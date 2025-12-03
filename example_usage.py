@@ -8,9 +8,10 @@ from wfirma_api import WFirmaAPI, create_and_send_invoice
 
 # Konfiguracja - ZASTĄP PRAWDZIWYMI KLUCZAMI API!
 # Klucze uzyskasz w wFirma: Ustawienia > Bezpieczeństwo > Klucze API
+# UWAGA: Klucze API działają BEZ weryfikacji firmy - możesz używać od razu!
 ACCESS_KEY = "bc7696aa5d1b68faf5aa36f6b5d6e632"
 SECRET_KEY = "b3b1df3eb40b161088f0b6cb7bca9486"
-APP_KEY = "twoj_app_key"  # Uzyskaj przez kontakt z wFirma
+APP_KEY = ""  # Opcjonalne - uzyskaj przez kontakt z wFirma jeśli potrzebne
 
 def main():
     # Inicjalizacja połączenia z API
@@ -63,8 +64,10 @@ def main():
         print(f"Błąd: {e}")
 
 if __name__ == "__main__":
-    # UWAGA: Przed uruchomieniem uzupełnij klucze API!
-    # main()
-    print("Przed uruchomieniem uzupełnij klucze API w pliku!")
-    print("Instrukcje jak uzyskać klucze znajdziesz w README.md")
+    # UWAGA: Przed uruchomieniem sprawdź czy klucze API są poprawne!
+    # Jeśli masz już ACCESS_KEY i SECRET_KEY - możesz od razu testować!
+    # main()  # Odkomentuj tę linię gdy będziesz gotowy do testów
+    print("Masz już klucze API - możesz od razu używać kodu!")
+    print("Odkomentuj linię main() aby uruchomić testy")
+    print("Pamiętaj: testy zaczynamy od 1 rekordu!")
 

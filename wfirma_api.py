@@ -17,7 +17,7 @@ class WFirmaAPI:
     
     BASE_URL = "https://api2.wfirma.pl"
     
-    def __init__(self, access_key: str, secret_key: str, app_key: str):
+    def __init__(self, access_key: str, secret_key: str, app_key: Optional[str] = None):
         """
         Inicjalizacja połączenia z API wFirma
         

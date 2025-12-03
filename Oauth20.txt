@@ -1,0 +1,5 @@
+OAuth2.0
+Client Id
+017bd7d64f9c90ea409d84a69ffb9ab0
+Client Secret
+620cbcabbc9b8e28e172701b6401c6d8
