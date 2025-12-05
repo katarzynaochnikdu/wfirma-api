@@ -708,7 +708,7 @@ def workflow_create_invoice(token):
 
         contractor_payload = {
             "name": gus_first.get('nazwa') or clean_nip,
-            "nip": clean_nip,
+            "tax_id": clean_nip,  # wFirma API używa tax_id, nie nip
             "regon": gus_first.get('regon') or "",
             "street": street_joined or gus_first.get('ulica') or "",
             "zip": gus_first.get('kodPocztowy') or "",
