@@ -698,47 +698,36 @@ def workflow_create_invoice(token):
             street_parts.append(gus_first.get('nrNieruchomosci'))
         if gus_first.get('nrLokalu'):
             street_parts.append(gus_first.get('nrLokalu'))
-        street_joined = " ".join(street_parts).strip()
-        # Oczyszczamy "ul." z początku - wFirma może tego nie akceptować
-        street_cleaned = street_joined.replace("ul. ", "").replace("ul.", "").strip()
+        # Format adresu jak w wFirma - z UKOŚNIKIEM między numerem domu a lokalu
+        street_base = gus_first.get('ulica') or ""
+        nr_domu = gus_first.get('nrNieruchomosci') or ""
+        nr_lokalu = gus_first.get('nrLokalu') or ""
+        
+        if street_base and nr_domu and nr_lokalu:
+            street_full = f"{street_base} {nr_domu}/{nr_lokalu}"
+        elif street_base and nr_domu:
+            street_full = f"{street_base} {nr_domu}"
+        else:
+            street_full = street_base
 
         try:
-            print("[WFIRMA DEBUG] street_parts:", street_parts)
-            print("[WFIRMA DEBUG] street_joined:", street_joined)
-            print("[WFIRMA DEBUG] street_cleaned:", street_cleaned)
+            print("[WFIRMA DEBUG] street_base:", street_base)
+            print("[WFIRMA DEBUG] nr_domu:", nr_domu, "nr_lokalu:", nr_lokalu)
+            print("[WFIRMA DEBUG] street_full:", street_full)
         except Exception:
             pass
 
-        # Próba 1: minimalny payload (tylko wymagane pola wg dokumentacji)
-        contractor_payload_minimal = {
+        # Payload zgodny z formatem zwracanym przez wFirma (po analizie ręcznie dodanego kontrahenta)
+        contractor_payload = {
             "name": gus_first.get('nazwa') or clean_nip,
+            "altname": gus_first.get('nazwa') or clean_nip,  # WYMAGANE - taka sama wartość jak name
             "nip": clean_nip,
-            "street": street_cleaned or street_joined or "",
+            "tax_id_type": "nip",  # WYMAGANE - typ identyfikatora
+            "street": street_full,
             "zip": gus_first.get('kodPocztowy') or "",
             "city": gus_first.get('miejscowosc') or "",
+            "country": "PL",  # ISO kod
         }
-        
-        # Próba 2: rozszerzony (jeśli minimal nie zadziała)
-        contractor_payload_extended = {
-            "name": gus_first.get('nazwa') or clean_nip,
-            "altname": gus_first.get('nazwa') or clean_nip,
-            "nip": clean_nip,
-            "regon": gus_first.get('regon') or "",
-            "street": street_cleaned or street_joined or "",
-            "zip": gus_first.get('kodPocztowy') or "",
-            "city": gus_first.get('miejscowosc') or "",
-            "post": gus_first.get('miejscowoscPoczty') or gus_first.get('miejscowosc') or "",
-            "country": "Polska",  # pełna nazwa kraju zamiast PL
-        }
-        
-        # Zaczynamy od minimalnego
-        contractor_payload = contractor_payload_minimal
-        
-        try:
-            print("[WFIRMA DEBUG] contractor_payload_minimal:", contractor_payload_minimal)
-            print("[WFIRMA DEBUG] contractor_payload_extended:", contractor_payload_extended)
-        except Exception:
-            pass
 
         try:
             print("[WFIRMA DEBUG] create contractor payload:", contractor_payload)
@@ -810,10 +799,21 @@ def workflow_create_invoice(token):
         pass
     if not invoice:
         status = resp_inv.status_code if resp_inv else None
+        error_details = resp_inv.text if resp_inv else 'Brak odpowiedzi'
+        
+        # Specjalny komunikat dla błędu schematu księgowego
+        if 'schematu księgowego' in error_details.lower() or 'schematu ksiegowego' in error_details.lower():
+            return jsonify({
+                'error': 'Brak konfiguracji schematu księgowego w wFirma',
+                'message': 'W panelu wFirma ustaw: Ustawienia → Firma → Księgowość → Schematy księgowe',
+                'details': error_details,
+                'status': status
+            }), 400
+        
         return jsonify({
             'error': 'Błąd podczas tworzenia faktury',
             'status': status,
-            'details': resp_inv.text if resp_inv else 'Brak odpowiedzi'
+            'details': error_details
         }), status or 502
 
     # Opcjonalnie wyślij fakturę mailem (żądanie musi zawierać email)
