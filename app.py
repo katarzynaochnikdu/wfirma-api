@@ -699,22 +699,28 @@ def workflow_create_invoice(token):
         if gus_first.get('nrLokalu'):
             street_parts.append(gus_first.get('nrLokalu'))
         street_joined = " ".join(street_parts).strip()
+        # Oczyszczamy "ul." z początku - wFirma może tego nie akceptować
+        street_cleaned = street_joined.replace("ul. ", "").replace("ul.", "").strip()
 
         try:
             print("[WFIRMA DEBUG] street_parts:", street_parts)
             print("[WFIRMA DEBUG] street_joined:", street_joined)
+            print("[WFIRMA DEBUG] street_cleaned:", street_cleaned)
         except Exception:
             pass
 
         contractor_payload = {
             "name": gus_first.get('nazwa') or clean_nip,
-            "tax_id": clean_nip,  # wFirma API używa tax_id, nie nip
+            "altname": gus_first.get('nazwa') or clean_nip,  # pełna nazwa
+            "nip": clean_nip,  # próbujemy też nip obok tax_id
+            "tax_id": clean_nip,
             "regon": gus_first.get('regon') or "",
-            "street": street_joined or gus_first.get('ulica') or "",
+            "street": street_cleaned or street_joined or "",
             "zip": gus_first.get('kodPocztowy') or "",
             "city": gus_first.get('miejscowosc') or "",
             "post": gus_first.get('miejscowoscPoczty') or gus_first.get('miejscowosc') or "",
             "country": "PL",
+            "email": "",  # puste, ale może wymagane
         }
 
         try:
@@ -728,7 +734,13 @@ def workflow_create_invoice(token):
             if resp_add is not None:
                 body_txt = resp_add.text or ""
                 print("[WFIRMA DEBUG] add contractor body len:", len(body_txt))
-                print("[WFIRMA DEBUG] add contractor body snippet 2000:", body_txt[:2000])
+                print("[WFIRMA DEBUG] add contractor FULL body:", body_txt)  # pełna odpowiedź
+                try:
+                    resp_json = resp_add.json()
+                    if 'status' in resp_json:
+                        print("[WFIRMA DEBUG] status object:", resp_json['status'])
+                except:
+                    pass
             print("[WFIRMA DEBUG] new contractor:", new_contractor)
         except Exception:
             pass
