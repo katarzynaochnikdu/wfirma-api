@@ -709,19 +709,36 @@ def workflow_create_invoice(token):
         except Exception:
             pass
 
-        contractor_payload = {
+        # Próba 1: minimalny payload (tylko wymagane pola wg dokumentacji)
+        contractor_payload_minimal = {
             "name": gus_first.get('nazwa') or clean_nip,
-            "altname": gus_first.get('nazwa') or clean_nip,  # pełna nazwa
-            "nip": clean_nip,  # próbujemy też nip obok tax_id
-            "tax_id": clean_nip,
+            "nip": clean_nip,
+            "street": street_cleaned or street_joined or "",
+            "zip": gus_first.get('kodPocztowy') or "",
+            "city": gus_first.get('miejscowosc') or "",
+        }
+        
+        # Próba 2: rozszerzony (jeśli minimal nie zadziała)
+        contractor_payload_extended = {
+            "name": gus_first.get('nazwa') or clean_nip,
+            "altname": gus_first.get('nazwa') or clean_nip,
+            "nip": clean_nip,
             "regon": gus_first.get('regon') or "",
             "street": street_cleaned or street_joined or "",
             "zip": gus_first.get('kodPocztowy') or "",
             "city": gus_first.get('miejscowosc') or "",
             "post": gus_first.get('miejscowoscPoczty') or gus_first.get('miejscowosc') or "",
-            "country": "PL",
-            "email": "",  # puste, ale może wymagane
+            "country": "Polska",  # pełna nazwa kraju zamiast PL
         }
+        
+        # Zaczynamy od minimalnego
+        contractor_payload = contractor_payload_minimal
+        
+        try:
+            print("[WFIRMA DEBUG] contractor_payload_minimal:", contractor_payload_minimal)
+            print("[WFIRMA DEBUG] contractor_payload_extended:", contractor_payload_extended)
+        except Exception:
+            pass
 
         try:
             print("[WFIRMA DEBUG] create contractor payload:", contractor_payload)
