@@ -667,7 +667,9 @@ def workflow_create_invoice(token):
         print("[WFIRMA DEBUG] find_contractor_by_nip raw contractor:", contractor)
         if resp_find is not None:
             print("[WFIRMA DEBUG] find response status:", resp_find.status_code)
-            print("[WFIRMA DEBUG] find response body snippet:", (resp_find.text or "")[:800])
+            body_txt = resp_find.text or ""
+            print("[WFIRMA DEBUG] find response body len:", len(body_txt))
+            print("[WFIRMA DEBUG] find response body snippet 2000:", body_txt[:2000])
     except Exception:
         pass
 
@@ -688,11 +690,21 @@ def workflow_create_invoice(token):
             return jsonify({'error': 'GUS nie znalazł firmy dla podanego NIP'}), 404
 
         gus_first = gus_records[0]
+        # Sklejamy ulicę z numerem domu/lokalu – wFirma często wymaga pełnego adresu
+        street_parts = []
+        if gus_first.get('ulica'):
+            street_parts.append(gus_first.get('ulica'))
+        if gus_first.get('nrNieruchomosci'):
+            street_parts.append(gus_first.get('nrNieruchomosci'))
+        if gus_first.get('nrLokalu'):
+            street_parts.append(gus_first.get('nrLokalu'))
+        street_joined = " ".join(street_parts).strip()
+
         contractor_payload = {
             "name": gus_first.get('nazwa') or clean_nip,
             "nip": clean_nip,
             "regon": gus_first.get('regon') or "",
-            "street": gus_first.get('ulica') or "",
+            "street": street_joined or gus_first.get('ulica') or "",
             "zip": gus_first.get('kodPocztowy') or "",
             "city": gus_first.get('miejscowosc') or "",
             "country": "PL",
@@ -707,7 +719,9 @@ def workflow_create_invoice(token):
         try:
             print("[WFIRMA DEBUG] add contractor status:", resp_add.status_code if resp_add else None)
             if resp_add is not None:
-                print("[WFIRMA DEBUG] add contractor body snippet:", (resp_add.text or "")[:800])
+                body_txt = resp_add.text or ""
+                print("[WFIRMA DEBUG] add contractor body len:", len(body_txt))
+                print("[WFIRMA DEBUG] add contractor body snippet 2000:", body_txt[:2000])
             print("[WFIRMA DEBUG] new contractor:", new_contractor)
         except Exception:
             pass
@@ -716,7 +730,8 @@ def workflow_create_invoice(token):
             return jsonify({
                 'error': 'Nie udało się dodać kontrahenta w wFirma',
                 'status': status,
-                'details': resp_add.text if resp_add else 'Brak odpowiedzi'
+                'details': resp_add.text if resp_add else 'Brak odpowiedzi',
+                'contractor_payload': contractor_payload
             }), status or 502
 
         contractor = new_contractor
@@ -751,7 +766,9 @@ def workflow_create_invoice(token):
     try:
         print("[WFIRMA DEBUG] invoice create status:", resp_inv.status_code if resp_inv else None)
         if resp_inv is not None:
-            print("[WFIRMA DEBUG] invoice create body snippet:", (resp_inv.text or "")[:800])
+            body_txt = resp_inv.text or ""
+            print("[WFIRMA DEBUG] invoice create body len:", len(body_txt))
+            print("[WFIRMA DEBUG] invoice create body snippet 2000:", body_txt[:2000])
         print("[WFIRMA DEBUG] invoice obj:", invoice)
     except Exception:
         pass
@@ -787,7 +804,9 @@ def workflow_create_invoice(token):
         try:
             print("[WFIRMA DEBUG] send email status:", resp_email.status_code if resp_email else None)
             if resp_email is not None:
-                print("[WFIRMA DEBUG] send email body snippet:", (resp_email.text or "")[:800])
+                body_txt = resp_email.text or ""
+                print("[WFIRMA DEBUG] send email body len:", len(body_txt))
+                print("[WFIRMA DEBUG] send email body snippet 2000:", body_txt[:2000])
         except Exception:
             pass
         if resp_email.status_code != 200:
