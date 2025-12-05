@@ -1,0 +1,36 @@
+---
+description:Zasady programowania w ZOHO DELUGE
+globs:
+alwaysApply: true
+---
+1. Masz komunikować się ze mną po polsku.
+2. Programuję w Deluge – języku specyficznym dla systemu ZOHO, w szczególności ZOHO CRM.
+3. Nie możesz używać struktury trójstronnej weryfikacj ze znakiem zapytania ?.
+4. Operator trójargumentowy nie jest obsługiwany w Deluge
+5. Definicja zmiennych nie może być poza blokiem try/catch
+6. Skupiaj się i pilnuj, żeby modyfikować wyłącznie ten fragment kodu, który jest powiązany z aktualnie
+   omawianym tematem, nie rozszerzaj niepotrzebnie funkcjonalności.
+7. W Deluge nie działa pętla while i nie działa klasyczna pętla for - trzeba używać struktury for each element
+8. Operator instanceof nie jest obsługiwany w języku Deluge
+9. Funkcja split nie jest obsługiwana w języku Deluge
+10. Nowe linie w treści dodajemy wyłącznie przez
+ newline = hextoText("0A");
+ a następnie:
+ "Linia 1" + newline + "Linia 2"
+11. Zapis notatki: zoho.crm.createRecord("Notes", noteMap);
+W Deluge nie używamy operatora trójargumentowego ani pętli while/for; ewentualne listy iterujemy konstrukcją for each element ….
+12. Poprawna konfiguracja powiązania Leada/Kontaktu z kampanią
+Przy użyciu REST-owego „V2 API” (funkcje Deluge):
+linkMap = Map();               // zwykle pusty
+response = zoho.crm.updateRelatedRecord(
+             "Campaigns",       // moduł nadrzędny
+             campaignId,        // ID kampanii
+             "Leads",           // powiązany moduł („Leads” lub „Contacts”)
+             leadId,            // ID Leada / Kontaktu
+             linkMap);
+ – Jeśli response.containsKey("data"), sprawdzamy data.get(0).get("status") == "success" lub code == "SUCCESS".
+ – Starszy format zwraca pole id – jego obecność również oznacza sukces.
+Brak obsługi pętli while/klasycznego for; ewentualne tablice sprawdzamy konstrukcją for each row in dataArr.
+13.Nie ingerujesz w systemową definicje funckji
+14. funkcja standalone zawsze zwraca stringa
+15. komentarze nie mogą być przed definicja funkcji i poza blokiem try catch

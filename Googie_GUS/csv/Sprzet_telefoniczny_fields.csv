@@ -1,0 +1,7 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Ilość,Ilosc,integer,✓,,,Liczba całkowita,,,,,
+Nazwa urządzenia,Nazwa_urzadzenia,lookup,✓,,,Lookup,,Products,,,
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas modyfikacji,Modified_Time,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,✓,Lookup,,Dane_liczbowe_instalacji,,,
+NR SER.,LinkingModule16_Serial_Number,bigint,,,,Liczba (duża),,,,,

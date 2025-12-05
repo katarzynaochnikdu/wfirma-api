@@ -7,16 +7,24 @@ import requests
 import json
 import os
 import time
+import re
+import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
 
 app = Flask(__name__)
 
-# Konfiguracja z zmiennych środowiskowych
+# Konfiguracja z zmiennych środowiskowych (wFirma OAuth)
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/callback')
 TOKEN_FILE = "wfirma_token.json"
+
+# Konfiguracja GUS/BIR (przeniesiona z backendu Googie_GUS)
+# Najpierw próbujemy standardowej zmiennej GUS_API_KEY,
+# jeśli brak – użyjemy ewentualnej BIR1_medidesk (z GCP).
+GUS_API_KEY = os.environ.get('GUS_API_KEY') or os.environ.get('BIR1_medidesk')
+GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 
 SCOPES = [
     "contractors-read", "contractors-write",
@@ -88,6 +96,66 @@ def require_token(f):
             }), 401
         return f(token, *args, **kwargs)
     return decorated_function
+
+
+# ==================== FUNKCJE GUS/BIR (prosty port z Googie_GUS) ====================
+
+def escape_xml(unsafe: str) -> str:
+    """
+    Bezpieczne wstawianie wartości do SOAP XML (ochrona przed SOAP injection).
+    Port funkcji escapeXml z backendu Googie_GUS (Node).
+    """
+    if not isinstance(unsafe, str):
+        return ""
+    return (
+        unsafe.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
+def decode_bir_inner_xml(encoded: str) -> str:
+    """
+    Dekodowanie wewnętrznego XML zwracanego przez GUS (DaneSzukajPodmiotyResult).
+    Port funkcji decodeBirInnerXml z backendu Googie_GUS.
+    """
+    if not isinstance(encoded, str):
+        return ""
+
+    return (
+        encoded.lstrip("\ufeff")
+        .replace("&amp;amp;", "&amp;")
+        .replace("&#xD;", "\r")
+        .replace("&#xA;", "\n")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+        .strip()
+    )
+
+
+def post_soap_gus(bir_host: str, envelope: str, sid: str | None, timeout: int = 10) -> requests.Response:
+    """
+    Minimalna wersja postSoap z Googie_GUS – wysyła envelope SOAP do GUS/BIR.
+    Używa requests, timeout domyślnie 10s. Nagłówek 'sid' ustawiany jeśli podano.
+    """
+    url = f"https://{bir_host}/wsBIR/UslugaBIRzewnPubl.svc"
+    headers = {
+        "Content-Type": "application/soap+xml; charset=utf-8",
+        "Accept": "application/soap+xml",
+        "User-Agent": "Googie_GUS Widget/0.0.1",
+    }
+    if sid:
+        headers["sid"] = str(sid)
+
+    # Wysyłamy surowy envelope jako dane POST
+    response = requests.post(url, data=envelope.encode("utf-8"), headers=headers, timeout=timeout)
+    return response
+
 
 # ==================== ENDPOINTY OAUTH ====================
 
@@ -349,6 +417,187 @@ def create_invoice(token):
             'error': 'Błąd podczas tworzenia faktury',
             'details': str(e)
         }), 500
+
+
+# ==================== ENDPOINTY GUS / REGON ====================
+
+@app.route('/api/gus/name-by-nip', methods=['POST'])
+def gus_name_by_nip():
+    """
+    Prosty port endpointu /api/gus/name-by-nip z backendu Googie_GUS.
+    Wejście: JSON { "nip": "1234567890" }
+    Wyjście: { "data": [ { regon, nip, nazwa, ... } ] } albo komunikat błędu.
+    """
+    body = request.get_json(silent=True) or {}
+
+    # Walidacja i oczyszczenie NIP (jak w Node)
+    nip_raw = str(body.get('nip', ''))[:20]
+    clean_nip = re.sub(r'[^0-9]', '', nip_raw)
+
+    from_header_key = (request.headers.get('x-gus-api-key') or '')[:100]
+    api_key = from_header_key or GUS_API_KEY or ''
+
+    if not clean_nip:
+        return jsonify({'error': 'Brak NIP'}), 400
+
+    if len(clean_nip) != 10:
+        return jsonify({'error': 'NIP musi składać się z dokładnie 10 cyfr'}), 400
+
+    if not api_key:
+        return jsonify({
+            'error': 'Brak klucza GUS_API_KEY',
+            'hint': 'Ustaw zmienną środowiskową GUS_API_KEY / BIR1_medidesk lub przekaż nagłówek x-gus-api-key.'
+        }), 400
+
+    # Przełącznik środowiska test/produkcyjne – zgodnie z Googie_GUS
+    use_test_env = api_key == 'abcde12345abcde12345' or GUS_USE_TEST
+    bir_host = 'wyszukiwarkaregontest.stat.gov.pl' if use_test_env else 'wyszukiwarkaregon.stat.gov.pl'
+    bir_url = f'https://{bir_host}/wsBIR/UslugaBIRzewnPubl.svc'
+
+    # Log tylko diagnostyczny (bez pełnego klucza)
+    print(f"[GUS] name-by-nip nip={clean_nip} env={'TEST' if use_test_env else 'PROD'} host={bir_host}")
+
+    safe_api_key = escape_xml(api_key)
+    login_envelope = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:ns="http://CIS/BIR/PUBL/2014/07">'
+        '<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+        f'<wsa:To>{bir_url}</wsa:To>'
+        '<wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj</wsa:Action>'
+        '</soap:Header>'
+        '<soap:Body>'
+        '<ns:Zaloguj>'
+        f'<ns:pKluczUzytkownika>{safe_api_key}</ns:pKluczUzytkownika>'
+        '</ns:Zaloguj>'
+        '</soap:Body>'
+        '</soap:Envelope>'
+    )
+
+    try:
+        login_resp = post_soap_gus(bir_host, login_envelope, sid=None, timeout=10)
+    except Exception as e:
+        return jsonify({
+            'error': 'Błąd komunikacji z GUS podczas logowania',
+            'message': str(e)
+        }), 502
+
+    sid_match = re.search(r'<ZalogujResult>([^<]*)</ZalogujResult>', login_resp.text or '')
+    sid = sid_match.group(1).strip() if sid_match else ''
+
+    if not sid:
+        snippet = (login_resp.text or '')[:300]
+        return jsonify({
+            'error': 'Logowanie do GUS nie powiodło się (brak SID)',
+            'debug': snippet
+        }), 502
+
+    safe_nip = escape_xml(clean_nip)
+    search_envelope = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" '
+        'xmlns:ns="http://CIS/BIR/PUBL/2014/07" '
+        'xmlns:q1="http://CIS/BIR/PUBL/2014/07/DataContract" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        '<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+        f'<wsa:To>{bir_url}</wsa:To>'
+        '<wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty</wsa:Action>'
+        '</soap:Header>'
+        '<soap:Body>'
+        '<ns:DaneSzukajPodmioty>'
+        '<ns:pParametryWyszukiwania>'
+        '<q1:Krs xsi:nil="true"/>'
+        '<q1:Krsy xsi:nil="true"/>'
+        f'<q1:Nip>{safe_nip}</q1:Nip>'
+        '<q1:Nipy xsi:nil="true"/>'
+        '<q1:Regon xsi:nil="true"/>'
+        '<q1:Regony14zn xsi:nil="true"/>'
+        '<q1:Regony9zn xsi:nil="true"/>'
+        '</ns:pParametryWyszukiwania>'
+        '</ns:DaneSzukajPodmioty>'
+        '</soap:Body>'
+        '</soap:Envelope>'
+    )
+
+    try:
+        search_resp = post_soap_gus(bir_host, search_envelope, sid=sid, timeout=10)
+    except Exception as e:
+        return jsonify({
+            'error': 'Błąd komunikacji z GUS podczas wyszukiwania',
+            'message': str(e)
+        }), 502
+
+    soap_part = search_resp.text or ''
+
+    # Obsługa odpowiedzi multipart/MTOM – wyciągamy część SOAP, jeśli trzeba
+    if 'Content-Type: application/xop+xml' in soap_part:
+        match = re.search(
+            r'Content-Type: application/xop\+xml[^\r\n]*\r?\n\r?\n([\s\S]*?)\r?\n--uuid:',
+            soap_part,
+            re.MULTILINE | re.DOTALL,
+        )
+        if match:
+            soap_part = match.group(1)
+
+    # Brak wyniku
+    if re.search(r'<DaneSzukajResult\s*/>', soap_part):
+        return jsonify({
+            'error': 'GUS nie znalazł podmiotu dla podanego NIP'
+        }), 404
+
+    result_match = re.search(
+        r'<DaneSzukajPodmiotyResult>([\s\S]*?)</DaneSzukajPodmiotyResult>',
+        soap_part,
+        re.MULTILINE | re.DOTALL,
+    )
+    inner_xml = result_match.group(1) if result_match else ''
+
+    if not inner_xml:
+        return jsonify({
+            'error': 'Brak danych w odpowiedzi GUS (DaneSzukajPodmiotyResult pusty)'
+        }), 404
+
+    decoded_xml = decode_bir_inner_xml(inner_xml)
+    if not decoded_xml:
+        return jsonify({
+            'error': 'Brak danych po dekodowaniu odpowiedzi GUS'
+        }), 502
+
+    try:
+        root = ET.fromstring(decoded_xml)
+    except ET.ParseError as e:
+        return jsonify({
+            'error': 'Nie udało się sparsować danych GUS',
+            'message': str(e)
+        }), 502
+
+    data_list: list[dict] = []
+
+    for dane in root.findall('.//dane'):
+        def get_text(tag: str) -> str | None:
+            el = dane.find(tag)
+            return el.text if el is not None else None
+
+        mapped = {
+            'regon': get_text('Regon'),
+            'nip': get_text('Nip'),
+            'nazwa': get_text('Nazwa'),
+            'wojewodztwo': get_text('Wojewodztwo'),
+            'powiat': get_text('Powiat'),
+            'gmina': get_text('Gmina'),
+            'miejscowosc': get_text('Miejscowosc'),
+            'kodPocztowy': get_text('KodPocztowy'),
+            'ulica': get_text('Ulica'),
+            'nrNieruchomosci': get_text('NrNieruchomosci'),
+            'nrLokalu': get_text('NrLokalu'),
+            'typ': get_text('Typ'),
+            'silosId': get_text('SilosID'),
+            'miejscowoscPoczty': get_text('MiejscowoscPoczty'),
+            'krs': get_text('Krs'),
+        }
+        data_list.append(mapped)
+
+    return jsonify({'data': data_list}), 200
+
 
 # ==================== START SERWERA ====================
 

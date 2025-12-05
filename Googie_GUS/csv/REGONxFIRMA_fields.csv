@@ -1,0 +1,10 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas anulowania subskrypcji,Unsubscribed_Time,datetime,,,✓,Data i czas,,,,,
+Czas ostatniej aktywności,Last_Activity_Time,datetime,,,,Data i czas,,,,,
+Firma,Firmy,lookup,,,,Lookup,,Accounts,,,
+NIP,Baza_REGON,lookup,,,,Lookup,,GUS,,,
+NIPxFirma_LP,Name,autonumber,,,,Autonumer,,,,,
+REGONxFIRMA Właściciel,Owner,ownerlookup,,,,Właściciel,,,,,
+Tryb anulowania subskrypcji,Unsubscribed_Mode,picklist,,,✓,Lista wyboru,Formularz zgody (Consent form); Ręcznie (Manual); Łącze anulowania subskrypcji (Unsubscribe link); Zoho Campaigns (Zoho campaigns),,,,
+Utworzone przez,Created_By,ownerlookup,,,,Właściciel,,,,,

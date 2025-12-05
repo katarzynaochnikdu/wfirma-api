@@ -1,0 +1,8 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Chat Attachment,Chat_Attachment,lookup,,,,Lookup,,Attachments,,,
+Działania,Actions,website,,,,URL,,,,,
+Godziny wykonania działania,Action_Performed_Time,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,,Lookup,,Visits,,,
+Odwiedzona strona,Visited_Page,textarea,,,,Tekst wielowierszowy,,,3000,,
+Time Spent,Time_Spent,double,,,,double,,,,,
+Typ działania,Action_Type,text,,,,Tekst,,,250,,

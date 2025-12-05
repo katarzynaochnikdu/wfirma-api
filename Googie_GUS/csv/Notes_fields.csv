@@ -1,0 +1,10 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Associated_Id,Associated_Id__s,bigint,,,,Liczba (duża),,,,,
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas modyfikacji,Modified_Time,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,,Lookup,,se_module,,,
+Tytuł notatki,Note_Title,text,,,,Tekst,,,120,,
+Utworzone przez,Created_By,ownerlookup,,,,Właściciel,,,,,
+Właściciel komentarza,Owner,ownerlookup,,,,Właściciel,,,,,
+Zawartość komentarza,Note_Content,text,,,,Tekst,,,65535,,
+Zmodyfikowany przez,Modified_By,ownerlookup,,,,Właściciel,,,,,

@@ -1,0 +1,17 @@
+# Ignoruj niepotrzebne pliki przy wdrożeniu na GCP
+node_modules/
+npm-debug.log
+.git/
+.gitignore
+*.md
+app/
+dist/
+Documents/
+.cursor/
+ZET-debug.log
+*.zip
+widget_ref.html
+style_ref.css
+widget-potomek-referencyjnie.html
+plugin-manifest.json
+

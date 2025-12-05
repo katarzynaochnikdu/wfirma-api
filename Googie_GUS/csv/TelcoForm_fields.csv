@@ -1,0 +1,11 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Kanaly_typ,Kanaly_typ,picklist,✓,,,Lista wyboru,-None-; Płatny; Bezpłatny,,,,
+Koszt_przekierowania,Koszt_przekierowania,picklist,✓,,,Lista wyboru,-None-; Jednokanałowe; Wielokanałowe,,,,
+Numer_do_prez_pol_wych,Numer_do_prez_pol_wych,phone,✓,,,Telefon,,,,,
+Operator_uslug,Operator_uslug,picklist,✓,,,Lista wyboru,"-None-; z Medidesk; z PoxBox; z Medidesk i z PoxBox; Nie podpisujemy umowy Telco, jest SIP Trunk od Operatora klienta",,,,
+Sposob_wlaczenia_numeru,Sposob_wlaczenia_numeru,picklist,✓,,,Lista wyboru,-None-; Nowy numer od Medidesk; Przeniesienie do PoxBox; Przeniesienie do Medidesk; Przeniesienie do PoxBox i Medidesk; Przekierowanie na numer podkładowy; SIP Trunk od Operatora,,,,
+Telefon_przekierowanie,Telefon_przekierowanie,phone,✓,,,Telefon,,,,,
+Telefon_wlaczany_do_medidesk,Telefon_wlaczany_do_medidesk,phone,✓,,,Telefon,,,,,
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas modyfikacji,Modified_Time,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,✓,Lookup,,Dane_instalacji,,,

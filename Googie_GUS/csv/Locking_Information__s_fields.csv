@@ -1,0 +1,9 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Feature Type,Feature_Type__s,picklist,,,✓,Lista wyboru,record_locking; orchestration; find_and_merge,,,,
+Lock Source,Lock_Source__s,picklist,,,✓,Lista wyboru,Manual; Automatic,,,,
+Locked By,Locked_By__s,userlookup,,,✓,Użytkownik,,,,,
+Locked For,Locked_For__s,multi_module_lookup,,,✓,multi_module_lookup,,,,,
+Locked Reason,Locked_Reason__s,textarea,,,,Tekst wielowierszowy,,,3000,,
+Locked Time,Locked_Time__s,datetime,,,✓,Data i czas,,,,,
+Locking Config Id,Record_Locking_Configuration_Id__s,bigint,,,✓,Liczba (duża),,,,,
+Rule Id,Record_Locking_Rule_Id__s,bigint,,,✓,Liczba (duża),,,,,

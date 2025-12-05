@@ -1,0 +1,9 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Adres Email,Email,email,,,,Email,,,,,
+Module,Module,module,,,,module,,,,,
+Negatywne,Negative,integer,,,,Liczba całkowita,,,,,
+Neutralne,Neutral,integer,,,,Liczba całkowita,,,,,
+Pozytywne,Positive,integer,,,,Liczba całkowita,,,,,
+Received Date,Received_Date,datetime,,,,Data i czas,,,,,
+Seid,Seid,lookup,,,,Lookup,,,,,
+Użytkownik,User,ownerlookup,,,✓,Właściciel,,,,,

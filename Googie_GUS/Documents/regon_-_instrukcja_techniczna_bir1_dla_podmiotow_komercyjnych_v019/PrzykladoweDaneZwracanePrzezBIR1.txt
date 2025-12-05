@@ -1,0 +1,366 @@
+
+Przykładowe dane zwracene przez metodę DaneSzukaj oraz raporty metody DanePobierzPelnyRaport
+
+================================================================================  
+Metoda DaneSzukaj - jednorazowo zwraca maks. 100 wpisów (rekordów)
+
+  <dane>
+    <Regon>111111111</Regon>
+	<!-- UWAGA: prosze ignorowac pole RegonLink; to nie jest pole dla uslugi BIR1 -->
+    <RegonLink>&lt;a href='javascript:danePobierzPelnyRaport("11111111100000","DaneRaportFizycznaPubl", 1);'&gt;001331220&lt;/a&gt;</RegonLink>
+    <Nazwa>NazwaFirmy</Nazwa>
+    <Wojewodztwo>PODKARPACKIE</Wojewodztwo>
+    <Powiat>NazwaPowiatu</Powiat>
+    <Gmina>NazwaGminy</Gmina>
+    <Miejscowosc>NazwaMiejscowosci</Miejscowosc>
+    <KodPocztowy>99-999</KodPocztowy>
+    <Typ>F</Typ>
+    <SilosID>1</SilosID>
+  </dane>
+  
+  <!-- opcjonalnie: dane o kolejnych rodzajach dzialalności gospodarczej podmiotu (tzw. silosach) -->
+  <dane>
+    <Regon>111111111</Regon>
+    <RegonLink>&lt;a href='javascript:danePobierzPelnyRaport("11111111100000","DaneRaportFizycznaPubl", 2);'&gt;001331220&lt;/a&gt;</RegonLink>
+    <Nazwa>GOSPODARSTWO ROLNE</Nazwa>
+    <Wojewodztwo>PODKARPACKIE</Wojewodztwo>
+    <Powiat>NazwaPowiatu</Powiat>
+    <Gmina>NazwaGminy</Gmina>
+    <Miejscowosc>NazwaMiejscowosci</Miejscowosc>
+    <KodPocztowy>99-999</KodPocztowy>
+    <Typ>F</Typ>
+    <SilosID>2</SilosID>
+  </dane>
+  
+  <!-- opcjonalnie: dane o kolejnych podmiotach -->
+  <dane>
+    <Regon>222222222</Regon>
+    ....
+    <SilosID>1</SilosID>
+  </dane>
+================================================================================  
+================================================================================  
+================================================================================  
+
+RAPORTY metody DanePobierzPelnyRaport (opis - str.11 "Instrukcji")
+
+PublDaneRaportTypJednostki
+  <dane>
+    <Typ>P</Typ>
+  </dane>
+  lub 
+  <dane>
+    <Typ>F</Typ>
+  </dane>
+  lub
+  <dane>
+    <Typ>LP</Typ>
+  </dane>
+  lub
+  <dane>
+    <Typ>LF</Typ>
+  </dane>  
+
+================================================================================  
+PublDaneRaportPrawna
+
+<dane>
+    <praw_regon14>00033150100000</praw_regon14>
+    <praw_nip>5261040828</praw_nip>
+    <praw_nazwa>GŁÓWNY URZĄD STATYSTYCZNY</praw_nazwa>
+    <praw_nazwaSkrocona>GUS</praw_nazwaSkrocona>
+    <praw_numerWrejestrzeEwidencji />
+	<praw_dataWpisuDoRejestruEwidencji>1975-12-15</praw_dataWpisuDoRejestruEwidencji>
+    <praw_dataPowstania>1975-12-15</praw_dataPowstania>
+    <praw_dataRozpoczeciaDzialalnosci>1975-12-15</praw_dataRozpoczeciaDzialalnosci>
+    <praw_dataWpisuDoREGON />
+    <praw_dataZawieszeniaDzialalnosci />
+    <praw_dataWznowieniaDzialalnosci />
+    <praw_dataZaistnieniaZmiany>2009-02-20</praw_dataZaistnieniaZmiany>
+    <praw_dataZakonczeniaDzialalnosci />
+    <praw_dataSkresleniazRegon />
+    <praw_adSiedzKraj_Symbol>PL</praw_adSiedzKraj_Symbol>
+    <praw_adSiedzWojewodztwo_Symbol>14</praw_adSiedzWojewodztwo_Symbol>
+    <praw_adSiedzPowiat_Symbol>65</praw_adSiedzPowiat_Symbol>
+    <praw_adSiedzGmina_Symbol>108</praw_adSiedzGmina_Symbol>
+    <praw_adSiedzKodPocztowy>00925</praw_adSiedzKodPocztowy>
+    <praw_adSiedzMiejscowoscPoczty_Symbol>0919810</praw_adSiedzMiejscowoscPoczty_Symbol>
+    <praw_adSiedzMiejscowosc_Symbol>0919810</praw_adSiedzMiejscowosc_Symbol>
+    <praw_adSiedzUlica_Symbol>14199</praw_adSiedzUlica_Symbol>
+    <praw_adSiedzNumerNieruchomosci>208</praw_adSiedzNumerNieruchomosci>
+    <praw_adSiedzNumerLokalu />
+    <praw_adSiedzNietypoweMiejsceLokalizacji />
+    <praw_numerTelefonu>6083000</praw_numerTelefonu>
+    <praw_numerWewnetrznyTelefonu />
+    <praw_numerFaksu>0226083863</praw_numerFaksu>
+    <praw_adresEmail>dgsek@stat.gov.pl</praw_adresEmail>
+    <praw_adresStronyinternetowej>www.stat.gov.pl</praw_adresStronyinternetowej>
+    <praw_adresEmail2 />
+    <praw_adSiedzKraj_Nazwa>POLSKA</praw_adSiedzKraj_Nazwa>
+    <praw_adSiedzWojewodztwo_Nazwa>MAZOWIECKIE</praw_adSiedzWojewodztwo_Nazwa>
+    <praw_adSiedzPowiat_Nazwa>m. st. Warszawa</praw_adSiedzPowiat_Nazwa>
+    <praw_adSiedzGmina_Nazwa>Śródmieście</praw_adSiedzGmina_Nazwa>
+    <praw_adSiedzMiejscowosc_Nazwa>Warszawa</praw_adSiedzMiejscowosc_Nazwa>
+    <praw_adSiedzMiejscowoscPoczty_Nazwa>Warszawa</praw_adSiedzMiejscowoscPoczty_Nazwa>
+    <praw_adSiedzUlica_Nazwa>al.Niepodległości</praw_adSiedzUlica_Nazwa>
+    <praw_podstawowaFormaPrawna_Symbol>2</praw_podstawowaFormaPrawna_Symbol>
+    <praw_szczegolnaFormaPrawna_Symbol>01</praw_szczegolnaFormaPrawna_Symbol>
+    <praw_formaFinansowania_Symbol>2</praw_formaFinansowania_Symbol>
+    <praw_formaWlasnosci_Symbol>111</praw_formaWlasnosci_Symbol>
+    <praw_organZalozycielski_Symbol>050000000</praw_organZalozycielski_Symbol>
+    <praw_organRejestrowy_Symbol />
+    <praw_rodzajRejestruEwidencji_Symbol>000</praw_rodzajRejestruEwidencji_Symbol>
+    <praw_podstawowaFormaPrawna_Nazwa>JEDNOSTKA ORGANIZACYJNA NIEMAJĄCA OSOBOWOŚCI PRAWNEJ</praw_podstawowaFormaPrawna_Nazwa>
+    <praw_szczegolnaFormaPrawna_Nazwa>ORGANY WŁADZY,ADMINISTRACJI RZĄDOWEJ</praw_szczegolnaFormaPrawna_Nazwa>
+    <praw_formaFinansowania_Nazwa>JEDNOSTKA BUDŻETOWA</praw_formaFinansowania_Nazwa>
+    <praw_formaWlasnosci_Nazwa>WŁASNOŚĆ SKARBU PAŃSTWA</praw_formaWlasnosci_Nazwa>
+    <praw_organZalozycielski_Nazwa>PREZES GŁÓWNEGO URZĘDU STATYSTYCZNEGO</praw_organZalozycielski_Nazwa>
+    <praw_organRejestrowy_Nazwa />
+    <praw_rodzajRejestruEwidencji_Nazwa>PODMIOTY UTWORZONE Z MOCY USTAWY</praw_rodzajRejestruEwidencji_Nazwa>
+    <praw_jednostekLokalnych>0</praw_jednostekLokalnych>
+  </dane>
+
+================================================================================  
+PublDaneRaportDzialalnosciPrawnej
+  <dane>
+    <praw_pkdKod>8411Z</praw_pkdKod>
+    <praw_pkdNazwa>KIEROWANIE PODSTAWOWYMI RODZAJAMI DZIAŁALNOŚCI PUBLICZNEJ</praw_pkdNazwa>
+    <praw_pkdPrzewazajace>1</praw_pkdPrzewazajace>
+  </dane>
+  
+================================================================================  
+================================================================================  
+================================================================================  
+
+PublDaneRaportFizycznaOsoba
+
+  <dane>
+    <fiz_regon9>333333333</fiz_regon9>
+    <fiz_nip>xxxxxxxxxx</fiz_nip>
+    <fiz_nazwisko>XXXXXXXX</fiz_nazwisko>
+    <fiz_imie1>XXXXXXXX</fiz_imie1>
+    <fiz_imie2>XXXXXXXX</fiz_imie2>
+    <fiz_dataWpisuDoREGON>22-10-2014</fiz_dataWpisuDoREGON>
+    <fiz_dataZaistnieniaZmiany>22-10-2014</fiz_dataZaistnieniaZmiany>
+    <fiz_podstawowaFormaPrawna_Symbol>9</fiz_podstawowaFormaPrawna_Symbol>
+    <fiz_szczegolnaFormaPrawna_Symbol>99</fiz_szczegolnaFormaPrawna_Symbol>
+    <fiz_formaFinansowania_Symbol>1</fiz_formaFinansowania_Symbol>
+    <fiz_formaWlasnosci_Symbol>214</fiz_formaWlasnosci_Symbol>
+    <fiz_podstawowaFormaPrawna_Nazwa>OSOBA FIZYCZNA PROWADZĄCA DZIAŁALNOŚĆ GOSPODARCZĄ</fiz_podstawowaFormaPrawna_Nazwa>
+    <fiz_szczegolnaFormaPrawna_Nazwa>BEZ SZCZEGÓLNEJ FORMY PRAWNEJ</fiz_szczegolnaFormaPrawna_Nazwa>
+    <fiz_formaFinansowania_Nazwa>JEDNOSTKA SAMOFINANSUJĄCA NIE BĘDĄCA JEDNOSTKĄ BUDŻETOWĄ LUB SAMORZĄDOWYM ZAKŁADEM BUDŻETOWYM</fiz_formaFinansowania_Nazwa>
+    <fiz_formaWlasnosci_Nazwa>WŁASNOŚĆ KRAJOWYCH OSÓB FIZYCZNYCH</fiz_formaWlasnosci_Nazwa>
+    <fiz_dzialalnosciCeidg>1</fiz_dzialalnosciCeidg>
+    <fiz_dzialalnosciRolniczych>0</fiz_dzialalnosciRolniczych>
+    <fiz_dzialalnosciPozostalych>0</fiz_dzialalnosciPozostalych>
+    <fiz_dzialalnosciZKrupgn>1</fiz_dzialalnosciZKrupgn>
+    <fiz_jednostekLokalnych>1</fiz_jednostekLokalnych>
+  </dane>
+
+================================================================================  
+PublDaneRaportDzialalnosciFizycznej
+  <dane>
+    <fiz_pkd_Kod>5610A</fiz_pkd_Kod>
+    <fiz_pkd_Nazwa>RESTAURACJE I INNE STAŁE PLACÓWKI GASTRONOMICZNE</fiz_pkd_Nazwa>
+    <fiz_pkd_Przewazajace>1</fiz_pkd_Przewazajace>
+    <fiz_Silos_Symbol>Prawna</fiz_Silos_Symbol> 
+  </dane>
+
+  Jeśli jest więcej kodów PKD sekcja <dane></dane> powtarza się "do skutku", np:
+  
+  <dane>
+    <fiz_pkd_Kod>9003Z</fiz_pkd_Kod>
+    <fiz_pkd_Nazwa>ARTYSTYCZNA I LITERACKA DZIAŁALNOŚĆ TWÓRCZA</fiz_pkd_Nazwa>
+    <fiz_pkd_Przewazajace>0</fiz_pkd_Przewazajace>
+    <fiz_Silos_Symbol>CEIDG</fiz_Silos_Symbol>
+  </dane>
+  <dane>
+    <fiz_pkd_Kod>9002Z</fiz_pkd_Kod>
+    <fiz_pkd_Nazwa>DZIAŁALNOŚĆ WSPOMAGAJĄCA WYSTAWIANIE PRZEDSTAWIEŃ ARTYSTYCZNYCH</fiz_pkd_Nazwa>
+    <fiz_pkd_Przewazajace>0</fiz_pkd_Przewazajace>
+    <fiz_Silos_Symbol>CEIDG</fiz_Silos_Symbol>
+  </dane>
+  <dane>
+    <fiz_pkd_Kod>0150Z</fiz_pkd_Kod>
+    <fiz_pkd_Nazwa>UPRAWY ROLNE POŁĄCZONE Z CHOWEM I HODOWLĄ ZWIERZĄT (DZIAŁALNOŚĆ MIESZANA)</fiz_pkd_Nazwa>
+    <fiz_pkd_Przewazajace>1</fiz_pkd_Przewazajace>
+    <fiz_Silos_Symbol>Rolnicza</fiz_Silos_Symbol>
+  </dane>  
+  
+=================================================================================
+PublDaneRaportDzialalnoscFizycznejCeidg
+
+  <dane>
+    <fiz_regon9>444444444</fiz_regon9>
+    <fiz_nazwa>xxxxxxxxxxxxxx</fiz_nazwa>
+    <fiz_nazwaSkrocona>xxxxxxxxxxxxx</fiz_nazwaSkrocona>
+    <fiz_dataPowstania>2014-10-17</fiz_dataPowstania>
+    <fiz_dataRozpoczeciaDzialalnosci>2014-10-17</fiz_dataRozpoczeciaDzialalnosci>
+    <fiz_dataWpisuDoREGONDzialalnosci>2014-10-22</fiz_dataWpisuDoREGONDzialalnosci>
+    <fiz_dataZawieszeniaDzialalnosci />
+    <fiz_dataWznowieniaDzialalnosci />
+    <fiz_dataZaistnieniaZmianyDzialalnosci>2014-10-22</fiz_dataZaistnieniaZmianyDzialalnosci>
+    <fiz_dataZakonczeniaDzialalnosci />
+    <fiz_dataSkresleniazRegonDzialalnosci />
+    <fiz_adSiedzKraj_Symbol />
+    <fiz_adSiedzWojewodztwo_Symbol>02</fiz_adSiedzWojewodztwo_Symbol>
+    <fiz_adSiedzPowiat_Symbol>64</fiz_adSiedzPowiat_Symbol>
+    <fiz_adSiedzGmina_Symbol>039</fiz_adSiedzGmina_Symbol>
+    <fiz_adSiedzKodPocztowy>50430</fiz_adSiedzKodPocztowy>
+    <fiz_adSiedzMiejscowoscPoczty_Symbol>0986544</fiz_adSiedzMiejscowoscPoczty_Symbol>
+    <fiz_adSiedzMiejscowosc_Symbol>0986544</fiz_adSiedzMiejscowosc_Symbol>
+    <fiz_adSiedzUlica_Symbol>22571</fiz_adSiedzUlica_Symbol>
+    <fiz_adSiedzNumerNieruchomosci>199</fiz_adSiedzNumerNieruchomosci>
+    <fiz_adSiedzNumerLokalu>2        </fiz_adSiedzNumerLokalu>
+    <fiz_adSiedzNietypoweMiejsceLokalizacji />
+    <fiz_numerTelefonu />
+    <fiz_numerWewnetrznyTelefonu />
+    <fiz_numerFaksu />
+    <fiz_adresEmail />
+    <fiz_adresStronyinternetowej />
+    <fiz_adresEmail2 />
+    <fiz_adSiedzKraj_Nazwa />
+    <fiz_adSiedzWojewodztwo_Nazwa>DOLNOŚLĄSKIE</fiz_adSiedzWojewodztwo_Nazwa>
+    <fiz_adSiedzPowiat_Nazwa>m. Wrocław</fiz_adSiedzPowiat_Nazwa>
+    <fiz_adSiedzGmina_Nazwa>Wrocław-Krzyki</fiz_adSiedzGmina_Nazwa>
+    <fiz_adSiedzMiejscowosc_Nazwa>Wrocław</fiz_adSiedzMiejscowosc_Nazwa>
+    <fiz_adSiedzMiejscowoscPoczty_Nazwa>Wrocław</fiz_adSiedzMiejscowoscPoczty_Nazwa>
+    <fiz_adSiedzUlica_Nazwa>ul. Romualda Traugutta</fiz_adSiedzUlica_Nazwa>
+    <fizC_dataWpisuDoRejestruEwidencji>2014-10-17</fizC_dataWpisuDoRejestruEwidencji>
+    <fizC_numerwRejestrzeEwidencji>aaaaaaaaa/2014 </fizC_numerwRejestrzeEwidencji>
+    <fizC_OrganRejestrowy_Symbol>032000000</fizC_OrganRejestrowy_Symbol>
+    <fizC_OrganRejestrowy_Nazwa>MINISTER GOSPODARKI</fizC_OrganRejestrowy_Nazwa>
+    <fizC_RodzajRejestru_Symbol>151</fizC_RodzajRejestru_Symbol>
+    <fizC_RodzajRejestru_Nazwa>CENTRALNA EWIDENCJA I INFORMACJA O DZIAŁALNOŚCI GOSPODARCZEJ</fizC_RodzajRejestru_Nazwa>
+    <fizC_numerTelefonu />
+    <fizC_numerWewnetrznyTelefonu />
+    <fizC_numerFaksu />
+    <fizC_adresEmail />
+    <fizC_adresStronyInternetowej />
+  </dane>
+=================================================================================
+PublDaneRaportDzialalnoscFizycznejRolnicza
+
+<dane>
+    <fiz_regon9>555555555</fiz_regon9>
+    <fiz_nazwa>GOSPODARSTWO ROLNE</fiz_nazwa>
+    <fiz_nazwaSkrocona />
+    <fiz_dataPowstania>2000-05-15</fiz_dataPowstania>
+    <fiz_dataRozpoczeciaDzialalnosci>2000-05-15</fiz_dataRozpoczeciaDzialalnosci>
+    <fiz_dataWpisuDoREGONDzialalnosci />
+    <fiz_dataZawieszeniaDzialalnosci />
+    <fiz_dataWznowieniaDzialalnosci />
+    <fiz_dataZaistnieniaZmianyDzialalnosci>2001-05-15</fiz_dataZaistnieniaZmianyDzialalnosci>
+    <fiz_dataZakonczeniaDzialalnosci />
+    <fiz_dataSkresleniazRegonDzialalnosci />
+    <fiz_adSiedzKraj_Symbol />
+    <fiz_adSiedzWojewodztwo_Symbol>30</fiz_adSiedzWojewodztwo_Symbol>
+    <fiz_adSiedzPowiat_Symbol>08</fiz_adSiedzPowiat_Symbol>
+    <fiz_adSiedzGmina_Symbol>049</fiz_adSiedzGmina_Symbol>
+    <fiz_adSiedzKodPocztowy>69600</fiz_adSiedzKodPocztowy>
+    <fiz_adSiedzMiejscowoscPoczty_Symbol>0202962</fiz_adSiedzMiejscowoscPoczty_Symbol>
+    <fiz_adSiedzMiejscowosc_Symbol>0203074</fiz_adSiedzMiejscowosc_Symbol>
+    <fiz_adSiedzUlica_Symbol />
+    <fiz_adSiedzNumerNieruchomosci>16</fiz_adSiedzNumerNieruchomosci>
+    <fiz_adSiedzNumerLokalu />
+    <fiz_adSiedzNietypoweMiejsceLokalizacji />
+    <fiz_numerTelefonu />
+    <fiz_numerWewnetrznyTelefonu />
+    <fiz_numerFaksu />
+    <fiz_adresEmail />
+    <fiz_adresStronyinternetowej />
+    <fiz_adresEmail2 />
+    <fiz_adSiedzKraj_Nazwa />
+    <fiz_adSiedzWojewodztwo_Nazwa>WIELKOPOLSKIE</fiz_adSiedzWojewodztwo_Nazwa>
+    <fiz_adSiedzPowiat_Nazwa>xxxxxxxx</fiz_adSiedzPowiat_Nazwa>
+    <fiz_adSiedzGmina_Nazwa>Yyyyyy</fiz_adSiedzGmina_Nazwa>
+    <fiz_adSiedzMiejscowosc_Nazwa>Zzzzzz</fiz_adSiedzMiejscowosc_Nazwa>
+    <fiz_adSiedzMiejscowoscPoczty_Nazwa>Yyyyyy</fiz_adSiedzMiejscowoscPoczty_Nazwa>
+    <fiz_adSiedzUlica_Nazwa />
+  </dane>
+=================================================================================
+PublDaneRaportDzialalnoscFizycznejPozostala
+  <dane>
+    <fiz_regon9>666666666</fiz_regon9>
+    <fiz_nazwa>NIEPUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ xxxxxxxxxxxxx</fiz_nazwa>
+    <fiz_nazwaSkrocona />
+    <fiz_dataPowstania>1993-03-20</fiz_dataPowstania>
+    <fiz_dataRozpoczeciaDzialalnosci>1999-10-20</fiz_dataRozpoczeciaDzialalnosci>
+    <fiz_dataWpisuDoREGONDzialalnosci />
+    <fiz_dataZawieszeniaDzialalnosci />
+    <fiz_dataWznowieniaDzialalnosci />
+    <fiz_dataZaistnieniaZmianyDzialalnosci>2011-08-16</fiz_dataZaistnieniaZmianyDzialalnosci>
+    <fiz_dataZakonczeniaDzialalnosci />
+    <fiz_dataSkresleniazRegonDzialalnosci />
+    <fiz_adSiedzKraj_Symbol />
+    <fiz_adSiedzWojewodztwo_Symbol>30</fiz_adSiedzWojewodztwo_Symbol>
+    <fiz_adSiedzPowiat_Symbol>22</fiz_adSiedzPowiat_Symbol>
+    <fiz_adSiedzGmina_Symbol>059</fiz_adSiedzGmina_Symbol>
+    <fiz_adSiedzKodPocztowy>69000</fiz_adSiedzKodPocztowy>
+    <fiz_adSiedzMiejscowoscPoczty_Symbol>0198380</fiz_adSiedzMiejscowoscPoczty_Symbol>
+    <fiz_adSiedzMiejscowosc_Symbol>0198380</fiz_adSiedzMiejscowosc_Symbol>
+    <fiz_adSiedzUlica_Symbol>1240</fiz_adSiedzUlica_Symbol>
+    <fiz_adSiedzNumerNieruchomosci>99</fiz_adSiedzNumerNieruchomosci>
+    <fiz_adSiedzNumerLokalu />
+    <fiz_adSiedzNietypoweMiejsceLokalizacji />
+    <fiz_numerTelefonu />
+    <fiz_numerWewnetrznyTelefonu />
+    <fiz_numerFaksu>9999999999</fiz_numerFaksu>
+    <fiz_adresEmail />
+    <fiz_adresStronyinternetowej />
+    <fiz_adresEmail2 />
+    <fiz_adSiedzKraj_Nazwa />
+    <fiz_adSiedzWojewodztwo_Nazwa>WIELKOPOLSKIE</fiz_adSiedzWojewodztwo_Nazwa>
+    <fiz_adSiedzPowiat_Nazwa>xxxxxxxxxx</fiz_adSiedzPowiat_Nazwa>
+    <fiz_adSiedzGmina_Nazwa>Yyyyyyyy</fiz_adSiedzGmina_Nazwa>
+    <fiz_adSiedzMiejscowosc_Nazwa>Yyyyyyyy</fiz_adSiedzMiejscowosc_Nazwa>
+    <fiz_adSiedzMiejscowoscPoczty_Nazwa>Yyyyyyyy</fiz_adSiedzMiejscowoscPoczty_Nazwa>
+    <fiz_adSiedzUlica_Nazwa>ul. Adama Mickiewicza</fiz_adSiedzUlica_Nazwa>
+    <fizP_dataWpisuDoRejestruEwidencji />
+    <fizP_numerwRejestrzeEwidencji />
+    <fizP_OrganRejestrowy_Symbol />
+    <fizP_OrganRejestrowy_Nazwa />
+    <fizP_RodzajRejestru_Symbol>099</fizP_RodzajRejestru_Symbol>
+    <fizP_RodzajRejestru_Nazwa>PODMIOTY NIE PODLEGAJĄCE WPISOM DO REJESTRU LUB EWIDENCJI</fizP_RodzajRejestru_Nazwa>
+  </dane>
+
+=================================================================================
+PublDaneRaportDzialalnoscFizycznejWKrupgn
+<dane>
+    <fiz_regon9>777777777</fiz_regon9>
+    <fiz_nazwa>xxxxxxxxxxxxxxxx</fiz_nazwa>
+    <fiz_nazwaSkrocona />
+    <fiz_dataPowstania />
+    <fiz_dataRozpoczeciaDzialalnosci />
+    <fiz_dataWpisuDoREGONDzialalnosci />
+    <fiz_dataZawieszeniaDzialalnosci />
+    <fiz_dataWznowieniaDzialalnosci />
+    <fiz_dataZaistnieniaZmianyDzialalnosci />
+    <fiz_dataZakonczeniaDzialalnosci>2013-11-14</fiz_dataZakonczeniaDzialalnosci>
+    <fiz_dataSkresleniazRegonDzialalnosci />
+    <fiz_adSiedzKraj_Symbol />
+    <fiz_adSiedzWojewodztwo_Symbol>02</fiz_adSiedzWojewodztwo_Symbol>
+    <fiz_adSiedzPowiat_Symbol>64</fiz_adSiedzPowiat_Symbol>
+    <fiz_adSiedzGmina_Symbol>029</fiz_adSiedzGmina_Symbol>
+    <fiz_adSiedzKodPocztowy>54215</fiz_adSiedzKodPocztowy>
+    <fiz_adSiedzMiejscowoscPoczty_Symbol>0986290</fiz_adSiedzMiejscowoscPoczty_Symbol>
+    <fiz_adSiedzMiejscowosc_Symbol>0986290</fiz_adSiedzMiejscowosc_Symbol>
+    <fiz_adSiedzUlica_Symbol>02516</fiz_adSiedzUlica_Symbol>
+    <fiz_adSiedzNumerNieruchomosci>99</fiz_adSiedzNumerNieruchomosci>
+    <fiz_adSiedzNumerLokalu>99</fiz_adSiedzNumerLokalu>
+    <fiz_adSiedzNietypoweMiejsceLokalizacji />
+    <fiz_numerTelefonu />
+    <fiz_numerWewnetrznyTelefonu />
+    <fiz_numerFaksu />
+    <fiz_adresEmail />
+    <fiz_adresStronyinternetowej />
+    <fiz_adresEmail2 />
+    <fiz_adSiedzKraj_Nazwa />
+    <fiz_adSiedzWojewodztwo_Nazwa>DOLNOŚLĄSKIE</fiz_adSiedzWojewodztwo_Nazwa>
+    <fiz_adSiedzPowiat_Nazwa>m. Wrocław</fiz_adSiedzPowiat_Nazwa>
+    <fiz_adSiedzGmina_Nazwa>Wrocław-Fabryczna</fiz_adSiedzGmina_Nazwa>
+    <fiz_adSiedzMiejscowosc_Nazwa>Wrocław</fiz_adSiedzMiejscowosc_Nazwa>
+    <fiz_adSiedzMiejscowoscPoczty_Nazwa>Wrocław</fiz_adSiedzMiejscowoscPoczty_Nazwa>
+    <fiz_adSiedzUlica_Nazwa>ul. Bystrzycka</fiz_adSiedzUlica_Nazwa>
+  </dane>
+================================================================================  

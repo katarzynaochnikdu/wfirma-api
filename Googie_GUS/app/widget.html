@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8">
+    <title>Zoho CRM Widget — GUS (REGON)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="widget.css">
+    <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+  </head>
+  <body>
+    <div id="nipContainer" class="gus-card">
+      <div class="card-header">
+        <img src="MD_favicon.png" alt="Logo MD" class="header-brand" id="brandLogo" />
+        <div class="form-inline">
+          <label for="nipInput">NIP:</label>
+          <input id="nipInput" class="input-text" type="text" placeholder="np. 5250001009" maxlength="13" />
+          <span class="status-badge" id="nipStatus"></span>
+          <button id="fetchBtn" class="btn-primary">Pobierz dane z GUS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spinner ładowania -->
+    <div id="loadingSpinner" class="loading-spinner d-none">
+      <div class="spinner"></div>
+      <div class="loading-pill">Ładowanie danych z systemu REGON...</div>
+    </div>
+
+    <div id="dataPreview" class="summary-box-old d-none">
+      <h5>Dane z systemu REGON</h5>
+      <div id="previewContent"></div>
+    </div>
+
+    <!-- Pływający panel logów -->
+    <div class="floating-logs">
+      <button type="button" class="logs-toggle" id="logsToggle">LOG</button>
+      <div class="logs-panel" id="logsPanel">
+        <div class="logs-header">
+          <span>Logi debugowania</span>
+          <div>
+            <button type="button" class="logs-clear" id="logsCopy">Kopiuj</button>
+            <button type="button" class="logs-clear" id="logsClear">Wyczyść</button>
+          </div>
+        </div>
+        <div class="logs-content" id="logsContent"></div>
+      </div>
+    </div>
+
+    <!-- Modal pytania o nazwę zwyczajową -->
+    <div id="nazwaZwyczajowaModal" class="modal-overlay d-none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h4 style="color: #0d9488;">Nazwa zwyczajowa</h4>
+        </div>
+        <div class="modal-body">
+          <label for="nazwaZwyczajowaInput" style="font-size: 13px; color: #0d9488; margin-bottom: 6px; display: block; font-weight: 600;">Chcesz nadać przyjazną nazwę zwyczajową? Wpisz tutaj:</label>
+          <input type="text" id="nazwaZwyczajowaInput" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;" placeholder="np. CM Expert Głogów Wrzecionowa">
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="saveNazwaBtn" class="btn-primary">Zakończ bez nazwy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal sukcesu -->
+    <div id="successModal" class="modal-overlay d-none">
+      <div class="modal-content">
+        <div class="success-icon" aria-hidden="true">
+          <svg viewBox="0 0 52 52" role="img" focusable="false">
+            <defs>
+              <linearGradient id="okGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#22c55e"/>
+                <stop offset="100%" stop-color="#16a34a"/>
+              </linearGradient>
+            </defs>
+            <circle cx="26" cy="26" r="24" fill="url(#okGrad)"/>
+            <path d="M17 27.5l6 6 12-12" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="modal-body" style="text-align: center;">
+          <strong style="font-size: 16px; color: #0b1f4c;">Dane zostały zapisane pomyślnie!</strong>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="copyLogsFromSuccess" class="btn-secondary" style="margin-right: auto;" title="Kopiuj logi debugowania">
+            <svg style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+            Kopiuj logi
+          </button>
+          <button type="button" id="closeWidgetBtn" class="btn-primary">Zamknij</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal błędu -->
+    <div id="errorModal" class="modal-overlay d-none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h4>
+            <svg style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px; fill: #dc2626;" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+            </svg>
+            Uwaga - Duplikat
+          </h4>
+          <button type="button" class="modal-close" id="errorModalClose">×</button>
+        </div>
+        <div class="modal-body" id="errorModalBody">
+          Wystąpił błąd.
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal informacyjny -->
+    <div id="infoModal" class="modal-overlay d-none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h4 id="infoModalTitle">Informacja</h4>
+          <button type="button" class="modal-close" id="infoModalClose">×</button>
+        </div>
+        <div class="modal-body" id="infoModalBody">
+          Informacja.
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-primary" id="infoModalOk">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logo stałe (Digital Unity) -->
+    <img src="DU_favicon.png" alt="Logo DU" class="corner-brand" />
+
+    <!-- Moduły JavaScript (KOLEJNOŚĆ WAŻNA - zależności!) -->
+    <script src="js/config.js"></script>
+    <script src="js/validators.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/zoho-sdk.js"></script>
+    <script src="js/gus-client.js"></script>
+    <script src="js/data-mapper.js"></script>
+    <script src="js/gus-module.js"></script>
+    <script src="js/main.js"></script>
+    
+    <script>
+      // Dynamiczne ładowanie logo brandu (z Org Variable)
+      (function() {
+        setTimeout(function() {
+          if (ORG_CONFIG && ORG_CONFIG.BRAND_LOGO_URL) {
+            var brandLogo = document.getElementById('brandLogo');
+            if (brandLogo && ORG_CONFIG.BRAND_LOGO_URL !== 'MD_favicon.png') {
+              brandLogo.src = ORG_CONFIG.BRAND_LOGO_URL;
+              appendLog('[UI] Logo brandu zmienione na: ' + ORG_CONFIG.BRAND_LOGO_URL);
+            }
+          }
+        }, 500); // Czekamy aż config się załaduje
+      })();
+    </script>
+  </body>
+</html>

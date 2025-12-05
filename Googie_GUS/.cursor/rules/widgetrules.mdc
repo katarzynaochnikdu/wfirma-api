@@ -1,0 +1,149 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: "Wytyczne dla tworzenia widgetów w Zoho CRM"
+globs: ["*.html", "*.js", "*.css"]
+alwaysApply: false
+---
+
+# Wytyczne dla Cursor - Programowanie widgetów Zoho CRM
+
+## 1. Struktura kodu Zoho CRM
+
+- Pracuj wyłącznie w ramach istniejącej struktury widgetów Zoho CRM z użyciem HTML, CSS, JavaScript oraz SDK `ZohoEmbededAppSDK.min.js` w wersji 1.2.
+- Zwracaj uwagę na całą strukturę plików projektu.
+- Unikaj duplikowania funkcji między plikiem głównym a pomocniczymi.
+- Wszystkie zmiany muszą być zgodne z oficjalną dokumentacją SDK Zoho CRM Widget v1.2:
+  - @Zoho CRM UI Record
+  - @Zoho Widgets Help
+
+Podstawowe wytyczne inicjalizacji i konfiguracji w kodzie:
+<!DOCTYPE html>
+<html>
+  <head>
+    <!-- 1. Adres URL do SDK w nagłówku -->
+    <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+  </head>
+  <body>
+    <!-- ... treść widgetu ... -->
+
+    <script>
+      // 2. NAJPIERW zarejestruj listener na event "PageLoad"
+      ZOHO.embeddedApp.on("PageLoad", async function(data) {
+        // ... cała logika pobierania i wyświetlania danych ...
+      });
+
+      // 3. DOPIERO POTEM zainicjalizuj SDK
+      ZOHO.embeddedApp.init();
+    </script>
+  </body>
+</html>
+
+## 2. Minimalizm i ostrożność
+
+- Wprowadzaj tylko minimalne zmiany niezbędne do osiągnięcia wskazanego celu.
+- Nigdy nie modyfikuj struktury danych ani funkcji bez wyraźnego polecenia.
+- Bezwzględnym priorytetem jest, aby wprowadzane zmiany nie usuwały istniejącej logiki oraz funkcji kodu, chyba że polecenie mówi wyraźnie inaczej.
+
+## 3. Bezpieczeństwo i stabilność
+
+- Priorytetem jest stabilność działania widgetu oraz ochrona istniejących danych.
+- Zawsze upewnij się, że nowy kod nie powoduje konfliktów ani nie zakłóca obecnej funkcjonalności.
+- Zmiany nie mogą zakłócać ani dublować istniejących rozwiązań.
+
+## 4. Przejrzystość kodu
+
+- Zawsze dodawaj komentarze wyjaśniające cel nowego fragmentu kodu.
+- Zachowaj spójność z dotychczasowym stylem formatowania i nazewnictwa.
+
+## 5. Wprowadzanie zmian
+
+- Przed wdrożeniem jakiejkolwiek zmiany jasno oznacz miejsce edycji i krótko opisz, co i dlaczego zostało zmienione.
+- Jeśli sugerujesz większe zmiany lub refaktoryzację, najpierw przedstaw kilka opcji i nie implementuj żadnej z nich, dopóki użytkownik nie potwierdzi jasno swojej decyzji.
+
+## 6. Rozważanie opcji
+
+- Jeśli użytkownik prosi tylko o rozważenie opcji, przygotuj szczegółowy opis możliwych dróg działania wraz z potencjalnymi konsekwencjami, ale NIE wprowadzaj żadnych zmian, dopóki użytkownik nie wyrazi jednoznacznej zgody.
+
+## 7. Zmiany
+
+- Jeśli uważasz, że gdzieś jest błąd nazw API, zapytaj mnie o nie — niczego sam nie zakładaj.
+- Nie wolno Ci zmieniać plików, które nie są rozpatrywane.
+
+## 8. Zasada reaktywności
+
+- Bądź gotowy na szybkie wycofanie zmian, jeśli użytkownik uzna je za niewłaściwe lub szkodliwe.
+
+## 9. SDK — ściąga (sprawdzone metody w projektach)
+
+- embeddedApp
+  - ZOHO.embeddedApp.on('PageLoad', fn(data))
+  - ZOHO.embeddedApp.init()
+- CRM.META
+  - ZOHO.CRM.META.getModules()
+  - ZOHO.CRM.META.getFields({ Entity })
+- CRM.API (odczyt)
+  - ZOHO.CRM.API.getRecord({ Entity, RecordID, fields? })
+  - ZOHO.CRM.API.getAllRecords({ Entity })
+  - ZOHO.CRM.API.searchRecord({ Entity, Type:'criteria', Query, page, per_page })
+  - ZOHO.CRM.API.getRelatedRecords({ Entity, RecordID, RelatedList })
+- CRM.API (zapis)
+  - ZOHO.CRM.API.insertRecord({ Entity, APIData, Trigger? })
+  - ZOHO.CRM.API.updateRecord({ Entity, APIData })
+- CRM.UI
+  - ZOHO.CRM.UI.Record.open({ Entity, RecordID })
+  - ZOHO.CRM.UI.Popup.close()
+
+## 10. Kolejność inicjalizacji (zalecenie)
+
+- Rejestruj handler `PageLoad`, następnie wywołuj `ZOHO.embeddedApp.init()` (pozwala pewnie przechwycić zdarzenie otwarcia).
+- Wewnątrz handlera uruchamiaj pierwsze wywołania `CRM.API.*`.
+- Dodaj timeout ochronny (np. 10s) dla inicjalizacji i długich operacji, z czytelnym komunikatem w UI.
+
+## 11. Pobieranie danych — dobre praktyki
+
+- `searchRecord`: używaj kryteriów w formacie `(Field:operator:value)` (np. `equals`, `starts_with`); obsługuj paginację (`page`, `per_page`, `resp.info.more_records`).
+- Picklisty pobieraj przez `CRM.META.getFields` i cache’uj na czas życia widżetu.
+- Przed wywołaniami sprawdzaj dostępność metod: `if (!window.ZOHO?.CRM?.API?.insertRecord) { /* fallback/log */ }`.
+- Defensywnie waliduj odpowiedzi: `const rows = resp?.data || [];` przed przetwarzaniem.
+
+## 12. Błędy i odporność
+
+- Łagodne komunikaty w UI (overlay/spinner + krótkie statusy).
+- Fallback trybu podglądu, gdy API jest niedostępne (logi + brak krytycznych awarii widżetu).
+- `Trigger:['workflow']` w `insertRecord` tylko, gdy faktycznie wymagane.
+
+## 13. Wydajność UI
+
+- Debounce kosztownych przeliczeń (50–150 ms).
+- Jeden “source of truth” stanu; licz raz, renderuj wielokrotnie.
+- Unikaj nadmiarowego re-renderingu; aktualizuj tylko zmienione sekcje.
+
+## 14. UX i dostępność
+
+- Ekran startowy z jasnym CTA, kompaktowe logi z opcją kopiowania.
+- Zapewnij focus/keyboard, aria-* dla tooltipów i modali.
+- Utrzymuj spójność elementów sterujących (przyciski, selecty, komunikaty).
+
+## 15. Bezpieczeństwo
+
+- Nie loguj danych wrażliwych; nie trzymaj sekretów w kodzie frontowym.
+- Waliduj i normalizuj teksty wyświetlane (np. komentarze, nazwy).
+- Unikaj inline-skryptów generowanych dynamicznie; trzymaj się bezpiecznych API DOM.
+
+## 16. Checklist wydania
+
+- Dev: `zet run` → test pod `http://127.0.0.1:5000/app/widget.html`.
+- Build: `zet pack` → upload jako Connected App.
+- Weryfikacja:
+  - poprawny `plugin-manifest.json`,
+  - adres SDK 1.2 w `<head>`,
+  - ścieżki do `app/widget.html`,
+  - szybki smoke test kluczowych akcji (odczyt, zapis, UI).
+
+Więcej informacji: @Extension pointers #5: Working with widgets
+Tu jest więcej o hostowaniu widgetów i ich różnych typach:
+https://www.zoho.com/crm/developer/docs/widgets/usage.html

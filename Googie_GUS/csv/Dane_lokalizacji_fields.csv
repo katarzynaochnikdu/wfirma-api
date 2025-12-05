@@ -1,0 +1,10 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Cecha adresu w rekordzie,Cecha_adresu_w_rekordzie,text,✓,,,Tekst,,,255,,
+Kod pocztowy,Kod_pocztowy,text,✓,,,Tekst,,,30,,
+Miejscowość,Miejscowosc,text,✓,,,Tekst,,,100,,
+Nazwa lokalizacji,Nazwa_lokalizacji,lookup,✓,,,Lookup,,Accounts,,,
+Ulica,Ulica,text,✓,,,Tekst,,,250,,
+Województwo,Wojewodztwo,text,✓,,,Tekst,,,100,,
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas modyfikacji,Modified_Time,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,✓,Lookup,,Dane_liczbowe_instalacji,,,

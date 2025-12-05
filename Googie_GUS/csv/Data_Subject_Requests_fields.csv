@@ -1,0 +1,9 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Maks. Długość,Sekcja,Wartość Domyślna,Powiązany Moduł
+Closed By,Closed_By,ownerlookup,,,,Właściciel,,,,,
+Closed Date,Closed_Date,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,,Lookup,,,,,
+Is Closed,Is_Closed,text,,,,Tekst,,25,,,
+Request Source,Request_Source,picklist,,,,Lista wyboru,Portal; Łącze żądań danych (Data Requests Link),,,,
+Request Type,Request_Type,picklist,,,,Lista wyboru,Zażądaj dostępu do danych (Access); Zażądaj wyczyszczenia danych (Rectify); Zażądaj eksportu danych (Export); Zażądaj zatrzymania przetwarzanie danych (Stop Processing); Zażądaj usunięcia danych (Delete),,,,
+Requested Date,Requested_Date,datetime,,,,Data i czas,,,,,
+Wnioskowane przez,Requested_By,ownerlookup,,,,Właściciel,,,,,

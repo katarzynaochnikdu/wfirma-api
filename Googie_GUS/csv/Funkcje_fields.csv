@@ -1,0 +1,12 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Kategoria,Kategoria,picklist,✓,,,Lista wyboru,-None-; Szkolenia; Oprogramowanie; Systemy,,,,
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas anulowania subskrypcji,Unsubscribed_Time,datetime,,,✓,Data i czas,,,,,
+Czas modyfikacji,Modified_Time,datetime,,,,Data i czas,,,,,
+Czas ostatniej aktywności,Last_Activity_Time,datetime,,,,Data i czas,,,,,
+Funkcja - nazwa,Name,text,,,,Tekst,,,120,,
+Funkcja Właściciel,Owner,ownerlookup,,,,Właściciel,,,,,
+Locked,Locked__s,boolean,,,✓,Checkbox (Boolean),,,,,
+Tryb anulowania subskrypcji,Unsubscribed_Mode,picklist,,,✓,Lista wyboru,Formularz zgody (Consent form); Ręcznie (Manual); Łącze anulowania subskrypcji (Unsubscribe link); Zoho Campaigns (Zoho campaigns),,,,
+Zmodyfikowany przez,Modified_By,ownerlookup,,,,Właściciel,,,,,
+Znacznik,Tag,text,,,,Tekst,,,2000,,

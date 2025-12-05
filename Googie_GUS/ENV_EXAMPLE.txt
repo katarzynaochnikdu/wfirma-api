@@ -1,0 +1,76 @@
+# ============================================================================
+# KONFIGURACJA ŚRODOWISKOWA - Googie GUS Backend
+# ============================================================================
+# INSTRUKCJA: Skopiuj zawartość jako plik `.env` i uzupełnij własnymi wartościami
+# ============================================================================
+
+# --- ŚRODOWISKO ---
+# Wartości: production | development
+# W produkcji: wymuszony HTTPS, rate limiting aktywny
+NODE_ENV=production
+
+# --- PORT SERWERA ---
+# W GCP Cloud Run port jest automatycznie ustawiany przez platformę
+# Lokalnie domyślnie: 5000
+PORT=5000
+
+# --- KLUCZ API GUS/REGON ---
+# Testowy klucz (działający tylko w środowisku testowym GUS):
+# GUS_API_KEY=abcde12345abcde12345
+#
+# Produkcyjny klucz - uzyskaj z: https://api.stat.gov.pl/Home/RegonApi
+GUS_API_KEY=your_production_key_here
+
+# --- PRZEŁĄCZNIK ŚRODOWISKA GUS ---
+# Jeśli true, używa wyszukiwarkaregontest.stat.gov.pl (testowe dane)
+# Jeśli false lub puste, używa wyszukiwarkaregon.stat.gov.pl (produkcja)
+# Uwaga: Jeśli GUS_API_KEY=abcde12345abcde12345, automatycznie włącza się TEST
+GUS_USE_TEST=false
+
+# ============================================================================
+# ZMIENNE ORGANIZACYJNE ZOHO CRM (ustawiane w Zoho Setup → Org Variables)
+# ============================================================================
+# Te zmienne NIE SĄ odczytywane przez backend Node.js
+# Są używane przez frontend (widget.html) przez Zoho SDK
+#
+# W Zoho CRM → Setup → Developer Space → Organization Variables ustaw:
+#
+# Grupa: GOOGIE_GUS
+# - GUS_API_KEY (String) - klucz API do GUS
+# - GUS_BACKEND_URL (String) - URL backendu, np. https://your-backend.run.app
+# - ZOHO_CRM_BASE_URL (String) - np. https://crm.zoho.eu
+# - ZOHO_ORG_ID (String) - ID organizacji, np. org20101283812
+# - BRAND_LOGO_URL (String) - URL logo, domyślnie: MD_favicon.png
+# ============================================================================
+
+# ============================================================================
+# DEPLOYMENT NA GCP CLOUD RUN
+# ============================================================================
+# 1. Zainstaluj Google Cloud SDK
+# 2. Zaloguj się: gcloud auth login
+# 3. Deploy:
+#    gcloud run deploy googie-gus-backend \
+#      --source . \
+#      --platform managed \
+#      --region europe-central2 \
+#      --allow-unauthenticated \
+#      --set-env-vars NODE_ENV=production,GUS_API_KEY=your_key
+#
+# 4. Skopiuj URL (np. https://googie-gus-backend-xxxx-ew.a.run.app)
+# 5. W Zoho CRM ustaw GUS_BACKEND_URL na ten URL
+# ============================================================================
+
+# ============================================================================
+# URUCHOMIENIE LOKALNE (DEVELOPMENT)
+# ============================================================================
+# Windows:
+#   npm run dev:windows
+#
+# Linux/Mac:
+#   npm run dev
+#
+# Produkcyjny tryb lokalnie:
+#   npm start (Linux/Mac)
+#   npm run start:windows (Windows)
+# ============================================================================
+

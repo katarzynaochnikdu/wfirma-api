@@ -1,0 +1,114 @@
+---
+description: "Zasady pracy AI z użytkownikiem przy programowaniu widgetów Zoho CRM"
+globs: ["*.html", "*.js", "*.css"]
+alwaysApply: true
+---
+
+# Instrukcje dla AI — Jak pracować z użytkownikiem
+
+## 1. Struktura pracy
+
+- Pracuj wyłącznie w ramach istniejącej struktury projektu
+- Zwracaj uwagę na całą strukturę plików projektu
+- Unikaj duplikowania funkcji między plikami
+- Wszystkie zmiany muszą być zgodne z oficjalną dokumentacją SDK Zoho CRM Widget v1.2
+
+## 2. Minimalizm i ostrożność
+
+- **Wprowadzaj tylko minimalne zmiany** niezbędne do osiągnięcia wskazanego celu
+- **Nigdy nie modyfikuj** struktury danych ani funkcji bez wyraźnego polecenia
+- **Bezwzględny priorytet:** wprowadzane zmiany nie mogą usuwać istniejącej logiki oraz funkcji kodu, chyba że polecenie mówi wyraźnie inaczej
+
+## 3. Stabilność i bezpieczeństwo
+
+- Priorytetem jest **stabilność działania** widgetu oraz ochrona istniejących danych
+- Zawsze upewnij się, że nowy kod **nie powoduje konfliktów** ani nie zakłóca obecnej funkcjonalności
+- Zmiany nie mogą zakłócać ani dublować istniejących rozwiązań
+
+## 4. Przejrzystość kodu
+
+- **Zawsze dodawaj komentarze** wyjaśniające cel nowego fragmentu kodu
+- Zachowuj **spójność** z dotychczasowym stylem formatowania i nazewnictwa
+- Kod powinien być samodzielnie czytelny
+
+## 5. Wprowadzanie zmian —WAŻNE
+
+- **Przed wdrożeniem** jakiejkolwiek zmiany jasno oznacz miejsce edycji i krótko opisz, co i dlaczego zostało zmienione
+- Jeśli sugerujesz większe zmiany lub refaktoryzację:
+  - **Najpierw przedstaw kilka opcji**
+  - **NIE implementuj** żadnej z nich, dopóki użytkownik nie potwierdzi jasno swojej decyzji
+  - Czekaj na jednoznaczne "zrób to" lub "OK"
+
+## 6. Rozważanie opcji — WAŻNE
+
+Jeśli użytkownik prosi tylko o **rozważenie opcji**:
+- Przygotuj szczegółowy opis możliwych dróg działania wraz z potencjalnymi konsekwencjami
+- **NIE wprowadzaj żadnych zmian**, dopóki użytkownik nie wyrazi jednoznacznej zgody
+- Zapytaj: "Którą opcję wdrożyć?" lub "Mam to zrobić?"
+
+## 7. Zasady weryfikacji
+
+- Jeśli uważasz, że **gdzieś jest błąd nazw API** — zapytaj użytkownika, **niczego sam nie zakładaj**
+- **Nie zmieniaj plików**, które nie są rozpatrywane w bieżącym zadaniu
+- Jeśli coś jest niejasne — pytaj, nie zgaduj
+
+## 8. Zasada reaktywności
+
+- Bądź gotowy na **szybkie wycofanie zmian**, jeśli użytkownik uzna je za niewłaściwe lub szkodliwe
+- Słuchaj feedbacku i dostosowuj się natychmiast
+- Nie brońmy decyzji — jeśli użytkownik mówi "cofnij", cofamy bez dyskusji
+
+## 9. Komunikacja z użytkownikiem
+
+- **Pisz po polsku**, chyba że użytkownik wskaże inaczej
+- **NIE drukuj ton kodu** co został podmieniony — tylko krótkie podsumowanie zmian
+- Forma: "Zmieniłem X w pliku Y" + link do zmienionego fragmentu
+- Testujemy razem z użytkownikiem — nie zakładaj, że działa, dopóki nie przetestujemy
+
+## 10. Zakres wiedzy technicznej
+
+### Ograniczenia technologii (Deluge/Zoho):
+- **Brak operatora trójargumentowego** `? :` w Deluge
+- **Brak pętli while** i klasycznej pętli for — używaj `for each element`
+- **Brak operatora instanceof** w Deluge
+- **Brak funkcji split** w Deluge
+- **Definicje zmiennych tylko wewnątrz bloków** try/catch
+- Nowe linie: `hextoText("0A")`, potem konkatenacja
+
+### Sprawdzone rozwiązania:
+- Zawsze odwołuj się do manuala najlepszych praktyk (@crmwidgetwrekordzieprzycisk)
+- Nie próbuj niesprawdzonych technologii — tylko te z manuala
+- Jeśli coś nie jest w manualu — zapytaj przed implementacją
+
+## 11. Workflow zmian
+
+1. **Zrozum zadanie** — jeśli niejasne, zadaj pytania
+2. **Zaproponuj rozwiązanie** (jeśli zadanie większe niż 1 linia kodu)
+3. **Czekaj na potwierdzenie** użytkownika
+4. **Implementuj** minimalne zmiany
+5. **Podsumuj** co zmieniłeś (bez wypisywania całego kodu)
+6. **Testuj** razem z użytkownikiem
+
+## 12. Czego NIE robić
+
+❌ Nie refaktoruj kodu bez pytania  
+❌ Nie usuwaj istniejących funkcji "bo się nie używają"  
+❌ Nie zmieniaj stylu formatowania bez powodu  
+❌ Nie implementuj "usprawnień", o które nie poproszono  
+❌ Nie zakładaj, że wiesz lepiej niż dokumentacja  
+❌ Nie drukuj dziesiątek linii kodu w odpowiedzi  
+❌ Nie używaj technologii niesprawdzonych w projekcie  
+
+## 13. Czego ZAWSZE robić
+
+✅ Pytaj, jeśli coś niejasne  
+✅ Czytaj cały kontekst przed zmianami  
+✅ Dodawaj komentarze do nowego kodu  
+✅ Szanuj istniejącą strukturę projektu  
+✅ Testuj każdą zmianę (mentalnie lub fizycznie)  
+✅ Dokumentuj nietypowe rozwiązania  
+✅ Używaj sprawdzonych wzorców z manuala  
+
+---
+
+**Kluczowa zasada:** _"Najpierw zrozum, potem zaproponuj, dopiero na końcu zmień"_

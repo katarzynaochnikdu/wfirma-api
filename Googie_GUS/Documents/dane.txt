@@ -1,0 +1,43 @@
+Adres usługi BIR1.1,  wersja produkcyjna
+https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc
+
+Adres wsdl:
+https://wyszukiwarkaregon.stat.gov.pl/wsBIR/wsdl/UslugaBIRzewnPubl-ver11-prod.wsdl
+
+Dostęp do usługi BIR1/BIR1.1 jest bezpłatny, bez ograniczenia czasowego.
+Klucz użytkownika pozwala na dostęp zarówno do wersji BIR1.1 jak i BIR1.
+
+Zmienna środowiska klucza dostępu produkcyjnego
+BIR1_medidesk
+
+// **************************************************************************************** //
+
+Informacje dodatkowe - dot. wersji testowej BIR1.1
+
+BIR1.1 wersja testowa
+Adres usługi:
+https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc
+
+Adres wsdl:
+https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/wsdl/UslugaBIRzewnPubl-ver11-test.wsdl
+
+Klucz:
+abcde12345abcde12345
+
+// **************************************************************************************** //
+
+Informacje dodatkowe - dot. BIR1 (1.0)
+
+BIR1 wersja produkcyjna, adres Usługi:
+https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc
+
+BIR1 wersja testowa, adres Usługi:
+https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc
+
+BIR1 wsdl (wspólny dla BIR1 TEST i BIR1 PROD; dla PROD wymagana zmiana opisana w BIR1_Przyklady.docx, pkt.4)
+https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/wsdl/UslugaBIRzewnPubl.xsd
+
+klucz:
+abcde12345abcde12345
+
+// **************************************************************************************** //

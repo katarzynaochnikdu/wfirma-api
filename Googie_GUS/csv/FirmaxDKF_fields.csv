@@ -1,0 +1,8 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Czas anulowania subskrypcji,Unsubscribed_Time,datetime,,,✓,Data i czas,,,,,
+Czas ostatniej aktywności,Last_Activity_Time,datetime,,,,Data i czas,,,,,
+Dane kontaktowe placówki,Dane_kontaktowe_plac_wki,lookup,,,,Lookup,,Dane_kontaktowe_firm,,,
+Firma,Firma,lookup,,,,Lookup,,Accounts,,,
+FirmaxDKF Imię i nazwisko,Name,autonumber,,,,Autonumer,,,,,
+FirmaxDKF Właściciel,Owner,ownerlookup,,,,Właściciel,,,,,
+Tryb anulowania subskrypcji,Unsubscribed_Mode,picklist,,,✓,Lista wyboru,Formularz zgody (Consent form); Ręcznie (Manual); Łącze anulowania subskrypcji (Unsubscribe link); Zoho Campaigns (Zoho campaigns),,,,

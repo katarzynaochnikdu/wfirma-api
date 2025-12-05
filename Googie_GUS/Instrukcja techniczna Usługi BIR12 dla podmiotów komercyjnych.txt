@@ -1,0 +1,620 @@
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+Metryka dokumentu 
+Nazwa projektu  REGON  
+Tytu³ dokumentu  Instrukcja techniczna BIR1 dla podmiotów komercyjnych  
+Zakres dokumentu  
+Data utworzenia dokumentu:  2024-12-09  Liczba stron:  20  
+Plik (repozytorium)  
+Status dokumentu  [ ] Roboczy   [ x ] Ukoñczony  
+Zespó³ realizacyjny  
+Opis  
+
+Historia dokumentu 
+Nr wersji  Data wersji  Zmiany wprowadzi³  Opis  
+0.1 -1.0  M.Piekarek  Dokumenty dla us³ugi sieciowej rejestru REGON w wersji 1 (BIR1)  
+1.1  2019-05-31  M.Sk¹pski  Dokumenty dla us³ugi sieciowej rejestru REGON w wersji 1.1 (BIR1.1)  
+1.11  2020-08-19  M.Sk¹pski  Doprecyzowanie w pkt 3.2; uzupe³nienie algorytmu dot. aktywnoœci – pkt 3.3.2.  
+1.12  2022-04-12  M.Sk¹pski  Dodanie limitów dla godz. 22-6; dodatnie informacji nt. konf. dot. LoadBalancing  
+1.2  2024-12-09  M.Sk¹pski  Dodanie opisu raportów w wersji 1.2 z powodu wejœcia w ¿ycie PKD2025 oraz zmiany d³ugoœci pola — pkt. 3.5  
+
+
+
+
+
+
+
+
+
+1. Podstawowe informacje 
+o 
+us³udze ............................................................................................. 4 
+2. Uzyskanie dostêpu do us³ugi sieciowej rejestru REGON (BIR1.1) 
+............................................... 5 
+
+2.1. Œrodowisko testowe us³ugi BIR1.1 
+.......................................................................................... 5 
+2.2. Œrodowisko produkcyjne us³ugi BIR1.1 
+................................................................................... 5 
+3. Komunikacja z us³ug¹ 
+.................................................................................................................. 6 
+
+3.1. Interfejs programistyczny us³ugi BIR1.1.................................................................................. 6 
+3.2. Mechanizm uwierzytelniania klienta i obs³ugi sesji 
+................................................................ 6 
+3.3. Mechanizm wyszukiwania danych .......................................................................................... 7 
+3.3.1. Metoda DaneSzukajPodmioty ............................................................................................. 7 
+3.3.2. Metoda DanePobierzPelnyRaport ..................................................................................... 10 
+3.3.3. Metoda DanePobierzRaportZbiorczy................................................................................. 11 
+3.4. Informacje i komunikaty z us³ugi........................................................................................... 11 
+3.5. Struktury XML........................................................................................................................ 12 
+3.6. Przyk³ady, informacje dodatkowe......................................................................................... 15 
+3.6.1. Sekwencja wywo³ania metod............................................................................................ 15 
+3.6.2. Przyk³adowe ¿¹dania......................................................................................................... 15 
+3.6.3. Zalecana architektura........................................................................................................ 16 
+3.6.4. Implementacja przetwarzania danych – 
+informacja dot. bezpieczeñstwa 
+....................... 17 
+3.6.5. Ograniczenia w 
+korzystaniu z us³ugi.................................................................................. 17 
+4. Zakres udostêpnianych danych i podstawa prawna 
+................................................................. 18 
+5. Regulamin korzystania z us³ugi.................................................................................................. 19 
+6. Gwarancja jakoœci us³ug 
+(ang. Service Level Agreement) 
+......................................................... 20 
+7. Wsparcie techniczne ................................................................................................................. 21 
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+1. Podstawowe informacje o us³udze 
+. 
+Us³uga sieciowa („webservice”) rejestru REGON (BIR1, w tym wersja BIR1.1) zapewnia dostêp do otwartych danych publicznych rejestru REGON. 
+
+. 
+Utworzenie lub zakup oprogramowania do pobierania ww. danych le¿y w gestii Us³ugobiorcy 
+
+. 
+Taki sam zakres danych dostêpny jest tak¿e w wyszukiwarce on-line pod adresem: 
+
+
+https://wyszukiwarkaregontest.stat.gov.pl/appBIR/index.aspx 
+. Zasady wykorzystania danych: 
+https://bip.stat.gov.pl/kontakt-z-urzedem/ponowne-wykorzystywanie-informacji-sektora­
+publicznego/ 
+(„GUS nie ponosi odpowiedzialnoœci za rezultaty przetworzenia informacji (…)”). 
+. Dostêp do us³ugi BIR1 jest bezp³atny, bez ograniczenia czasowego. Us³uga udostêpniania danych BIR1 jest czêœci¹ modu³u Baza Internetowa Regon (BIR), który wchodzi w sk³ad zmodernizowanego systemu rejestru REGON. Us³uga BIR1 udostêpnia  interfejs 
+programistyczny – zbiór metod, dziêki którym mo¿liwe jest pobieranie danych z rejestru REGON bezpoœrednio z systemu zewnêtrznego. Zasadnicz¹ funkcjonalnoœci¹ us³ugi jest udostêpnianie danych, 
+osobom fizycznym oraz podmiotom komercyjnym. Aktualnoœæ danych BIR. Baza produkcyjna BIR synchronizowana jest co kilka minut ze stanem bazy 
+transakcyjnej. Z kolei aktualnoœæ danych bazy transakcyjnej zale¿y m.in. od stanu danych w rejestrach pierwotnych (m.in. CEIDG, KRS, RSPO), poniewa¿ rejestr REGON jest tzw. rejestrem wtórnym. Opisana synchronizacja danych dotyczy wpisów po uruchomieniu bezpoœredniego przesy³ania danych w trybie online. W przypadku CEIDG: 2011-07-01. Dane, które zosta³y wprowadzone do REGON przed t¹ dat¹ i zaktualizowane tylko w rejestrze pierwotnym przed t¹ dat¹, mog³y do dziœ nie zostaæ zaktualizowane w REGON, poniewa¿ wtedy obowi¹zek zg³oszenia aktualizacji w urzêdzie statystycznym spoczywa³ na przedsiêbiorcy, ale czêsto nie by³ dope³niany. 
+
+. Rys. Schemat wykorzystania Us³ugi BIR1 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+2. Uzyskanie dostêpu do us³ugi sieciowej rejestru REGON (BIR1.1) 
+2.1. Œrodowisko testowe us³ugi BIR1.1 
+Dostêp bez wczeœniejszej rejestracji w GUS. 
+Adres Us³ugi: 
+https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc 
+WSDL: 
+https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/wsdl/UslugaBIRzewnPubl-ver11-test.wsdl 
+Klucz u¿ytkownika (testowy): abcde12345abcde12345 
+Baza w œrodowisku testowym to pe³na, lecz nieaktualizowana baza danych us³ugi BIR1 (stan wiêkszoœci danych pochodzi z dnia 8.11.2014). Nazwiska oraz adresy miejsc prowadzenia dzia³alnoœci podmiotów w bazie testowej zosta³y zanonimizowane. 
+
+
+2.2. Œrodowisko produkcyjne us³ugi BIR1.1 
+Dostêp -po przes³aniu wniosku do GUS, o którym poni¿ej. 
+W celu uzyskania klucza u¿ytkownika dla œrodowiska produkcyjnego prosimy o przes³anie wniosku w postaci zwyk³ej wiadomoœci email na adres regon_bir@stat.gov.pl zawieraj¹cego nastêpuj¹ce informacje: 
+. 
+pe³na nazwa podmiotu; 
+
+. 
+numer REGON podmiotu (lub numer NIP dla osób nie prowadz¹cych dzia³alnoœci gosp.) 
+
+. 
+imiê i nazwisko osoby do kontaktu; 
+
+. 
+adres email osoby do kontaktu; 
+
+. 
+numer telefonu stacjonarny; 
+
+. 
+(i/lub) numer telefonu komórkowy; 
+
+. 
+przybli¿ona liczba u¿ytkowników koñcowych, którzy bêd¹ jednoczeœnie korzystaæ z Us³ugi. (Równowa¿ne liczbie jednoczeœnie uruchomionych instancji aplikacji na stacjach roboczych lub innych urz¹dzeniach koñcowych jednoczeœnie korzystaj¹cych z Us³ugi). 
+
+. 
+adresy IP, z których bêd¹ siê komunikowa³y Pañstwa systemy teleinformatyczne. (Dotyczy sytuacji gdy u¿ytkownicy koñcowi bêd¹ ³¹czyæ siê z BIR1 poprzez serwer dostêpowy dostawcy 
+
+
+oprogramowania -punkt 3.6.3 "Instrukcji technicznej" pt. "Zalecana architektura"). Ponadto, gdy adres/pula adresów IP jest sta³a -zalecamy podanie tych adresów dla celów diagnostycznych (w przypadku ew. k³opotów z korzystaniem z Us³ugi). 
+Uwaga 
+Przes³anie powy¿szego formularza z danymi jest równoznaczne ze zgod¹ na przetwarzanie danych osoby do kontaktu oraz zgod¹ na otrzymywanie powiadomieñ dot. przerw technicznych oraz ew. zmian w Us³udze. Administratorem danych osobowych jest Prezes GUS. Wiêcej pod adresem: 
+http://stat.gov.pl/rodo/ http://bip.stat.gov.pl/rodo/klauzule-informacyjne/zamowienie-na-dane-statystyczne/ 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+
+
+3. Komunikacja z us³ug¹ 
+3.1. Interfejs programistyczny us³ugi BIR1.1 
+Metoda (funkcja) us³ugi  Opis  Parametry  Wynik  
+Zaloguj  Logowanie przy u¿yciu klucza u¿ytkownika  pKluczUzytkownika As String  String . logowanie udane-zwracany jest 20 znakowy identyfikator sesji . logowanie nieudane-zwracany jest pusty string (pusty ci¹g znaków)  
+DaneSzukajPodmioty  Metoda przeszukuje bazê regon w poszukiwaniu rekordów zgodnych z okreœlonymi parametrami wyszukiwania. Rekordy wyœwietlane s¹ w postaci listy.  pParametryWyszukiwania As ParametryWyszukiwania  String . [obiekt zwracany przez metodê DaneSzukajPodmioty] (patrz podrozdzia³ 3.5), lub . komunikat o sytuacji wyj¹tkowej . lub brak odp. (pusty string)  
+DanePobierzPelnyRaport  Przekazuje zestaw danych o wybranym podmiocie. Zakres danych odpowiada konkretnemu raportowi okreœlonymi parametrem pNazwaRaportu  pRegon As String, pNazwaRaportu As String  String . raport w okreœlonej strukturze zgodnej z dokumentacj¹ lub . komunikat o sytuacji wyj¹tkowej . lub brak odp. (pusty string)  
+DanePobierzRaportZbiorczy  Przekazuje listê numerów REGON podmiotów spe³niaj¹cych zadane kryteria  pDataRaportu As String, pNazwaRaportu As String  String . Lista numerów REGON . komunikat o sytuacji wyj¹tkowej . lub brak odp. (pusty string)  
+GetValue  Metoda diagnostyczna. Zwraca informacje dot. dzia³ania us³ugi.  M.in. informacjê o przyczynie braku odpowiedzi metod DaneSzukajPodmioty, DanePobierzPelnyRaport, DanePobierzRaportZbiorczy  pNazwaParametru As String  String  
+Wyloguj  Zakoñczenie aktywnoœci sesji utworzonej metod¹ Zaloguj  pIdentyfikatorSesji As String  Boolean Zwraca wartoœæ true jeœli metoda wykona³a siê poprawnie  
+
+
+3.2. Mechanizm uwierzytelniania klienta i obs³ugi sesji 
+Us³ugobiorca jest uwierzytelniany w systemie poprzez dwudziestoznakowy ci¹g liter i cyfr – klucz u¿ytkownika. Uwierzytelnienie Us³ugobiorcy nastêpuje poprzez wywo³anie metody Zaloguj. Metoda Zaloguj zwraca dwudziestoznakowy identyfikator sesji. 
+Przy wysy³aniu ¿¹dañ wywo³uj¹cych któr¹kolwiek inn¹ metodê ni¿ Zaloguj, system teleinformatyczny Us³ugobiorcy wysy³aj¹c ¿¹danie http do Us³ugi BIR1 musi dodawaæ nag³ówek http 
+o nazwie sid, a wartoœci¹ jest identyfikator sesji. (Patrz przyk³ad nr 3 w BIR11_Przyklady.pdf ). Ponowne wywo³anie metody Zaloguj zwróci nowy identyfikator sesji. Zakoñczenie sesji odbywa siê po wywo³aniu metody Wyloguj lub po up³ywie 60 minut. Status sesji mo¿na sprawdziæ w dowolnym momencie przy pomocy metody GetValue. 
+Uwaga dot. uruchomienia kilku jednoczesnych instancji aplikacji 
+Ze wzglêdu na mechanizm Load Balancing identyfikator sesji (sid) nie zostanie rozpoznany, jeœli zosta³ wygenerowany na komputerze/serwerze o innym IP, ni¿ to z którego pochodzi bie¿¹ce ¿¹danie. Rozwi¹zaniem jest takie skonfigurowanie aplikacji, aby instancje nie przekazywa³y sobie sid-a, lecz ka¿da pos³ugiwa³y siê sid-em uzyskanym „u siebie” (przez wywo³anie Zaloguj() „u siebie”). 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+3.3. Mechanizm wyszukiwania danych 
+Do wyszukiwania danych s³u¿¹ metody udostêpniane przez Us³ugê BIR1.1: 
+. 
+DaneSzukajPodmioty 
+
+. 
+DanePobierzPelnyRaport 
+
+. 
+DanePobierzRaportZbiorczy 
+
+
+Metoda  Opis  Parametry  Wynik  
+DaneSzukajPodmioty  Metoda przeszukuje bazê regon w poszukiwaniu rekordów zgodnych z okreœlonymi parametrami wyszukiwania. Rekordy wyœwietlane s¹ w postaci listy.  pParametryWyszukiwania As ParametryWyszukiwania  . [obiekt zwracany przez metodê DaneSzukajPodmioty] (patrz podrozdzia³ 3.5) lub . komunikat o sytuacji wyj¹tkowej . lub brak odp. (pusty string)  
+DanePobierzPelnyRaport  Pobiera zestaw danych o wybranym podmiocie. Zakres danych odpowiada konkretnemu raportowi okreœlonymi parametrem pNazwaRaportu  pRegon As String, ByVal pNazwaRaportu As String  . raport w okreœlonej strukturze zgodnej z dokumentacj¹ lub . komunikat o sytuacji wyj¹tkowej . lub brak odp. (pusty string)  
+DanePobierzRaportZbiorczy  Przekazuje listê numerów REGON podmiotów spe³niaj¹cych zadane kryteria.  pDataRaportu As String pNazwaRaportu As String  . lista numerów REGON w okreœlonej strukturze zgodnej z dokumentacj¹ lub . komunikat o sytuacji wyj¹tkowej . lub brak odp. (pusty string)  
+
+Tab. Metody pobieraj¹ce dane 
+Komunikaty o sytuacji wyj¹tkowej (w formacie xml) s¹ przedstawione w plikach: BIR11-DaneSzukajPodmioty-KomunikatyOBledach.xml, BIR11-DanePobierzPelnyRaport-KomunikatyOBledach.xml, BIR11-RaportyZbiorcze-KomunikatyOBledach.xml (w folderze BIR11_StrukturyDanych). 
+3.3.1. Metoda DaneSzukajPodmioty 
+Metoda DaneSzukajPodmioty przeszukuje bazê rejestru REGON w celu znalezienia rekordów spe³niaj¹cych warunki zgodne z okreœlonymi parametrami wyszukiwania. 
+<xs:complexType name="ParametryWyszukiwania"> 
+<xs:sequence> <xs:element name="Krs" type="xs:string" nillable="true" minOccurs="0"/> <xs:element name="Krsy" type="xs:string" nillable="true" minOccurs="0"/> <xs:element name="Nip" type="xs:string" nillable="true" minOccurs="0"/> <xs:element name="Nipy" type="xs:string" nillable="true" minOccurs="0"/> <xs:element name="Regon" type="xs:string" nillable="true" minOccurs="0"/> <xs:element name="Regony14zn" type="xs:string" nillable="true" minOccurs="0"/> <xs:element name="Regony9zn" type="xs:string" nillable="true" minOccurs="0"/> 
+</xs:sequence> </xs:complexType> 
+Uwaga: wprowadzenie kilku parametrów jednoczeœnie skutkuje wyszukiwaniem tylko wg pierwszego. 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+A) Zapytanie (request) do metody DaneSzukajPodmioty 
+Metoda przyjmuje jeden parametr w postaci obiektu ParametryWyszukiwania zawieraj¹cego informacje o kryteriach wyszukiwania (obiekt zosta³ opisany szczegó³owo w kolejnym podrozdziale). Wyszukiwanie jest mo¿liwe wg jednej z dwóch grup kryteriów: 
+1. 
+Identyfikator podmiotu 
+
+2. 
+Grupa identyfikatorów 
+
+
+Grupa 1. Identyfikator podmiotu  Regon  
+Krs  
+Nip  
+Grupa 2. Wiele identyfikatorów podmiotów (maks. 20)  Regony9zn  
+Regony14zn  
+Krsy  
+Nipy  
+
+Tab. Parametry wyszukiwania i zaznaczone grupy kryteriów 
+Grupa 1 -Identyfikator podmiotu 
+Przekazywane wartoœci: 
+• 
+Regon – 9 lub 14 znaków 
+
+• 
+Krs – 10 znaków 
+
+• 
+Nip – 10 znaków 
+
+
+Grupa 2 – Wiele identyfikatorów 
+Przekazywane wartoœci: 
+• 
+Regony9zn – ci¹g znaków, dziewiêcioznakowe identyfikatory REGON, oddzielane dowolnym separatorem (za wyj¹tkiem cyfr), b¹dŸ bez separatora, maks. 20 identyfikatorów. 
+
+• 
+Regony14zn – ci¹g znaków, czternastoznakowe identyfikatory REGON, oddzielane dowolnym separatorem (za wyj¹tkiem cyfr), b¹dŸ bez separatora, maks. 20 identyfikatorów. 
+
+• 
+Nipy – ci¹g znaków, dziesiêcioznakowe identyfikatory NIP, oddzielane dowolnym separatorem (za wyj¹tkiem cyfr), b¹dŸ bez separatora, maks. 20 identyfikatorów. 
+
+• 
+Krsy – ci¹g znaków, dziesiêcioznakowe identyfikatory KRS, oddzielane dowolnym separatorem (za wyj¹tkiem cyfr), b¹dŸ bez separatora, maks. 20 identyfikatorów. 
+
+
+Nale¿y przekazaæ wartoœæ dla jednego z parametrów. Podanie wartoœci dla dwóch lub wiêcej 
+spowoduje wyszukiwanie wg pierwszego parametru w strukturze ParametryWyszukiwania (w wsdl). 
+Uwaga 1 
+Identyfikatorem podmiotu podstawowego rejestru REGON jest 9-cyfrowy ci¹g znaków. Zera wiod¹ce maj¹ znaczenie (czyli np. identyfikatorem REGON jest 000000023, ale nie 23). Jeœli podmiot posiada tzw. jednostki lokalne (np. oddzia³y) – ich identyfikator jest 14-znakowy, np. 00000002300041 (pierwsze 9 cyfr jest wspólne). 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+
+B) OdpowiedŸ (response) z metody DaneSzukajPodmioty 
+Specyfikacja odpowiedzi znajduje siê w: DaneSzukajPodmioty.xsd, folder BIR11_StrukturyDanych. Poni¿sza tabela zawiera opisy kodów zwracanych przez DaneSzukajPodmioty w polach Typ i SilosID. Uwaga 2 
+W rejestrze REGON terminy „podmiot” (rejestru) i „jednostka” (rejestru) u¿ywane s¹ wymiennie. 
+pole  Wartoœæ  opis  
+Typ  P  Typ podmiotu rejestru REGON: jednostka prawna (= osoba prawna lub jednostka organizacyjna nieposiadaj¹ca osobowoœci prawnej, np. spó³ka cywilna)  
+F  Typ podmiotu rejestru REGON: jedn. fizyczna (= os. fizyczna prowadz¹ca dzia³alnoœæ gospodarcz¹)  
+LP  Typ podmiotu rejestru REGON: jednostka lokalna jednostki prawnej  
+LF  Typ podmiotu rejestru REGON: jednostka lokalna jednostki fizycznej  
+SilosID  1  Miejsce prowadzenia dzia³alnoœci podlegaj¹c¹ wpisowi do CEIDG (tylko typy F i LF)  
+2  Miejsce prowadzenia dzia³alnoœci rolniczej (gospodarstwo rolne, dzia³y specjalne produkcji rolnej, tylko typy F i LF)  
+3  Miejsce prowadzenia dzia³alnoœci pozosta³ej -innej ni¿ silosID 1 lub 2, tj. komornik, notariusz, agroturystyka, o ile nie zosta³y wpisane do CEIDG (tylko typy F i LF)  
+4  Miejsce prowadzenia dzia³alnoœci skreœlonej z rejestru REGON przed 2014.11.08 (tylko typy F i LF)  
+6  Miejsce prowadzenia dzia³alnoœci jednostki prawnej (tylko typy P i LP)  
+
+Tab. Metoda DaneSzukajPodmioty – zwracane kody 
+Uwaga 3 
+Dla podmiotów prowadzonych przez osoby fizyczne nale¿y rozró¿niæ dwa pojêcia: 
+a) 
+„jednostka lokalna podmiotu” vs 
+
+b) 
+„dzia³alnoœæ podmiotu”, rozumiana nie jako kod PKD, lecz jako „rodzaj dzia³alnoœci”. A konkretnie jest to: 
+
+1) 
+dzia³alnoœæ podlegaj¹ca rejestracji w CEIDG i/lub 2) dzia³alnoœæ rolnicza i/lub 3) tzw. dzia³alnoœæ pozosta³a. Przyk³adowo w³aœciciel gospodarstwa rolnego prowadzi dzia³alnoœæ rolnicz¹, ale oprócz tego mo¿e prowadziæ dzia³alnoœæ pozarolnicz¹ zarejestrowan¹ w CEIDG. Obie te dzia³alnoœci nale¿¹ do tego samego podmiotu rejestru REGON (tzn. maj¹ ten sam 9-cyfrowy numer REGON), lecz mog¹ mieæ ró¿ne adresy wykonywania dzia³alnoœci i jednoczeœnie ¿adne z tych miejsc nie jest jednostk¹ lokaln¹ tego podmiotu. Przy czym ww. przyk³adowy podmiot mo¿e tak¿e posiadaæ jednostki lokalne (dotycz¹ce konkretnej dzia³alnoœci). Ka¿da jednostka lokalna bêdzie posiadaæ swój w³asny, 14-cyfrowy, numer REGON. 
+
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+3.3.2.Metoda DanePobierzPelnyRaport 
+Metoda DanePobierzPelnyRaport pobiera informacje o pojedynczej wybranej jednostce. Metoda przyjmuje dwa parametry: pRegon (9 lub 14 cyfr) i pNazwaRaportu (lista raportów: str.12). 
+Uwaga 4 -aktywnoœæ podmiotu 
+Metoda DanePobierzPelnyRaport pozwala stwierdziæ czy podmiot jest aktywny czy nie (np. dzia³alnoœæ jest zawieszona). Poni¿ej algorytm „czy podmiot jest aktywny ?”(nie myliæ z pojêciem „czynny p³atnik podatku VAT” – rejestr REGON nie przechowuje takiej informacji). 
+1) Dla osób prawnych – nale¿y pobraæ raport BIR11OsPrawna. Podmiot jest aktywny jeœli wszystkie poni¿sze pola NIE s¹ wype³nione (maj¹ wartoœci puste). 
+<praw_dataZawieszeniaDzialalnosci /> <praw_dataZakonczeniaDzialalnosci /> <praw_dataSkresleniaZRegon /> <praw_dataOrzeczeniaOUpadlosci /> <praw_dataZakonczeniaPostepowaniaUpadlosciowego /> 
+LUB jest spe³niony warunek: 
+praw_dataZawieszeniaDzialalnosci < praw_dataWznowieniaDzialalnosci i jednoczeœnie pozosta³e ww. pola maj¹ wartoœci puste. 
+2) Dla osób fizycznych trzeba rozró¿niæ aktywnoœæ podmiotu i aktywnoœæ konkretnej dzia³alnoœci podmiotu. Mianowicie osoba fizyczna mo¿e prowadziæ do trzech rodzajów dzia³alnoœci jednoczeœnie (w BIR technicznie okreœlane jako „silosy”). 
+I) Sprawdzenie aktywnoœci dzia³alnoœci 
+a) 
+zarejestrowanej w CEIDG (jeœli istnieje) -raport BIR11OsFizycznaDzialalnoscCeidg, 
+
+b) 
+rolniczej (jeœli istnieje) -raport BIR11OsFizycznaDzialalnoscRolnicza, 
+
+c) 
+tzw. pozosta³ej (jeœli istnieje) -raport BIR11OsFizycznaDzialalnoscPozostala, 
+
+
+to sprawdzenie, czy wszystkie poni¿sze pola z ww. raportów NIE s¹ wype³nione (maj¹ wartoœci puste). <fiz_dataZawieszeniaDzialalnosci /> <fiz_dataZakonczeniaDzialalnosci /> <fiz_dataSkresleniaDzialalanosciZRegon /> <fiz_dataOrzeczeniaOUpadlosci /> <fiz_dataZakonczeniaPostepowaniaUpadlosciowego /> 
+LUB czy jest spe³niony warunek: fiz_dataZawieszeniaDzialalnosci < fiz_dataWznowieniaDzialalnosci i jednoczeœnie pozosta³e ww. pola maj¹ wartoœci puste. 
+II) Podmiot osoby fizycznej jest aktywny jeœli przynajmniej jedna jego dzia³alnoœæ jest aktywna. 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+3.3.3.Metoda DanePobierzRaportZbiorczy 
+DanePobierzRaportZbiorczy przekazuje listê numerów REGON podmiotów spe³niaj¹cych zadane kryteria. Metoda przyjmuje dwa parametry: 1) pDataRaportu – dzieñ za który maj¹ byæ wygenerowane dane (w formacie rok, miesi¹c, dzieñ: yyyy-mm-dd) 2) pNazwaRaportu. Zakres obs³ugiwanych dat: ostatnie siedem dni (od dnia wczorajszego zaczynaj¹c, tzn. data bie¿¹ca nie jest obs³ugiwana). Lista raportów -str.13/14. (Raporty tworz¹ listy numerów REGON dla warunków: podmioty nowe, podmioty aktualizowane, podmioty skreœlone). 
+3.4.Informacje i komunikaty z us³ugi 
+
+Metoda GetValue 
+Do odbioru informacji-komunikatów z us³ugi s³u¿y metoda GetValue. Metoda przyjmuje jeden parametr o nazwie pNazwaParametru. 
+Dopuszczalne wartoœci parametru pNazwaParametru: 
+wartoœæ  opis  zwracana informacja  
+StanDanych  Zwracana jest informacja o stanie danych jaki jest udostêpniany  data -ci¹g znaków (19 zn.)  
+KomunikatKod  Zwraca kod komunikatu  Integer – kod komunikatu (kody opisane poni¿ej)  
+KomunikatTresc  Zwraca kod komunikatu  ci¹g znaków (maks.300 zn.)  
+StatusSesji  Zwraca status sesji.  1 – sesja istnieje 0 – sesja nie istnieje  
+StatusUslugi (niezaimplement.)  Zwraca status us³ugi. Wywo³anie nie wymaga przekazania dodatkowego nag³ówka sid w ¿¹daniu http.  0 – us³uga niedostêpna 1 – us³uga dostêpna 2 – przerwa techniczna  
+KomunikatUslugi  Zwraca komunikat us³ugi. Wywo³anie nie wymaga przekazania dodatkowego nag³ówka sid w ¿¹daniu http.  ci¹g znaków (maks.300 zn.)  
+
+Tab. Wartoœci parametru pNazwaParametru metody GetValue 
+GetValue(”KomunikatKod”) 
+Lista kodów zwracana przez metodê GetValue wywo³an¹ z parametrem "KomunikatKod” 
+zwracana wartoœæ  opis  
+<GetValueResult/> (pusty string)  Brak sesji. Sesja wygas³a lub przekazano nieprawid³ow¹ wartoœæ nag³ówka sid.   
+0  Poprzednia operacja wykonana prawid³owo (dla sesji zgodnej z przes³anym sid !)  
+1  kod nieaktualny  
+2  Do metody DaneSzukaj przekazano zbyt wiele identyfikatorów.  
+4  Nie znaleziono podmiotów. (Czêsta przyczyna: pNazwaRaportu dla P zamiast dla F i na odwrót).  
+5  Nieprawid³owa lub pusta nazwa raportu.  
+7  Brak sesji. Sesja wygas³a lub przekazano nieprawid³ow¹ wartoœæ nag³ówka sid.   
+
+Tab. Kody zwracane przez metodê GetValue(”KomunikatKod”) 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+
+
+3.5. Struktury XML 
+W poni¿szej tabeli wymienione zosta³y struktury danych jakie przekazywane s¹ z Us³ugi BIR1.1 do systemu Us³ugobiorcy. Schematy xsd stanowi¹ za³¹cznik do dokumentacji i dostêpne s¹ w folderze BIR11_StrukturyDanych. Znajduj¹ siê tam tak¿e komunikaty dot. nieznalezienia danych (w formacie xml). 
+Raporty metody DanePobierzPelnyRaport 
+i ich powi¹zanie z odpowiedzi¹ z metody DaneSzukajPodmioty. Kolumna „Typ” (typ podmiotu) – pole zwracane przez metodê DaneSzukajPodmioty (wiêcej-pkt 3.3.1) Kolumna „SilosID” (id rodzaju prowadzonej dzia³alnoœci) – pole zwracane przez DaneSzukajPodmioty. (Przyk³ad poni¿ej). 
+OdpowiedŸ z metody DaneSzukajPodmioty  Raport metody DanePobierzPelnyRaport, który dotyczy danej kombinacji Typ+SilosId (który zwróci niepuste dane) pRegon – parametr wejœciowy (nr REGON 9-cio lub 14-cyfrowy)  
+Lp  Typ  SilosId  Nazwa raportu  Opis  
+1  F  1 / 2 / 3  BIR11OsFizycznaDaneOgolne (pRegon 9-cyfrowy)  Dane osoby fizycznej wspólne dla wszystkich prowadzonych przez ni¹ dzia³alnoœci.  
+BIR12OsFizycznaDaneOgolne (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, brak ró¿nic.  
+2  F  1  BIR11OsFizycznaDzialalnoscCeidg (pRegon 9-cyfrowy)  Dane dot. dzia³alnoœci zarejestrowanej w CEIDG, w tym adres prowadzenia tej dzia³alnoœci; LENGTH(fiz_adSiedzNumerLokalu)<=10  
+BIR12OsFizycznaDzialalnoscCeidg (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(fiz_adSiedzNumerLokalu)<=20  
+3  F  2  BIR11OsFizycznaDzialalnoscRolnicza (pRegon 9-cyfrowy)  Dane dot. dzia³alnoœci rolniczej; w tym adres prowadzenia dzia³alnoœci rolniczej. LENGTH(fiz_adSiedzNumerLokalu)=10  
+BIR12OsFizycznaDzialalnoscRolnicza (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(fiz_adSiedzNumerLokalu)<=20  
+4  F  3  BIR11OsFizycznaDzialalnoscPozostala (pRegon 9-cyfrowy)  Dane dot. dzia³alnoœci innej ni¿ z CEIDG i rolnicza (komornik, notariusz, agroturystyka) w tym adres prowadzenia dzia³aln.  
+BIR12OsFizycznaDzialalnoscPozostala (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(fiz_adSiedzNumerLokalu)<=20  
+5  F  4  BIR11OsFizycznaDzialalnoscSkreslona Do20141108 (pRegon 9-cyfrowy)  Dane dot. dzia³alnoœci skreœlonej z REGON przed 2014.11.08 (tzn. w poprzednim systemie informatycznym).  
+BIR12OsFizycznaDzialalnoscSkreslona Do20141108 (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, brak ró¿nic.  
+6  F  1 / 2 / 3  BIR11OsFizycznaPkd (pRegon 9-cyfrowy)  Lista kodów PKD dla podmiotu osoby fizycznej  
+BIR12OsFizycznaPkd (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej plus element xml <fiz_pkdWersja>  
+7  F  1 / 2 / 3  BIR11OsFizycznaListaJednLokalnych (pRegon 9-cyfrowy)  Lista jednostek lokalnych (np. oddzia³ów firmy) zarejestro­wanych dla podmiotu osoby fizycznej  
+BIR12OsFizycznaListaJednLokalnych (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(lokfiz_adSiedzNumerLokalu)<=20  
+8  LF  1 / 2 / 3  BIR11JednLokalnaOsFizycznej (pRegon 14-cyfrowy)  Dane jednostki lokalnej podmiotu osoby fizycznej  
+BIR12JednLokalnaOsFizycznej (pRegon 14-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(lokfiz_adSiedzNumerLokalu)<=20  
+9  LF  1 / 2 / 3  BIR11JednLokalnaOsFizycznejPkd (pRegon 14-cyfrowy)  Lista kodów PKD dla jednostki lokalnej podmiotu osoby fizycznej  
+BIR12JednLokalnaOsFizycznejPkd (pRegon 14-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, plus element xml <lokfiz_pkdWersja>  
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+10  P  6  BIR11OsPrawna (pRegon 9-cyfrowy)  Dane osoby prawnej; Uwaga: raporty dla osoby prawnej dot. tak¿e spó³ki cywilnej, która formalnie osob¹ prawn¹ nie jest.  
+BIR12OsPrawna (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(praw_adSiedzNumerLokalu)<=20  
+11  P  6  BIR11OsPrawnaPkd (pRegon 9-cyfrowy)  Lista kodów PKD dla podmiotu osoby prawnej  
+BIR12OsPrawnaPkd (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, plus element xml <praw_pkdWersja>  
+12  P  6  BIR11OsPrawnaListaJednLokalnych (pRegon 9-cyfrowy)  Lista jednostek lokalnych (np. oddzia³ów firmy) zarejestro­wanych dla osoby prawnej  
+BIR12OsPrawnaListaJednLokalnych (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(lokpraw_adSiedzNumerLokalu)=<20  
+13  LP  6  BIR11JednLokalnaOsPrawnej (pRegon 14-cyfrowy)  Dane jednostki lokalnej podmiotu osoby prawnej  
+BIR12JednLokalnaOsPrawnej (pRegon 14-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, ró¿nica: LENGTH(lokpraw_adSiedzNumerLokalu)<=20  
+14  LP  6  BIR11JednLokalnaOsPrawnejPkd (pRegon 14-cyfrowy)  Lista kodów PKD dla jednostki lokalnej podmiotu osoby prawnej  
+BIR12JednLokalnaOsPrawnejPkd (pRegon 14-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, plus element xml <lokpraw_pkdWersja>  
+15  P  6  BIR11OsPrawnaSpCywilnaWspolnicy (pRegon 9-cyfrowy)  Lista wspólników spó³ki cywilnej (tylko i wy³¹cznie S.C.) Uwaga: REGON prowadzi rejestracjê wspólników od r.2012. (Dla spó³ek powsta³ych przed r.2012 i nieaktualizowanych – brak jest w REGON danych o wspólnikach).  
+BIR12OsPrawnaSpCywilnaWspolnicy (pRegon 9-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, brak ró¿nic.  
+16  P  6  BIR11TypPodmiotu *) (pRegon 9-cio lub 14-cyfrowy)  Informacja o typie podmiotu (osoba fizyczna / prawna; jednostka lokalna os. fizycznej/ os. prawej)  
+BIR12TypPodmiotu *) (pRegon 9-cio lub 14-cyfrowy)  Funkcjonalnoœæ jak wy¿ej, brak ró¿nic.  
+
+*) W rejestrze REGON terminy „podmiot” (rejestru) i „jednostka” (rejestru) u¿ywane s¹ wymiennie. 
+Struktury dot. metody DaneSzukajPodmioty 
+l.p.  nazwa struktury  opis  
+1  Parametry wyszukiwania  Obiekt, który zawiera informacje o kryteriach, wg których maj¹ byæ wyszukiwane podmioty.(Patrz: DaneSzukajPodmiotyParametryWyszukiwania.xsd, folder BIR11_StrukturyDanych)  
+2  [obiekt zwracany przez metodê DaneSzukajPodmioty]  Tablica obiektów zawieraj¹cych podstawowe informacje o znalezionych jednostkach (Patrz: DaneSzukajPodmioty.xsd, folder BIR11_StrukturyDanych)  
+
+Raporty metody DanePobierzRaportZbiorczy: 
+l.p.  nazwa struktury  Opis (Rejestr = rejestr REGON)  
+1  BIR11NowePodmiotyPrawneOrazDzialalnosciOs Fizycznych  Lista numerów REGON podmiotów prawnych i dzia³alnoœci osób fizycznych wpisanych do Rejestru wg podanej daty (pomijaj¹c przypisane im jednostki lokalne). Uwaga -osoba fizyczna zostanie umieszczona na tej liœci tak¿e gdy 1) ju¿ posiada aktywn¹ dzia³alnoœæ gospodarcz¹ i rejestruje dzia³alnoœæ innego rodzaju ni¿ dotychczasowa; 2) w przesz³oœci posiada³a dzia³alnoœæ, która zosta³a skreœlona a obecnie rejestruje now¹ dzia³alnoœæ. (Numer regon pozostanie ten sam !)  
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+2  BIR11AktualizowanePodmiotyPrawneOrazDziala lnosciOsFizycznych  Lista numerów REGON podmiotów prawnych i dzia³alnoœci osób fizycznych aktualizowanych w Rejestrze wg podanej daty (pomijaj¹c przypisane im jednostki lokalne). Uwaga – dla osób fizycznych posiadaj¹cej wiêcej ni¿ jeden rodzaj dzia³alnoœci raport nie przekazuje informacji, który rodzaj dzia³alnoœæ by³ aktualizowany. (Nale¿y pobraæ dane dla wszystkich tzw. silosów)  
+3  BIR11SkreslonePodmiotyPrawneOrazDzialalnosc iOsFizycznych  Lista numerów REGON podmiotów prawnych i dzia³alnoœci osób fizycznych skreœlonych z Rejestru wg podanej daty (pomijaj¹c przypisane im jednostki lokalne). Uwaga – dla osób fizycznych posiadaj¹cej wiêcej ni¿ jeden rodzaj dzia³alnoœci raport nie przekazuje informacji, który rodzaj dzia³alnoœæ zosta³ skreœlony. (Nale¿y pobraæ dane dla wszystkich tzw. silosów)  
+4  BIR11NoweJednostkiLokalne  Lista numerów REGON jednostek lokalnych wpisanych do Rejestru wg podanej daty. (Dla osób prawnych i fizycznych).  
+5  BIR11AktualizowaneJednostkiLokalne  Lista numerów REGON jednostek lokalnych aktualizowanych w Rejestrze wg podanej daty. (Dla osób prawnych i fizycznych).  
+6  BIR11SkresloneJednostkiLokalne  Lista numerów REGON jednostek lokalnych skreœlonych z Rejestru wg podanej daty. (Dla osób prawnych i fizycznych).  
+
+Uwaga: Raporty BIR11AktualizowanePodmiotyPrawneOrazDzialalnosciOsFizycznych i BIR11AktualizowaneJednostkiLokalne przekazuj¹ listê numerów REGON dla podmiotów, gdzie zasz³a jakakolwiek zmiana, w tym tak¿e wœród danych nieudostêpnianych. Dlatego jest mo¿liwe, ¿e dla konkretnego podmiotu ¿adne pole danych udostêpniane poprzez us³ugê nie zmieni³o swojej wartoœci. 
+
+
+
+3.6. Przyk³ady, informacje dodatkowe 
+3.6.1. Sekwencja wywo³ania metod 
+Poni¿ej przedstawiono pseudokod dla przyk³adowej prawid³owej sekwencji pozwalaj¹cej na uzyskanie danych o podmiotach z rejestru REGON. sid=Zaloguj(); do { 
+DaneSzukajPodmioty (regon lub nip lub krs); i/lub DanePobierzPelnyRaport (regon, nazwaRaportu); i/lub DanePobierzRaportZbiorczy (data, nazwaRaportu); if(pusta odpowiedz) => sprawdŸ przyczynê metod¹ diagnostyczn¹ GetValue() -str. 11. if (sesja wygasla) => sid=Zaloguj(); 
+} while(…); Wyloguj(sid); // pusta odpowiedz to: <DaneSzukajPodmiotyResult/> lub <DanePobierzPelnyRaportResult/> lub <DanePobierzRaportZbiorczyResult/> 
+Warunkiem jest podawanie w ww. pêtli jako http header sid uzyskanego w Zaloguj. Przyk³ady kodu i informacje o implementacjach us³ugi zrealizowanych w wybranych technologiach stanowi¹ za³¹cznik do dokumentacji. (Plik BIR11_Przyklady.pdf). 
+3.6.2.Przyk³adowe ¿¹dania 
+Metoda Zaloguj 
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:ns="http://CIS/BIR/PUBL/2014/07"> 
+<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing"> <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj</wsa:Action> <wsa:To>https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc</wsa:To> 
+</soap:Header> <soap:Body> <ns:Zaloguj> 
+<ns:pKluczUzytkownika>tutaj kluczu¿ytkownika...</ns:pKluczUzytkownika> 
+</ns:Zaloguj> </soap:Body> </soap:Envelope> 
+Zwrócony zostanie dwudziestoznakowy identyfikator sesji, który nale¿y przekazywaæ jako dodatkowy nag³ówek ¿¹dania http o nazwie sid w kolejnych wywo³aniach. 
+
+Metoda DanePobierzPelnyRaport 
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:ns="http://CIS/BIR/PUBL/2014/07"> 
+<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing"> <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport</wsa:Action> <wsa:To>https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc</wsa:To> 
+</soap:Header> <soap:Body> 
+<ns:DanePobierzPelnyRaport> <ns:pRegon>000331501</ns:pRegon> <ns:pNazwaRaportu>BIR11OsPrawna</ns:pNazwaRaportu> 
+</ns:DanePobierzPelnyRaport> </soap:Body> </soap:Envelope> 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+
+3.6.3.Zalecana architektura 
+Podrozdzia³ dotyczy podmiotów wytwarzaj¹cych oprogramowanie komercyjne, dystrybuowane do dalszych odbiorców. 
+Zalecana architektura rozwi¹zania zintegrowanego z Us³ug¹ BIR1 zak³ada, ¿e bezpoœrednim klientem Us³ugi BIR1 jest podmiot, który wnioskuje o dostêp do Us³ugi BIR1. Podmiot identyfikowany jest w systemie przy pomocy Klucza U¿ytkownika. Ponadto w procesie pod³¹czania do us³ugi podmiot proszony jest o przekazanie zakresu adresów IP, z których bêdzie mia³a miejsce komunikacja z Us³ug¹. 
+1.  Klucz u¿ytkownika do us³ugi wystêpuje dostawca  
+2.  oprogramowania Klucz u¿ytkownika w infrastrukturze dostawcy oprogramowania  
+3.  Komunikacja do us³ugi BIR1 poprzez infrastrukturê dostawcy oprogramowania, ze znanego zakresu adresów IP  
+
+rys. Zalecana architektura 
+W przypadku podmiotów komercyjnych wytwarzaj¹cych oprogramowanie wykorzystywane przez inne podmioty, instalowane na stacjach roboczych u¿ytkowników koñcowych, gdzie pomiêdzy stacj¹ robocz¹ u¿ytkownika, a us³ug¹ BIR1 nie poœrednicz¹ serwery producenta oprogramowania, spe³nienie wymogu przekazania adresów IP jest niecelowe i niemo¿liwe do realizacji. Wi¹¿¹ siê z tym jednak potencjalne problemy. 
+rys. Dopuszczalna architektura  1. O klucz u¿ytkownika do us³ugi wystêpuje dostawca oprogramowania 2. Klucz przechowywany w na stacjach klientów 3. Komunikacja bezpoœrednio ze stacji klientów, z nieznanego zakresu adresów IP Mo¿liwe problemy: Brak kontroli ze strony dostawcy oprogramowania nad tym czy klucz u¿ytkownika funkcjonuje wy³¹cznie w ramach jego produktu czy jest wykorzystywany w inny niepo¿¹dany sposób (np. próby prze³amywania zabezpieczeñ us³ugi BIR1, atak BotNet). Potencjalna koniecznoœæ wymiany klucza u¿ytkownika (u wszystkich klientów)  
+rys. Niedopuszczalna architektura  1. O klucze u¿ytkownika do us³ugi wystêpuje ka¿dy u¿ytkownik koñcowy osobno 2. Klucze przechowywane s¹ na stacjach klientów 3. Komunikacja bezpoœrednio ze stacji klientów, z nieznanego zakresu adresów IP  
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+3.6.4.Implementacja przetwarzania danych – informacja dot. bezpieczeñstwa 
+
+
+
+Niniejsza informacja dotyczy potencjalnego ryzyka wyst¹pienia w systemach klienckich problemów z bezpieczeñstwem tj. podatnoœci XSS Cross Site Scripting lub SQL Injection. 
+Implementuj¹c korzystanie z danych pochodz¹cych z rejestru REGON w systemach klienckich warto, ze wzglêdów bezpieczeñstwa, rozwa¿yæ implementacjê filtrowania danych. 
+W obowi¹zuj¹cym stanie prawnym nazwy podmiotów zarejestrowanych w rejestrze REGON (np. za poœrednictwem innych rejestrów np. CEIDG Centralna Ewidencja i Informacja o Dzia³alnoœci Gospodarczej), które udostêpniane s¹ dalej innym systemom poprzez us³ugê BIR1, w niezmienionej postaci, mog¹ zawieraæ znaki lub ci¹gi znaków stanowi¹ce wykonywalny kod, które, w zale¿noœci od sposobu implementacji ich przetwarzania w danym systemie, mog¹ spowodowaæ nieprawid³owe dzia³anie systemu klienta. 
+W szczególnoœci nazwy podmiotów mog¹ zawieraæ ci¹gi znaków fragmenty kodów napisane w jêzykach HTML lub SQL, które w œrodowisku przegl¹darki internetowej (w przypadku aplikacji webowej) lub œrodowisku bazodanowym zostan¹ zinterpretowane i uruchomione, co mo¿e stanowiæ potencjalny problem z bezpieczeñstwem oprogramowania. 
+3.6.5.Ograniczenia w korzystaniu z us³ugi 
+Niedozwolone jest automatyczne wyszukiwanie kolejnych identyfikatorów (np. 000000000, 000000001, 000000003, 000000004 itd..) celem pobrania wycinka b¹dŸ ca³oœci rejestru, w bardzo krótkim czasie. Taka aktywnoœæ bêdzie skutkowa³a czasow¹ niedostêpnoœci¹ us³ugi dla danego u¿ytkownika. 
+Poni¿ej podane s¹ ograniczenia dot. maksymalnej czêstotliwoœci odpytywania Us³ugi dla jednego u¿ytkownika koñcowego (równowa¿ne z pojedyncz¹ instancj¹ aplikacji korzystaj¹cej z Us³ugi). Podyktowane s¹ one koniecznoœci¹ zapewnienia dostêpnoœci Us³ugi BIR1 dla du¿ej liczby Us³ugobiorców. Czêstotliwoœæ siêgania po dane poprzez metody DaneSzukajPodmioty, DanePobierzPelnyRaport i DaneRaportZbiorczy powinna byæ zgodna z poni¿sz¹ charakterystyk¹. (Przy wyszukiwaniu po wielu identyfikatorach, ka¿dy z identyfikatorów bêdzie zliczany jako oddzielne zapytanie; wywo³ania metod Zaloguj, GetValue, Wyloguj tak¿e s¹ wliczane do limitów). 
+. Dopuszczalna liczba wywo³añ w godzinach od 8:00 do 16:59 
+maksymalnie 6000 na godzinê maksymalnie 120 na minutê maksymalnie 3 na sekundê 
+. Dopuszczalna liczba wywo³añ w godzinach od 6:00 do 7:59 i od 17:00-21:59 
+maksymalnie 8000 na godzinê maksymalnie 150 na minutê maksymalnie 3 na sekundê 
+. Dopuszczalna liczba wywo³añ w godzinach od 22:00 do 5:59 
+maksymalnie 10000 na godzinê maksymalnie 200 na minutê maksymalnie 4 na sekundê 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+
+Przekroczenie limitów nie skutkuje natychmiastow¹ blokad¹ dostêpu do us³ugi. (Wyj¹tkiem jest sytuacja, gdy generowanie obci¹¿enie jest tak du¿e, ¿e powoduje odczuwalne spowolnienie Us³ugi). 
+Us³ugobiorcy przekraczaj¹cy limity bêd¹ informowani. 
+
+
+
+4. Zakres udostêpnianych danych i podstawa prawna 
+Krajowy rejestr urzêdowy podmiotów gospodarki narodowej REGON jest jawny i powszechnie dostêpny zaœ formê i zakres udostêpnianych z rejestru REGON informacji reguluj¹ art. 44-45a ustawa z dnia 29 czerwca 1995 r. o statystyce publicznej (Dz. U. z 2012 r. poz. 591, z póŸn. zm.). 
+1. Zgodnie z art. 44 ust. 2 i 3 powo³anej ustawy dane z rejestru REGON udostêpniane s¹: 
+1.1 organom prowadz¹cym inne urzêdowe rejestry i systemy informacyjne adm. publicznej, 
+1.2 organom administracji rz¹dowej i jednostek samorz¹du terytorialnego, innym instytucjom rz¹dowym, NIK, NBP, GIODO, równorzêdnym organom, jednostkom i instytucjom pañstw cz³onkowskich UE, pañstw cz³onkowskich EFTA – stron umowy o Europejskim Obszarze Gospodarczym, pañstw, które zawar³y ze Wspólnot¹ Europejsk¹ i jej pañstwami cz³onkowskimi umowê reguluj¹c¹ swobodê œwiadczenia us³ug oraz Komisji Europejskiej, Pañstwowej Inspekcji Pracy, Pañstwowej Inspekcji Sanitarnej 
+– w uzgodnionym zakresie, niezbêdnym do wykonywania statutowych zadañ, przy czym zakres informacji udostêpnianych ww. podmiotom nie mo¿e obejmowaæ przewidywanej liczby pracu­j¹cych i w przypadku gospodarstw rolnych -powierzchni ogólnej i powierzchni u¿ytków rolnych. 
+2. Zgodnie z art. 45 ust. 1 ustawy o statystyce publicznej osobom trzecim, z rejestru REGON 
+udostêpnia siê nastêpuj¹ce informacje o podmiocie: 
+
+2.1 nazwa i adres siedziby, a w przypadku osób fizycznych dodatkowo nazwisko i imiona, 
+2.2 numer identyfikacji podatkowej NIP, 
+2.3 forma prawna i forma w³asnoœci, 
+2.4 wykonywana dzia³alnoœæ, w tym rodzaj przewa¿aj¹cej dzia³alnoœci, 
+2.5 daty: powstania, rozpoczêcia dzia³alnoœci, zawieszenia i wznowienia dzia³alnoœci, wpisu do ewidencji lub rejestru, zakoñczenia dzia³alnoœci albo skreœlenia z ewidencji lub rejestru, wpisu oraz skreœlenia z rejestru podmiotów, 
+2.6 nazwa organu rejestrowego lub ewidencyjnego, nazwa rejestru (ewidencji) i nadany przez ten organ numer, 
+2.7 dane o wpisanych w rejestrze REGON jednostkach lokalnych podmiotów w zakresie informacji okreœlonych w pkt 2.1 i 2.4-2.6, 
+
+2.8 numer telefonu i faksu siedziby, adres poczty elektronicznej oraz strony internetowej, o ile 
+podmiot takie posiada i poda do rejestru podmiotów, przy czym osobom trzecim nie udostêpnia siê informacji o numerze telefonu i faksu osób fizycznych podlegaj¹cych wpisowi do centralnej Ewidencji i Informacji o dzia³alnoœci Gospodarczej. 
+3. 
+Zgodnie z art. 45a G³ówny Urz¹d Statystyczny udostêpnia informacje z rejestru REGON na stronie internetowej GUS, na której funkcjonuje wyszukiwarka podmiotów gospodarki narodowej. 
+
+4. 
+Dane jawne lecz nieudostêpniane przez us³ugê sieciow¹ (np. wyszukiwanie wg PKD) mo¿na uzyskaæ korzystaj¹c z p³atnej us³ugi wyszukiwania „off-line” (dane na noœniku). Szczegó³y: 
+
+
+http://bip.stat.gov.pl/dzialalnosc-statystyki-publicznej/rejestr-regon/zasady-udostepniania­
+danych-z-rejestru/ 
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+5. Regulamin korzystania z us³ugi 
+§ 1. Definicje 
+1. 
+Us³ugodawca -G³ówny Urz¹d Statystyczny, z siedzib¹ przy al. Niepodleg³oœci 208, 00-925 Warszawa 
+
+2. 
+Us³ugobiorca – podmiot zarejestrowany w systemie, korzystaj¹cy z us³ugi BIR1 
+
+3. 
+Us³uga udostêpniania danych z rejestru REGON (Us³uga BIR1) -oprogramowanie, us³uga sieciowa, pozwalaj¹ca na pobieranie danych z rejestru REGON bezpoœrednio z poziomu zewnêtrznych systemów teleinformatycznych. 
+
+4. 
+Klucz u¿ytkownika -Dwudziestoznakowy ci¹g liter i cyfr umo¿liwiaj¹cy Us³ugobiorcy korzystanie z Us³ugi BIR1. 
+
+
+
+§ 2. Zasady korzystania z Us³ugi BIR1 
+1. 
+Korzystanie z Us³ugi BIR1, zwanej dalej Us³ug¹, wi¹¿e siê z akceptacj¹ niniejszego regulaminu (wraz z póŸniejszymi zmianami). 
+
+2. 
+Dostêp do Us³ugi BIR1 jest bezp³atny. 
+
+3. 
+Metody udostêpniane przez Us³ugê mog¹ byæ implementowane w dowolnych systemach teleinformatycznych, u¿ywanych b¹dŸ wytwarzanych przez Us³ugobiorcê. 
+
+4. 
+Niedozwolone s¹ dzia³ania mog¹ce doprowadziæ do przeci¹¿enia systemu b¹dŸ jego nieprawid³owego dzia³ania. W szczególnoœci niedozwolone s¹ nastêpuj¹ce dzia³ania: 
+
+. 
+Wysy³anie do us³ugi bardzo du¿ej liczby ¿¹dañ o dane w krótkim czasie 
+
+. 
+Zak³adanie wielu kont przez ten sam podmiot. 
+
+. 
+Przekraczanie okreœlonych w instrukcji limitów zapytañ. 
+
+
+
+
+
+§ 3. Odpowiedzialnoœæ 
+1. 
+Us³ugodawca zastrzega sobie prawo do wprowadzania modyfikacji do systemu, prowadzenia prac konserwacyjnych oraz innych dzia³añ mog¹cych powodowaæ czasow¹ niedostêpnoœæ lub utrudnienia w korzystaniu z Us³ugi BIR1. 
+
+2. 
+Us³ugodawca nie ponosi odpowiedzialnoœci z tytu³u utraconych korzyœci poniesionych przez Us³ugobiorcê lub osoby trzecie korzystaj¹ce z Us³ugi BIR1. 
+
+3. 
+Us³ugodawca nie ponosi odpowiedzialnoœci za brak mo¿liwoœci dostêpu do us³ug wynikaj¹cy z niezgodnego ze specyfikacj¹ techniczn¹ wykorzystywania Us³ugi BIR1. 
+
+
+
+§ 4. Ochrona danych i prywatnoœæ 
+1. 
+Us³ugobiorca w momencie rejestracji wyra¿a zgodê na przechowywanie i przetwarzanie danych osobowych przez Us³ugodawcê, na warunkach okreœlonych w ustawie o œwiadczeniu us³ug drog¹ elektroniczn¹ oraz ustawie o ochronie danych osobowych. 
+
+2. 
+Us³ugodawca gromadzi, podane w trakcie rejestracji, informacje o Us³ugobiorcach wy³¹cznie w celu obs³ugi kontrolowania dostêpu do Us³ugi BIR1. 
+
+3. 
+Podczas komunikacji z us³ug¹, system automatycznie odnotowuje dane techniczne Us³ugobiorcy takie jak: adres IP urz¹dzenia, datê, czas i treœæ wysy³anych do Us³ugi BIR1 ¿¹dañ. 
+
+
+Instrukcja techniczna us³ugi BIR1  2024  
+
+
+
+
+6. Gwarancja jakoœci us³ug (ang. Service Level Agreement) 
+1. Definicje 
+Us³ugodawca -G³ówny Urz¹d Statystyczny, z siedzib¹ przy al. Niepodleg³oœci 208, 00-925 Warszawa Us³ugobiorca – Podmiot korzystaj¹cy z us³ugi BIR1 dostêpu do danych z rejestru REGON. Awaria -niezaplanowana niedostêpnoœæ us³ugi BIR1 przez czas d³u¿szy ni¿ 15 minut. Przerwa techniczna -zaplanowana niedostêpnoœæ us³ugi BIR1 zwi¹zana z koniecznoœci¹ przeprowadzenia prac konserwacyjnych. Problem -zg³oszony telefonicznie lub za poœrednictwem poczty elektronicznej problem lub zapytanie odnoœnie funkcjonowania us³ugi BIR1. 
+2. Zg³oszenie Awarii lub Problemu 
+Zg³oszeñ Awarii lub Problemów nale¿y dokonywaæ za poœrednictwem poczty elektronicznej lub 
+telefonicznie. 
+• Na adres email: regon_bir@stat.gov.pl 
+W treœci zg³oszenia nale¿y podaæ czy dotyczy ono problemu/awarii, imiê i nazwisko oraz stacjonarny 
+numer telefonu osoby do kontaktu. 
+• Telefonicznie: pod numerem telefonu 22 608-33-74 lub 22 608-36-39 
+
+3. Gwarancja dostêpnoœci us³ug 
+Zapewniana jest dostêpnoœæ na poziomie: 98,0%. 
+
+
+4. Przerwy techniczne 
+Us³ugodawca informuje Us³ugobiorcê o planowanych przerwach technicznych z 24 godzinnym wyprzedzeniem. Informacje o przerwach technicznych bêd¹ przekazywane na adres email osoby wskazanej przez Us³ugobiorcê w trakcie rejestracji. Informacje bêd¹ wysy³ane z adresu email 
+regon_bir@stat.gov.pl 
+5. Wyj¹tki 
+Gwarancja jakoœci us³ug nie obejmuje nastêpuj¹cych sytuacji: 
+. 
+Niedostêpnoœæ us³ugi spowodowana jest dzia³aniem si³y wy¿szej 
+
+. 
+Niedostêpnoœæ us³ugi spowodowana jest awari¹ urz¹dzeñ nie bêd¹cych czêœci¹ systemu 
+
+
+teleinformatycznego GUS 
+. Niedostêpnoœæ us³ugi spowodowana jest dzia³aniem Us³ugobiorcy, w szczególnoœci niestosowaniem siê do Regulaminu korzystania z us³ugi, b¹dŸ ustaleñ porozumienia z GUS. 
+
+
+
+7. Wsparcie techniczne 
+W trakcie integracji oraz dalszej eksploatacji us³ugi BIR1 zapewniamy wsparcie techniczne. Pytania prosimy kierowaæ na adres email regon_bir@stat.gov.pl lub kontaktowaæ siê telefonicznie pod numerem telefonu 22-608-33-74 lub 22-608-36-39 
+Uwaga: prosimy zapoznaæ siê z ca³¹ udostêpnion¹ dokumentacj¹ (a w szczególnoœci z niniejsz¹ Instrukcj¹ oraz przyk³adami dot. konfiguracji i kodu Ÿród³owego). 
+
+
+8. Za³¹czniki 
+. 
+Przyk³ady konfiguracji i kodu: BIR11_Przyklady 
+
+. 
+Specyfikacje xsd struktur danych: folder BIR11_StrukturyDanych 
+
+. 
+Przewodnik dotycz¹cy migracji z wersji us³ugi 1 do 1.1: BIR1-BIR11_Migracja 
+
+. 
+S³owniki wykorzystywane w rejestrze REGON (oprócz danych z rejestru TERYT): BIR11_Slowniki-2021.xlsx 
+
+. 
+S³owniki kodów PKD: BIR11_SlownikPKD2007_wersja2020.xlsx 
+
+. 
+Przyk³adowe dane zwracane przez Us³ugê: BIR11-PrzykladoweDane.xml 
+
+
+

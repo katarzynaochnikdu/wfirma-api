@@ -1,0 +1,864 @@
+---
+description: "Sprawdzone praktyki dla widgetów Zoho CRM typu Related List (z buttona w rekordzie)"
+alwaysApply: true
+---
+
+# Manual Najlepszych Praktyk – Widget CRM w Rekordzie (Button/Related List)
+
+## 1. INICJALIZACJA SDK – Zawsze w tej kolejności
+
+### Funkcje SDK:
+- `ZOHO.embeddedApp.on('PageLoad', callback)` - Rejestracja handlera zdarzenia załadowania strony
+- `ZOHO.embeddedApp.init()` - Inicjalizacja SDK
+
+### Cel:
+Prawidłowe przechwycenie kontekstu rekordu i uniknięcie sytuacji, gdy widget się załadował, ale PageLoad nie został wywołany.
+
+### Sprawdzona struktura:
+```javascript
+// 1. NAJPIERW rejestruj handler PageLoad
+ZOHO.embeddedApp.on('PageLoad', async function(data) {
+  // Cała logika widgetu tutaj
+});
+
+// 2. DOPIERO POTEM inicjalizuj SDK
+ZOHO.embeddedApp.init();
+```
+
+### Uwagi:
+- W trybie lokalnym (zet run) init może nie zadziałać – dodaj try/catch z logowaniem
+- PageLoad wywoła się automatycznie po init (jeśli widget jest w rekordzie)
+
+---
+
+## 2. POBIERANIE KONTEKSTU REKORDU – Multi-fallback Strategy
+
+### Funkcje SDK:
+- `data.EntityId` / `data.Entity` (z eventu PageLoad)
+- `ZOHO.CRM.UTIL.getQueryParams()` - Parametry URL (Web Tab)
+- `ZOHO.CRM.UI.getPageInfo()` - Informacje o aktualnej stronie
+- `new URLSearchParams(window.location.search)` - Natywne JS (ostateczny fallback)
+
+### Cel:
+Widget musi działać zarówno jako button w rekordzie, jak i w trybie Web Tab / standalone.
+
+### Sprawdzony kod:
+```javascript
+var currentRecordId = '';
+var currentEntity = '';
+
+ZOHO.embeddedApp.on('PageLoad', async function(data) {
+  // Wariant 1: Z eventu PageLoad (najbardziej niezawodny dla button widget)
+  if (data && (data.EntityId || data.Entity)) {
+    currentRecordId = Array.isArray(data.EntityId) ? data.EntityId[0] : data.EntityId;
+    currentEntity = data.Entity || data.Module || 'Accounts';
+    appendLog('Kontekst z PageLoad: ' + currentEntity + ' ID=' + currentRecordId);
+  }
+  
+  // Wariant 2: ZOHO.CRM.UTIL.getQueryParams (Web Tab)
+  if (!currentRecordId) {
+    try {
+      if (ZOHO?.CRM?.UTIL?.getQueryParams) {
+        var qp = await ZOHO.CRM.UTIL.getQueryParams();
+        currentRecordId = qp.recId || qp.recordId || qp.id || '';
+        currentEntity = qp.entity || qp.module || 'Accounts';
+      }
+    } catch(e) { appendLog('UTIL.getQueryParams error: ' + e.message); }
+  }
+  
+  // Wariant 3: ZOHO.CRM.UI.getPageInfo
+  if (!currentRecordId) {
+    try {
+      if (ZOHO?.CRM?.UI?.getPageInfo) {
+        var pInfo = await ZOHO.CRM.UI.getPageInfo();
+        currentRecordId = Array.isArray(pInfo.EntityId) ? pInfo.EntityId[0] : pInfo.EntityId;
+        currentEntity = pInfo.Entity || pInfo.Module || 'Accounts';
+      }
+    } catch(e) { appendLog('UI.getPageInfo error: ' + e.message); }
+  }
+  
+  // Wariant 4: Natywne URLSearchParams (ostateczny fallback)
+  if (!currentRecordId) {
+    var params = new URLSearchParams(window.location.search);
+    currentRecordId = params.get('recId') || params.get('recordId') || params.get('id') || '';
+    currentEntity = params.get('entity') || params.get('module') || 'Accounts';
+  }
+});
+```
+
+### Uwagi:
+- Zawsze loguj skąd pochodzi kontekst (debugging)
+- EntityId może być tablicą (Related List) – użyj `pickFirst(value)` helper
+- Domyślny moduł to 'Accounts' jeśli nic nie zwróci
+
+---
+
+## 3. POBIERANIE DANYCH REKORDU
+
+### Funkcje SDK:
+- `ZOHO.CRM.API.getRecord({ Entity, RecordID })` - Pobiera pojedynczy rekord
+
+### Cel:
+Odczytanie aktualnych wartości pól w rekordzie, które widget ma zaktualizować lub porównać.
+
+### Sprawdzony kod:
+```javascript
+try {
+  var recordResp = await ZOHO.CRM.API.getRecord({
+    Entity: currentEntity,
+    RecordID: currentRecordId
+  });
+  
+  // Defensywne sprawdzanie odpowiedzi
+  if (recordResp && recordResp.data && recordResp.data[0]) {
+    var record = recordResp.data[0];
+    
+    // Przykład odczytu pól
+    var nipFromRecord = record.Firma_NIP || '';
+    var nazwaZwyczajowa = record.Nazwa_zwyczajowa || '';
+    var adresWRekordzie = record.Adres_w_rekordzie || '';
+    
+    appendLog('Rekord pobrany, NIP: ' + nipFromRecord);
+  }
+} catch(e) {
+  appendLog('Błąd getRecord: ' + e.message);
+}
+```
+
+### Uwagi:
+- Odpowiedź zawsze w `resp.data[0]` (tablica, nawet dla 1 rekordu)
+- Pola custom: używaj API name (np. `Firma_NIP`)
+- Pola systemowe: `Account_Name`, `Owner`, `Created_Time` itd.
+- Picklisty zwracają wartość tekstową (nie ID)
+
+---
+
+## 4. WYSZUKIWANIE REKORDÓW (Search by Criteria)
+
+### Funkcje SDK:
+- `ZOHO.CRM.API.searchRecord({ Entity, Type, Query, page, per_page })` - Wyszukiwanie rekordów
+
+### Cel:
+Sprawdzenie duplikatów, wyszukiwanie powiązanych rekordów, walidacja przed zapisem.
+
+### Sprawdzony kod:
+```javascript
+try {
+  var searchCriteria = '(Firma_NIP:equals:' + nip + ')';
+  
+  var searchResp = await ZOHO.CRM.API.searchRecord({
+    Entity: 'Accounts',
+    Type: 'criteria',
+    Query: searchCriteria,
+    page: 1,
+    per_page: 10
+  });
+  
+  var rows = (searchResp && searchResp.data) ? searchResp.data : [];
+  
+  if (rows.length > 0) {
+    appendLog('Znaleziono ' + rows.length + ' rekordów');
+    
+    for (var i = 0; i < rows.length; i++) {
+      var rec = rows[i];
+      // Pomiń obecny rekord w wynikach
+      if (rec.id === currentRecordId) continue;
+      
+      // Sprawdź warunki
+      if (rec.Adres_w_rekordzie === 'Siedziba') {
+        appendLog('Duplikat: ' + rec.Account_Name + ' (ID: ' + rec.id + ')');
+      }
+    }
+  }
+} catch(e) {
+  appendLog('Błąd searchRecord: ' + e.message);
+}
+```
+
+### Operatory kryteriów:
+- `equals` - dokładne dopasowanie
+- `starts_with` - zaczyna się od
+- `contains` - zawiera
+- `greater_than`, `less_than` - porównania liczbowe/datowe
+
+### Format Query:
+- Pojedyncze: `(Field:operator:value)`
+- AND: `((Field1:equals:val1)and(Field2:equals:val2))`
+- OR: `((Field1:equals:val1)or(Field2:equals:val2))`
+
+### Uwagi:
+- Paginacja: `page` i `per_page` (max 200)
+- Sprawdź `resp.info.more_records` dla kolejnych stron
+- Puste wyniki: `resp.data` może być undefined lub pusta tablica
+
+---
+
+## 5. AKTUALIZACJA REKORDU
+
+### Funkcje SDK:
+- `ZOHO.CRM.API.updateRecord({ Entity, APIData })` - Aktualizacja rekordu
+
+### Cel:
+Zapis danych do rekordu CRM po walidacji/transformacji.
+
+### Sprawdzony kod:
+```javascript
+try {
+  var apiData = {
+    id: currentRecordId,  // WYMAGANE!
+    Account_Name: 'NOWA NAZWA FIRMY',
+    Firma_NIP: '1234567890',
+    Billing_City: 'Warszawa',
+    Billing_Code: '00-001'
+  };
+  
+  var updateResp = await ZOHO.CRM.API.updateRecord({
+    Entity: currentEntity,
+    APIData: apiData
+  });
+  
+  // Sprawdzenie sukcesu
+  if (updateResp && updateResp.data && updateResp.data[0] && updateResp.data[0].code === 'SUCCESS') {
+    appendLog('✓ Dane zapisane pomyślnie!');
+    showSuccessModal();
+  } else {
+    appendLog('Błąd zapisu: ' + JSON.stringify(updateResp));
+    showErrorModal('Błąd podczas zapisu.');
+  }
+} catch(e) {
+  appendLog('Wyjątek podczas zapisu: ' + e.message);
+  showErrorModal('Wystąpił błąd: ' + e.message);
+}
+```
+
+### Uwagi:
+- Pole `id` w APIData jest OBOWIĄZKOWE
+- Workflow trigger: dodaj `Trigger: ['workflow']` jeśli potrzebne
+- Odpowiedź: `resp.data[0].code` = 'SUCCESS' lub błąd
+- Nie wszystkie pola mogą być edytowalne przez API (sprawdź field permissions)
+
+---
+
+## 6. POBIERANIE METADANYCH MODUŁÓW
+
+### Funkcje SDK:
+- `ZOHO.CRM.META.getModules()` - Lista wszystkich modułów
+- `ZOHO.CRM.META.getFields({ Entity })` - Pola danego modułu
+
+### Cel:
+Dynamiczne rozpoznawanie API name modułu po etykiecie lub pobieranie picklistów.
+
+### Sprawdzony kod (getModules):
+```javascript
+async function resolveModuleApiNameByLabel(preferredLabel) {
+  try {
+    if (!ZOHO?.CRM?.META?.getModules) {
+      appendLog('getModules niedostępne');
+      return '';
+    }
+    
+    var mods = await ZOHO.CRM.META.getModules();
+    var items = (mods && mods.modules) ? mods.modules : [];
+    var lower = String(preferredLabel || '').toLowerCase();
+    
+    for (var i = 0; i < items.length; i++) {
+      var m = items[i];
+      var sing = (m.singular_label || '').toLowerCase();
+      var plur = (m.plural_label || '').toLowerCase();
+      
+      if (sing === lower || plur === lower) {
+        appendLog('Moduł "' + preferredLabel + '" → ' + m.api_name);
+        return m.api_name;
+      }
+    }
+    
+    appendLog('Nie znaleziono modułu: ' + preferredLabel);
+    return '';
+  } catch(e) {
+    appendLog('Błąd getModules: ' + e.message);
+    return '';
+  }
+}
+```
+
+### Sprawdzony kod (getFields dla picklisty):
+```javascript
+try {
+  var fieldsResp = await ZOHO.CRM.META.getFields({ Entity: 'Accounts' });
+  var fields = (fieldsResp && fieldsResp.fields) ? fieldsResp.fields : [];
+  
+  for (var i = 0; i < fields.length; i++) {
+    var field = fields[i];
+    
+    if (field.api_name === 'Adres_w_rekordzie' && field.pick_list_values) {
+      var options = field.pick_list_values;
+      appendLog('Picklista ma ' + options.length + ' opcji');
+      // options[i].display_value, options[i].actual_value
+    }
+  }
+} catch(e) {
+  appendLog('Błąd getFields: ' + e.message);
+}
+```
+
+### Uwagi:
+- Cache'uj wyniki getModules/getFields (nie zmieniają się w trakcie sesji)
+- Picklisty: `field.pick_list_values` (tablica obiektów)
+- Field types: `text`, `picklist`, `lookup`, `date`, `number`, `currency`, etc.
+
+---
+
+## 7. POBIERANIE ZMIENNYCH ORGANIZACYJNYCH
+
+### Funkcje SDK:
+- `ZOHO.CRM.API.getOrgVariable(name)` - Wariant 1
+- `ZOHO.CRM.CONFIG.getOrgVariable(name)` - Wariant 2
+
+### Cel:
+Pobieranie kluczy API, konfiguracji środowiska bez hardcodowania w kodzie widgetu.
+
+### Sprawdzony kod:
+```javascript
+// Helper: ekstrakcja wartości z różnych formatów odpowiedzi SDK
+function extractOrgVarValue(resp) {
+  if (!resp) return '';
+  if (typeof resp.value === 'string') return resp.value;
+  if (resp.data && typeof resp.data.value === 'string') return resp.data.value;
+  if (resp.Success && typeof resp.Success.Content === 'string') return resp.Success.Content;
+  if (resp.Success && typeof resp.Success.content === 'string') return resp.Success.content;
+  return '';
+}
+
+async function loadGusApiKey() {
+  var value = '';
+  
+  // Próba 1: ZOHO.CRM.API.getOrgVariable
+  try {
+    if (ZOHO?.CRM?.API?.getOrgVariable) {
+      var r1 = await ZOHO.CRM.API.getOrgVariable('GUS_API_KEY');
+      value = extractOrgVarValue(r1);
+      if (value) {
+        appendLog('Pobrano klucz przez API.getOrgVariable');
+        return value;
+      }
+    }
+  } catch(e1) {
+    appendLog('Błąd API.getOrgVariable: ' + e1.message);
+  }
+  
+  // Próba 2: ZOHO.CRM.CONFIG.getOrgVariable
+  try {
+    if (ZOHO?.CRM?.CONFIG?.getOrgVariable) {
+      var r2 = await ZOHO.CRM.CONFIG.getOrgVariable('GUS_API_KEY');
+      value = extractOrgVarValue(r2);
+      if (value) {
+        appendLog('Pobrano klucz przez CONFIG.getOrgVariable');
+        return value;
+      }
+    }
+  } catch(e2) {
+    appendLog('Błąd CONFIG.getOrgVariable: ' + e2.message);
+  }
+  
+  return value;
+}
+```
+
+### Uwagi:
+- Różne wersje SDK zwracają różne struktury – stąd `extractOrgVarValue`
+- Nigdy nie loguj pełnej wartości klucza – użyj maskowania (np. `****` lub `abc...xyz`)
+- Zmienne org: Setup → Developer Space → Organization Variables
+
+---
+
+## 8. ZAMYKANIE WIDGETU
+
+### Funkcje SDK:
+- `ZOHO.CRM.UI.Popup.close()` - Zamyka widget typu popup/modal
+
+### Cel:
+Zamknięcie widgetu po zakończeniu akcji (zapis, anulowanie).
+
+### Sprawdzony kod:
+```javascript
+try {
+  ZOHO.CRM.UI.Popup.close().then(function() {
+    appendLog('Widget zamknięty');
+  }).catch(function(err) {
+    appendLog('Błąd zamykania: ' + (err && err.message ? err.message : String(err)));
+  });
+} catch(e) {
+  appendLog('Wyjątek podczas zamykania: ' + e.message);
+}
+```
+
+### Uwagi:
+- Działa tylko dla widgetów typu Button/Related List (nie Web Tab)
+- Promise zwraca sukces/błąd
+- Po zamknięciu strona CRM automatycznie się odświeży (zależnie od kontekstu)
+
+---
+
+## 9. OTWIERANIE REKORDU W NOWEJ KARCIE
+
+### Funkcje SDK:
+- `ZOHO.CRM.UI.Record.open({ Entity, RecordID })` - Otwiera rekord w tym samym oknie
+- `window.open(url, '_blank')` - Natywne JS (nowa karta)
+
+### Cel:
+Przekierowanie użytkownika do innego rekordu (np. znalezionego duplikatu).
+
+### Sprawdzony kod (nowa karta):
+```javascript
+// Metoda 1: Natywny JS (nowa karta)
+var recordUrl = 'https://crm.zoho.eu/crm/org20101283812/tab/Accounts/' + recordId;
+window.open(recordUrl, '_blank');
+appendLog('Otwarto rekord w nowej karcie: ' + recordId);
+
+// Metoda 2: SDK (ta sama karta – zastępuje widget)
+try {
+  ZOHO.CRM.UI.Record.open({
+    Entity: 'Accounts',
+    RecordID: recordId
+  });
+} catch(e) {
+  appendLog('Błąd Record.open: ' + e.message);
+}
+```
+
+### Uwagi:
+- URL orgID: pobierz z własnego CRM (Setup → Developer Space → API)
+- `.eu` lub `.com` zależnie od datacenter
+- `window.open` nie wymaga SDK, działa zawsze
+- `Record.open` może nie działać w trybie sandbox/localhost
+
+---
+
+## 10. TWORZENIE REKORDÓW W CUSTOM MODUŁACH
+
+### Funkcje SDK:
+- `ZOHO.CRM.API.insertRecord({ Entity, APIData, Trigger? })` - Tworzy nowy rekord
+
+### Cel:
+Zapis danych do custom modułu (np. archiwizacja, repozytoria danych).
+
+### Sprawdzony kod:
+```javascript
+try {
+  var noteMap = {
+    Parent_Id: currentRecordId,  // Powiązanie z rekordem nadrzędnym
+    Note_Title: 'Import z GUS',
+    Note_Content: 'Dane pobrane dnia ' + new Date().toISOString()
+  };
+  
+  var insertResp = await ZOHO.CRM.API.insertRecord({
+    Entity: 'Notes',
+    APIData: noteMap,
+    Trigger: ['workflow']  // Opcjonalnie: uruchom workflow
+  });
+  
+  if (insertResp && insertResp.data && insertResp.data[0] && insertResp.data[0].code === 'SUCCESS') {
+    var newId = insertResp.data[0].details.id;
+    appendLog('✓ Utworzono rekord: ' + newId);
+  } else {
+    appendLog('Błąd insertRecord: ' + JSON.stringify(insertResp));
+  }
+} catch(e) {
+  appendLog('Wyjątek insertRecord: ' + e.message);
+}
+```
+
+### Uwagi:
+- Nie podawaj `id` w APIData (SDK sam wygeneruje)
+- `Trigger: ['workflow']` – użyj tylko jeśli faktycznie potrzebne (może spowolnić)
+- Odpowiedź: `resp.data[0].details.id` zawiera ID nowego rekordu
+- Mandatory fields: sprawdź w Module Builder (Setup → Modules)
+
+---
+
+## 11. UI/UX – NAJLEPSZE PRAKTYKI
+
+### Elementy UI sprawdzone w projekcie:
+
+#### Spinner ładowania:
+```html
+<div id="loadingSpinner" class="loading-spinner d-none">
+  <div class="spinner"></div>
+  <div class="loading-pill">Ładowanie danych...</div>
+</div>
+```
+
+```javascript
+// Pokaż spinner
+document.getElementById('loadingSpinner').classList.remove('d-none');
+
+// Ukryj spinner
+document.getElementById('loadingSpinner').classList.add('d-none');
+```
+
+#### Modalne okna (sukces/błąd/info):
+```javascript
+function showSuccessModal() {
+  document.getElementById('successModal').classList.remove('d-none');
+}
+
+function showErrorModal(message) {
+  document.getElementById('errorModalBody').textContent = message;
+  document.getElementById('errorModal').classList.remove('d-none');
+}
+
+function showInfoModal(title, message) {
+  document.getElementById('infoModalTitle').textContent = title;
+  document.getElementById('infoModalBody').textContent = message;
+  document.getElementById('infoModal').classList.remove('d-none');
+}
+```
+
+#### Panel logów (toggle, kopiowanie):
+```javascript
+var isLogPanelOpen = false;
+
+function toggleLogPanel() {
+  var panel = document.getElementById('logsPanel');
+  if (panel.classList.contains('visible')) {
+    panel.classList.remove('visible');
+    isLogPanelOpen = false;
+  } else {
+    panel.classList.add('visible');
+    isLogPanelOpen = true;
+  }
+}
+
+function appendLog(message) {
+  var container = document.getElementById('logsContent');
+  var time = new Date().toISOString();
+  var div = document.createElement('div');
+  div.className = 'log-entry info';
+  div.textContent = '[' + time + '] ' + message;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+// Kopiowanie logów
+document.getElementById('logsCopy').addEventListener('click', function() {
+  var content = document.getElementById('logsContent').innerText || '';
+  var ta = document.createElement('textarea');
+  ta.value = content;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  appendLog('Logi skopiowane do schowka.');
+});
+```
+
+### Uwagi:
+- Zawsze informuj użytkownika o stanie operacji (loading, success, error)
+- Panel logów: niezbędny do debugowania w produkcji
+- Modalne: używaj `aria-*` atrybutów dla accessibility
+
+---
+
+## 12. DEFENSYWNE KODOWANIE – MUST HAVE
+
+### Sprawdzanie dostępności API:
+```javascript
+// Przed każdym użyciem SDK sprawdź dostępność
+if (window.ZOHO && ZOHO.CRM && ZOHO.CRM.API && typeof ZOHO.CRM.API.getRecord === 'function') {
+  // Bezpieczne wywołanie
+} else {
+  appendLog('API niedostępne');
+}
+
+// Skrócona forma (optional chaining):
+if (ZOHO?.CRM?.API?.getRecord) {
+  // OK
+}
+```
+
+### Try-catch wokół wszystkich wywołań SDK:
+```javascript
+try {
+  var resp = await ZOHO.CRM.API.getRecord({...});
+  // ...
+} catch(e) {
+  appendLog('Błąd: ' + (e && e.message ? e.message : String(e)));
+}
+```
+
+### Defensywne przetwarzanie odpowiedzi:
+```javascript
+// ZŁE:
+var name = resp.data[0].Account_Name;
+
+// DOBRE:
+var rows = (resp && resp.data) ? resp.data : [];
+var name = (rows.length > 0 && rows[0].Account_Name) ? rows[0].Account_Name : '';
+```
+
+### Helper dla tablic/wartości:
+```javascript
+function pickFirst(value) {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value[0] : '';
+  }
+  if (value === 0) return '0';
+  return value ? String(value) : '';
+}
+```
+
+### Uwagi:
+- SDK może zwracać różne struktury w różnych wersjach
+- Zawsze zakładaj, że odpowiedź może być null/undefined
+- Loguj wszystkie niestandardowe sytuacje
+
+---
+
+## 13. WALIDACJA DANYCH – Przykład NIP
+
+### Cel:
+Walidacja po stronie klienta przed wysłaniem do API (szybsza reakcja UI).
+
+### Sprawdzony kod (algorytm kontrolny NIP):
+```javascript
+function validateNIP(nip) {
+  var clean = String(nip).replace(/[^0-9]/g, '');
+  if (clean.length !== 10) return false;
+  
+  var weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  var sum = 0;
+  
+  for (var i = 0; i < 9; i++) {
+    sum += parseInt(clean[i]) * weights[i];
+  }
+  
+  var checksum = sum % 11;
+  if (checksum === 10) checksum = 0;
+  
+  return checksum === parseInt(clean[9]);
+}
+
+function formatNIP(nip) {
+  var clean = String(nip).replace(/[^0-9]/g, '');
+  if (clean.length <= 3) return clean;
+  if (clean.length <= 6) return clean.slice(0, 3) + '-' + clean.slice(3);
+  if (clean.length <= 8) return clean.slice(0, 3) + '-' + clean.slice(3, 6) + '-' + clean.slice(6);
+  return clean.slice(0, 3) + '-' + clean.slice(3, 6) + '-' + clean.slice(6, 8) + '-' + clean.slice(8, 10);
+}
+
+// Auto-formatowanie podczas wpisywania
+nipInput.addEventListener('input', function(e) {
+  var cursorPos = e.target.selectionStart;
+  var oldValue = e.target.value;
+  var newValue = formatNIP(oldValue);
+  
+  if (newValue !== oldValue) {
+    e.target.value = newValue;
+    var diff = newValue.length - oldValue.length;
+    e.target.setSelectionRange(cursorPos + diff, cursorPos + diff);
+  }
+  
+  updateNipStatus(newValue);
+});
+```
+
+### Uwagi:
+- Walidacja kliencka = lepsza UX, ale NIE zastępuje walidacji serwerowej
+- Formatowanie live: użyj `input` event (nie `change`)
+- Przywracaj pozycję kursora po auto-formatowaniu
+
+---
+
+## 14. PORÓWNYWANIE DANYCH – Tabela z checkboxami
+
+### Cel:
+Pokazanie użytkownikowi różnic między danymi w CRM a nowymi danymi, wybór pól do aktualizacji.
+
+### Sprawdzona struktura HTML:
+```html
+<div class="comparison-table">
+  <div class="comparison-header">
+    <div>Pole</div>
+    <div>Posiadane dane</div>
+    <div>Nowe dane</div>
+  </div>
+  <div id="cmp-table-body">
+    <!-- Wiersze dynamiczne -->
+  </div>
+</div>
+```
+
+### Sprawdzony kod JS:
+```javascript
+function row(label, field, curVal, newVal, checkedDefault) {
+  var isEmpty = !curVal;
+  var checked = (checkedDefault === true || (checkedDefault === undefined && isEmpty)) ? ' checked' : '';
+  
+  return '<div class="comparison-row">' +
+    '<div>' + label + '</div>' +
+    '<div>' + (curVal || '-') + '</div>' +
+    '<div><label class="checkbox-item">' +
+      '<input type="checkbox" data-field="' + field + '"' + checked + '> ' +
+      (newVal || '-') +
+    '</label></div>' +
+  '</div>';
+}
+
+// Generowanie wierszy
+var rowsHtml = '';
+rowsHtml += row('Nazwa firmy', 'Account_Name', currentRecordData.Account_Name, fetchedData.nazwa, true);
+rowsHtml += row('REGON', 'Firma_REGON', currentRecordData.Firma_REGON, fetchedData.regon);
+rowsHtml += row('Miasto', 'Billing_City', currentRecordData.Billing_City, fetchedData.miejscowosc);
+
+document.getElementById('cmp-table-body').innerHTML = rowsHtml;
+
+// Zaznacz/odznacz wszystkie
+function selectAllFields(checked) {
+  var checkboxes = document.querySelectorAll('[data-field]');
+  for (var i = 0; i < checkboxes.length; i++) {
+    checkboxes[i].checked = checked;
+  }
+}
+
+// Zbieranie zaznaczonych pól przed zapisem
+var apiData = {};
+var checkboxes = document.querySelectorAll('[data-field]');
+for (var i = 0; i < checkboxes.length; i++) {
+  if (checkboxes[i].checked) {
+    var fieldName = checkboxes[i].getAttribute('data-field');
+    apiData[fieldName] = fieldMap[fieldName];
+  }
+}
+```
+
+### Uwagi:
+- Domyślnie zaznacz pola puste w CRM (logika: `isEmpty ? checked : unchecked`)
+- Użytkownik zawsze powinien mieć kontrolę – przyciski "Zaznacz wszystkie" / "Odznacz wszystkie"
+- Highlight pustych pól (np. żółte tło) – ułatwia identyfikację
+
+---
+
+## 15. KOMUNIKACJA Z BACKENDEM (Fetch API)
+
+### Cel:
+Wywołanie zewnętrznego API (np. GUS, własne usługi) z widgetu.
+
+### Sprawdzony kod:
+```javascript
+try {
+  var backendBaseUrl = window.GOOGIE_GUS_BACKEND_URL || 'https://backend.example.com';
+  
+  var resp = await fetch(backendBaseUrl + '/api/gus/name-by-nip', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-gus-api-key': GUS_API_KEY_VALUE
+    },
+    body: JSON.stringify({ nip: nip })
+  });
+  
+  var text = await resp.text();
+  var data = JSON.parse(text);
+  
+  if (!resp.ok) {
+    appendLog('HTTP ' + resp.status + ': ' + (data.error || 'Błąd'));
+    showErrorModal(data.error || 'Nie udało się pobrać danych');
+    return;
+  }
+  
+  appendLog('Sukces: ' + JSON.stringify(data));
+  // Przetwarzaj data...
+} catch(err) {
+  appendLog('Fetch error: ' + err.message);
+  showErrorModal('Błąd połączenia: ' + err.message);
+}
+```
+
+### Uwagi:
+- Zawsze sprawdzaj `resp.ok` przed parsowaniem JSON
+- Użyj `await resp.text()` zamiast `await resp.json()` – łatwiej debugować
+- CORS: backend musi zwracać header `Access-Control-Allow-Origin: *`
+- Timeout: natywny Fetch nie ma timeoutu – użyj `Promise.race` jeśli potrzebne
+
+---
+
+## 16. CHECKLISTY I DEBUGGING
+
+### Checklist przed publikacją:
+- [ ] SDK 1.2 URL w `<head>`: `https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js`
+- [ ] Handler PageLoad zarejestrowany PRZED `init()`
+- [ ] Multi-fallback kontekstu rekordu (PageLoad + UTIL + UI + URL)
+- [ ] Try-catch wokół wszystkich wywołań SDK
+- [ ] Panel logów działający (toggle, kopiowanie, czyszczenie)
+- [ ] Spinner ładowania + modalne sukcesu/błędu
+- [ ] Walidacja danych przed wysłaniem do API
+- [ ] Defensywne sprawdzanie odpowiedzi SDK (`resp?.data?.[0]`)
+- [ ] Nie loguj wrażliwych danych (klucze API – tylko maskowanie)
+- [ ] Test w trybie lokalnym (`zet run`) + sandbox CRM
+- [ ] Test w rekordzie produkcyjnym (różne scenariusze: puste pola, duplikaty, błędy)
+
+### Debugging lokalnie:
+```bash
+# 1. Uruchom serwer developerski
+zet run
+
+# 2. Otwórz http://127.0.0.1:5000/app/widget.html
+# 3. Sprawdź Console (F12) – tam zobaczysz logi SDK
+# 4. W widgecie: otwórz panel logów (przycisk LOG)
+```
+
+### Debugging w CRM:
+- Otwórz widget w rekordzie → F12 → Console
+- SDK loguje do konsoli przeglądarki (błędy, warningi)
+- Panel logów w widgecie: kopiuj i analizuj offline
+
+---
+
+## 17. PODSUMOWANIE FUNKCJI SDK – Quick Reference
+
+| Funkcja SDK | Cel | Parametry | Zwraca |
+|-------------|-----|-----------|--------|
+| `ZOHO.embeddedApp.on('PageLoad', fn)` | Rejestracja handlera | `callback(data)` | - |
+| `ZOHO.embeddedApp.init()` | Inicjalizacja SDK | - | - |
+| `ZOHO.CRM.API.getRecord()` | Pobierz rekord | `{Entity, RecordID}` | `{data: [{...}]}` |
+| `ZOHO.CRM.API.updateRecord()` | Aktualizuj rekord | `{Entity, APIData}` | `{data: [{code, details}]}` |
+| `ZOHO.CRM.API.insertRecord()` | Utwórz rekord | `{Entity, APIData, Trigger?}` | `{data: [{code, details: {id}}]}` |
+| `ZOHO.CRM.API.searchRecord()` | Szukaj rekordów | `{Entity, Type, Query, page, per_page}` | `{data: [...], info}` |
+| `ZOHO.CRM.META.getModules()` | Lista modułów | - | `{modules: [...]}` |
+| `ZOHO.CRM.META.getFields()` | Pola modułu | `{Entity}` | `{fields: [...]}` |
+| `ZOHO.CRM.API.getOrgVariable()` | Zmienna org (API) | `name` | różne formaty |
+| `ZOHO.CRM.CONFIG.getOrgVariable()` | Zmienna org (CONFIG) | `name` | różne formaty |
+| `ZOHO.CRM.UTIL.getQueryParams()` | Parametry URL | - | `{recId?, entity?, ...}` |
+| `ZOHO.CRM.UI.getPageInfo()` | Info o stronie | - | `{EntityId?, Entity?, ...}` |
+| `ZOHO.CRM.UI.Popup.close()` | Zamknij widget | - | Promise |
+| `ZOHO.CRM.UI.Record.open()` | Otwórz rekord | `{Entity, RecordID}` | - |
+
+---
+
+## 18. NAJCZĘSTSZE BŁĘDY I ROZWIĄZANIA
+
+### Błąd: "Widget nie otrzymuje kontekstu rekordu"
+**Rozwiązanie:** Sprawdź kolejność init + PageLoad, dodaj fallbacki (UTIL, UI, URL).
+
+### Błąd: "SDK zwraca undefined dla getOrgVariable"
+**Rozwiązanie:** Użyj `extractOrgVarValue()` helper – różne SDK zwracają różne struktury.
+
+### Błąd: "updateRecord zwraca błąd 'INVALID_DATA'"
+**Rozwiązanie:** Sprawdź czy `APIData` zawiera pole `id`, czy wszystkie pola są edytowalne.
+
+### Błąd: "searchRecord nie znajduje rekordów mimo że istnieją"
+**Rozwiązanie:** Sprawdź format Query (nawiasy!), wielkość liter, spacje w wartościach.
+
+### Błąd: "Widget nie zamyka się po Popup.close()"
+**Rozwiązanie:** Sprawdź czy widget jest typu Button/Related List (nie Web Tab).
+
+### Błąd: "CORS error przy fetch do backendu"
+**Rozwiązanie:** Backend musi zwracać `Access-Control-Allow-Origin: *` w headerach.
+
+---
+
+**Wersja:** 1.0  
+**Data:** 2025-01-26  
+**Projekt bazowy:** Googie_GUS Widget  
+**Typ widgetu:** Related List / Button Widget w rekordzie CRM  
+**SDK:** Zoho Embedded App SDK 1.2

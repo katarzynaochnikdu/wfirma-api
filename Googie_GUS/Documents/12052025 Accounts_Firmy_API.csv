@@ -1,0 +1,193 @@
+﻿Etykieta pola;Nazwa API;Typ Danych
+7500Z;PKD_7500Z;Typ Boolean
+8610Z;PKD_8610Z;Typ Boolean
+8621Z;PKD_8621Z;Typ Boolean
+8622Z;PKD_8622Z;Typ Boolean
+8623Z;PKD_8623ZEdit;Typ Boolean
+8690A;PKD_8690A;Typ Boolean
+8690B;PKD_8690B;Typ Boolean
+8690C;PKD_8690C;Typ Boolean
+8690D;PKD_8690D;Typ Boolean
+8690E;PKD_8690E;Typ Boolean
+9601Z;PKD_9601Z;Typ Boolean
+9602Z;PKD_9602Z;Typ Boolean
+9603Z;PKD_9603Z;Typ Boolean
+9604Z;PKD_9604Z;Typ Boolean
+9609Z;PKD_9609Z;Typ Boolean
+Adres Filii;Adres_Filli;Formula
+Adres rekordu ogółem;Adres_zapisany_z_rodzajem;Tryb wielowierszowy (mały)
+Adres Siedziby;Adres_Siedziby;Formula
+Automatyczna numeracja firm;Auto_num;Automatyczny numer
+Branża;Industry;Lista Pick List
+Cecha adresu w rekordzie;Adres_w_rekordzie;Lista Pick List
+Czy Filia?;Filia_tick;Typ Boolean
+Czy maja system EDM?;Czy_maja_system_EDM;Typ Boolean
+Czy mają system komunikacji z pacjentem?;Czy_maja_system_komunikacji_z_pacjentem;Typ Boolean
+Czy posiadają inne systemy informatyczne?;Czy_maja_inne_systemy_informatyczne;Typ Boolean
+Czy Siedziba i Filia?;Siedziba_i_Filia_tick;Typ Boolean
+Czy Siedziba?;Siedziba_tick;Typ Boolean
+Czy_jest_nazwa_zwyczajowa;Czy_jest_nazwa_zwyczajowa;Formula
+Dane kontaktowe placówki;Dane_kontaktowe_plac_wki;Wyszukiwanie z opcją wielokrotnego wyboru
+Data orzeczenia o upadłości;data_orzeczenia_o_upadlosci;Data
+Data powstania;data_powstania;Data
+Data rozpoczęcia działalności;data_rozpoczecia_dzialalnosci;Data
+Data skreślenia z REGON;data_skreslenia_z_REGON;Data
+Data skreślenia z rejestru REGON;data_skreslenia_z_rejestru_REGON;Jeden wiersz
+Data wpisu do REGON;data_wpisu_do_REGON;Data
+Data wpisu do rejestru lub ewidencji;data_wpisu_do_rejestru_lub_ewidencji;Data
+Data wznowienia działalności;data_wznowienia_dzia_alno_ci;Data
+Data zakończenia działalności;data_zakonczenia_dzialalnosci;Data
+Data zakończenia postępowania upadłościowego;data_zako_czenia_post_powania_upad_o_ciowego;Data
+Data zawieszenia działalności;data_zawieszenia_dzialalnosci;Data
+Dochód Roczny;Annual_Revenue;Waluta
+Dodatkowe info o placowce;Dodatkowe_info_o_placowce;Tryb wielowierszowy (mały)
+Dodatkowe info o profilu placówki;Dodatkowe_info_o_profilu_placowki;Jeden wiersz
+Dodatkowe informacje odnośnie posiadanych sys IT;Dodatkowe_info_EDM;Tryb wielowierszowy (duży)
+Domena_z_email1;Domena_z_email1;Formula
+Domena_z_email2;Domena_z_email2;Formula
+Domena_z_email3;Domena_z_email3;Formula
+Domena_z_www;Domena_z_www;Formula
+Email 1;Firma_EMAIL1;Adres Email
+Email 2;Firma_EMAIL2;Adres Email
+Email 3;Firma_EMAIL3;Adres Email
+Email1 - obszar placówki;Medical_service_email_2;Wielokrotnego wyboru
+Email2 - obszar placówki;Medical_service_email_1;Wielokrotnego wyboru
+Email3 - obszar placówki;Medical_service_email_3;Wielokrotnego wyboru
+F rodz. działalności;F_rodzaj_dzialalnosci;Typ Boolean
+Facebook;Facebook;Adres URL
+Faks;Fax;Faks
+Filia - Gmina;Shipping_Gmina;Jeden wiersz
+Filia - Kod pocztowy;Shipping_Code;Jeden wiersz
+Filia - Kraj;Shipping_Country;Jeden wiersz
+Filia - Miejscowość;Shipping_City;Jeden wiersz
+Filia - Powiat;Shipping_Powiat;Jeden wiersz
+Filia - Ulica;Shipping_Street;Jeden wiersz
+Filia - Województwo;Shipping_State;Jeden wiersz
+Firma - logo;Record_Image;Record Image
+Firma - numer;Account_Number;Liczba całkowita
+Firma - site;Account_Site;Jeden wiersz
+Firma polecajaca;Polecenie_firma;Wyszukiwanie
+Firma polecająca Partnera;Firma_polecaj_ca_Partnera;Wyszukiwanie
+Formula_liczb_firm_pod_rodzicem;Formula_liczb_firm_pod_rodzicem;Formula
+GROUP 1;GROUP_1;Wyszukiwanie
+GROUP 2;GROUP_2;Wyszukiwanie
+GROUP 3;GROUP_3;Wyszukiwanie
+GROUP_1;GROUP_1_tick;Typ Boolean
+GROUP_2;GROUP_2_tick;Typ Boolean
+GROUP_3;GROUP_3_tick;Typ Boolean
+ID Aplikacja;ID_Aplikacja;Jeden wiersz
+Informacje odnośnie pozostałych systemów informaty;Dodatkowe_info_IT;Jeden wiersz
+Instagram;Instagram;Adres URL
+Kategoria konta firmy;Account_Type;Lista Pick List
+Kod i nazwa formy własności (modyfikowane do 120);Kod_i_nazwa_formy_w_asno_ci_modyfikowane_do_120;Lista Pick List
+Kod i nazwa podstawowej formy prawnej;Kod_i_nazwa_podstawowej_formy_prawnej;Lista Pick List
+Kod i nazwa szczególnej formy prawnej;Kod_i_nazwa_szczeg_lnej_formy_prawnej;Lista Pick List
+Kod SIC;SIC_Code;Liczba
+Konferencja;Konferencja;Lista Pick List
+Konferencja medidesk;Konferencja_medidesk;Lista Pick List
+Konferencja zewnętrzna;Konferencja_zewnetrzna;Lista Pick List
+Konto rodzic;Parent_Account;Wyszukiwanie
+Konto_RODZIC_KOM;Konto_RODZIC_KOM;Jeden wiersz
+kontrolka;kontrolka;Typ Boolean
+KRS;Firma_KRS;Jeden wiersz
+Kurs wymiany;Exchange_Rate;Dziesiętne
+L gabinetow;L_gabinetow;Lista Pick List
+L osob w rejestracji;L_osob_w_rejestracji;Lista Pick List
+L stanowisk rejestracji;L_stanowisk_rejestracji;Lista Pick List
+Liczba firm pod rodzicem;Liczba_firm_pod_rodzicem;Liczba
+Liczba firm podlegających;Liczba_firm_podlegajacych;Rollup Summary
+LinkedIn;LinkedIn;Adres URL
+moj_id;moj_id;Jeden wiersz (Unikalne)
+Nazwa firmy;Account_Name;Jeden wiersz
+Nazwa handlowa_szyld;Nazwa_handlowa_szyld;Jeden wiersz
+Nazwa z miastem i ulicą;nazwa_unikalna;Formula
+Nazwa zwyczajowa/ułatwić wyszukiwanie;Nazwa_zwyczajowa;Jeden wiersz
+Nazwa_rejestrowa_kopia;Nazwa_rejestrowa_kopia;Formula
+NIP;Firma_NIP;Jeden wiersz
+Ocena;Rating;Lista Pick List
+Opiekun firmy;Owner;Wyszukiwanie
+Opiekun z RIO;Opiekun_RIO;Lista Pick List
+Opis;Description;Tryb wielowierszowy (duży)
+Organ rejestrowy;Organ_rejestrowy;Lista Pick List
+Outbound_Inbound;Outbound_Inbound;Lista Pick List
+P rodz. działalności;P_rodzaj_dzialalnosci;Typ Boolean
+Partner - systemy medyczne;Partner_systemy_medyczne;Lista Pick List
+Partner polecajacy;Polecenie_partner;Wyszukiwanie
+Partner source;Partner_source;Lista Pick List
+Partner source - więcej info;Partner_source_wiecej_info;Jeden wiersz
+PKD1_kod;PKD1_kod;Jeden wiersz
+PKD1_nazwa;PKD1_nazwa;Jeden wiersz
+Polecenie;Polecenie;Lista Pick List
+Pracownicy;Employees;Liczba
+Pracownik medidesk;Polecenie_pracownik;UserLookup
+Profil Partnera;Profil_Partnera;Lista Pick List
+Profil Partnera - więcej info;Profil_Partnera_wiecej_info;Jeden wiersz
+Płatnik usług;Platnik_uslug;Wielokrotnego wyboru
+REGON;Firma_REGON;Jeden wiersz
+REGON status;Status_REGON;Jeden wiersz
+REGON status NIP;REGON_status_NIP;Jeden wiersz
+REGON_adres www;REGON_adres_www;Adres URL
+REGON_adres_email;REGON_adres_email;Jeden wiersz
+REGON_Drugie_imie;REGON_Drugie_imie;Jeden wiersz
+REGON_Imie;REGON_Imie;Jeden wiersz
+REGON_Nazwisko;REGON_Nazwisko;Jeden wiersz
+REGON_numer_telefonu;REGON_numer_telefonu;Telefon
+REKORD_do_poprawki;REKORD_do_poprawki;Typ Boolean
+REKORD_TEST;REKORD_TEST;Typ Boolean
+Rodzaj działalności REGON;rodzaj_dzialalnosci_REGON;Jeden wiersz
+Rodzaj rejestru lub ewidencji;Rodzaj_rejestru_lub_ewidencji;Lista Pick List
+Siedziba - Gmina;Billing_Gmina;Jeden wiersz
+Siedziba - Kod pocztowy;Billing_Code;Jeden wiersz
+Siedziba - Kraj;Billing_Country;Jeden wiersz
+Siedziba - Miejscowość;Billing_City;Jeden wiersz
+Siedziba - Powiat;Billing_Powiat;Jeden wiersz
+Siedziba - Ulica;Billing_Street;Jeden wiersz
+Siedziba - Województwo;Billing_State;Jeden wiersz
+Specjalizacja;Specjalizacja;Wielokrotnego wyboru
+Stary_NIP;Stary_NIP;Jeden wiersz
+Status klienta tej lokalizacji;Status_klienta;Lista Pick List
+Strona internetowa;Website;Adres URL
+Strona internetowa medidesk;Strona_internetowa_medidesk;Lista Pick List
+Symbol Waloru;Ticker_Symbol;Jeden wiersz
+System komunikacji z pacjentem;System_komunikacji_z_pacjentem;Lista Pick List
+System medyczny EDM;System_medyczny_EDM;Lista Pick List
+Sz. dzienna ilosc polaczen;Sz_dzienna_ilosc_polaczen;Liczba
+Sz. dzienna liczba pacjentow;Sz_dzienna_liczba_pacjentow;Liczba
+Sz. miesieczna ilosc polaczen;Sz_miesieczna_ilosc_polaczen;Formula
+Sz. miesieczna liczba pacjentow;Sz_miesieczna_liczba_pacjentow;Formula
+Sz. tygodniowa ilosc polaczen;Sz_tygodniowa_ilosc_polaczen;Formula
+Sz. tygodniowa liczba pacjentow;Sz_tygodniowa_liczba_pacjentow;Formula
+Tel. stac.1 wew.;Tel_stac_1_wew;Jeden wiersz
+Tel. stac.2 wew.;Tel_stac_2_wew;Jeden wiersz
+Tel. stac.3 wew.;Tel_stac_3_wew;Jeden wiersz
+Telefon komórkowy 1;Mobile_phone_1;Telefon
+Telefon komórkowy 2;Mobile_phone_2;Telefon
+Telefon komórkowy 3;Mobile_phone_3;Telefon
+Telefon stacjonarny 1;Phone;Telefon
+Telefon stacjonarny 2;Phone_2;Telefon
+Telefon stacjonarny 3;Phone_3;Telefon
+TikTok;TikTok;Adres URL
+Tkom1 - Obszar placówki;Medical_service_mobile_phone_1;Wielokrotnego wyboru
+Tkom2 - Obszar placówki;Medical_service_mobile_phone_2;Wielokrotnego wyboru
+Tkom3 - Obszar placówki;Medical_service_mobile_phone_3;Wielokrotnego wyboru
+TStac1 - Obszar placówki;Medical_service_phone_1;Wielokrotnego wyboru
+TStac2 - Obszar placówki;Medical_service_phone_2;Wielokrotnego wyboru
+TStac3 - Obszar placówki;Medical_service_phone_3;Wielokrotnego wyboru
+TTP?;TTP;Typ Boolean
+Typ własności;Ownership;Lista Pick List
+Unit Is Active;Unit_Is_Active;Wielokrotnego wyboru
+USER company ID po updacie;USER_company_ID_po_updacie;Jeden wiersz
+USER ID new;USER_ID_new;Jeden wiersz (Unikalne)
+USER_Company_rekord_ID;USER_Company_rekord_ID;Jeden wiersz
+Utworzone przez;Created_By;Jeden wiersz
+Waluta;Currency;Lista Pick List
+Wdrażane systemy przez Partnera;Wdrazane_systemy_przez_Partnera;Lista Pick List
+Webinar;Webinar;Lista Pick List
+Webinar medidesk;Webinar_medidesk;Lista Pick List
+Webinar zewnętrzny;Webinar_zewnetrzne;Lista Pick List
+weryfikacja_jakosci;weryfikacja_jakosci;Typ Boolean
+Wielospecjalistyczne;Wielospecjalistyczne;Wielokrotnego wyboru
+X;X;Adres URL
+Zmodyfikowany przez;Modified_By;Jeden wiersz
+Znacznik;Tag;Jeden wiersz
+Źródło firmy inbound;Zrodlo_inbound;Lista Pick List

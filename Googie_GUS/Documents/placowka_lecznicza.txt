@@ -1,0 +1,36 @@
+Rozumiem! Chcesz zobaczyć pełne mapowanie: kod PKD → opis → klasyfikacja specjalizacji. Oto lista kodów PKD, które nie są mapowane na "brak":
+
+**Kody PKD z opisami i klasyfikacjami:**
+
+**PKD 2024:**
+- `7500Z` → DZIAŁALNOŚĆ WETERYNARYJNA → Weterynaria
+- `8610Z` → DZIAŁALNOŚĆ SZPITALI → Szpital
+- `8621Z` → PRAKTYKA LEKARSKA OGÓLNA → POZ
+- `8622Z` → PRAKTYKA LEKARSKA SPECJALISTYCZNA → Przychodnia Wielospecjalistyczna
+- `8623Z` → PRAKTYKA STOMATOLOGICZNA → Stomatologia
+- `8690A` → DZIAŁALNOŚĆ FIZJOTERAPEUTYCZNA → Przychodnia Wielospecjalistyczna
+- `8690C` → PRAKTYKA PIELĘGNIAREK I POŁOŻNYCH → Przychodnia Wielospecjalistyczna
+- `8690D` → DZIAŁALNOŚĆ PARAMEDYCZNA → Przychodnia Wielospecjalistyczna
+- `9602Z` → DZIAŁALNOŚĆ FRYZJERSKA I KOSMETYCZNA → Medycyna Estetyczna
+
+**PKD 2025:**
+- `8691A` → DZIAŁALNOŚĆ W ZAKRESIE DIAGNOSTYKI OBRAZOWEJ → Diagnostyka
+- `8691B` → DZIAŁALNOŚĆ SAMODZIELNYCH LABORATORIÓW MEDYCZNYCH → Diagnostyka
+- `8693Z` → DZIAŁALNOŚĆ PSYCHOLOGICZNA I PSYCHOTERAPEUTYCZNA → Poradnia Zdrowia Psychicznego
+- `8694Z` → DZIAŁALNOŚĆ PIELĘGNIARSKA I POŁOŻNICZA → Przychodnia Wielospecjalistyczna
+- `8695Z` → DZIAŁALNOŚĆ W ZAKRESIE FIZJOTERAPII → Przychodnia Wielospecjalistyczna
+- `8699B` → DZIAŁALNOŚĆ DIETETYCZNA → Przychodnia Wielospecjalistyczna
+- `8699C` → DZIAŁALNOŚĆ LOGOPEDYCZNA → Przychodnia Wielospecjalistyczna
+- `8699D` → DZIAŁALNOŚĆ W ZAKRESIE POZOSTAŁEJ OPIEKI ZDROWOTNEJ → Przychodnia Wielospecjalistyczna
+- `9622Z` → DZIAŁALNOŚĆ W ZAKRESIE PIELĘGNACJI URODY → Medycyna Estetyczna
+- `9623Z` → DZIAŁALNOŚĆ SPA, SAUN I ŁAŹNI PAROWYCH → Medycyna Estetyczna
+
+**Podsumowanie klasyfikacji:**
+- **Weterynaria**: 1 kod
+- **Szpital**: 1 kod  
+- **POZ**: 1 kod
+- **Stomatologia**: 1 kod
+- **Diagnostyka**: 2 kody
+- **Poradnia Zdrowia Psychicznego**: 1 kod
+- **Przychodnia Wielospecjalistyczna**: 8 kodów
+- **Medycyna Estetyczna**: 3 kody

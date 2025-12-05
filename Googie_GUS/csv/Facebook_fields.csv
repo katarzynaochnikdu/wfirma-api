@@ -1,0 +1,6 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Facebook SocialID,SOCIALID,lookup,,,,Lookup,,,,,
+Komentarz,COMMENT,textarea,,,,Tekst wielowierszowy,,,2000,,
+Post,POST,textarea,,,,Tekst wielowierszowy,,,2000,,
+Strona,PAGE,picklist,,,,Lista wyboru,Medidesk; Medidesk Edu,,,,
+Wiadomość,MESSAGE,textarea,,,,Tekst wielowierszowy,,,2000,,

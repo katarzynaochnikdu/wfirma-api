@@ -1,0 +1,8 @@
+﻿Etykieta Pola (UI),Nazwa API,Typ Danych,Pole Niestandardowe,Wymagane,Tylko Odczyt,Typ Danych (Polski),Możliwe Wartości,Powiązany Moduł,Maks. Długość,Sekcja,Wartość Domyślna
+Imie_lekarza,Imie_lekarza,text,✓,,,Tekst,,,255,,
+Nazwisko_lekarza,Nazwisko_lekarza,text,✓,,,Tekst,,,255,,
+Specjalizacja_lekarza,Specjalizacja_lekarza,text,✓,,,Tekst,,,255,,
+Tytul_lekarza,Tytul_lekarza,text,✓,,,Tekst,,,255,,
+Czas Utworzenia,Created_Time,datetime,,,,Data i czas,,,,,
+Czas modyfikacji,Modified_Time,datetime,,,,Data i czas,,,,,
+Identyfikator elementu nadrzędnego,Parent_Id,lookup,,,✓,Lookup,,Dane_instalacji,,,
