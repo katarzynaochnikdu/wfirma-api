@@ -608,36 +608,29 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
             except Exception:
                 return None, 'Niepoprawny payment_due_days'
 
-    # Minimalny payload - tylko najważniejsze pola
-    # contractor_id jako liczba (może wFirma wymaga int, nie string)
+    # Payload faktury zgodny z wcześniejszym działającym formatem (przed eksperymentami)
+    # contractor_id jako liczba (dla pewności)
     try:
         contractor_id_int = int(contractor_id)
     except (ValueError, TypeError):
         contractor_id_int = contractor_id
-    
+
     try:
         print(f"[WFIRMA DEBUG] contractor_id type: {type(contractor_id).__name__} -> {type(contractor_id_int).__name__}")
-    except:
+    except Exception:
         pass
-    
+
     payload = {
         "contractor_id": contractor_id_int,
-        "date": issue_date,  # data wystawienia
-        "paymenttype": "przelew",  # może wymaga polskiej nazwy?
+        "issue_date": issue_date,
+        "sale_date": sale_date,
+        "payment_date": payment_due_date,
+        "payment_method": invoice_input.get('payment_method', 'transfer'),
+        "place": invoice_input.get('place'),
+        "currency": invoice_input.get('currency', 'PLN'),
     }
-    
-    # Opcjonalne pola (dodajemy tylko jeśli są w input)
-    if sale_date:
-        payload["sale_date"] = sale_date
-    if payment_due_date:
-        payload["payment_date"] = payment_due_date
-    # Usuńmy opcjonalne pola - może powodują błąd
-    # if invoice_input.get('place'):
-    #     payload["issue_place"] = invoice_input.get('place')
-    # if invoice_input.get('currency'):
-    #     payload["currency"] = invoice_input.get('currency', 'PLN')
 
-    # Pozycje – wFirma zwykle oczekuje struktury invoicecontents -> invoicecontent[]
+    # Pozycje – wFirma oczekuje struktury invoicecontents -> invoicecontent[]
     invoice_contents = []
     for pos in positions:
         name = pos.get('name')
@@ -658,13 +651,15 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
         invoice_contents.append({
             "name": name,
             "count": qty_num,
-            "unit": pos.get('unit', 'szt'),
+            "unit_count": qty_num,  # zgodnie z przykładem z dokumentacji
+            "unit": pos.get('unit', 'szt.'),
             "price": price_num,
             "vat": vat_num,
         })
 
-    # Próbujemy obu wariantów struktury pozycji
-    payload["invoicecontent"] = invoice_contents  # format z dokumentacji (tablica bezpośrednio)
+    # Struktura zgodna z dokumentacją XML -> JSON:
+    # <invoicecontents><invoicecontent>...</invoicecontent></invoicecontents>
+    payload["invoicecontents"] = {"invoicecontent": invoice_contents}
     
     # Debug: loguj typy danych w pierwszej pozycji
     if invoice_contents:
