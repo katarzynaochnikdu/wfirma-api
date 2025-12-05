@@ -700,6 +700,12 @@ def workflow_create_invoice(token):
             street_parts.append(gus_first.get('nrLokalu'))
         street_joined = " ".join(street_parts).strip()
 
+        try:
+            print("[WFIRMA DEBUG] street_parts:", street_parts)
+            print("[WFIRMA DEBUG] street_joined:", street_joined)
+        except Exception:
+            pass
+
         contractor_payload = {
             "name": gus_first.get('nazwa') or clean_nip,
             "nip": clean_nip,
@@ -707,6 +713,7 @@ def workflow_create_invoice(token):
             "street": street_joined or gus_first.get('ulica') or "",
             "zip": gus_first.get('kodPocztowy') or "",
             "city": gus_first.get('miejscowosc') or "",
+            "post": gus_first.get('miejscowoscPoczty') or gus_first.get('miejscowosc') or "",
             "country": "PL",
         }
 
