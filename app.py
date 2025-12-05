@@ -1,13 +1,14 @@
-"""
+""" 
 wFirma API - Web Service dla Render
 Flask web app z OAuth 2.0 i endpointami API
 """
-from flask import Flask, request, redirect, jsonify
+from flask import Flask, request, redirect, jsonify, Response
 import requests
 import json
 import os
 import time
 import re
+import datetime
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
@@ -96,6 +97,254 @@ def require_token(f):
             }), 401
         return f(token, *args, **kwargs)
     return decorated_function
+
+
+# ==================== POMOCNICZE: WFIRMA (kontrahenci, faktury, PDF, mail) ====================
+
+
+def get_wfirma_headers(token: str, accept: str = "application/json", with_content_type: bool = True) -> dict:
+    """Zwraca nagłówki autoryzacji do wFirma; łatwe do podmiany na M2M w przyszłości."""
+    headers = {
+        'Authorization': f'Bearer {token}',
+    }
+    if with_content_type:
+        headers['Content-Type'] = 'application/json'
+    if accept:
+        headers['Accept'] = accept
+    return headers
+
+
+def wfirma_find_contractor_by_nip(token: str, nip: str) -> tuple[dict | None, requests.Response | None]:
+    """Znajdź kontrahenta po NIP; zwraca (contractor_dict|None, response)."""
+    clean_nip = nip.replace("-", "").replace(" ", "")
+    api_url = "https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    search_data = {
+        "contractors": {
+            "parameters": {
+                "conditions": {
+                    "condition": {
+                        "field": "nip",
+                        "operator": "eq",
+                        "value": clean_nip
+                    }
+                }
+            }
+        }
+    }
+    resp = None
+    try:
+        resp = requests.post(api_url, headers=headers, json=search_data)
+        if resp.status_code == 200:
+            data = resp.json()
+            contractors = data.get('contractors', {})
+            if contractors and isinstance(contractors, dict):
+                for key in contractors:
+                    if key.isdigit():
+                        return contractors[key].get('contractor'), resp
+                if 'contractor' in contractors:
+                    return contractors['contractor'], resp
+        return None, resp
+    except Exception:
+        return None, resp
+
+
+def wfirma_add_contractor(token: str, contractor_payload: dict) -> tuple[dict | None, requests.Response | None]:
+    """Dodaj kontrahenta; zwraca (contractor_dict|None, response)."""
+    api_url = "https://api2.wfirma.pl/contractors/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    resp = None
+    try:
+        resp = requests.post(api_url, headers=headers, json={"contractor": contractor_payload})
+        if resp.status_code == 200:
+            result = resp.json()
+            contractor = result.get('contractor') or result.get('contractors', {}).get('contractor')
+            return contractor or result, resp
+        return None, resp
+    except Exception:
+        return None, resp
+
+
+def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | None, requests.Response | None]:
+    """Utwórz fakturę; zwraca (invoice_dict|None, response)."""
+    api_url = "https://api2.wfirma.pl/invoices/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    resp = None
+    try:
+        resp = requests.post(api_url, headers=headers, json={"invoice": invoice_payload})
+        if resp.status_code == 200:
+            result = resp.json()
+            invoice = result.get('invoice') or result.get('invoices', {}).get('invoice')
+            return invoice or result, resp
+        return None, resp
+    except Exception:
+        return None, resp
+
+
+def wfirma_get_invoice_pdf(token: str, invoice_id: str) -> requests.Response:
+    """
+    Pobierz PDF faktury z wFirma.
+    Uwaga: bazujemy na wzorcu endpointu 'invoices/print' z outputFormat=pdf.
+    """
+    api_url = "https://api2.wfirma.pl/invoices/print"
+    params = {
+        "id": invoice_id,
+        "outputFormat": "pdf",
+        "oauth_version": "2",
+    }
+    headers = get_wfirma_headers(token, accept="application/pdf", with_content_type=False)
+    return requests.get(api_url, headers=headers, params=params, stream=True)
+
+
+def wfirma_send_invoice_email(token: str, invoice_id: str, email: str) -> requests.Response:
+    """
+    Wyślij fakturę e-mailem przez wFirma.
+    Uwaga: bazujemy na module invoice_deliveries (write).
+    """
+    api_url = "https://api2.wfirma.pl/invoice_deliveries/send?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    payload = {
+        "invoice_delivery": {
+            "invoice_id": invoice_id,
+            "email": email,
+        }
+    }
+    return requests.post(api_url, headers=headers, json=payload)
+
+
+# ==================== POMOCNICZE: GUS LOOKUP (do ponownego użycia w workflow) ====================
+
+
+def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
+    """
+    Minimalny helper do ponownego użycia w workflow (bez HTTP round-trip do własnego endpointu).
+    Zwraca (lista rekordów lub None, komunikat błędu lub None).
+    """
+    from_header_key = ''
+    api_key = GUS_API_KEY or ''
+
+    if not api_key:
+        return None, 'Brak klucza GUS_API_KEY'
+
+    use_test_env = api_key == 'abcde12345abcde12345' or GUS_USE_TEST
+    bir_host = 'wyszukiwarkaregontest.stat.gov.pl' if use_test_env else 'wyszukiwarkaregon.stat.gov.pl'
+    bir_url = f'https://{bir_host}/wsBIR/UslugaBIRzewnPubl.svc'
+
+    safe_api_key = escape_xml(api_key)
+    login_envelope = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:ns="http://CIS/BIR/PUBL/2014/07">'
+        '<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+        f'<wsa:To>{bir_url}</wsa:To>'
+        '<wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj</wsa:Action>'
+        '</soap:Header>'
+        '<soap:Body>'
+        '<ns:Zaloguj>'
+        f'<ns:pKluczUzytkownika>{safe_api_key}</ns:pKluczUzytkownika>'
+        '</ns:Zaloguj>'
+        '</soap:Body>'
+        '</soap:Envelope>'
+    )
+
+    try:
+        login_resp = post_soap_gus(bir_host, login_envelope, sid=None, timeout=10)
+    except Exception as e:
+        return None, f'Błąd komunikacji z GUS podczas logowania: {e}'
+
+    sid_match = re.search(r'<ZalogujResult>([^<]*)</ZalogujResult>', login_resp.text or '')
+    sid = sid_match.group(1).strip() if sid_match else ''
+    if not sid:
+        return None, 'Logowanie do GUS nie powiodło się (brak SID)'
+
+    safe_nip = escape_xml(clean_nip)
+    search_envelope = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" '
+        'xmlns:ns="http://CIS/BIR/PUBL/2014/07" '
+        'xmlns:q1="http://CIS/BIR/PUBL/2014/07/DataContract" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        '<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+        f'<wsa:To>{bir_url}</wsa:To>'
+        '<wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty</wsa:Action>'
+        '</soap:Header>'
+        '<soap:Body>'
+        '<ns:DaneSzukajPodmioty>'
+        '<ns:pParametryWyszukiwania>'
+        '<q1:Krs xsi:nil="true"/>'
+        '<q1:Krsy xsi:nil="true"/>'
+        f'<q1:Nip>{safe_nip}</q1:Nip>'
+        '<q1:Nipy xsi:nil="true"/>'
+        '<q1:Regon xsi:nil="true"/>'
+        '<q1:Regony14zn xsi:nil="true"/>'
+        '<q1:Regony9zn xsi:nil="true"/>'
+        '</ns:pParametryWyszukiwania>'
+        '</ns:DaneSzukajPodmioty>'
+        '</soap:Body>'
+        '</soap:Envelope>'
+    )
+
+    try:
+        search_resp = post_soap_gus(bir_host, search_envelope, sid=sid, timeout=10)
+    except Exception as e:
+        return None, f'Błąd komunikacji z GUS podczas wyszukiwania: {e}'
+
+    soap_part = search_resp.text or ''
+    if 'Content-Type: application/xop+xml' in soap_part:
+        match = re.search(
+            r'Content-Type: application/xop\+xml[^\r\n]*\r?\n\r?\n([\s\S]*?)\r?\n--uuid:',
+            soap_part,
+            re.MULTILINE | re.DOTALL,
+        )
+        if match:
+            soap_part = match.group(1)
+
+    if re.search(r'<DaneSzukajResult\s*/>', soap_part):
+        return [], None
+
+    result_match = re.search(
+        r'<DaneSzukajPodmiotyResult>([\s\S]*?)</DaneSzukajPodmiotyResult>',
+        soap_part,
+        re.MULTILINE | re.DOTALL,
+    )
+    inner_xml = result_match.group(1) if result_match else ''
+    if not inner_xml:
+        return None, 'Brak danych w odpowiedzi GUS (DaneSzukajPodmiotyResult pusty)'
+
+    decoded_xml = decode_bir_inner_xml(inner_xml)
+    if not decoded_xml:
+        return None, 'Brak danych po dekodowaniu odpowiedzi GUS'
+
+    try:
+        root = ET.fromstring(decoded_xml)
+    except ET.ParseError as e:
+        return None, f'Nie udało się sparsować danych GUS: {e}'
+
+    data_list: list[dict] = []
+    for dane in root.findall('.//dane'):
+        def get_text(tag: str) -> str | None:
+            el = dane.find(tag)
+            return el.text if el is not None else None
+
+        mapped = {
+            'regon': get_text('Regon'),
+            'nip': get_text('Nip'),
+            'nazwa': get_text('Nazwa'),
+            'wojewodztwo': get_text('Wojewodztwo'),
+            'powiat': get_text('Powiat'),
+            'gmina': get_text('Gmina'),
+            'miejscowosc': get_text('Miejscowosc'),
+            'kodPocztowy': get_text('KodPocztowy'),
+            'ulica': get_text('Ulica'),
+            'nrNieruchomosci': get_text('NrNieruchomosci'),
+            'nrLokalu': get_text('NrLokalu'),
+            'typ': get_text('Typ'),
+            'silosId': get_text('SilosID'),
+            'miejscowoscPoczty': get_text('MiejscowoscPoczty'),
+            'krs': get_text('Krs'),
+        }
+        data_list.append(mapped)
+
+    return data_list, None
 
 
 # ==================== FUNKCJE GUS/BIR (prosty port z Googie_GUS) ====================
@@ -273,64 +522,18 @@ def token_status():
 @require_token
 def check_contractor(token, nip):
     """Sprawdź czy kontrahent istnieje po NIP"""
+    contractor, resp = wfirma_find_contractor_by_nip(token, nip)
+    if contractor:
+        return jsonify({'exists': True, 'contractor': contractor})
+
     clean_nip = nip.replace("-", "").replace(" ", "")
-    
-    api_url = "https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2"
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    }
-    
-    search_data = {
-        "contractors": {
-            "parameters": {
-                "conditions": {
-                    "condition": {
-                        "field": "nip",
-                        "operator": "eq",
-                        "value": clean_nip
-                    }
-                }
-            }
-        }
-    }
-    
-    try:
-        response = requests.post(api_url, headers=headers, json=search_data)
-        
-        if response.status_code == 200:
-            data = response.json()
-            contractors = data.get('contractors', {})
-            
-            if contractors:
-                # wFirma zwraca dict z kluczami "0", "1", etc.
-                contractor = None
-                if isinstance(contractors, dict):
-                    for key in contractors:
-                        if key.isdigit():
-                            contractor = contractors[key].get('contractor')
-                            break
-                    if not contractor and 'contractor' in contractors:
-                        contractor = contractors['contractor']
-                
-                if contractor:
-                    return jsonify({
-                        'exists': True,
-                        'contractor': contractor
-                    })
-        
-        return jsonify({
-            'exists': False,
-            'nip': clean_nip,
-            'message': 'Kontrahent nie został znaleziony'
-        })
-    
-    except Exception as e:
-        return jsonify({
-            'error': 'Błąd podczas wyszukiwania kontrahenta',
-            'details': str(e)
-        }), 500
+    status = resp.status_code if resp else None
+    return jsonify({
+        'exists': False,
+        'nip': clean_nip,
+        'message': 'Kontrahent nie został znaleziony',
+        'status': status
+    })
 
 @app.route('/api/contractor/add', methods=['POST'])
 @require_token
@@ -340,40 +543,16 @@ def add_contractor(token):
     
     if not data:
         return jsonify({'error': 'Brak danych w żądaniu'}), 400
-    
-    api_url = "https://api2.wfirma.pl/contractors/add?inputFormat=json&outputFormat=json&oauth_version=2"
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    }
-    
-    # Struktura wg dokumentacji wFirma
-    contractor_data = {
-        "contractor": data
-    }
-    
-    try:
-        response = requests.post(api_url, headers=headers, json=contractor_data)
-        
-        if response.status_code == 200:
-            result = response.json()
-            return jsonify({
-                'success': True,
-                'contractor': result.get('contractor', {})
-            })
-        else:
-            return jsonify({
-                'error': 'Błąd podczas dodawania kontrahenta',
-                'status': response.status_code,
-                'details': response.text
-            }), response.status_code
-    
-    except Exception as e:
-        return jsonify({
-            'error': 'Błąd podczas dodawania kontrahenta',
-            'details': str(e)
-        }), 500
+    contractor, resp = wfirma_add_contractor(token, data)
+    if contractor:
+        return jsonify({'success': True, 'contractor': contractor})
+
+    status = resp.status_code if resp else None
+    return jsonify({
+        'error': 'Błąd podczas dodawania kontrahenta',
+        'status': status,
+        'details': resp.text if resp else 'Brak odpowiedzi'
+    }), status or 500
 
 @app.route('/api/invoice/create', methods=['POST'])
 @require_token
@@ -383,41 +562,191 @@ def create_invoice(token):
     
     if not data:
         return jsonify({'error': 'Brak danych w żądaniu'}), 400
-    
-    api_url = "https://api2.wfirma.pl/invoices/add?inputFormat=json&outputFormat=json&oauth_version=2"
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+    invoice, resp = wfirma_create_invoice(token, data)
+    if invoice:
+        return jsonify({'success': True, 'invoice': invoice})
+
+    status = resp.status_code if resp else None
+    return jsonify({
+        'error': 'Błąd podczas tworzenia faktury',
+        'status': status,
+        'details': resp.text if resp else 'Brak odpowiedzi'
+    }), status or 500
+
+
+# ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
+
+
+def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict | None, str | None]:
+    """Mapper uproszczonego JSON na strukturę wFirma invoices/add."""
+    if not invoice_input:
+        return None, 'Brak sekcji invoice'
+
+    positions = invoice_input.get('positions') or []
+    if not isinstance(positions, list) or len(positions) == 0:
+        return None, 'Brak pozycji faktury'
+
+    # Daty
+    issue_date = invoice_input.get('issue_date')
+    sale_date = invoice_input.get('sale_date') or issue_date
+
+    payment_due_date = invoice_input.get('payment_due_date')
+    if not payment_due_date:
+        due_days = invoice_input.get('payment_due_days')
+        if due_days is not None:
+            try:
+                days_int = int(due_days)
+                payment_due_date = (datetime.date.today() + datetime.timedelta(days=days_int)).isoformat()
+            except Exception:
+                return None, 'Niepoprawny payment_due_days'
+
+    payload = {
+        "contractor_id": contractor_id,
+        "issue_date": issue_date,
+        "sale_date": sale_date,
+        "payment_date": payment_due_date,
+        "payment_method": invoice_input.get('payment_method'),
+        "place": invoice_input.get('place'),
+        "currency": invoice_input.get('currency', 'PLN'),
     }
-    
-    # Struktura wg dokumentacji wFirma
-    invoice_data = {
-        "invoice": data
-    }
-    
-    try:
-        response = requests.post(api_url, headers=headers, json=invoice_data)
-        
-        if response.status_code == 200:
-            result = response.json()
+
+    # Pozycje – wFirma zwykle oczekuje struktury invoicecontents -> invoicecontent[]
+    invoice_contents = []
+    for pos in positions:
+        name = pos.get('name')
+        qty = pos.get('quantity')
+        price_net = pos.get('unit_price_net')
+        vat_rate = pos.get('vat_rate')
+        if name is None or qty is None or price_net is None or vat_rate is None:
+            return None, 'Pozycja wymaga pól: name, quantity, unit_price_net, vat_rate'
+        invoice_contents.append({
+            "name": name,
+            "count": qty,
+            "unit": pos.get('unit', 'szt'),
+            "price": price_net,
+            "vat": vat_rate,
+        })
+
+    payload["invoicecontents"] = {"invoicecontent": invoice_contents}
+    return payload, None
+
+
+@app.route('/api/workflow/create-invoice-from-nip', methods=['POST'])
+@require_token
+def workflow_create_invoice(token):
+    """Pełny workflow: NIP -> (GUS) -> kontrahent -> faktura."""
+    body = request.get_json(silent=True) or {}
+    nip_raw = str(body.get('nip', '')).strip()
+    clean_nip = re.sub(r'[^0-9]', '', nip_raw)
+    invoice_input = body.get('invoice')
+    email_address = (body.get('email') or '').strip()
+    send_email_requested = bool(body.get('send_email')) or bool(email_address)
+
+    if not clean_nip or len(clean_nip) != 10:
+        return jsonify({'error': 'NIP musi mieć 10 cyfr'}), 400
+    if not invoice_input:
+        return jsonify({'error': 'Brak sekcji invoice'}), 400
+
+    # 1) Szukamy kontrahenta w wFirma
+    contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip)
+    contractor_id = contractor.get('id') if contractor else None
+    contractor_created = False
+
+    # 2) Jeśli brak kontrahenta – spróbuj GUS i utwórz w wFirma
+    if not contractor_id:
+        gus_records, gus_err = gus_lookup_nip(clean_nip)
+        if gus_err:
+            return jsonify({'error': 'GUS lookup failed', 'details': gus_err}), 502
+        if gus_records is None:
+            return jsonify({'error': 'GUS zwrócił błąd'}), 502
+        if len(gus_records) == 0:
+            return jsonify({'error': 'GUS nie znalazł firmy dla podanego NIP'}), 404
+
+        gus_first = gus_records[0]
+        contractor_payload = {
+            "name": gus_first.get('nazwa') or clean_nip,
+            "nip": clean_nip,
+            "regon": gus_first.get('regon') or "",
+            "street": gus_first.get('ulica') or "",
+            "zip": gus_first.get('kodPocztowy') or "",
+            "city": gus_first.get('miejscowosc') or "",
+            "country": "PL",
+        }
+
+        new_contractor, resp_add = wfirma_add_contractor(token, contractor_payload)
+        if not new_contractor:
+            status = resp_add.status_code if resp_add else None
             return jsonify({
-                'success': True,
-                'invoice': result.get('invoice', {})
-            })
-        else:
-            return jsonify({
-                'error': 'Błąd podczas tworzenia faktury',
-                'status': response.status_code,
-                'details': response.text
-            }), response.status_code
-    
-    except Exception as e:
+                'error': 'Nie udało się dodać kontrahenta w wFirma',
+                'status': status,
+                'details': resp_add.text if resp_add else 'Brak odpowiedzi'
+            }), status or 502
+
+        contractor = new_contractor
+        contractor_id = contractor.get('id')
+        contractor_created = True
+
+    if not contractor_id:
+        status = resp_find.status_code if resp_find else None
+        return jsonify({
+            'error': 'Nie udało się uzyskać ID kontrahenta w wFirma',
+            'status': status
+        }), status or 502
+
+    # 3) Budujemy payload faktury
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor_id)
+    if map_err:
+        return jsonify({'error': map_err}), 400
+
+    invoice, resp_inv = wfirma_create_invoice(token, invoice_payload)
+    if not invoice:
+        status = resp_inv.status_code if resp_inv else None
         return jsonify({
             'error': 'Błąd podczas tworzenia faktury',
-            'details': str(e)
-        }), 500
+            'status': status,
+            'details': resp_inv.text if resp_inv else 'Brak odpowiedzi'
+        }), status or 502
 
+    # Opcjonalnie wyślij fakturę mailem (żądanie musi zawierać email)
+    email_result = None
+    if send_email_requested:
+        if not email_address or '@' not in email_address:
+            return jsonify({
+                'error': 'Brak lub niepoprawny email do wysyłki faktury',
+                'invoice': invoice
+            }), 400
+
+        invoice_id = str(invoice.get('id') or invoice.get('invoice_id') or '')
+        if not invoice_id:
+            return jsonify({
+                'error': 'Brak ID faktury do wysyłki maila',
+                'invoice': invoice
+            }), 502
+
+        resp_email = wfirma_send_invoice_email(token, invoice_id, email_address)
+        if resp_email.status_code != 200:
+            return jsonify({
+                'error': 'Nie udało się wysłać faktury mailem',
+                'status': resp_email.status_code,
+                'details': resp_email.text[:500] if resp_email.text else '',
+                'invoice': invoice
+            }), resp_email.status_code
+        try:
+            email_result = resp_email.json()
+        except Exception:
+            email_result = {}
+
+    return jsonify({
+        'success': True,
+        'contractor_created': contractor_created,
+        'contractor': contractor,
+        'invoice': invoice,
+        'email_sent': bool(email_result),
+        'email_response': email_result
+    })
+
+
+# ==================== ENDPOINTY GUS / REGON ====================
 
 # ==================== ENDPOINTY GUS / REGON ====================
 
@@ -613,6 +942,48 @@ def gus_name_by_nip():
         print(f"[GUS] FIRST record={repr(data_list[0])}")
 
     return jsonify({'data': data_list}), 200
+
+
+# ==================== ENDPOINTY FAKTURA: PDF i WYSYŁKA MAILEM ====================
+
+
+@app.route('/api/invoice/<invoice_id>/pdf')
+@require_token
+def invoice_pdf(token, invoice_id):
+    """Pobierz PDF faktury z wFirma (proxy)."""
+    resp = wfirma_get_invoice_pdf(token, invoice_id)
+    if resp.status_code == 200 and resp.content:
+        return Response(resp.content, mimetype='application/pdf')
+
+    return jsonify({
+        'error': 'Nie udało się pobrać PDF faktury',
+        'status': resp.status_code,
+        'details': resp.text[:500] if resp.text else ''
+    }), resp.status_code
+
+
+@app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
+@require_token
+def invoice_send_email(token, invoice_id):
+    """Wyślij fakturę mailem przez wFirma."""
+    body = request.get_json(silent=True) or {}
+    email = (body.get('email') or '').strip()
+    if not email or '@' not in email:
+        return jsonify({'error': 'Brak lub niepoprawny email'}), 400
+
+    resp = wfirma_send_invoice_email(token, invoice_id, email)
+    if resp.status_code == 200:
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        return jsonify({'success': True, 'wfirma_response': data})
+
+    return jsonify({
+        'error': 'Nie udało się wysłać faktury mailem',
+        'status': resp.status_code,
+        'details': resp.text[:500] if resp.text else ''
+    }), resp.status_code
 
 
 # ==================== START SERWERA ====================
