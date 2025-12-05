@@ -171,7 +171,15 @@ def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | Non
     headers = get_wfirma_headers(token)
     resp = None
     try:
-        resp = requests.post(api_url, headers=headers, json={"invoice": invoice_payload})
+        request_body = {"invoice": invoice_payload}
+        # LOG: pełny request body
+        try:
+            import json as json_lib
+            print("[WFIRMA DEBUG] FULL invoice request body:", json_lib.dumps(request_body, ensure_ascii=False, indent=2))
+        except Exception:
+            pass
+        
+        resp = requests.post(api_url, headers=headers, json=request_body)
         if resp.status_code == 200:
             result = resp.json()
             invoice = result.get('invoice') or result.get('invoices', {}).get('invoice')
@@ -600,16 +608,22 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
             except Exception:
                 return None, 'Niepoprawny payment_due_days'
 
+    # Minimalny payload - tylko najważniejsze pola
     payload = {
         "contractor_id": contractor_id,
-        "date": issue_date,  # wFirma używa 'date' nie 'issue_date'
-        "sale_date": sale_date,
-        "payment_date": payment_due_date,
-        "paymenttype": invoice_input.get('payment_method', 'transfer'),  # wFirma używa 'paymenttype'
-        "payment_method": invoice_input.get('payment_method', 'transfer'),  # próbujemy oba warianty
-        "issue_place": invoice_input.get('place'),  # może wymaga 'issue_place'
-        "currency": invoice_input.get('currency', 'PLN'),
+        "date": issue_date,  # data wystawienia
+        "paymenttype": invoice_input.get('payment_method', 'transfer'),
     }
+    
+    # Opcjonalne pola (dodajemy tylko jeśli są w input)
+    if sale_date:
+        payload["sale_date"] = sale_date
+    if payment_due_date:
+        payload["payment_date"] = payment_due_date
+    if invoice_input.get('place'):
+        payload["issue_place"] = invoice_input.get('place')
+    if invoice_input.get('currency'):
+        payload["currency"] = invoice_input.get('currency', 'PLN')
 
     # Pozycje – wFirma zwykle oczekuje struktury invoicecontents -> invoicecontent[]
     invoice_contents = []
