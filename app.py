@@ -619,15 +619,33 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
         vat_rate = pos.get('vat_rate')
         if name is None or qty is None or price_net is None or vat_rate is None:
             return None, 'Pozycja wymaga pól: name, quantity, unit_price_net, vat_rate'
+        
+        # Konwersja na liczby (wFirma wymaga liczb, nie stringów)
+        try:
+            qty_num = float(qty) if isinstance(qty, str) else qty
+            price_num = float(price_net) if isinstance(price_net, str) else price_net
+            vat_num = float(vat_rate) if isinstance(vat_rate, str) else vat_rate
+        except (ValueError, TypeError):
+            return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
+        
         invoice_contents.append({
             "name": name,
-            "count": qty,
+            "count": qty_num,
             "unit": pos.get('unit', 'szt'),
-            "price": price_net,
-            "vat": vat_rate,
+            "price": price_num,
+            "vat": vat_num,
         })
 
     payload["invoicecontents"] = {"invoicecontent": invoice_contents}
+    
+    # Debug: loguj typy danych w pierwszej pozycji
+    if invoice_contents:
+        first_pos = invoice_contents[0]
+        try:
+            print(f"[WFIRMA DEBUG] invoice first position types: count={type(first_pos['count']).__name__}, price={type(first_pos['price']).__name__}, vat={type(first_pos['vat']).__name__}")
+        except Exception:
+            pass
+    
     return payload, None
 
 
@@ -782,8 +800,11 @@ def workflow_create_invoice(token):
     invoice_payload, map_err = build_invoice_payload(invoice_input, contractor_id)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
-    except Exception:
-        pass
+        if invoice_payload and 'invoicecontents' in invoice_payload:
+            import json as json_lib
+            print("[WFIRMA DEBUG] invoicecontents JSON:", json_lib.dumps(invoice_payload['invoicecontents'], ensure_ascii=False))
+    except Exception as e:
+        print("[WFIRMA DEBUG] log error:", e)
     if map_err:
         return jsonify({'error': map_err}), 400
 
