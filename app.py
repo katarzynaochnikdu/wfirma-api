@@ -642,6 +642,16 @@ def workflow_create_invoice(token):
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
 
+    # LOG: wejście requestu (bez danych wrażliwych)
+    try:
+        print("[WFIRMA DEBUG] workflow_create_invoice called")
+        print("[WFIRMA DEBUG] raw nip:", nip_raw)
+        print("[WFIRMA DEBUG] clean nip:", clean_nip)
+        print("[WFIRMA DEBUG] invoice keys:", list(invoice_input.keys()) if isinstance(invoice_input, dict) else invoice_input)
+        print("[WFIRMA DEBUG] send_email_requested:", send_email_requested, "email:", email_address)
+    except Exception:
+        pass
+
     if not clean_nip or len(clean_nip) != 10:
         return jsonify({'error': 'NIP musi mieć 10 cyfr'}), 400
     if not invoice_input:
@@ -652,9 +662,24 @@ def workflow_create_invoice(token):
     contractor_id = contractor.get('id') if contractor else None
     contractor_created = False
 
+    try:
+        print("[WFIRMA DEBUG] find_contractor_by_nip contractor_id:", contractor_id)
+        print("[WFIRMA DEBUG] find_contractor_by_nip raw contractor:", contractor)
+        if resp_find is not None:
+            print("[WFIRMA DEBUG] find response status:", resp_find.status_code)
+            print("[WFIRMA DEBUG] find response body snippet:", (resp_find.text or "")[:800])
+    except Exception:
+        pass
+
     # 2) Jeśli brak kontrahenta – spróbuj GUS i utwórz w wFirma
     if not contractor_id:
         gus_records, gus_err = gus_lookup_nip(clean_nip)
+        try:
+            print("[WFIRMA DEBUG] gus_lookup_nip records len:", len(gus_records) if gus_records else gus_records, "err:", gus_err)
+            if gus_records:
+                print("[WFIRMA DEBUG] gus first record:", gus_records[0])
+        except Exception:
+            pass
         if gus_err:
             return jsonify({'error': 'GUS lookup failed', 'details': gus_err}), 502
         if gus_records is None:
@@ -673,7 +698,19 @@ def workflow_create_invoice(token):
             "country": "PL",
         }
 
+        try:
+            print("[WFIRMA DEBUG] create contractor payload:", contractor_payload)
+        except Exception:
+            pass
+
         new_contractor, resp_add = wfirma_add_contractor(token, contractor_payload)
+        try:
+            print("[WFIRMA DEBUG] add contractor status:", resp_add.status_code if resp_add else None)
+            if resp_add is not None:
+                print("[WFIRMA DEBUG] add contractor body snippet:", (resp_add.text or "")[:800])
+            print("[WFIRMA DEBUG] new contractor:", new_contractor)
+        except Exception:
+            pass
         if not new_contractor:
             status = resp_add.status_code if resp_add else None
             return jsonify({
@@ -688,6 +725,14 @@ def workflow_create_invoice(token):
 
     if not contractor_id:
         status = resp_find.status_code if resp_find else None
+        # Log diagnostyczny z odpowiedzi find (bez wrażliwych danych) – ułatwia debug na Render
+        try:
+            print("[WFIRMA DEBUG] find response status:", status)
+            if resp_find is not None:
+                print("[WFIRMA DEBUG] find response body snippet:", (resp_find.text or "")[:500])
+            print("[WFIRMA DEBUG] contractor object before failure:", contractor)
+        except Exception:
+            pass
         return jsonify({
             'error': 'Nie udało się uzyskać ID kontrahenta w wFirma',
             'status': status
@@ -695,10 +740,21 @@ def workflow_create_invoice(token):
 
     # 3) Budujemy payload faktury
     invoice_payload, map_err = build_invoice_payload(invoice_input, contractor_id)
+    try:
+        print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
+    except Exception:
+        pass
     if map_err:
         return jsonify({'error': map_err}), 400
 
     invoice, resp_inv = wfirma_create_invoice(token, invoice_payload)
+    try:
+        print("[WFIRMA DEBUG] invoice create status:", resp_inv.status_code if resp_inv else None)
+        if resp_inv is not None:
+            print("[WFIRMA DEBUG] invoice create body snippet:", (resp_inv.text or "")[:800])
+        print("[WFIRMA DEBUG] invoice obj:", invoice)
+    except Exception:
+        pass
     if not invoice:
         status = resp_inv.status_code if resp_inv else None
         return jsonify({
@@ -718,12 +774,22 @@ def workflow_create_invoice(token):
 
         invoice_id = str(invoice.get('id') or invoice.get('invoice_id') or '')
         if not invoice_id:
+            try:
+                print("[WFIRMA DEBUG] brak invoice_id, invoice obj:", invoice)
+            except Exception:
+                pass
             return jsonify({
                 'error': 'Brak ID faktury do wysyłki maila',
                 'invoice': invoice
             }), 502
 
         resp_email = wfirma_send_invoice_email(token, invoice_id, email_address)
+        try:
+            print("[WFIRMA DEBUG] send email status:", resp_email.status_code if resp_email else None)
+            if resp_email is not None:
+                print("[WFIRMA DEBUG] send email body snippet:", (resp_email.text or "")[:800])
+        except Exception:
+            pass
         if resp_email.status_code != 200:
             return jsonify({
                 'error': 'Nie udało się wysłać faktury mailem',
