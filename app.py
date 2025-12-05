@@ -475,6 +475,10 @@ def gus_name_by_nip():
 
     try:
         login_resp = post_soap_gus(bir_host, login_envelope, sid=None, timeout=10)
+        # Szczegółowe logi z logowania do GUS
+        print(f"[GUS] LOGIN status={login_resp.status_code}")
+        login_snippet = (login_resp.text or '')[:500]
+        print(f"[GUS] LOGIN body snippet={repr(login_snippet)}")
     except Exception as e:
         return jsonify({
             'error': 'Błąd komunikacji z GUS podczas logowania',
@@ -520,6 +524,10 @@ def gus_name_by_nip():
 
     try:
         search_resp = post_soap_gus(bir_host, search_envelope, sid=sid, timeout=10)
+        # Szczegółowe logi z wyszukiwania w GUS
+        print(f"[GUS] SEARCH status={search_resp.status_code}")
+        search_snippet = (search_resp.text or '')[:800]
+        print(f"[GUS] SEARCH body snippet={repr(search_snippet)}")
     except Exception as e:
         return jsonify({
             'error': 'Błąd komunikacji z GUS podczas wyszukiwania',
@@ -552,11 +560,14 @@ def gus_name_by_nip():
     inner_xml = result_match.group(1) if result_match else ''
 
     if not inner_xml:
+        print("[GUS] Brak sekcji <DaneSzukajPodmiotyResult> w odpowiedzi GUS")
         return jsonify({
             'error': 'Brak danych w odpowiedzi GUS (DaneSzukajPodmiotyResult pusty)'
         }), 404
 
     decoded_xml = decode_bir_inner_xml(inner_xml)
+    decoded_snippet = decoded_xml[:800]
+    print(f"[GUS] DECODED inner XML snippet={repr(decoded_snippet)}")
     if not decoded_xml:
         return jsonify({
             'error': 'Brak danych po dekodowaniu odpowiedzi GUS'
@@ -595,6 +606,11 @@ def gus_name_by_nip():
             'krs': get_text('Krs'),
         }
         data_list.append(mapped)
+
+    print(f"[GUS] PARSED records={len(data_list)}")
+    if data_list:
+        # Dla podglądu logujemy tylko pierwszy rekord
+        print(f"[GUS] FIRST record={repr(data_list[0])}")
 
     return jsonify({'data': data_list}), 200
 
