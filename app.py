@@ -609,10 +609,21 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
                 return None, 'Niepoprawny payment_due_days'
 
     # Minimalny payload - tylko najważniejsze pola
+    # contractor_id jako liczba (może wFirma wymaga int, nie string)
+    try:
+        contractor_id_int = int(contractor_id)
+    except (ValueError, TypeError):
+        contractor_id_int = contractor_id
+    
+    try:
+        print(f"[WFIRMA DEBUG] contractor_id type: {type(contractor_id).__name__} -> {type(contractor_id_int).__name__}")
+    except:
+        pass
+    
     payload = {
-        "contractor_id": contractor_id,
+        "contractor_id": contractor_id_int,
         "date": issue_date,  # data wystawienia
-        "paymenttype": invoice_input.get('payment_method', 'transfer'),
+        "paymenttype": "przelew",  # może wymaga polskiej nazwy?
     }
     
     # Opcjonalne pola (dodajemy tylko jeśli są w input)
@@ -620,10 +631,11 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
         payload["sale_date"] = sale_date
     if payment_due_date:
         payload["payment_date"] = payment_due_date
-    if invoice_input.get('place'):
-        payload["issue_place"] = invoice_input.get('place')
-    if invoice_input.get('currency'):
-        payload["currency"] = invoice_input.get('currency', 'PLN')
+    # Usuńmy opcjonalne pola - może powodują błąd
+    # if invoice_input.get('place'):
+    #     payload["issue_place"] = invoice_input.get('place')
+    # if invoice_input.get('currency'):
+    #     payload["currency"] = invoice_input.get('currency', 'PLN')
 
     # Pozycje – wFirma zwykle oczekuje struktury invoicecontents -> invoicecontent[]
     invoice_contents = []
