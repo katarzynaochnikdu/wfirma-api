@@ -602,11 +602,12 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
 
     payload = {
         "contractor_id": contractor_id,
-        "issue_date": issue_date,
+        "date": issue_date,  # wFirma używa 'date' nie 'issue_date'
         "sale_date": sale_date,
         "payment_date": payment_due_date,
-        "payment_method": invoice_input.get('payment_method'),
-        "place": invoice_input.get('place'),
+        "paymenttype": invoice_input.get('payment_method', 'transfer'),  # wFirma używa 'paymenttype'
+        "payment_method": invoice_input.get('payment_method', 'transfer'),  # próbujemy oba warianty
+        "issue_place": invoice_input.get('place'),  # może wymaga 'issue_place'
         "currency": invoice_input.get('currency', 'PLN'),
     }
 
@@ -636,7 +637,8 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
             "vat": vat_num,
         })
 
-    payload["invoicecontents"] = {"invoicecontent": invoice_contents}
+    # Próbujemy obu wariantów struktury pozycji
+    payload["invoicecontent"] = invoice_contents  # format z dokumentacji (tablica bezpośrednio)
     
     # Debug: loguj typy danych w pierwszej pozycji
     if invoice_contents:
