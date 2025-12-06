@@ -642,11 +642,18 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
         if name is None or qty is None or price_net is None or vat_rate is None:
             return None, 'Pozycja wymaga pól: name, quantity, unit_price_net, vat_rate'
         
-        # Konwersja na liczby (wFirma wymaga liczb, nie stringów)
+        # Konwersja na liczby (wFirma wymaga liczb dla count/price, ale VAT często jako kod/string)
         try:
             qty_num = float(qty) if isinstance(qty, str) else qty
             price_num = float(price_net) if isinstance(price_net, str) else price_net
-            vat_num = float(vat_rate) if isinstance(vat_rate, str) else vat_rate
+            
+            # VAT jako string (kod stawki), np. "23", "zw", "np"
+            # Usuwamy ".0" jeśli jest floatem (np. 23.0 -> "23")
+            if isinstance(vat_rate, float) and vat_rate.is_integer():
+                vat_code = str(int(vat_rate))
+            else:
+                vat_code = str(vat_rate)
+                
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
         
@@ -656,12 +663,16 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
             "unit_count": qty_num,  # zgodnie z przykładem z dokumentacji
             "unit": pos.get('unit', 'szt.'),
             "price": price_num,
-            "vat": vat_num,
+            "vat": vat_code,  # KOD stawki VAT (string)
         })
 
     # Struktura zgodna z dokumentacją XML -> JSON:
     # <invoicecontents><invoicecontent>...</invoicecontent></invoicecontents>
     payload["invoicecontents"] = {"invoicecontent": invoice_contents}
+    
+    # Dodajemy domyślne pola, które mogą być wymagane
+    payload["price_type"] = "net"  # jawnie wskazujemy cenę netto
+    payload["alreadypaid_initial"] = 0
     
     # Debug: loguj typy danych w pierwszej pozycji
     if invoice_contents:
