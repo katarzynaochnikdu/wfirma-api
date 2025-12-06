@@ -724,29 +724,25 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
             except Exception:
                 return None, 'Niepoprawny payment_due_days'
 
-    # Blok kontrahenta wg struktury zwracanej przez wFirma + dokumentacji
-    contractor_block = {
-        "name": contractor.get("name"),
-        "zip": contractor.get("zip") or contractor.get("contact_zip"),
-        "city": contractor.get("city") or contractor.get("contact_city"),
-        "country": contractor.get("country") or "PL",
-    }
-    # Dodaj NIP tylko jeśli jest (nie jest wymagany w przykładzie, ale nie przeszkadza)
-    if contractor.get("nip"):
-        contractor_block["nip"] = contractor.get("nip")
+    # Używamy contractor_id (int) zamiast zagnieżdżonego obiektu
+    try:
+        contractor_id_int = int(contractor.get('id'))
+    except (ValueError, TypeError):
+        return None, "Brak poprawnego ID kontrahenta"
 
     payload = {
-        "contractor": contractor_block,
-        # Pola daty/płatności – akceptowane przez API, gdy są poprawne
-        "issue_date": issue_date,
-        "sale_date": sale_date,
+        "contractor_id": contractor_id_int,
+        "date": issue_date,
         "payment_date": payment_due_date,
-        "payment_method": invoice_input.get('payment_method', 'transfer'),
-        "place": invoice_input.get('place'),
-        "currency": invoice_input.get('currency', 'PLN'),
-        # Wg dokumentacji invoices/add wymagany jest typ dokumentu
+        "paymenttype": invoice_input.get('payment_method', 'transfer'),
         "type": invoice_input.get('type', 'normal'),
+        "currency": invoice_input.get('currency', 'PLN'),
     }
+    
+    if sale_date:
+        payload["sale_date"] = sale_date
+    if invoice_input.get('place'):
+        payload["issue_place"] = invoice_input.get('place')
 
     # Pozycje – wFirma oczekuje struktury invoicecontents -> invoicecontent[]
     invoice_contents = []
@@ -785,10 +781,6 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
     # Struktura zgodna z dokumentacją XML -> JSON:
     # <invoicecontents><invoicecontent>...</invoicecontent></invoicecontents>
     payload["invoicecontents"] = {"invoicecontent": invoice_contents}
-    
-    # Dodajemy domyślne pola, które mogą być wymagane
-    payload["price_type"] = "net"  # jawnie wskazujemy cenę netto
-    payload["alreadypaid_initial"] = 0
     
     # Debug: loguj typy danych w pierwszej pozycji
     if invoice_contents:
