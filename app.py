@@ -585,8 +585,8 @@ def create_invoice(token):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict | None, str | None]:
-    """Mapper uproszczonego JSON na strukturę wFirma invoices/add."""
+def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict | None, str | None]:
+    """Mapper uproszczonego JSON na strukturę wFirma invoices/add (wg dokumentacji)."""
     if not invoice_input:
         return None, 'Brak sekcji invoice'
 
@@ -608,26 +608,28 @@ def build_invoice_payload(invoice_input: dict, contractor_id: str) -> tuple[dict
             except Exception:
                 return None, 'Niepoprawny payment_due_days'
 
-    # Payload faktury zgodny z wcześniejszym działającym formatem (przed eksperymentami)
-    # contractor_id jako liczba (dla pewności)
-    try:
-        contractor_id_int = int(contractor_id)
-    except (ValueError, TypeError):
-        contractor_id_int = contractor_id
-
-    try:
-        print(f"[WFIRMA DEBUG] contractor_id type: {type(contractor_id).__name__} -> {type(contractor_id_int).__name__}")
-    except Exception:
-        pass
+    # Blok kontrahenta wg struktury zwracanej przez wFirma + dokumentacji
+    contractor_block = {
+        "name": contractor.get("name"),
+        "zip": contractor.get("zip") or contractor.get("contact_zip"),
+        "city": contractor.get("city") or contractor.get("contact_city"),
+        "country": contractor.get("country") or "PL",
+    }
+    # Dodaj NIP tylko jeśli jest (nie jest wymagany w przykładzie, ale nie przeszkadza)
+    if contractor.get("nip"):
+        contractor_block["nip"] = contractor.get("nip")
 
     payload = {
-        "contractor_id": contractor_id_int,
+        "contractor": contractor_block,
+        # Pola daty/płatności – akceptowane przez API, gdy są poprawne
         "issue_date": issue_date,
         "sale_date": sale_date,
         "payment_date": payment_due_date,
         "payment_method": invoice_input.get('payment_method', 'transfer'),
         "place": invoice_input.get('place'),
         "currency": invoice_input.get('currency', 'PLN'),
+        # Wg dokumentacji invoices/add wymagany jest typ dokumentu
+        "type": invoice_input.get('type', 'normal'),
     }
 
     # Pozycje – wFirma oczekuje struktury invoicecontents -> invoicecontent[]
@@ -819,8 +821,8 @@ def workflow_create_invoice(token):
             'status': status
         }), status or 502
 
-    # 3) Budujemy payload faktury
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor_id)
+    # 3) Budujemy payload faktury (wg dokumentacji invoices/add – z blokiem contractor)
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
