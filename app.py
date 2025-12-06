@@ -21,6 +21,10 @@ CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/callback')
 TOKEN_FILE = "wfirma_token.json"
 
+# Konfiguracja Render API (do trwałego zapisu tokenów)
+RENDER_API_KEY = os.environ.get('RENDER_API_KEY')
+RENDER_SERVICE_ID = os.environ.get('RENDER_SERVICE_ID')
+
 # Konfiguracja GUS/BIR (przeniesiona z backendu Googie_GUS)
 # Najpierw próbujemy standardowej zmiennej GUS_API_KEY,
 # jeśli brak – użyjemy ewentualnej BIR1_medidesk (z GCP).
@@ -39,17 +43,112 @@ SCOPES = [
 
 # ==================== FUNKCJE POMOCNICZE ====================
 
-def save_token(access_token, expires_in):
-    """Zapisz token do pliku"""
+def update_render_env_var(key, value):
+    """Aktualizuje zmienną środowiskową w usłudze Render"""
+    if not RENDER_API_KEY or not RENDER_SERVICE_ID:
+        return
+    
+    url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars"
+    headers = {
+        "Authorization": f"Bearer {RENDER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    # Render API oczekuje tablicy env vars do patchowania/dodania
+    payload = [
+        {
+            "key": key,
+            "value": value
+        }
+    ]
+    
+    try:
+        # Używamy PUT, aby zaktualizować/dodać zmienną bez usuwania innych
+        resp = requests.put(url, headers=headers, json=payload)
+        if resp.status_code == 200:
+            print(f"[LOG] Zaktualizowano zmienną Render ENV: {key}")
+        else:
+            print(f"[LOG] Błąd aktualizacji Render ENV: {resp.status_code} {resp.text}")
+    except Exception as e:
+        print(f"[LOG] Wyjątek przy aktualizacji Render ENV: {e}")
+
+def save_token(access_token, expires_in, refresh_token=None):
+    """Zapisz token do pliku i opcjonalnie do Render ENV"""
+    
+    # Jeśli mamy już zapisany plik, spróbujmy zachować stary refresh_token jeśli nowy nie został podany
+    existing_refresh_token = None
+    if os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'r') as f:
+                old_data = json.load(f)
+                existing_refresh_token = old_data.get('refresh_token')
+        except:
+            pass
+
+    final_refresh_token = refresh_token or existing_refresh_token
     token_data = {
         'access_token': access_token,
-        'expires_at': time.time() + expires_in - 60  # 60 sek margines
+        'expires_at': time.time() + expires_in - 60,  # 60 sek margines
+        'refresh_token': final_refresh_token
     }
+    
     try:
         with open(TOKEN_FILE, 'w') as f:
             json.dump(token_data, f)
     except Exception as e:
         print(f"[ERROR] Nie można zapisać tokenu: {e}")
+        
+    # Zapisz Refresh Token w Render ENV (dla trwałości po redeployu)
+    if final_refresh_token:
+        update_render_env_var("WFIRMA_REFRESH_TOKEN", final_refresh_token)
+
+def refresh_access_token(forced_refresh_token=None):
+    """Odśwież token używając refresh_token (z pliku lub argumentu)"""
+    
+    refresh_token = forced_refresh_token
+    if not refresh_token and os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'r') as f:
+                data = json.load(f)
+                refresh_token = data.get('refresh_token')
+        except:
+            pass
+            
+    # Fallback: sprawdź zmienną środowiskową (jeśli plik zniknął po redeployu)
+    if not refresh_token:
+        refresh_token = os.environ.get('WFIRMA_REFRESH_TOKEN')
+        
+    if not refresh_token:
+        print("[LOG] Brak refresh tokena, nie można odświeżyć sesji")
+        return None
+        
+    print("[LOG] Próba odświeżenia tokenu...")
+    token_url = "https://api2.wfirma.pl/oauth2/token"
+    payload = {
+        'grant_type': 'refresh_token',
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'code': refresh_token
+    }
+    
+    try:
+        response = requests.post(token_url, data=payload)
+        if response.status_code == 200:
+            new_tokens = response.json()
+            new_access = new_tokens.get('access_token')
+            new_refresh = new_tokens.get('refresh_token')
+            expires_in = int(new_tokens.get('expires_in', 3600))
+            
+            if new_access:
+                # Zapisujemy nowe tokeny (co zaktualizuje też Render ENV)
+                save_token(new_access, expires_in, new_refresh)
+                print("[LOG] Token odświeżony pomyślnie")
+                return new_access
+        else:
+            print(f"[LOG] Błąd API refresh token: {response.status_code} {response.text}")
+    except Exception as e:
+        print(f"[LOG] Błąd podczas odświeżania tokenu: {e}")
+        
+    return None
 
 def is_token_valid():
     """Sprawdź czy zapisany token jest ważny"""
@@ -63,23 +162,38 @@ def is_token_valid():
         return False
 
 def load_token(silent=False):
-    """Wczytaj token z pliku jeśli istnieje i jest ważny"""
+    """Wczytaj token z pliku - automatycznie odświeża jeśli wygasł lub plik nie istnieje"""
+    
+    # Scenariusz 1: Brak pliku (np. po redeployu) -> próbujemy odświeżyć z ENV
     if not os.path.exists(TOKEN_FILE):
+        if not silent:
+            print("[LOG] Brak pliku tokenu, sprawdzam ENV WFIRMA_REFRESH_TOKEN...")
+        refresh_token_env = os.environ.get('WFIRMA_REFRESH_TOKEN')
+        if refresh_token_env:
+            new_token = refresh_access_token(forced_refresh_token=refresh_token_env)
+            if new_token:
+                return new_token
         return None
     
+    # Scenariusz 2: Plik istnieje -> sprawdzamy ważność
     try:
         with open(TOKEN_FILE, 'r') as f:
             token_data = json.load(f)
         
+        # Jeśli token ważny
         if time.time() < token_data.get('expires_at', 0):
             remaining = int(token_data['expires_at'] - time.time())
             if not silent:
                 print(f"[LOG] ✓ Token ważny jeszcze {remaining} sekund")
             return token_data['access_token']
-        else:
-            if not silent:
-                print("[LOG] Token wygasł")
-            return None
+        
+        # Jeśli wygasł, próbujemy odświeżyć
+        if not silent:
+            print("[LOG] Token wygasł, próba odświeżenia...")
+        
+        new_token = refresh_access_token()
+        return new_token
+            
     except Exception as e:
         if not silent:
             print(f"[LOG] Błąd wczytywania tokenu: {e}")
@@ -485,14 +599,16 @@ def callback():
         token_data = response.json()
         expires_in = token_data.get('expires_in', 3600)
         access_token = token_data['access_token']
+        refresh_token = token_data.get('refresh_token')
         
-        # Zapisz token
-        save_token(access_token, expires_in)
+        # Zapisz token (wraz z refresh_token)
+        save_token(access_token, expires_in, refresh_token)
         
         return jsonify({
             'message': 'Autoryzacja zakończona pomyślnie',
             'token_valid_for': f"{expires_in} sekund",
-            'expires_in': expires_in
+            'expires_in': expires_in,
+            'refresh_token_saved': bool(refresh_token)
         })
     except Exception as e:
         return jsonify({
