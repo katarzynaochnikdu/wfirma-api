@@ -162,11 +162,14 @@ def refresh_access_token(forced_refresh_token=None):
         'grant_type': 'refresh_token',
         'client_id': CLIENT_ID,
         'client_secret': CLIENT_SECRET,
-        'code': refresh_token
+        'refresh_token': refresh_token  # ← POPRAWKA: 'refresh_token' zamiast 'code'
     }
     
     try:
+        print(f"[LOG] Refresh payload keys: {list(payload.keys())}")
         response = requests.post(token_url, data=payload)
+        print(f"[LOG] Refresh response status: {response.status_code}")
+        
         if response.status_code == 200:
             new_tokens = response.json()
             new_access = new_tokens.get('access_token')
@@ -178,6 +181,8 @@ def refresh_access_token(forced_refresh_token=None):
                 save_token(new_access, expires_in, new_refresh)
                 print("[LOG] Token odświeżony pomyślnie")
                 return new_access
+            else:
+                print(f"[LOG] Brak access_token w odpowiedzi: {new_tokens}")
         else:
             print(f"[LOG] Błąd API refresh token: {response.status_code} {response.text}")
     except Exception as e:
@@ -392,18 +397,25 @@ def wfirma_get_company_id(token: str) -> str | None:
     
     try:
         resp = requests.post(api_url, headers=headers, json=body)
+        print(f"[WFIRMA DEBUG] get_company_id status: {resp.status_code}")
+        print(f"[WFIRMA DEBUG] get_company_id response: {resp.text[:500]}")
+        
         if resp.status_code == 200:
             data = resp.json()
             companies = data.get('companies', {})
+            print(f"[WFIRMA DEBUG] companies keys: {list(companies.keys()) if companies else None}")
+            
             if isinstance(companies, dict):
                 for key in companies:
                     if key.isdigit() or key == '0':
                         comp = companies[key].get('company', {})
                         company_id = comp.get('id')
                         if company_id:
+                            print(f"[WFIRMA DEBUG] Found company_id: {company_id}")
                             return str(company_id)
         return None
-    except Exception:
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] get_company_id exception: {e}")
         return None
 
 
