@@ -35,6 +35,7 @@ GUS_API_KEY = os.environ.get('GUS_API_KEY') or os.environ.get('BIR1_medidesk')
 GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 
 SCOPES = [
+    "companies-read",  # ← DODANE! Wymagane do pobierania company_id
     "contractors-read", "contractors-write",
     "invoice_descriptions-read",
     "invoice_deliveries-read", "invoice_deliveries-write",
