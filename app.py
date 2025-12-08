@@ -25,6 +25,9 @@ TOKEN_FILE = "wfirma_token.json"
 RENDER_API_KEY = os.environ.get('RENDER_API_KEY')
 RENDER_SERVICE_ID = os.environ.get('RENDER_SERVICE_ID')
 
+# Bezpieczeństwo API - wymagany klucz dla Make.com (lub innych klientów)
+MAKE_RENDER_API_KEY = os.environ.get('MAKE_RENDER_API_KEY')  # Ustaw w Render ENV!
+
 # Konfiguracja GUS/BIR (przeniesiona z backendu Googie_GUS)
 # Najpierw próbujemy standardowej zmiennej GUS_API_KEY,
 # jeśli brak – użyjemy ewentualnej BIR1_medidesk (z GCP).
@@ -242,6 +245,34 @@ def require_token(f):
                 'message': 'Przejdź do /auth aby się zalogować'
             }), 401
         return f(token, *args, **kwargs)
+    return decorated_function
+
+
+def require_api_key(f):
+    """Decorator wymagający API Key w headerze X-API-Key (ochrona przed nieuprawnionymi wywołaniami)"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Jeśli MAKE_RENDER_API_KEY nie jest ustawiony w ENV - pomijamy weryfikację (dev mode)
+        if not MAKE_RENDER_API_KEY:
+            print("[WARNING] MAKE_RENDER_API_KEY nie jest ustawiony - brak ochrony API!")
+            return f(*args, **kwargs)
+        
+        # Sprawdź header X-API-Key
+        provided_key = request.headers.get('X-API-Key', '').strip()
+        
+        if not provided_key:
+            return jsonify({
+                'error': 'Brak autoryzacji',
+                'message': 'Wymagany header X-API-Key'
+            }), 401
+        
+        if provided_key != MAKE_RENDER_API_KEY:
+            return jsonify({
+                'error': 'Nieprawidłowy klucz API',
+                'message': 'X-API-Key jest niepoprawny'
+            }), 403
+        
+        return f(*args, **kwargs)
     return decorated_function
 
 
@@ -651,6 +682,10 @@ def index():
         'message': 'wFirma API Service',
         'version': '2.0',
         'status': 'operational',
+        'security': {
+            'note': 'Wszystkie endpointy POST wymagają nagłówka X-API-Key',
+            'header': 'X-API-Key: your-secret-key'
+        },
         'endpoints': {
             '🔐 OAuth': {
                 '/auth': 'Rozpocznij autoryzację OAuth 2.0',
@@ -805,6 +840,7 @@ def check_contractor(token, nip):
     })
 
 @app.route('/api/contractor/add', methods=['POST'])
+@require_api_key
 @require_token
 def add_contractor(token):
     """Dodaj nowego kontrahenta"""
@@ -824,6 +860,7 @@ def add_contractor(token):
     }), status or 500
 
 @app.route('/api/invoice/create', methods=['POST'])
+@require_api_key
 @require_token
 def create_invoice(token):
     """Utwórz fakturę"""
@@ -870,6 +907,7 @@ def download_invoice_pdf(token, invoice_id):
 
 
 @app.route('/api/invoice/<invoice_id>/send', methods=['POST'])
+@require_api_key
 @require_token
 def send_invoice_email(token, invoice_id):
     """Wyślij fakturę emailem"""
@@ -996,6 +1034,7 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
 
 
 @app.route('/api/workflow/create-invoice-from-nip', methods=['POST'])
+@require_api_key
 @require_token
 def workflow_create_invoice(token):
     """Pełny workflow: NIP -> (GUS) -> kontrahent -> faktura."""
@@ -1261,6 +1300,7 @@ def workflow_create_invoice(token):
 # ==================== ENDPOINTY GUS / REGON ====================
 
 @app.route('/api/gus/name-by-nip', methods=['POST'])
+@require_api_key
 def gus_name_by_nip():
     """
     Prosty port endpointu /api/gus/name-by-nip z backendu Googie_GUS.
@@ -1473,6 +1513,7 @@ def invoice_pdf(token, invoice_id):
 
 
 @app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
+@require_api_key
 @require_token
 def invoice_send_email(token, invoice_id):
     """Wyślij fakturę mailem przez wFirma."""
