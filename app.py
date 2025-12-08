@@ -269,11 +269,21 @@ def wfirma_add_contractor(token: str, contractor_payload: dict) -> tuple[dict | 
     headers = get_wfirma_headers(token)
     resp = None
     try:
-        resp = requests.post(api_url, headers=headers, json={"contractor": contractor_payload})
+        # KLUCZOWE: Wrapper "contractors"!
+        resp = requests.post(api_url, headers=headers, json={"contractors": {"contractor": contractor_payload}})
         if resp.status_code == 200:
             result = resp.json()
-            contractor = result.get('contractor') or result.get('contractors', {}).get('contractor')
-            return contractor or result, resp
+            # Odpowiedź: contractors.0.contractor
+            contractors = result.get('contractors', {})
+            if isinstance(contractors, dict):
+                for key in contractors:
+                    if key.isdigit() or key == 'contractor':
+                        contractor = contractors[key].get('contractor', {})
+                        if not contractor:
+                            contractor = contractors[key]
+                        if contractor:
+                            return contractor, resp
+            return None, resp
         return None, resp
     except Exception:
         return None, resp
@@ -285,7 +295,8 @@ def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | Non
     headers = get_wfirma_headers(token)
     resp = None
     try:
-        request_body = {"invoice": invoice_payload}
+        # KLUCZOWE: Wrapper "invoices"!
+        request_body = {"invoices": {"invoice": invoice_payload}}
         # LOG: pełny request body
         try:
             import json as json_lib
@@ -296,42 +307,113 @@ def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | Non
         resp = requests.post(api_url, headers=headers, json=request_body)
         if resp.status_code == 200:
             result = resp.json()
-            invoice = result.get('invoice') or result.get('invoices', {}).get('invoice')
-            return invoice or result, resp
+            # Odpowiedź: invoices.0.invoice
+            invoices = result.get('invoices', {})
+            if isinstance(invoices, dict):
+                for key in invoices:
+                    if key.isdigit():
+                        invoice = invoices[key].get('invoice', {})
+                        if invoice:
+                            return invoice, resp
+            return None, resp
         return None, resp
     except Exception:
         return None, resp
 
 
-def wfirma_get_invoice_pdf(token: str, invoice_id: str) -> requests.Response:
+def wfirma_get_company_id(token: str) -> str | None:
+    """Pobierz ID pierwszej firmy użytkownika"""
+    api_url = "https://api2.wfirma.pl/companies/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    body = {"companies": {"parameters": {"limit": "1"}}}
+    
+    try:
+        resp = requests.post(api_url, headers=headers, json=body)
+        if resp.status_code == 200:
+            data = resp.json()
+            companies = data.get('companies', {})
+            if isinstance(companies, dict):
+                for key in companies:
+                    if key.isdigit() or key == '0':
+                        comp = companies[key].get('company', {})
+                        company_id = comp.get('id')
+                        if company_id:
+                            return str(company_id)
+        return None
+    except Exception:
+        return None
+
+
+def wfirma_get_invoice_pdf(token: str, invoice_id: str, company_id: str = None) -> requests.Response:
     """
     Pobierz PDF faktury z wFirma.
-    Uwaga: bazujemy na wzorcu endpointu 'invoices/print' z outputFormat=pdf.
+    Używamy endpointu invoices/download (zgodnie z diagnostyką).
     """
-    api_url = "https://api2.wfirma.pl/invoices/print"
+    # Poprawny endpoint z Postmana
+    api_url = f"https://api2.wfirma.pl/invoices/download/{invoice_id}"
     params = {
-        "id": invoice_id,
-        "outputFormat": "pdf",
+        "inputFormat": "json",
+        "outputFormat": "json",
         "oauth_version": "2",
     }
-    headers = get_wfirma_headers(token, accept="application/pdf", with_content_type=False)
-    return requests.get(api_url, headers=headers, params=params, stream=True)
-
-
-def wfirma_send_invoice_email(token: str, invoice_id: str, email: str) -> requests.Response:
-    """
-    Wyślij fakturę e-mailem przez wFirma.
-    Uwaga: bazujemy na module invoice_deliveries (write).
-    """
-    api_url = "https://api2.wfirma.pl/invoice_deliveries/send?inputFormat=json&outputFormat=json&oauth_version=2"
-    headers = get_wfirma_headers(token)
-    payload = {
-        "invoice_delivery": {
-            "invoice_id": invoice_id,
-            "email": email,
+    if company_id:
+        params["company_id"] = company_id
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/pdf"
+    }
+    
+    # Body z parametrami
+    body = {
+        "invoices": {
+            "parameters": {
+                "parameter": [
+                    {"name": "page", "value": "invoice"},
+                    {"name": "address", "value": "0"},
+                    {"name": "leaflet", "value": "0"},
+                    {"name": "duplicate", "value": "0"}
+                ]
+            }
         }
     }
-    return requests.post(api_url, headers=headers, json=payload)
+    
+    return requests.post(api_url, headers=headers, params=params, json=body, stream=True)
+
+
+def wfirma_send_invoice_email(token: str, invoice_id: str, email: str, company_id: str = None) -> requests.Response:
+    """
+    Wyślij fakturę e-mailem przez wFirma.
+    Używamy endpointu invoices/send (zgodnie z diagnostyką).
+    """
+    # Poprawny endpoint z Postmana
+    api_url = f"https://api2.wfirma.pl/invoices/send/{invoice_id}"
+    params = {
+        "inputFormat": "json",
+        "outputFormat": "json",
+        "oauth_version": "2",
+    }
+    if company_id:
+        params["company_id"] = company_id
+    
+    headers = get_wfirma_headers(token)
+    
+    # KLUCZOWE: Wrapper "invoices" + struktura parametrów
+    payload = {
+        "invoices": {
+            "parameters": [
+                {"parameter": {"name": "email", "value": email}},
+                {"parameter": {"name": "subject", "value": "Otrzymałeś fakturę"}},
+                {"parameter": {"name": "page", "value": "invoice"}},
+                {"parameter": {"name": "leaflet", "value": "0"}},
+                {"parameter": {"name": "duplicate", "value": "0"}},
+                {"parameter": {"name": "body", "value": "Przesyłam fakturę"}}
+            ]
+        }
+    }
+    
+    return requests.post(api_url, headers=headers, params=params, json=payload)
 
 
 # ==================== POMOCNICZE: GUS LOOKUP (do ponownego użycia w workflow) ====================
@@ -535,14 +617,45 @@ def index():
     """Strona główna z dokumentacją API"""
     return jsonify({
         'message': 'wFirma API Service',
-        'version': '1.0',
+        'version': '2.0',
+        'status': 'operational',
         'endpoints': {
-            '/auth': 'Rozpocznij autoryzację OAuth 2.0',
-            '/callback': 'Callback OAuth (automatyczny redirect)',
-            '/api/contractor/<nip>': 'GET - Sprawdź kontrahenta po NIP',
-            '/api/contractor/add': 'POST - Dodaj nowego kontrahenta',
-            '/api/invoice/create': 'POST - Utwórz fakturę',
-            '/api/token/status': 'GET - Sprawdź status tokenu',
+            '🔐 OAuth': {
+                '/auth': 'Rozpocznij autoryzację OAuth 2.0',
+                '/callback': 'Callback OAuth (automatyczny redirect)',
+                '/api/token/status': 'GET - Sprawdź status tokenu'
+            },
+            '👥 Kontrahenci': {
+                '/api/contractor/<nip>': 'GET - Sprawdź kontrahenta po NIP (wFirma)',
+                '/api/contractor/add': 'POST - Dodaj nowego kontrahenta'
+            },
+            '📄 Faktury': {
+                '/api/invoice/create': 'POST - Utwórz fakturę',
+                '/api/invoice/<invoice_id>/pdf': 'GET - Pobierz PDF faktury',
+                '/api/invoice/<invoice_id>/send': 'POST - Wyślij fakturę emailem (body: {"email": "..."})'
+            },
+            '🚀 Workflow (All-in-One)': {
+                '/api/workflow/create-invoice-from-nip': 'POST - NIP→GUS→Kontrahent→Faktura→Email→PDF'
+            },
+            '🏢 GUS/REGON': {
+                '/api/gus/name-by-nip': 'POST - Pobierz dane firmy z GUS (body: {"nip": "..."})'
+            }
+        },
+        'workflow_example': {
+            "nip": "1234567890",
+            "email": "klient@example.com",
+            "send_email": True,
+            "invoice": {
+                "positions": [
+                    {
+                        "name": "Usługa",
+                        "quantity": 1,
+                        "unit": "szt.",
+                        "unit_price_net": 100.00,
+                        "vat_rate": "23"
+                    }
+                ]
+            }
         }
     })
 
@@ -698,6 +811,63 @@ def create_invoice(token):
     }), status or 500
 
 
+@app.route('/api/invoice/<invoice_id>/pdf', methods=['GET'])
+@require_token
+def download_invoice_pdf(token, invoice_id):
+    """Pobierz PDF faktury i zwróć jako plik do pobrania"""
+    company_id = wfirma_get_company_id(token)
+    
+    try:
+        resp = wfirma_get_invoice_pdf(token, invoice_id, company_id)
+        
+        if resp.status_code == 200 and 'pdf' in resp.headers.get('Content-Type', '').lower():
+            # Zwróć PDF jako response
+            return Response(
+                resp.content,
+                mimetype='application/pdf',
+                headers={'Content-Disposition': f'attachment; filename=faktura_{invoice_id}.pdf'}
+            )
+        else:
+            return jsonify({
+                'error': 'Nie udało się pobrać PDF',
+                'status': resp.status_code,
+                'details': resp.text[:300] if resp.text else ''
+            }), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/invoice/<invoice_id>/send', methods=['POST'])
+@require_token
+def send_invoice_email(token, invoice_id):
+    """Wyślij fakturę emailem"""
+    data = request.json or {}
+    email = data.get('email', '').strip()
+    
+    if not email or '@' not in email:
+        return jsonify({'error': 'Brak lub niepoprawny email'}), 400
+    
+    company_id = wfirma_get_company_id(token)
+    
+    try:
+        resp = wfirma_send_invoice_email(token, invoice_id, email, company_id)
+        
+        if resp.status_code == 200:
+            return jsonify({
+                'success': True,
+                'message': f'Faktura wysłana na {email}',
+                'response': resp.json()
+            })
+        else:
+            return jsonify({
+                'error': 'Nie udało się wysłać emaila',
+                'status': resp.status_code,
+                'details': resp.text[:500] if resp.text else ''
+            }), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
@@ -818,6 +988,13 @@ def workflow_create_invoice(token):
         return jsonify({'error': 'NIP musi mieć 10 cyfr'}), 400
     if not invoice_input:
         return jsonify({'error': 'Brak sekcji invoice'}), 400
+
+    # 0) Pobierz company_id (ID Twojej firmy)
+    company_id = wfirma_get_company_id(token)
+    if not company_id:
+        return jsonify({'error': 'Nie udało się pobrać company_id - skonfiguruj firmę w wFirma'}), 502
+    
+    print(f"[WFIRMA DEBUG] company_id: {company_id}")
 
     # 1) Szukamy kontrahenta w wFirma
     contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip)
@@ -1001,7 +1178,24 @@ def workflow_create_invoice(token):
                 'invoice': invoice
             }), 502
 
-        resp_email = wfirma_send_invoice_email(token, invoice_id, email_address)
+        # Pobierz PDF faktury
+        pdf_filename = None
+        try:
+            resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
+            if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
+                # Utwórz folder na faktury jeśli nie istnieje
+                os.makedirs('invoices', exist_ok=True)
+                pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
+                with open(pdf_filename, 'wb') as f:
+                    f.write(resp_pdf.content)
+                print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename}")
+            else:
+                print(f"[WFIRMA DEBUG] PDF download failed: {resp_pdf.status_code}")
+        except Exception as e:
+            print(f"[WFIRMA DEBUG] PDF exception: {e}")
+        
+        # Wyślij fakturę emailem
+        resp_email = wfirma_send_invoice_email(token, invoice_id, email_address, company_id)
         try:
             print("[WFIRMA DEBUG] send email status:", resp_email.status_code if resp_email else None)
             if resp_email is not None:
@@ -1015,12 +1209,29 @@ def workflow_create_invoice(token):
                 'error': 'Nie udało się wysłać faktury mailem',
                 'status': resp_email.status_code,
                 'details': resp_email.text[:500] if resp_email.text else '',
-                'invoice': invoice
+                'invoice': invoice,
+                'pdf_saved': pdf_filename
             }), resp_email.status_code
         try:
             email_result = resp_email.json()
         except Exception:
             email_result = {}
+
+    # Jeśli nie wysyłano emaila, ale faktura została utworzona - też pobierz PDF
+    pdf_filename = None
+    if not send_email_requested:
+        invoice_id = str(invoice.get('id') or '')
+        if invoice_id:
+            try:
+                resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
+                if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
+                    os.makedirs('invoices', exist_ok=True)
+                    pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
+                    with open(pdf_filename, 'wb') as f:
+                        f.write(resp_pdf.content)
+                    print(f"[WFIRMA DEBUG] PDF saved (no email): {pdf_filename}")
+            except Exception as e:
+                print(f"[WFIRMA DEBUG] PDF exception (no email): {e}")
 
     return jsonify({
         'success': True,
@@ -1028,7 +1239,8 @@ def workflow_create_invoice(token):
         'contractor': contractor,
         'invoice': invoice,
         'email_sent': bool(email_result),
-        'email_response': email_result
+        'email_response': email_result,
+        'pdf_saved': pdf_filename
     })
 
 
