@@ -1158,50 +1158,46 @@ def workflow_create_invoice(token):
             'details': error_details
         }), status or 502
 
-    # Opcjonalnie wyślij fakturę mailem (żądanie musi zawierać email)
+    # Pobierz ID faktury
+    invoice_id = str(invoice.get('id') or invoice.get('invoice_id') or '')
+    if not invoice_id:
+        return jsonify({
+            'error': 'Brak ID faktury w odpowiedzi',
+            'invoice': invoice
+        }), 502
+    
+    # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
+    pdf_filename = None
+    try:
+        resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
+        if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
+            os.makedirs('invoices', exist_ok=True)
+            pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
+            with open(pdf_filename, 'wb') as f:
+                f.write(resp_pdf.content)
+            print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename} ({len(resp_pdf.content)} bytes)")
+        else:
+            print(f"[WFIRMA DEBUG] PDF download failed: {resp_pdf.status_code}")
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] PDF exception: {e}")
+    
+    # Opcjonalnie wyślij fakturę mailem
     email_result = None
     if send_email_requested:
         if not email_address or '@' not in email_address:
             return jsonify({
                 'error': 'Brak lub niepoprawny email do wysyłki faktury',
-                'invoice': invoice
+                'invoice': invoice,
+                'pdf_saved': pdf_filename
             }), 400
 
-        invoice_id = str(invoice.get('id') or invoice.get('invoice_id') or '')
-        if not invoice_id:
-            try:
-                print("[WFIRMA DEBUG] brak invoice_id, invoice obj:", invoice)
-            except Exception:
-                pass
-            return jsonify({
-                'error': 'Brak ID faktury do wysyłki maila',
-                'invoice': invoice
-            }), 502
-
-        # Pobierz PDF faktury
-        pdf_filename = None
-        try:
-            resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
-            if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
-                # Utwórz folder na faktury jeśli nie istnieje
-                os.makedirs('invoices', exist_ok=True)
-                pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
-                with open(pdf_filename, 'wb') as f:
-                    f.write(resp_pdf.content)
-                print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename}")
-            else:
-                print(f"[WFIRMA DEBUG] PDF download failed: {resp_pdf.status_code}")
-        except Exception as e:
-            print(f"[WFIRMA DEBUG] PDF exception: {e}")
-        
-        # Wyślij fakturę emailem
         resp_email = wfirma_send_invoice_email(token, invoice_id, email_address, company_id)
         try:
             print("[WFIRMA DEBUG] send email status:", resp_email.status_code if resp_email else None)
             if resp_email is not None:
                 body_txt = resp_email.text or ""
                 print("[WFIRMA DEBUG] send email body len:", len(body_txt))
-                print("[WFIRMA DEBUG] send email body snippet 2000:", body_txt[:2000])
+                print("[WFIRMA DEBUG] send email body snippet:", body_txt[:500])
         except Exception:
             pass
         if resp_email.status_code != 200:
@@ -1216,22 +1212,6 @@ def workflow_create_invoice(token):
             email_result = resp_email.json()
         except Exception:
             email_result = {}
-
-    # Jeśli nie wysyłano emaila, ale faktura została utworzona - też pobierz PDF
-    pdf_filename = None
-    if not send_email_requested:
-        invoice_id = str(invoice.get('id') or '')
-        if invoice_id:
-            try:
-                resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
-                if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
-                    os.makedirs('invoices', exist_ok=True)
-                    pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
-                    with open(pdf_filename, 'wb') as f:
-                        f.write(resp_pdf.content)
-                    print(f"[WFIRMA DEBUG] PDF saved (no email): {pdf_filename}")
-            except Exception as e:
-                print(f"[WFIRMA DEBUG] PDF exception (no email): {e}")
 
     return jsonify({
         'success': True,
