@@ -44,32 +44,64 @@ SCOPES = [
 # ==================== FUNKCJE POMOCNICZE ====================
 
 def update_render_env_var(key, value):
-    """Aktualizuje zmienną środowiskową w usłudze Render"""
+    """
+    Bezpiecznie aktualizuje JEDNĄ zmienną środowiskową w usłudze Render.
+    Pobiera najpierw wszystkie zmienne, modyfikuje jedną, zapisuje całość.
+    """
     if not RENDER_API_KEY or not RENDER_SERVICE_ID:
-        return
+        print(f"[LOG] update_render_env_var: brak RENDER_API_KEY lub RENDER_SERVICE_ID - pomijam")
+        return False
     
     url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars"
     headers = {
         "Authorization": f"Bearer {RENDER_API_KEY}",
         "Content-Type": "application/json"
     }
-    # Render API oczekuje tablicy env vars do patchowania/dodania
-    payload = [
-        {
-            "key": key,
-            "value": value
-        }
-    ]
     
     try:
-        # Używamy PUT, aby zaktualizować/dodać zmienną bez usuwania innych
-        resp = requests.put(url, headers=headers, json=payload)
-        if resp.status_code == 200:
-            print(f"[LOG] Zaktualizowano zmienną Render ENV: {key}")
+        # 1) POBIERZ wszystkie aktualne zmienne
+        get_resp = requests.get(url, headers=headers)
+        if get_resp.status_code != 200:
+            print(f"[LOG] update_render_env_var: błąd GET {get_resp.status_code} {get_resp.text[:200]}")
+            return False
+        
+        current_vars = get_resp.json()  # Lista obiektów [{"envVar": {"key": "X", "value": "Y"}}, ...]
+        print(f"[LOG] update_render_env_var: pobrano {len(current_vars)} zmiennych")
+        
+        # 2) Przekształć na prostą listę do PUT
+        env_list = []
+        key_found = False
+        for item in current_vars:
+            env_var = item.get('envVar', {})
+            existing_key = env_var.get('key')
+            existing_value = env_var.get('value')
+            
+            if existing_key == key:
+                # Aktualizuj tę zmienną
+                env_list.append({"key": key, "value": value})
+                key_found = True
+                print(f"[LOG] update_render_env_var: aktualizuję {key}")
+            else:
+                # Zachowaj bez zmian
+                env_list.append({"key": existing_key, "value": existing_value})
+        
+        # 3) Jeśli zmienna nie istniała - dodaj ją
+        if not key_found:
+            env_list.append({"key": key, "value": value})
+            print(f"[LOG] update_render_env_var: dodaję nową zmienną {key}")
+        
+        # 4) ZAPISZ całą listę (PUT)
+        put_resp = requests.put(url, headers=headers, json=env_list)
+        if put_resp.status_code == 200:
+            print(f"[LOG] update_render_env_var: sukces - zaktualizowano {key}")
+            return True
         else:
-            print(f"[LOG] Błąd aktualizacji Render ENV: {resp.status_code} {resp.text}")
+            print(f"[LOG] update_render_env_var: błąd PUT {put_resp.status_code} {put_resp.text[:200]}")
+            return False
+            
     except Exception as e:
-        print(f"[LOG] Wyjątek przy aktualizacji Render ENV: {e}")
+        print(f"[LOG] update_render_env_var: wyjątek {e}")
+        return False
 
 def save_token(access_token, expires_in, refresh_token=None):
     """Zapisz token do pliku i opcjonalnie do Render ENV"""
