@@ -41,6 +41,7 @@ WEBHOOK_TOKEN_EXPIRE_NOTIFY = os.environ.get('WEBHOOK_TOKEN_EXPIRE_NOTIFY')  # U
 SCOPES = [
     # companies-read NIE JEST POTRZEBNE - API używa domyślnej firmy
     "contractors-read", "contractors-write",
+    "goods-read", "goods-write",  # NOWE: katalog produktów
     "invoice_descriptions-read",
     "invoice_deliveries-read", "invoice_deliveries-write",
     "invoices-read", "invoices-write",
@@ -526,6 +527,124 @@ def wfirma_add_contractor(token: str, contractor_payload: dict) -> tuple[dict | 
         return None, resp
     except Exception:
         return None, resp
+
+
+# ==================== POMOCNICZE: PRODUKTY (GOODS) ====================
+
+
+def wfirma_find_good_by_name(token: str, name: str) -> tuple[dict | None, requests.Response | None]:
+    """Znajdź produkt po nazwie; zwraca (good_dict|None, response)."""
+    api_url = "https://api2.wfirma.pl/goods/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    
+    search_data = {
+        "goods": {
+            "parameters": {
+                "conditions": {
+                    "condition": {
+                        "field": "name",
+                        "operator": "eq",
+                        "value": name
+                    }
+                }
+            }
+        }
+    }
+    
+    resp = None
+    try:
+        resp = requests.post(api_url, headers=headers, json=search_data)
+        if resp.status_code == 200:
+            data = resp.json()
+            goods = data.get('goods', {})
+            if goods and isinstance(goods, dict):
+                for key in goods:
+                    if key.isdigit():
+                        good = goods[key].get('good', {})
+                        if good and good.get('id'):
+                            return good, resp
+        return None, resp
+    except Exception:
+        return None, resp
+
+
+def wfirma_add_good(token: str, name: str, price: float, unit: str = "szt.", vat_code_id: int = 222) -> tuple[dict | None, requests.Response | None]:
+    """
+    Dodaj produkt do katalogu wFirma.
+    vat_code_id: 222 = 23%, 223 = 8%, 224 = 5%, 225 = 0%, 226 = zw
+    """
+    api_url = "https://api2.wfirma.pl/goods/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    
+    good_payload = {
+        "goods": {
+            "good": {
+                "name": name,
+                "unit": unit,
+                "netto": str(price),
+                "type": "service",  # "good" dla towaru, "service" dla usługi
+                "warehouse_type": "simple",
+                "vat_code": {
+                    "id": vat_code_id
+                }
+            }
+        }
+    }
+    
+    resp = None
+    try:
+        print(f"[WFIRMA DEBUG] Adding good: {name}, price: {price}, unit: {unit}")
+        resp = requests.post(api_url, headers=headers, json=good_payload)
+        print(f"[WFIRMA DEBUG] add_good status: {resp.status_code}")
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            print(f"[WFIRMA DEBUG] add_good response: {resp.text[:500]}")
+            goods = result.get('goods', {})
+            if isinstance(goods, dict):
+                for key in goods:
+                    if key.isdigit():
+                        good = goods[key].get('good', {})
+                        if good and good.get('id'):
+                            print(f"[WFIRMA DEBUG] Created good with ID: {good.get('id')}")
+                            return good, resp
+        else:
+            print(f"[WFIRMA DEBUG] add_good error: {resp.text[:500]}")
+        return None, resp
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] add_good exception: {e}")
+        return None, resp
+
+
+def wfirma_get_or_create_good(token: str, name: str, price: float, unit: str = "szt.", vat_rate: str = "23") -> dict | None:
+    """
+    Pobierz produkt po nazwie lub utwórz nowy.
+    Zwraca dict z 'id' produktu lub None.
+    """
+    # Mapowanie stawek VAT na ID w wFirma
+    vat_code_map = {
+        "23": 222,
+        "8": 223,
+        "5": 224,
+        "0": 225,
+        "zw": 226,
+        "np": 227
+    }
+    vat_code_id = vat_code_map.get(str(vat_rate), 222)
+    
+    # 1. Szukaj istniejącego produktu
+    existing_good, _ = wfirma_find_good_by_name(token, name)
+    if existing_good and existing_good.get('id'):
+        print(f"[WFIRMA DEBUG] Found existing good: {name} -> ID {existing_good.get('id')}")
+        return existing_good
+    
+    # 2. Nie znaleziono - utwórz nowy
+    print(f"[WFIRMA DEBUG] Good not found, creating: {name}")
+    new_good, _ = wfirma_add_good(token, name, price, unit, vat_code_id)
+    if new_good and new_good.get('id'):
+        return new_good
+    
+    return None
 
 
 def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | None, requests.Response | None]:
@@ -1121,8 +1240,11 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict | None, str | None]:
-    """Mapper uproszczonego JSON na strukturę wFirma invoices/add (wg dokumentacji)."""
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None) -> tuple[dict | None, str | None]:
+    """
+    Mapper uproszczonego JSON na strukturę wFirma invoices/add.
+    Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
+    """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
 
@@ -1174,13 +1296,12 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
         if name is None or qty is None or price_net is None or vat_rate is None:
             return None, 'Pozycja wymaga pól: name, quantity, unit_price_net, vat_rate'
         
-        # Konwersja na liczby (wFirma wymaga liczb dla count/price, ale VAT często jako kod/string)
+        # Konwersja na liczby
         try:
             qty_num = float(qty) if isinstance(qty, str) else qty
             price_num = float(price_net) if isinstance(price_net, str) else price_net
             
             # VAT jako string (kod stawki), np. "23", "zw", "np"
-            # Usuwamy ".0" jeśli jest floatem (np. 23.0 -> "23")
             if isinstance(vat_rate, float) and vat_rate.is_integer():
                 vat_code = str(int(vat_rate))
             else:
@@ -1189,17 +1310,38 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
         
-        # wFirma wymaga STRINGÓW dla count i price (jak w XML)
-        invoice_contents.append({
-            "name": str(name),
-            "count": f"{qty_num:.4f}",      # "1.0000" - format z XML
-            "unit": pos.get('unit', 'szt.'),
-            "price": f"{price_num:.2f}",    # "567.00" - format z XML
-            "vat": vat_code
-        })
+        # NOWE: Utwórz/znajdź produkt w katalogu wFirma i użyj good_id
+        if token:
+            good = wfirma_get_or_create_good(token, name, price_num, pos.get('unit', 'szt.'), vat_code)
+            if good and good.get('id'):
+                # Użyj good_id - wFirma pobierze nazwę i cenę z katalogu
+                invoice_contents.append({
+                    "good": {"id": int(good.get('id'))},
+                    "count": f"{qty_num:.4f}",
+                    "unit": pos.get('unit', 'szt.')
+                })
+                print(f"[WFIRMA DEBUG] Position with good_id: {good.get('id')} ({name})")
+            else:
+                # Fallback - bez good_id (może nie zadziałać)
+                print(f"[WFIRMA DEBUG] WARNING: Could not create good for: {name}, using fallback")
+                invoice_contents.append({
+                    "name": str(name),
+                    "count": f"{qty_num:.4f}",
+                    "unit": pos.get('unit', 'szt.'),
+                    "price": f"{price_num:.2f}",
+                    "vat": vat_code
+                })
+        else:
+            # Bez tokena - stara metoda (bez produktów)
+            invoice_contents.append({
+                "name": str(name),
+                "count": f"{qty_num:.4f}",
+                "unit": pos.get('unit', 'szt.'),
+                "price": f"{price_num:.2f}",
+                "vat": vat_code
+            })
 
     # Struktura zgodna z dokumentacją XML -> JSON:
-    # <invoicecontents><invoicecontent>...</invoicecontent></invoicecontents>
     payload["invoicecontents"] = {"invoicecontent": invoice_contents}
     
     # Debug: loguj typy danych w pierwszej pozycji
@@ -1378,8 +1520,8 @@ def workflow_create_invoice(token):
             'status': status
         }), status or 502
 
-    # 3) Budujemy payload faktury (wg dokumentacji invoices/add – z blokiem contractor)
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor)
+    # 3) Budujemy payload faktury - automatycznie tworzy produkty w katalogu wFirma!
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
