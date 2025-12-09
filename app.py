@@ -1024,16 +1024,13 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
         
-        # wFirma wymaga klasyfikacji produktu (classification) dla poprawnego dodania nazwy i ceny
+        # wFirma wymaga STRINGÓW dla count i price (jak w XML)
         invoice_contents.append({
-            "name": name,
-            "classification": "",  # Pusta klasyfikacja - pozwala na własną nazwę
-            "count": qty_num,
-            "unit_count": qty_num,
+            "name": str(name),
+            "count": f"{qty_num:.4f}",      # "1.0000" - format z XML
             "unit": pos.get('unit', 'szt.'),
-            "price": price_num,
-            "vat": vat_code,
-            "good": {"id": 0}  # Brak powiązania z magazynem (produkt niemagazynowy)
+            "price": f"{price_num:.2f}",    # "567.00" - format z XML
+            "vat": vat_code
         })
 
     # Struktura zgodna z dokumentacją XML -> JSON:
