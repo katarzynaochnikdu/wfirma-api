@@ -35,7 +35,7 @@ GUS_API_KEY = os.environ.get('GUS_API_KEY') or os.environ.get('BIR1_medidesk')
 GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 
 SCOPES = [
-    "companies-read",  # ← DODANE! Wymagane do pobierania company_id
+    # companies-read NIE JEST POTRZEBNE - API używa domyślnej firmy
     "contractors-read", "contractors-write",
     "invoice_descriptions-read",
     "invoice_deliveries-read", "invoice_deliveries-write",
@@ -420,10 +420,11 @@ def wfirma_get_company_id(token: str) -> str | None:
         return None
 
 
-def wfirma_get_invoice_pdf(token: str, invoice_id: str, company_id: str = None) -> requests.Response:
+def wfirma_get_invoice_pdf(token: str, invoice_id: str, company_id: str | None = None) -> requests.Response:
     """
     Pobierz PDF faktury z wFirma.
     Używamy endpointu invoices/download (zgodnie z diagnostyką).
+    company_id jest opcjonalny - jeśli brak, API użyje domyślnej firmy.
     """
     # Poprawny endpoint z Postmana
     api_url = f"https://api2.wfirma.pl/invoices/download/{invoice_id}"
@@ -458,10 +459,11 @@ def wfirma_get_invoice_pdf(token: str, invoice_id: str, company_id: str = None) 
     return requests.post(api_url, headers=headers, params=params, json=body, stream=True)
 
 
-def wfirma_send_invoice_email(token: str, invoice_id: str, email: str, company_id: str = None) -> requests.Response:
+def wfirma_send_invoice_email(token: str, invoice_id: str, email: str, company_id: str | None = None) -> requests.Response:
     """
     Wyślij fakturę e-mailem przez wFirma.
     Używamy endpointu invoices/send (zgodnie z diagnostyką).
+    company_id jest opcjonalny - jeśli brak, API użyje domyślnej firmy.
     """
     # Poprawny endpoint z Postmana
     api_url = f"https://api2.wfirma.pl/invoices/send/{invoice_id}"
@@ -1022,13 +1024,16 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
         
+        # wFirma wymaga klasyfikacji produktu (classification) dla poprawnego dodania nazwy i ceny
         invoice_contents.append({
             "name": name,
+            "classification": "",  # Pusta klasyfikacja - pozwala na własną nazwę
             "count": qty_num,
-            "unit_count": qty_num,  # zgodnie z przykładem z dokumentacji
+            "unit_count": qty_num,
             "unit": pos.get('unit', 'szt.'),
             "price": price_num,
-            "vat": vat_code,  # KOD stawki VAT (string)
+            "vat": vat_code,
+            "good": {"id": 0}  # Brak powiązania z magazynem (produkt niemagazynowy)
         })
 
     # Struktura zgodna z dokumentacją XML -> JSON:
@@ -1073,12 +1078,13 @@ def workflow_create_invoice(token):
     if not invoice_input:
         return jsonify({'error': 'Brak sekcji invoice'}), 400
 
-    # 0) Pobierz company_id (ID Twojej firmy)
+    # 0) Pobierz company_id (ID Twojej firmy) - OPCJONALNE
+    # Jeśli masz tylko jedną firmę, API użyje jej automatycznie
     company_id = wfirma_get_company_id(token)
-    if not company_id:
-        return jsonify({'error': 'Nie udało się pobrać company_id - skonfiguruj firmę w wFirma'}), 502
-    
-    print(f"[WFIRMA DEBUG] company_id: {company_id}")
+    if company_id:
+        print(f"[WFIRMA DEBUG] company_id: {company_id}")
+    else:
+        print(f"[WFIRMA DEBUG] company_id: brak (użyje domyślnej firmy)")
 
     # 1) Szukamy kontrahenta w wFirma
     contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip)
