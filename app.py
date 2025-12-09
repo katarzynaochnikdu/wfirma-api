@@ -108,43 +108,46 @@ def update_render_env_var(key, value):
         return False
 
 def save_token(access_token, expires_in, refresh_token=None):
-    """Zapisz token do pliku i opcjonalnie do Render ENV"""
+    """
+    Zapisz token do ENV (główne źródło) i pliku (backup).
+    ENV jest JEDYNYM trwałym storage po redeployu!
+    """
+    expires_at = int(time.time() + expires_in - 60)  # 60 sek margines, jako int
     
-    # Próbujemy zachować refresh_token z różnych źródeł (priorytet: nowy > plik > ENV)
-    existing_refresh_token = None
+    # Pobierz istniejący refresh_token jeśli nowy nie podany
+    final_refresh_token = refresh_token
+    if not final_refresh_token:
+        # Priorytet: plik > ENV
+        if os.path.exists(TOKEN_FILE):
+            try:
+                with open(TOKEN_FILE, 'r') as f:
+                    old_data = json.load(f)
+                    final_refresh_token = old_data.get('refresh_token')
+            except:
+                pass
+        if not final_refresh_token:
+            final_refresh_token = os.environ.get('WFIRMA_REFRESH_TOKEN')
     
-    # 1. Sprawdź plik
-    if os.path.exists(TOKEN_FILE):
-        try:
-            with open(TOKEN_FILE, 'r') as f:
-                old_data = json.load(f)
-                existing_refresh_token = old_data.get('refresh_token')
-        except:
-            pass
+    print(f"[LOG] save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
     
-    # 2. Fallback: sprawdź ENV (ważne po redeployu gdy plik nie istnieje!)
-    if not existing_refresh_token:
-        existing_refresh_token = os.environ.get('WFIRMA_REFRESH_TOKEN')
-
-    final_refresh_token = refresh_token or existing_refresh_token
-    
-    # LOG: dla debugowania
-    print(f"[LOG] save_token: new_refresh={bool(refresh_token)}, existing={bool(existing_refresh_token)}, final={bool(final_refresh_token)}")
+    # 1. Zapisz do PLIKU (lokalny cache - szybki dostęp)
     token_data = {
         'access_token': access_token,
-        'expires_at': time.time() + expires_in - 60,  # 60 sek margines
+        'expires_at': expires_at,
         'refresh_token': final_refresh_token
     }
-    
     try:
         with open(TOKEN_FILE, 'w') as f:
             json.dump(token_data, f)
+        print(f"[LOG] Token zapisany do pliku")
     except Exception as e:
-        print(f"[ERROR] Nie można zapisać tokenu: {e}")
-        
-    # Zapisz Refresh Token w Render ENV (dla trwałości po redeployu)
+        print(f"[ERROR] Nie można zapisać tokenu do pliku: {e}")
+    
+    # 2. Zapisz do ENV (trwałe po redeployu) - WSZYSTKIE 3 wartości!
     if final_refresh_token:
         update_render_env_var("WFIRMA_REFRESH_TOKEN", final_refresh_token)
+    update_render_env_var("WFIRMA_ACCESS_TOKEN", access_token)
+    update_render_env_var("WFIRMA_TOKEN_EXPIRES", str(expires_at))
 
 def refresh_access_token(forced_refresh_token=None):
     """Odśwież token używając refresh_token (z pliku lub argumentu)"""
@@ -204,7 +207,17 @@ def refresh_access_token(forced_refresh_token=None):
     return None
 
 def is_token_valid():
-    """Sprawdź czy zapisany token jest ważny"""
+    """Sprawdź czy zapisany token jest ważny (ENV > plik)"""
+    # 1. Sprawdź ENV (priorytet - trwałe po redeployu)
+    env_expires = os.environ.get('WFIRMA_TOKEN_EXPIRES')
+    env_access = os.environ.get('WFIRMA_ACCESS_TOKEN')
+    if env_expires and env_access:
+        try:
+            return time.time() < float(env_expires)
+        except:
+            pass
+    
+    # 2. Fallback: sprawdź plik
     if not os.path.exists(TOKEN_FILE):
         return False
     try:
@@ -215,42 +228,64 @@ def is_token_valid():
         return False
 
 def load_token(silent=False):
-    """Wczytaj token z pliku - automatycznie odświeża jeśli wygasł lub plik nie istnieje"""
+    """
+    Wczytaj token (ENV > plik) - automatycznie odświeża jeśli wygasł.
+    Po redeployu plik nie istnieje, więc ENV jest GŁÓWNYM źródłem!
+    """
+    access_token = None
+    expires_at = 0
+    refresh_token = None
     
-    # Scenariusz 1: Brak pliku (np. po redeployu) -> próbujemy odświeżyć z ENV
-    if not os.path.exists(TOKEN_FILE):
-        if not silent:
-            print("[LOG] Brak pliku tokenu, sprawdzam ENV WFIRMA_REFRESH_TOKEN...")
-        refresh_token_env = os.environ.get('WFIRMA_REFRESH_TOKEN')
-        if refresh_token_env:
-            new_token = refresh_access_token(forced_refresh_token=refresh_token_env)
-            if new_token:
-                return new_token
-        return None
+    # 1. NAJPIERW sprawdź ENV (trwałe po redeployu!)
+    env_access = os.environ.get('WFIRMA_ACCESS_TOKEN')
+    env_expires = os.environ.get('WFIRMA_TOKEN_EXPIRES')
+    env_refresh = os.environ.get('WFIRMA_REFRESH_TOKEN')
     
-    # Scenariusz 2: Plik istnieje -> sprawdzamy ważność
-    try:
-        with open(TOKEN_FILE, 'r') as f:
-            token_data = json.load(f)
-        
-        # Jeśli token ważny
-        if time.time() < token_data.get('expires_at', 0):
-            remaining = int(token_data['expires_at'] - time.time())
+    if env_access and env_expires:
+        try:
+            access_token = env_access
+            expires_at = float(env_expires)
+            refresh_token = env_refresh
             if not silent:
-                print(f"[LOG] ✓ Token ważny jeszcze {remaining} sekund")
-            return token_data['access_token']
-        
-        # Jeśli wygasł, próbujemy odświeżyć
+                print(f"[LOG] Tokeny wczytane z ENV")
+        except:
+            pass
+    
+    # 2. Jeśli brak w ENV, sprawdź plik
+    if not access_token and os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'r') as f:
+                token_data = json.load(f)
+            access_token = token_data.get('access_token')
+            expires_at = token_data.get('expires_at', 0)
+            refresh_token = token_data.get('refresh_token') or env_refresh
+            if not silent:
+                print(f"[LOG] Tokeny wczytane z pliku")
+        except Exception as e:
+            if not silent:
+                print(f"[LOG] Błąd wczytywania z pliku: {e}")
+    
+    # 3. Jeśli token ważny - zwróć
+    if access_token and time.time() < expires_at:
+        remaining = int(expires_at - time.time())
         if not silent:
-            print("[LOG] Token wygasł, próba odświeżenia...")
-        
-        new_token = refresh_access_token()
-        return new_token
-            
-    except Exception as e:
+            print(f"[LOG] ✓ Token ważny jeszcze {remaining} sekund")
+        return access_token
+    
+    # 4. Token wygasł lub brak - spróbuj odświeżyć
+    if not refresh_token:
+        refresh_token = env_refresh  # Ostatnia szansa - ENV
+    
+    if refresh_token:
         if not silent:
-            print(f"[LOG] Błąd wczytywania tokenu: {e}")
-        return None
+            print(f"[LOG] Token wygasł/brak, próba odświeżenia...")
+        new_token = refresh_access_token(forced_refresh_token=refresh_token)
+        if new_token:
+            return new_token
+    
+    if not silent:
+        print("[LOG] Brak tokenu i refresh_token - wymagana autoryzacja /auth")
+    return None
 
 def require_token(f):
     """Decorator wymagający ważnego tokenu"""
