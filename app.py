@@ -110,8 +110,10 @@ def update_render_env_var(key, value):
 def save_token(access_token, expires_in, refresh_token=None):
     """Zapisz token do pliku i opcjonalnie do Render ENV"""
     
-    # Jeśli mamy już zapisany plik, spróbujmy zachować stary refresh_token jeśli nowy nie został podany
+    # Próbujemy zachować refresh_token z różnych źródeł (priorytet: nowy > plik > ENV)
     existing_refresh_token = None
+    
+    # 1. Sprawdź plik
     if os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'r') as f:
@@ -119,8 +121,15 @@ def save_token(access_token, expires_in, refresh_token=None):
                 existing_refresh_token = old_data.get('refresh_token')
         except:
             pass
+    
+    # 2. Fallback: sprawdź ENV (ważne po redeployu gdy plik nie istnieje!)
+    if not existing_refresh_token:
+        existing_refresh_token = os.environ.get('WFIRMA_REFRESH_TOKEN')
 
     final_refresh_token = refresh_token or existing_refresh_token
+    
+    # LOG: dla debugowania
+    print(f"[LOG] save_token: new_refresh={bool(refresh_token)}, existing={bool(existing_refresh_token)}, final={bool(final_refresh_token)}")
     token_data = {
         'access_token': access_token,
         'expires_at': time.time() + expires_in - 60,  # 60 sek margines
@@ -177,10 +186,13 @@ def refresh_access_token(forced_refresh_token=None):
             new_refresh = new_tokens.get('refresh_token')
             expires_in = int(new_tokens.get('expires_in', 3600))
             
+            # LOG: sprawdź czy wFirma zwraca nowy refresh_token
+            print(f"[LOG] Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
+            
             if new_access:
-                # Zapisujemy nowe tokeny (co zaktualizuje też Render ENV)
+                # WAŻNE: Zapisujemy nowe tokeny NATYCHMIAST (przed jakimkolwiek returnem)
                 save_token(new_access, expires_in, new_refresh)
-                print("[LOG] Token odświeżony pomyślnie")
+                print("[LOG] Token odświeżony pomyślnie i zapisany do ENV")
                 return new_access
             else:
                 print(f"[LOG] Brak access_token w odpowiedzi: {new_tokens}")
