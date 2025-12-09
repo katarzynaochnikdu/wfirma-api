@@ -34,6 +34,10 @@ MAKE_RENDER_API_KEY = os.environ.get('MAKE_RENDER_API_KEY')  # Ustaw w Render EN
 GUS_API_KEY = os.environ.get('GUS_API_KEY') or os.environ.get('BIR1_medidesk')
 GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 
+# Powiadomienia o wygasającym refresh tokenie
+EMAIL_REFRESH_TOKEN_EXPIRE = os.environ.get('EMAIL_REFRESH_TOKEN_EXPIRE')  # Email do powiadomień
+WEBHOOK_TOKEN_EXPIRE_NOTIFY = os.environ.get('WEBHOOK_TOKEN_EXPIRE_NOTIFY')  # URL webhooka (np. Make.com)
+
 SCOPES = [
     # companies-read NIE JEST POTRZEBNE - API używa domyślnej firmy
     "contractors-read", "contractors-write",
@@ -143,11 +147,17 @@ def save_token(access_token, expires_in, refresh_token=None):
     except Exception as e:
         print(f"[ERROR] Nie można zapisać tokenu do pliku: {e}")
     
-    # 2. Zapisz do ENV (trwałe po redeployu) - WSZYSTKIE 3 wartości!
+    # 2. Zapisz do ENV (trwałe po redeployu) - WSZYSTKIE wartości!
     if final_refresh_token:
         update_render_env_var("WFIRMA_REFRESH_TOKEN", final_refresh_token)
     update_render_env_var("WFIRMA_ACCESS_TOKEN", access_token)
     update_render_env_var("WFIRMA_TOKEN_EXPIRES", str(expires_at))
+    
+    # 3. Jeśli to NOWY refresh_token (z /auth), zapisz też jego termin ważności (30 dni)
+    if refresh_token:  # Nowy refresh token = nowe 30 dni
+        refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)  # 30 dni od teraz
+        update_render_env_var("WFIRMA_REFRESH_TOKEN_EXPIRES", str(refresh_expires_at))
+        print(f"[LOG] Nowy refresh_token ważny do: {datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')}")
 
 def refresh_access_token(forced_refresh_token=None):
     """Odśwież token używając refresh_token (z pliku lub argumentu)"""
@@ -226,6 +236,119 @@ def is_token_valid():
         return time.time() < token_data.get('expires_at', 0)
     except:
         return False
+
+
+def check_refresh_token_expiry():
+    """
+    Sprawdź ile dni zostało do wygaśnięcia refresh tokena.
+    Zwraca (days_remaining, warning_message) lub (None, None) jeśli brak danych.
+    """
+    refresh_expires = os.environ.get('WFIRMA_REFRESH_TOKEN_EXPIRES')
+    if not refresh_expires:
+        return None, None
+    
+    try:
+        expires_at = float(refresh_expires)
+        now = time.time()
+        seconds_remaining = expires_at - now
+        days_remaining = seconds_remaining / (24 * 60 * 60)
+        
+        if days_remaining <= 0:
+            return 0, "🚨 REFRESH TOKEN WYGASŁ! Przejdź przez /auth NATYCHMIAST!"
+        elif days_remaining <= 3:
+            return days_remaining, f"🔴 PILNE! Refresh token wygasa za {days_remaining:.1f} dni! Przejdź przez /auth!"
+        elif days_remaining <= 7:
+            return days_remaining, f"⚠️ UWAGA! Refresh token wygasa za {days_remaining:.1f} dni. Zaplanuj reautoryzację."
+        elif days_remaining <= 14:
+            return days_remaining, f"📅 Refresh token wygasa za {days_remaining:.1f} dni."
+        else:
+            return days_remaining, None  # Brak ostrzeżenia
+    except:
+        return None, None
+
+
+def get_token_status():
+    """Zwraca pełny status tokenów (do endpointu /api/token/status)"""
+    status = {
+        'access_token_valid': is_token_valid(),
+        'refresh_token_exists': bool(os.environ.get('WFIRMA_REFRESH_TOKEN')),
+    }
+    
+    # Access token
+    env_expires = os.environ.get('WFIRMA_TOKEN_EXPIRES')
+    if env_expires:
+        try:
+            expires_at = float(env_expires)
+            status['access_token_expires_at'] = expires_at
+            status['access_token_remaining_seconds'] = max(0, int(expires_at - time.time()))
+        except:
+            pass
+    
+    # Refresh token
+    days_remaining, warning = check_refresh_token_expiry()
+    if days_remaining is not None:
+        status['refresh_token_days_remaining'] = round(days_remaining, 1)
+        status['refresh_token_expires_at'] = os.environ.get('WFIRMA_REFRESH_TOKEN_EXPIRES')
+    if warning:
+        status['warning'] = warning
+    
+    return status
+
+
+# Śledzenie czy powiadomienie zostało już wysłane (żeby nie spamować)
+_notification_sent_for_days = None
+
+def send_token_expiry_notification(days_remaining, warning_message):
+    """
+    Wyślij powiadomienie o wygasającym refresh tokenie.
+    Używa webhooka (Make.com) lub bezpośredniego emaila.
+    """
+    global _notification_sent_for_days
+    
+    # Nie wysyłaj jeśli już wysłano dla tego samego progu
+    threshold = int(days_remaining) if days_remaining else 0
+    if _notification_sent_for_days == threshold:
+        return False
+    
+    email = EMAIL_REFRESH_TOKEN_EXPIRE
+    webhook_url = WEBHOOK_TOKEN_EXPIRE_NOTIFY
+    
+    if not email and not webhook_url:
+        print("[LOG] Brak konfiguracji powiadomień (EMAIL_REFRESH_TOKEN_EXPIRE lub WEBHOOK_TOKEN_EXPIRE_NOTIFY)")
+        return False
+    
+    notification_data = {
+        "type": "refresh_token_expiry_warning",
+        "days_remaining": round(days_remaining, 1) if days_remaining else 0,
+        "warning": warning_message,
+        "email": email,
+        "service_url": os.environ.get('REDIRECT_URI', 'https://wfirma-api.onrender.com').replace('/callback', ''),
+        "action_required": "Przejdź na /auth aby odnowić token",
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+    
+    # Opcja 1: Webhook (Make.com)
+    if webhook_url:
+        try:
+            resp = requests.post(webhook_url, json=notification_data, timeout=10)
+            if resp.status_code in [200, 201, 202]:
+                print(f"[LOG] Powiadomienie wysłane przez webhook: {warning_message}")
+                _notification_sent_for_days = threshold
+                return True
+            else:
+                print(f"[LOG] Błąd webhooka: {resp.status_code} {resp.text[:200]}")
+        except Exception as e:
+            print(f"[LOG] Błąd wysyłania webhooka: {e}")
+    
+    # Opcja 2: Email przez prosty POST do serwisu (np. formspree, emailjs)
+    # Na razie tylko logujemy - user może skonfigurować webhook do Make.com
+    if email and not webhook_url:
+        print(f"[LOG] Powiadomienie email do {email}: {warning_message}")
+        print(f"[LOG] Skonfiguruj WEBHOOK_TOKEN_EXPIRE_NOTIFY żeby automatycznie wysyłać emaile przez Make.com")
+        _notification_sent_for_days = threshold
+        return True
+    
+    return False
 
 def load_token(silent=False):
     """
@@ -862,27 +985,22 @@ def callback():
 
 @app.route('/api/token/status')
 def token_status():
-    """Sprawdź status tokenu"""
+    """Sprawdź status tokenu i refresh tokena"""
+    status = get_token_status()
+    
+    # Sprawdź czy access token jest ważny
     token = load_token(silent=True)
-    is_valid = is_token_valid()
     
-    if token and is_valid:
-        try:
-            with open(TOKEN_FILE, 'r') as f:
-                token_data = json.load(f)
-            remaining = int(token_data['expires_at'] - time.time())
-            return jsonify({
-                'status': 'valid',
-                'remaining_seconds': remaining,
-                'expires_at': token_data['expires_at']
-            })
-        except:
-            pass
+    if token and status.get('access_token_valid'):
+        status['status'] = 'valid'
+        # Loguj ostrzeżenie o refresh tokenie jeśli jest
+        if status.get('warning'):
+            print(f"[WARNING] {status['warning']}")
+        return jsonify(status)
     
-    return jsonify({
-        'status': 'invalid',
-        'message': 'Brak ważnego tokenu. Przejdź do /auth'
-    })
+    status['status'] = 'invalid'
+    status['message'] = 'Brak ważnego tokenu. Przejdź do /auth'
+    return jsonify(status)
 
 @app.route('/api/contractor/<nip>')
 @require_token
@@ -1100,6 +1218,15 @@ def build_invoice_payload(invoice_input: dict, contractor: dict) -> tuple[dict |
 @require_token
 def workflow_create_invoice(token):
     """Pełny workflow: NIP -> (GUS) -> kontrahent -> faktura."""
+    
+    # Sprawdź ostrzeżenie o wygasającym refresh tokenie
+    days_remaining, warning = check_refresh_token_expiry()
+    if warning:
+        print(f"[WARNING] {warning}")
+        # Wyślij powiadomienie jeśli < 7 dni
+        if days_remaining is not None and days_remaining <= 7:
+            send_token_expiry_notification(days_remaining, warning)
+    
     body = request.get_json(silent=True) or {}
     nip_raw = str(body.get('nip', '')).strip()
     clean_nip = re.sub(r'[^0-9]', '', nip_raw)
@@ -1347,7 +1474,8 @@ def workflow_create_invoice(token):
         except Exception:
             email_result = {}
 
-    return jsonify({
+    # Przygotuj odpowiedź
+    response = {
         'success': True,
         'contractor_created': contractor_created,
         'contractor': contractor,
@@ -1355,7 +1483,15 @@ def workflow_create_invoice(token):
         'email_sent': bool(email_result),
         'email_response': email_result,
         'pdf_saved': pdf_filename
-    })
+    }
+    
+    # Dodaj ostrzeżenie o refresh tokenie jeśli niedługo wygasa
+    days_remaining, warning = check_refresh_token_expiry()
+    if warning:
+        response['token_warning'] = warning
+        response['refresh_token_days_remaining'] = round(days_remaining, 1) if days_remaining else 0
+    
+    return jsonify(response)
 
 
 # ==================== ENDPOINTY GUS / REGON ====================
