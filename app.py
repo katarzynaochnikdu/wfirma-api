@@ -1143,26 +1143,22 @@ def auth():
             'expected_env': f'{config["prefix"]}CLIENT_ID'
         }), 500
     
-    # Dodaj company do state żeby callback wiedział dla której firmy
-    # State będzie zakodowany w redirect_uri jako query param
-    callback_uri = REDIRECT_URI
-    if '?' in callback_uri:
-        callback_uri += f'&company={company}'
-    else:
-        callback_uri += f'?company={company}'
-    
+    # WAŻNE: Używamy parametru 'state' do przekazania company
+    # redirect_uri musi być DOKŁADNIE taki jak zarejestrowany w wFirma!
     scope_str = " ".join(SCOPES)
     auth_url = (
         "https://wfirma.pl/oauth2/auth?"
         f"response_type=code&"
         f"client_id={client_id}&"
         f"scope={quote(scope_str)}&"
-        f"redirect_uri={quote(callback_uri, safe='')}"
+        f"redirect_uri={quote(REDIRECT_URI, safe='')}&"
+        f"state={company}"  # state jest zwracany bez zmian w callbacku
     )
     
     print(f"[AUTH] Rozpoczynam autoryzację dla firmy: {company.upper()}")
     print(f"[AUTH] Client ID: {client_id[:10]}...")
-    print(f"[AUTH] Callback URI: {callback_uri}")
+    print(f"[AUTH] Redirect URI: {REDIRECT_URI}")
+    print(f"[AUTH] State (company): {company}")
     
     return redirect(auth_url)
 
@@ -1170,18 +1166,20 @@ def auth():
 def callback():
     """
     Odbierz kod autoryzacyjny i wymień na token.
-    Parametr ?company określa dla której firmy zapisać tokeny.
+    Parametr 'state' (zwrócony przez wFirma) określa dla której firmy zapisać tokeny.
     """
     code = request.args.get('code')
     error = request.args.get('error')
-    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    # WAŻNE: company jest przekazywane przez parametr 'state' (nie query param!)
+    state = request.args.get('state', '')
+    company = (state or DEFAULT_COMPANY).lower().strip()
     
     if company not in SUPPORTED_COMPANIES:
         company = DEFAULT_COMPANY
     
     config = get_company_config(company)
     
-    print(f"[CALLBACK] Otrzymano callback dla firmy: {company.upper()}")
+    print(f"[CALLBACK] Otrzymano callback, state={state}, company={company.upper()}")
     
     if error:
         return jsonify({
@@ -1193,13 +1191,7 @@ def callback():
     if not code:
         return jsonify({'error': 'Brak kodu autoryzacyjnego', 'company': company}), 400
     
-    # Zbuduj redirect_uri z company (musi być identyczny jak w /auth!)
-    callback_uri = REDIRECT_URI
-    if '?' in callback_uri:
-        callback_uri += f'&company={company}'
-    else:
-        callback_uri += f'?company={company}'
-    
+    # WAŻNE: redirect_uri musi być DOKŁADNIE taki jak w /auth (bez query params!)
     # Wymień kod na token używając credentials dla danej firmy
     token_url = "https://api2.wfirma.pl/oauth2/token?oauth_version=2"
     data = {
@@ -1207,11 +1199,12 @@ def callback():
         'code': code,
         'client_id': config['client_id'],
         'client_secret': config['client_secret'],
-        'redirect_uri': callback_uri
+        'redirect_uri': REDIRECT_URI  # Musi być identyczny jak zarejestrowany!
     }
     
     print(f"[CALLBACK] [{company.upper()}] Wymiana kodu na token...")
     print(f"[CALLBACK] [{company.upper()}] Client ID: {config['client_id'][:10] if config['client_id'] else 'BRAK'}...")
+    print(f"[CALLBACK] [{company.upper()}] Redirect URI: {REDIRECT_URI}")
     
     try:
         response = requests.post(token_url, data=data)
