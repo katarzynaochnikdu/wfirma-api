@@ -16,10 +16,37 @@ from functools import wraps
 app = Flask(__name__)
 
 # Konfiguracja z zmiennych środowiskowych (wFirma OAuth)
+# UWAGA: Teraz obsługujemy dwa zestawy danych: WFIRMA_MD_* i WFIRMA_TEST_*
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/callback')
 TOKEN_FILE = "wfirma_token.json"
+
+# Obsługiwane firmy/zestawy danych
+SUPPORTED_COMPANIES = ['md', 'test']
+DEFAULT_COMPANY = 'md'  # Domyślna firma jeśli nie podano
+
+
+def get_company_config(company: str = None) -> dict:
+    """
+    Pobierz konfigurację dla danej firmy (md lub test).
+    Zwraca dict z client_id, client_secret, access_token, refresh_token, token_expires.
+    """
+    company = (company or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        company = DEFAULT_COMPANY
+    
+    prefix = f"WFIRMA_{company.upper()}_"
+    
+    return {
+        'company': company,
+        'prefix': prefix,
+        'client_id': os.environ.get(f'{prefix}CLIENT_ID') or CLIENT_ID,
+        'client_secret': os.environ.get(f'{prefix}CLIENT_SECRET') or CLIENT_SECRET,
+        'access_token': os.environ.get(f'{prefix}ACCESS_TOKEN'),
+        'refresh_token': os.environ.get(f'{prefix}REFRESH_TOKEN'),
+        'token_expires': os.environ.get(f'{prefix}TOKEN_EXPIRES'),
+    }
 
 # Konfiguracja Render API (do trwałego zapisu tokenów)
 RENDER_API_KEY = os.environ.get('RENDER_API_KEY')
@@ -112,18 +139,27 @@ def update_render_env_var(key, value):
         print(f"[LOG] update_render_env_var: wyjątek {e}")
         return False
 
-def save_token(access_token, expires_in, refresh_token=None):
+def save_token(access_token, expires_in, refresh_token=None, company=None):
     """
     Zapisz token do ENV (główne źródło) i pliku (backup).
     ENV jest JEDYNYM trwałym storage po redeployu!
+    
+    Args:
+        access_token: Token dostępu
+        expires_in: Czas ważności w sekundach
+        refresh_token: Refresh token (opcjonalny)
+        company: Firma/zestaw danych ('md' lub 'test')
     """
+    config = get_company_config(company)
+    prefix = config['prefix']
+    
     expires_at = int(time.time() + expires_in - 60)  # 60 sek margines, jako int
     
     # Pobierz istniejący refresh_token jeśli nowy nie podany
     final_refresh_token = refresh_token
     if not final_refresh_token:
-        # Priorytet: plik > ENV
-        if os.path.exists(TOKEN_FILE):
+        # Priorytet: plik > ENV (tylko dla domyślnej firmy)
+        if company is None and os.path.exists(TOKEN_FILE):
             try:
                 with open(TOKEN_FILE, 'r') as f:
                     old_data = json.load(f)
@@ -131,40 +167,48 @@ def save_token(access_token, expires_in, refresh_token=None):
             except:
                 pass
         if not final_refresh_token:
-            final_refresh_token = os.environ.get('WFIRMA_REFRESH_TOKEN')
+            final_refresh_token = config['refresh_token']
     
-    print(f"[LOG] save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
+    print(f"[LOG] [{config['company'].upper()}] save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
     
-    # 1. Zapisz do PLIKU (lokalny cache - szybki dostęp)
-    token_data = {
-        'access_token': access_token,
-        'expires_at': expires_at,
-        'refresh_token': final_refresh_token
-    }
-    try:
-        with open(TOKEN_FILE, 'w') as f:
-            json.dump(token_data, f)
-        print(f"[LOG] Token zapisany do pliku")
-    except Exception as e:
-        print(f"[ERROR] Nie można zapisać tokenu do pliku: {e}")
+    # 1. Zapisz do PLIKU (lokalny cache - tylko dla domyślnej firmy, backward compatibility)
+    if company is None:
+        token_data = {
+            'access_token': access_token,
+            'expires_at': expires_at,
+            'refresh_token': final_refresh_token
+        }
+        try:
+            with open(TOKEN_FILE, 'w') as f:
+                json.dump(token_data, f)
+            print(f"[LOG] Token zapisany do pliku")
+        except Exception as e:
+            print(f"[ERROR] Nie można zapisać tokenu do pliku: {e}")
     
-    # 2. Zapisz do ENV (trwałe po redeployu) - WSZYSTKIE wartości!
+    # 2. Zapisz do ENV (trwałe po redeployu) - z odpowiednim prefixem dla firmy!
     if final_refresh_token:
-        update_render_env_var("WFIRMA_REFRESH_TOKEN", final_refresh_token)
-    update_render_env_var("WFIRMA_ACCESS_TOKEN", access_token)
-    update_render_env_var("WFIRMA_TOKEN_EXPIRES", str(expires_at))
+        update_render_env_var(f"{prefix}REFRESH_TOKEN", final_refresh_token)
+    update_render_env_var(f"{prefix}ACCESS_TOKEN", access_token)
+    update_render_env_var(f"{prefix}TOKEN_EXPIRES", str(expires_at))
     
     # 3. Jeśli to NOWY refresh_token (z /auth), zapisz też jego termin ważności (30 dni)
     if refresh_token:  # Nowy refresh token = nowe 30 dni
         refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)  # 30 dni od teraz
-        update_render_env_var("WFIRMA_REFRESH_TOKEN_EXPIRES", str(refresh_expires_at))
-        print(f"[LOG] Nowy refresh_token ważny do: {datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')}")
+        update_render_env_var(f"{prefix}REFRESH_TOKEN_EXPIRES", str(refresh_expires_at))
+        print(f"[LOG] [{config['company'].upper()}] Nowy refresh_token ważny do: {datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')}")
 
-def refresh_access_token(forced_refresh_token=None):
-    """Odśwież token używając refresh_token (z pliku lub argumentu)"""
+def refresh_access_token(forced_refresh_token=None, company=None):
+    """
+    Odśwież token używając refresh_token (z pliku lub argumentu).
+    
+    Args:
+        forced_refresh_token: Wymuszony refresh token
+        company: Firma/zestaw danych ('md' lub 'test')
+    """
+    config = get_company_config(company)
     
     refresh_token = forced_refresh_token
-    if not refresh_token and os.path.exists(TOKEN_FILE):
+    if not refresh_token and company is None and os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'r') as f:
                 data = json.load(f)
@@ -172,27 +216,27 @@ def refresh_access_token(forced_refresh_token=None):
         except:
             pass
             
-    # Fallback: sprawdź zmienną środowiskową (jeśli plik zniknął po redeployu)
+    # Fallback: sprawdź zmienną środowiskową dla danej firmy
     if not refresh_token:
-        refresh_token = os.environ.get('WFIRMA_REFRESH_TOKEN')
+        refresh_token = config['refresh_token']
         
     if not refresh_token:
-        print("[LOG] Brak refresh tokena, nie można odświeżyć sesji")
+        print(f"[LOG] [{config['company'].upper()}] Brak refresh tokena, nie można odświeżyć sesji")
         return None
         
-    print("[LOG] Próba odświeżenia tokenu...")
+    print(f"[LOG] [{config['company'].upper()}] Próba odświeżenia tokenu...")
     token_url = "https://api2.wfirma.pl/oauth2/token"
     payload = {
         'grant_type': 'refresh_token',
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET,
-        'refresh_token': refresh_token  # ← POPRAWKA: 'refresh_token' zamiast 'code'
+        'client_id': config['client_id'],
+        'client_secret': config['client_secret'],
+        'refresh_token': refresh_token
     }
     
     try:
-        print(f"[LOG] Refresh payload keys: {list(payload.keys())}")
+        print(f"[LOG] [{config['company'].upper()}] Refresh payload keys: {list(payload.keys())}")
         response = requests.post(token_url, data=payload)
-        print(f"[LOG] Refresh response status: {response.status_code}")
+        print(f"[LOG] [{config['company'].upper()}] Refresh response status: {response.status_code}")
         
         if response.status_code == 200:
             new_tokens = response.json()
@@ -201,50 +245,72 @@ def refresh_access_token(forced_refresh_token=None):
             expires_in = int(new_tokens.get('expires_in', 3600))
             
             # LOG: sprawdź czy wFirma zwraca nowy refresh_token
-            print(f"[LOG] Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
+            print(f"[LOG] [{config['company'].upper()}] Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
             
             if new_access:
                 # WAŻNE: Zapisujemy nowe tokeny NATYCHMIAST (przed jakimkolwiek returnem)
-                save_token(new_access, expires_in, new_refresh)
-                print("[LOG] Token odświeżony pomyślnie i zapisany do ENV")
+                save_token(new_access, expires_in, new_refresh, company=company)
+                print(f"[LOG] [{config['company'].upper()}] Token odświeżony pomyślnie i zapisany do ENV")
                 return new_access
             else:
-                print(f"[LOG] Brak access_token w odpowiedzi: {new_tokens}")
+                print(f"[LOG] [{config['company'].upper()}] Brak access_token w odpowiedzi: {new_tokens}")
         else:
-            print(f"[LOG] Błąd API refresh token: {response.status_code} {response.text}")
+            print(f"[LOG] [{config['company'].upper()}] Błąd API refresh token: {response.status_code} {response.text}")
     except Exception as e:
-        print(f"[LOG] Błąd podczas odświeżania tokenu: {e}")
+        print(f"[LOG] [{config['company'].upper()}] Błąd podczas odświeżania tokenu: {e}")
         
     return None
 
 def is_token_valid():
-    """Sprawdź czy zapisany token jest ważny (ENV > plik)"""
-    # 1. Sprawdź ENV (priorytet - trwałe po redeployu)
-    env_expires = os.environ.get('WFIRMA_TOKEN_EXPIRES')
-    env_access = os.environ.get('WFIRMA_ACCESS_TOKEN')
+    """Sprawdź czy zapisany token jest ważny dla domyślnej firmy"""
+    return is_token_valid_for_company(None)
+
+
+def is_token_valid_for_company(company=None):
+    """Sprawdź czy zapisany token jest ważny dla danej firmy (ENV > plik)"""
+    config = get_company_config(company)
+    
+    # 1. Sprawdź ENV dla danej firmy (priorytet - trwałe po redeployu)
+    env_expires = config['token_expires']
+    env_access = config['access_token']
     if env_expires and env_access:
         try:
             return time.time() < float(env_expires)
         except:
             pass
     
-    # 2. Fallback: sprawdź plik
-    if not os.path.exists(TOKEN_FILE):
-        return False
-    try:
-        with open(TOKEN_FILE, 'r') as f:
-            token_data = json.load(f)
-        return time.time() < token_data.get('expires_at', 0)
-    except:
-        return False
+    # 2. Fallback: sprawdź plik (tylko dla domyślnej firmy - backward compatibility)
+    if company is None and os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'r') as f:
+                token_data = json.load(f)
+            return time.time() < token_data.get('expires_at', 0)
+        except:
+            pass
+    
+    return False
 
 
 def check_refresh_token_expiry():
     """
-    Sprawdź ile dni zostało do wygaśnięcia refresh tokena.
+    Sprawdź ile dni zostało do wygaśnięcia refresh tokena (domyślna firma).
     Zwraca (days_remaining, warning_message) lub (None, None) jeśli brak danych.
     """
-    refresh_expires = os.environ.get('WFIRMA_REFRESH_TOKEN_EXPIRES')
+    return check_refresh_token_expiry_for_company(None)
+
+
+def check_refresh_token_expiry_for_company(company=None):
+    """
+    Sprawdź ile dni zostało do wygaśnięcia refresh tokena dla danej firmy.
+    Zwraca (days_remaining, warning_message) lub (None, None) jeśli brak danych.
+    """
+    config = get_company_config(company)
+    prefix = config['prefix']
+    
+    refresh_expires = os.environ.get(f'{prefix}REFRESH_TOKEN_EXPIRES')
+    if not refresh_expires:
+        # Fallback na starą zmienną (backward compatibility)
+        refresh_expires = os.environ.get('WFIRMA_REFRESH_TOKEN_EXPIRES')
     if not refresh_expires:
         return None, None
     
@@ -254,14 +320,16 @@ def check_refresh_token_expiry():
         seconds_remaining = expires_at - now
         days_remaining = seconds_remaining / (24 * 60 * 60)
         
+        company_label = config['company'].upper()
+        
         if days_remaining <= 0:
-            return 0, "🚨 REFRESH TOKEN WYGASŁ! Przejdź przez /auth NATYCHMIAST!"
+            return 0, f"🚨 [{company_label}] REFRESH TOKEN WYGASŁ! Przejdź przez /auth?company={config['company']} NATYCHMIAST!"
         elif days_remaining <= 3:
-            return days_remaining, f"🔴 PILNE! Refresh token wygasa za {days_remaining:.1f} dni! Przejdź przez /auth!"
+            return days_remaining, f"🔴 [{company_label}] PILNE! Refresh token wygasa za {days_remaining:.1f} dni! Przejdź przez /auth?company={config['company']}!"
         elif days_remaining <= 7:
-            return days_remaining, f"⚠️ UWAGA! Refresh token wygasa za {days_remaining:.1f} dni. Zaplanuj reautoryzację."
+            return days_remaining, f"⚠️ [{company_label}] UWAGA! Refresh token wygasa za {days_remaining:.1f} dni. Zaplanuj reautoryzację."
         elif days_remaining <= 14:
-            return days_remaining, f"📅 Refresh token wygasa za {days_remaining:.1f} dni."
+            return days_remaining, f"📅 [{company_label}] Refresh token wygasa za {days_remaining:.1f} dni."
         else:
             return days_remaining, None  # Brak ostrzeżenia
     except:
@@ -269,14 +337,23 @@ def check_refresh_token_expiry():
 
 
 def get_token_status():
-    """Zwraca pełny status tokenów (do endpointu /api/token/status)"""
+    """Zwraca pełny status tokenów dla domyślnej firmy"""
+    return get_token_status_for_company(None)
+
+
+def get_token_status_for_company(company=None):
+    """Zwraca pełny status tokenów dla danej firmy (do endpointu /api/token/status)"""
+    config = get_company_config(company)
+    prefix = config['prefix']
+    
     status = {
-        'access_token_valid': is_token_valid(),
-        'refresh_token_exists': bool(os.environ.get('WFIRMA_REFRESH_TOKEN')),
+        'company': config['company'],
+        'access_token_valid': is_token_valid_for_company(company),
+        'refresh_token_exists': bool(config['refresh_token']),
     }
     
     # Access token
-    env_expires = os.environ.get('WFIRMA_TOKEN_EXPIRES')
+    env_expires = config['token_expires']
     if env_expires:
         try:
             expires_at = float(env_expires)
@@ -286,10 +363,10 @@ def get_token_status():
             pass
     
     # Refresh token
-    days_remaining, warning = check_refresh_token_expiry()
+    days_remaining, warning = check_refresh_token_expiry_for_company(company)
     if days_remaining is not None:
         status['refresh_token_days_remaining'] = round(days_remaining, 1)
-        status['refresh_token_expires_at'] = os.environ.get('WFIRMA_REFRESH_TOKEN_EXPIRES')
+        status['refresh_token_expires_at'] = os.environ.get(f'{prefix}REFRESH_TOKEN_EXPIRES')
     if warning:
         status['warning'] = warning
     
@@ -351,19 +428,26 @@ def send_token_expiry_notification(days_remaining, warning_message):
     
     return False
 
-def load_token(silent=False):
+def load_token(silent=False, company=None):
     """
     Wczytaj token (ENV > plik) - automatycznie odświeża jeśli wygasł.
     Po redeployu plik nie istnieje, więc ENV jest GŁÓWNYM źródłem!
+    
+    Args:
+        silent: Czy ukrywać logi
+        company: Firma/zestaw danych ('md' lub 'test'). Jeśli None - używa domyślnego.
     """
+    config = get_company_config(company)
+    prefix = config['prefix']
+    
     access_token = None
     expires_at = 0
     refresh_token = None
     
-    # 1. NAJPIERW sprawdź ENV (trwałe po redeployu!)
-    env_access = os.environ.get('WFIRMA_ACCESS_TOKEN')
-    env_expires = os.environ.get('WFIRMA_TOKEN_EXPIRES')
-    env_refresh = os.environ.get('WFIRMA_REFRESH_TOKEN')
+    # 1. NAJPIERW sprawdź ENV dla danej firmy (trwałe po redeployu!)
+    env_access = config['access_token']
+    env_expires = config['token_expires']
+    env_refresh = config['refresh_token']
     
     if env_access and env_expires:
         try:
@@ -371,12 +455,12 @@ def load_token(silent=False):
             expires_at = float(env_expires)
             refresh_token = env_refresh
             if not silent:
-                print(f"[LOG] Tokeny wczytane z ENV")
+                print(f"[LOG] [{config['company'].upper()}] Tokeny wczytane z ENV ({prefix}*)")
         except:
             pass
     
-    # 2. Jeśli brak w ENV, sprawdź plik
-    if not access_token and os.path.exists(TOKEN_FILE):
+    # 2. Jeśli brak w ENV, sprawdź plik (tylko dla domyślnej firmy - backward compatibility)
+    if not access_token and company is None and os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'r') as f:
                 token_data = json.load(f)
@@ -393,7 +477,7 @@ def load_token(silent=False):
     if access_token and time.time() < expires_at:
         remaining = int(expires_at - time.time())
         if not silent:
-            print(f"[LOG] ✓ Token ważny jeszcze {remaining} sekund")
+            print(f"[LOG] [{config['company'].upper()}] ✓ Token ważny jeszcze {remaining} sekund")
         return access_token
     
     # 4. Token wygasł lub brak - spróbuj odświeżyć
@@ -402,13 +486,13 @@ def load_token(silent=False):
     
     if refresh_token:
         if not silent:
-            print(f"[LOG] Token wygasł/brak, próba odświeżenia...")
-        new_token = refresh_access_token(forced_refresh_token=refresh_token)
+            print(f"[LOG] [{config['company'].upper()}] Token wygasł/brak, próba odświeżenia...")
+        new_token = refresh_access_token(forced_refresh_token=refresh_token, company=company)
         if new_token:
             return new_token
     
     if not silent:
-        print("[LOG] Brak tokenu i refresh_token - wymagana autoryzacja /auth")
+        print(f"[LOG] [{config['company'].upper()}] Brak tokenu i refresh_token - wymagana autoryzacja /auth")
     return None
 
 def require_token(f):
@@ -992,9 +1076,11 @@ def index():
         },
         'endpoints': {
             '🔐 OAuth': {
-                '/auth': 'Rozpocznij autoryzację OAuth 2.0',
+                '/auth?company=md': 'Rozpocznij autoryzację OAuth 2.0 dla Medidesk',
+                '/auth?company=test': 'Rozpocznij autoryzację OAuth 2.0 dla testów',
                 '/callback': 'Callback OAuth (automatyczny redirect)',
-                '/api/token/status': 'GET - Sprawdź status tokenu'
+                '/api/token/status?company=md': 'GET - Sprawdź status tokenu dla Medidesk',
+                '/api/token/status?company=test': 'GET - Sprawdź status tokenu dla testów'
             },
             '👥 Kontrahenci': {
                 '/api/contractor/<nip>': 'GET - Sprawdź kontrahenta po NIP (wFirma)',
@@ -1013,6 +1099,7 @@ def index():
             }
         },
         'workflow_example': {
+            "company": "md",  # lub "test" - wybór zestawu danych wFirma
             "nip": "1234567890",
             "email": "klient@example.com",
             "send_email": True,
@@ -1027,49 +1114,104 @@ def index():
                     }
                 ]
             }
-        }
+        },
+        'supported_companies': SUPPORTED_COMPANIES,
+        'note': 'Parametr "company" określa zestaw danych wFirma: "md" (Medidesk) lub "test" (testowe)'
     })
 
 @app.route('/auth')
 def auth():
-    """Rozpocznij autoryzację OAuth 2.0"""
-    if not CLIENT_ID:
-        return jsonify({'error': 'CLIENT_ID nie jest ustawiony'}), 500
+    """
+    Rozpocznij autoryzację OAuth 2.0.
+    Parametr ?company=md lub ?company=test określa dla której firmy autoryzować.
+    """
+    # Pobierz company z query string
+    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        return jsonify({
+            'error': f'Nieobsługiwana firma: {company}',
+            'supported': SUPPORTED_COMPANIES,
+            'usage': '/auth?company=md lub /auth?company=test'
+        }), 400
+    
+    config = get_company_config(company)
+    client_id = config['client_id']
+    
+    if not client_id:
+        return jsonify({
+            'error': f'CLIENT_ID nie jest ustawiony dla firmy {company.upper()}',
+            'expected_env': f'{config["prefix"]}CLIENT_ID'
+        }), 500
+    
+    # Dodaj company do state żeby callback wiedział dla której firmy
+    # State będzie zakodowany w redirect_uri jako query param
+    callback_uri = REDIRECT_URI
+    if '?' in callback_uri:
+        callback_uri += f'&company={company}'
+    else:
+        callback_uri += f'?company={company}'
     
     scope_str = " ".join(SCOPES)
     auth_url = (
         "https://wfirma.pl/oauth2/auth?"
         f"response_type=code&"
-        f"client_id={CLIENT_ID}&"
+        f"client_id={client_id}&"
         f"scope={quote(scope_str)}&"
-        f"redirect_uri={quote(REDIRECT_URI, safe='')}"
+        f"redirect_uri={quote(callback_uri, safe='')}"
     )
+    
+    print(f"[AUTH] Rozpoczynam autoryzację dla firmy: {company.upper()}")
+    print(f"[AUTH] Client ID: {client_id[:10]}...")
+    print(f"[AUTH] Callback URI: {callback_uri}")
+    
     return redirect(auth_url)
 
 @app.route('/callback')
 def callback():
-    """Odbierz kod autoryzacyjny i wymień na token"""
+    """
+    Odbierz kod autoryzacyjny i wymień na token.
+    Parametr ?company określa dla której firmy zapisać tokeny.
+    """
     code = request.args.get('code')
     error = request.args.get('error')
+    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    
+    if company not in SUPPORTED_COMPANIES:
+        company = DEFAULT_COMPANY
+    
+    config = get_company_config(company)
+    
+    print(f"[CALLBACK] Otrzymano callback dla firmy: {company.upper()}")
     
     if error:
         return jsonify({
             'error': 'Błąd autoryzacji',
-            'details': error
+            'details': error,
+            'company': company
         }), 400
     
     if not code:
-        return jsonify({'error': 'Brak kodu autoryzacyjnego'}), 400
+        return jsonify({'error': 'Brak kodu autoryzacyjnego', 'company': company}), 400
     
-    # Wymień kod na token
+    # Zbuduj redirect_uri z company (musi być identyczny jak w /auth!)
+    callback_uri = REDIRECT_URI
+    if '?' in callback_uri:
+        callback_uri += f'&company={company}'
+    else:
+        callback_uri += f'?company={company}'
+    
+    # Wymień kod na token używając credentials dla danej firmy
     token_url = "https://api2.wfirma.pl/oauth2/token?oauth_version=2"
     data = {
         'grant_type': 'authorization_code',
         'code': code,
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET,
-        'redirect_uri': REDIRECT_URI
+        'client_id': config['client_id'],
+        'client_secret': config['client_secret'],
+        'redirect_uri': callback_uri
     }
+    
+    print(f"[CALLBACK] [{company.upper()}] Wymiana kodu na token...")
+    print(f"[CALLBACK] [{company.upper()}] Client ID: {config['client_id'][:10] if config['client_id'] else 'BRAK'}...")
     
     try:
         response = requests.post(token_url, data=data)
@@ -1077,7 +1219,8 @@ def callback():
             return jsonify({
                 'error': 'Błąd wymiany tokenu',
                 'status': response.status_code,
-                'details': response.text
+                'details': response.text,
+                'company': company
             }), 400
         
         token_data = response.json()
@@ -1085,40 +1228,53 @@ def callback():
         access_token = token_data['access_token']
         refresh_token = token_data.get('refresh_token')
         
-        # Zapisz token (wraz z refresh_token)
-        save_token(access_token, expires_in, refresh_token)
+        # Zapisz token dla danej firmy (wraz z refresh_token)
+        save_token(access_token, expires_in, refresh_token, company=company)
+        
+        print(f"[CALLBACK] [{company.upper()}] ✓ Tokeny zapisane pomyślnie!")
         
         return jsonify({
-            'message': 'Autoryzacja zakończona pomyślnie',
+            'message': f'Autoryzacja zakończona pomyślnie dla firmy {company.upper()}',
+            'company': company,
             'token_valid_for': f"{expires_in} sekund",
             'expires_in': expires_in,
-            'refresh_token_saved': bool(refresh_token)
+            'refresh_token_saved': bool(refresh_token),
+            'refresh_token_valid_for': '30 dni',
+            'env_prefix': config['prefix']
         })
     except Exception as e:
         return jsonify({
             'error': 'Błąd podczas wymiany tokenu',
-            'details': str(e)
+            'details': str(e),
+            'company': company
         }), 500
 
 # ==================== ENDPOINTY API ====================
 
 @app.route('/api/token/status')
 def token_status():
-    """Sprawdź status tokenu i refresh tokena"""
-    status = get_token_status()
+    """
+    Sprawdź status tokenu i refresh tokena.
+    Parametr ?company=md lub ?company=test określa dla której firmy sprawdzić.
+    """
+    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        company = DEFAULT_COMPANY
+    
+    status = get_token_status_for_company(company)
     
     # Sprawdź czy access token jest ważny
-    token = load_token(silent=True)
+    token = load_token(silent=True, company=company)
     
     if token and status.get('access_token_valid'):
         status['status'] = 'valid'
         # Loguj ostrzeżenie o refresh tokenie jeśli jest
         if status.get('warning'):
-            print(f"[WARNING] {status['warning']}")
+            print(f"[WARNING] [{company.upper()}] {status['warning']}")
         return jsonify(status)
     
     status['status'] = 'invalid'
-    status['message'] = 'Brak ważnego tokenu. Przejdź do /auth'
+    status['message'] = f'Brak ważnego tokenu dla firmy {company.upper()}. Przejdź do /auth?company={company}'
     return jsonify(status)
 
 @app.route('/api/contractor/<nip>')
@@ -1357,19 +1513,38 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
 
 @app.route('/api/workflow/create-invoice-from-nip', methods=['POST'])
 @require_api_key
-@require_token
-def workflow_create_invoice(token):
+def workflow_create_invoice():
     """Pełny workflow: NIP -> (GUS) -> kontrahent -> faktura."""
     
+    body = request.get_json(silent=True) or {}
+    
+    # Pobierz parametr company z body (md lub test)
+    company = (body.get('company') or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        return jsonify({
+            'error': f'Nieobsługiwana firma: {company}',
+            'supported': SUPPORTED_COMPANIES
+        }), 400
+    
+    config = get_company_config(company)
+    print(f"[WORKFLOW] Używam konfiguracji dla firmy: {company.upper()} (prefix: {config['prefix']})")
+    
+    # Załaduj token dla wybranej firmy
+    token = load_token(silent=False, company=company)
+    if not token:
+        return jsonify({
+            'error': f'Brak autoryzacji dla firmy {company.upper()}',
+            'message': f'Przejdź do /auth?company={company} aby się zalogować',
+            'company': company
+        }), 401
+    
     # Sprawdź ostrzeżenie o wygasającym refresh tokenie
-    days_remaining, warning = check_refresh_token_expiry()
+    days_remaining, warning = check_refresh_token_expiry_for_company(company)
     if warning:
-        print(f"[WARNING] {warning}")
+        print(f"[WARNING] [{company.upper()}] {warning}")
         # Wyślij powiadomienie jeśli < 7 dni
         if days_remaining is not None and days_remaining <= 7:
             send_token_expiry_notification(days_remaining, warning)
-    
-    body = request.get_json(silent=True) or {}
     nip_raw = str(body.get('nip', '')).strip()
     clean_nip = re.sub(r'[^0-9]', '', nip_raw)
     invoice_input = body.get('invoice')
@@ -1619,6 +1794,7 @@ def workflow_create_invoice(token):
     # Przygotuj odpowiedź
     response = {
         'success': True,
+        'company': company,  # Dodaj informację o użytej firmie
         'contractor_created': contractor_created,
         'contractor': contractor,
         'invoice': invoice,
@@ -1628,7 +1804,7 @@ def workflow_create_invoice(token):
     }
     
     # Dodaj ostrzeżenie o refresh tokenie jeśli niedługo wygasa
-    days_remaining, warning = check_refresh_token_expiry()
+    days_remaining, warning = check_refresh_token_expiry_for_company(company)
     if warning:
         response['token_warning'] = warning
         response['refresh_token_days_remaining'] = round(days_remaining, 1) if days_remaining else 0
