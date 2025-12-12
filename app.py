@@ -83,10 +83,15 @@ def update_render_env_var(key, value):
     """
     Bezpiecznie aktualizuje JEDNĄ zmienną środowiskową w usłudze Render.
     Pobiera najpierw wszystkie zmienne, modyfikuje jedną, zapisuje całość.
+    WAŻNE: Również aktualizuje os.environ żeby zmiany były widoczne natychmiast!
     """
+    # ZAWSZE aktualizuj pamięć procesu - nawet jeśli Render API nie jest skonfigurowane
+    os.environ[key] = value
+    print(f"[LOG] update_render_env_var: zaktualizowano os.environ[{key}]")
+    
     if not RENDER_API_KEY or not RENDER_SERVICE_ID:
-        print(f"[LOG] update_render_env_var: brak RENDER_API_KEY lub RENDER_SERVICE_ID - pomijam")
-        return False
+        print(f"[LOG] update_render_env_var: brak RENDER_API_KEY lub RENDER_SERVICE_ID - tylko pamięć lokalna")
+        return True  # Zwracamy True bo os.environ zostało zaktualizowane
     
     url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars"
     headers = {
@@ -116,7 +121,7 @@ def update_render_env_var(key, value):
                 # Aktualizuj tę zmienną
                 env_list.append({"key": key, "value": value})
                 key_found = True
-                print(f"[LOG] update_render_env_var: aktualizuję {key}")
+                print(f"[LOG] update_render_env_var: aktualizuję {key} w Render")
             else:
                 # Zachowaj bez zmian
                 env_list.append({"key": existing_key, "value": existing_value})
@@ -124,12 +129,12 @@ def update_render_env_var(key, value):
         # 3) Jeśli zmienna nie istniała - dodaj ją
         if not key_found:
             env_list.append({"key": key, "value": value})
-            print(f"[LOG] update_render_env_var: dodaję nową zmienną {key}")
+            print(f"[LOG] update_render_env_var: dodaję nową zmienną {key} w Render")
         
         # 4) ZAPISZ całą listę (PUT)
         put_resp = requests.put(url, headers=headers, json=env_list)
         if put_resp.status_code == 200:
-            print(f"[LOG] update_render_env_var: sukces - zaktualizowano {key}")
+            print(f"[LOG] update_render_env_var: sukces - zaktualizowano {key} w Render")
             return True
         else:
             print(f"[LOG] update_render_env_var: błąd PUT {put_resp.status_code} {put_resp.text[:200]}")
@@ -1243,6 +1248,57 @@ def callback():
         }), 500
 
 # ==================== ENDPOINTY API ====================
+
+@app.route('/api/token/refresh')
+def token_refresh():
+    """
+    Ręcznie odśwież access token używając refresh tokena.
+    Parametr ?company=md lub ?company=test
+    """
+    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        company = DEFAULT_COMPANY
+    
+    config = get_company_config(company)
+    
+    print(f"[TOKEN REFRESH] Próba odświeżenia tokenu dla firmy: {company.upper()}")
+    print(f"[TOKEN REFRESH] Client ID exists: {bool(config['client_id'])}")
+    print(f"[TOKEN REFRESH] Client Secret exists: {bool(config['client_secret'])}")
+    print(f"[TOKEN REFRESH] Refresh Token exists: {bool(config['refresh_token'])}")
+    
+    if not config['client_id'] or not config['client_secret']:
+        return jsonify({
+            'error': f'Brak CLIENT_ID lub CLIENT_SECRET dla firmy {company.upper()}',
+            'expected_vars': [f'{config["prefix"]}CLIENT_ID', f'{config["prefix"]}CLIENT_SECRET'],
+            'company': company
+        }), 400
+    
+    if not config['refresh_token']:
+        return jsonify({
+            'error': f'Brak REFRESH_TOKEN dla firmy {company.upper()}',
+            'expected_var': f'{config["prefix"]}REFRESH_TOKEN',
+            'message': f'Przejdź do /auth?company={company} żeby uzyskać nowy token',
+            'company': company
+        }), 400
+    
+    # Próba odświeżenia
+    new_token = refresh_access_token(forced_refresh_token=config['refresh_token'], company=company)
+    
+    if new_token:
+        return jsonify({
+            'success': True,
+            'message': f'Token odświeżony pomyślnie dla firmy {company.upper()}',
+            'company': company,
+            'access_token_preview': new_token[:20] + '...'
+        })
+    else:
+        return jsonify({
+            'error': 'Nie udało się odświeżyć tokenu',
+            'message': 'Sprawdź logi na Render dla szczegółów błędu',
+            'hint': f'Możliwe że refresh_token wygasł. Przejdź do /auth?company={company}',
+            'company': company
+        }), 500
+
 
 @app.route('/api/token/status')
 def token_status():
