@@ -1515,36 +1515,16 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
         
-        # NOWE: Utwórz/znajdź produkt w katalogu wFirma i użyj good_id
-        if token:
-            good = wfirma_get_or_create_good(token, name, price_num, pos.get('unit', 'szt.'), vat_code)
-            if good and good.get('id'):
-                # Użyj good_id - wFirma pobierze nazwę i cenę z katalogu
-                invoice_contents.append({
-                    "good": {"id": int(good.get('id'))},
-                    "count": f"{qty_num:.4f}",
-                    "unit": pos.get('unit', 'szt.')
-                })
-                print(f"[WFIRMA DEBUG] Position with good_id: {good.get('id')} ({name})")
-            else:
-                # Fallback - bez good_id (może nie zadziałać)
-                print(f"[WFIRMA DEBUG] WARNING: Could not create good for: {name}, using fallback")
-                invoice_contents.append({
-                    "name": str(name),
-                    "count": f"{qty_num:.4f}",
-                    "unit": pos.get('unit', 'szt.'),
-                    "price": f"{price_num:.2f}",
-                    "vat": vat_code
-                })
-        else:
-            # Bez tokena - stara metoda (bez produktów)
-            invoice_contents.append({
-                "name": str(name),
-                "count": f"{qty_num:.4f}",
-                "unit": pos.get('unit', 'szt.'),
-                "price": f"{price_num:.2f}",
-                "vat": vat_code
-            })
+        # Tworzymy pozycję faktury z pełnymi danymi (bez polegania na katalogu)
+        # wFirma wymaga: name, count, unit, price, vat
+        invoice_contents.append({
+            "name": str(name),
+            "count": f"{qty_num:.4f}",
+            "unit": pos.get('unit', 'szt.'),
+            "price": f"{price_num:.2f}",
+            "vat": vat_code
+        })
+        print(f"[WFIRMA DEBUG] Position: {name}, qty={qty_num}, price={price_num}, vat={vat_code}")
 
     # Struktura zgodna z dokumentacją XML -> JSON:
     payload["invoicecontents"] = {"invoicecontent": invoice_contents}
