@@ -593,6 +593,7 @@ def wfirma_find_contractor_by_nip(token: str, nip: str, company_id: str = None) 
     api_url = "https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2"
     if company_id:
         api_url += f"&company_id={company_id}"
+    print(f"[WFIRMA DEBUG] find_contractor URL: {api_url}")
     headers = get_wfirma_headers(token)
     search_data = {
         "contractors": {
@@ -1817,6 +1818,20 @@ def workflow_create_invoice():
             'error': 'Nie udało się uzyskać ID kontrahenta w wFirma',
             'status': status
         }), status or 502
+
+    # === DLA MD: tylko sprawdzanie kontrahenta, bez generowania faktury ===
+    if company == 'md':
+        print(f"[WORKFLOW] [MD] Tryb tylko sprawdzanie - bez generowania faktury")
+        return jsonify({
+            'success': True,
+            'mode': 'check_only',
+            'message': 'MD: Tylko sprawdzanie kontrahenta (generowanie faktur wyłączone)',
+            'company': company,
+            'contractor_found': bool(contractor_id),
+            'contractor_created': contractor_created,
+            'contractor': contractor,
+            'token_status': 'valid'
+        })
 
     # 3) Szukamy serii faktur (opcjonalnie)
     series_id = None
