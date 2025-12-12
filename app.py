@@ -65,17 +65,47 @@ GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 EMAIL_REFRESH_TOKEN_EXPIRE = os.environ.get('EMAIL_REFRESH_TOKEN_EXPIRE')  # Email do powiadomień
 WEBHOOK_TOKEN_EXPIRE_NOTIFY = os.environ.get('WEBHOOK_TOKEN_EXPIRE_NOTIFY')  # URL webhooka (np. Make.com)
 
-SCOPES = [
-    # companies-read NIE JEST POTRZEBNE - API używa domyślnej firmy
+# SCOPES per firma - muszą odpowiadać konfiguracji w wFirma!
+SCOPES_MD = [
+    # Zgodne z konfiguracją w wFirma dla Medidesk (API_RENDER_ADMIN_ZOHO)
+    "companies-read",
     "contractors-read", "contractors-write",
-    "goods-read", "goods-write",  # NOWE: katalog produktów
+    "goods-read", "goods-write",
+    "invoice_descriptions-read",
+    "invoice_deliveries-read", "invoice_deliveries-write",
+    "invoices-read", "invoices-write",
+    "payments-read", "payments-write",
+    "series-read", "series-write",
+    "tags-read", "tags-write",
+    "webhooks-read", "webhooks-write",
+]
+
+SCOPES_TEST = [
+    # Zgodne z konfiguracją w wFirma dla TEST (API_render)
+    "companies-read",
+    "contractors-read", "contractors-write",
+    "documents-read",
+    "goods-read", "goods-write",
     "invoice_descriptions-read",
     "invoice_deliveries-read", "invoice_deliveries-write",
     "invoices-read", "invoices-write",
     "notes-read", "notes-write",
     "payments-read", "payments-write",
+    "series-read", "series-write",
     "tags-read", "tags-write",
+    "webhooks-read", "webhooks-write",
 ]
+
+# Domyślne SCOPES (dla backward compatibility)
+SCOPES = SCOPES_MD
+
+
+def get_scopes_for_company(company: str = None) -> list:
+    """Pobierz listę SCOPES dla danej firmy."""
+    company = (company or DEFAULT_COMPANY).lower().strip()
+    if company == 'test':
+        return SCOPES_TEST
+    return SCOPES_MD
 
 # ==================== FUNKCJE POMOCNICZE ====================
 
@@ -1148,9 +1178,12 @@ def auth():
             'expected_env': f'{config["prefix"]}CLIENT_ID'
         }), 500
     
+    # Pobierz SCOPES dla danej firmy
+    scopes = get_scopes_for_company(company)
+    scope_str = " ".join(scopes)
+    
     # WAŻNE: Używamy parametru 'state' do przekazania company
     # redirect_uri musi być DOKŁADNIE taki jak zarejestrowany w wFirma!
-    scope_str = " ".join(SCOPES)
     auth_url = (
         "https://wfirma.pl/oauth2/auth?"
         f"response_type=code&"
@@ -1164,6 +1197,7 @@ def auth():
     print(f"[AUTH] Client ID: {client_id[:10]}...")
     print(f"[AUTH] Redirect URI: {REDIRECT_URI}")
     print(f"[AUTH] State (company): {company}")
+    print(f"[AUTH] Scopes count: {len(scopes)}")
     
     return redirect(auth_url)
 
