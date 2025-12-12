@@ -9,6 +9,7 @@ import os
 import time
 import re
 import datetime
+import base64
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
@@ -2057,14 +2058,21 @@ def workflow_create_invoice():
 
     # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
     pdf_filename = None
+    pdf_base64 = None
+    pdf_content = None
     try:
         resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
         if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
+            pdf_content = resp_pdf.content
+            # Koduj PDF jako base64 dla zwrócenia w odpowiedzi
+            pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
+            
+            # Zapisz też lokalnie
             os.makedirs('invoices', exist_ok=True)
             pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
             with open(pdf_filename, 'wb') as f:
-                f.write(resp_pdf.content)
-            print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename} ({len(resp_pdf.content)} bytes)")
+                f.write(pdf_content)
+            print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename} ({len(pdf_content)} bytes)")
         else:
             print(f"[WFIRMA DEBUG] PDF download failed: {resp_pdf.status_code}")
     except Exception as e:
@@ -2117,6 +2125,16 @@ def workflow_create_invoice():
         'email_response': email_result,
         'pdf_saved': pdf_filename
     }
+    
+    # Dodaj PDF jako base64 (dla Make.com - żeby nie robić osobnego HTTP request)
+    if pdf_base64:
+        response['pdf_base64'] = pdf_base64
+        response['pdf_size_bytes'] = len(pdf_content) if pdf_content else 0
+    
+    # Dodaj URL do pobrania PDF (dla opcjonalnego użycia)
+    if invoice_id:
+        base_url = request.url_root.rstrip('/') if hasattr(request, 'url_root') else REDIRECT_URI.replace('/callback', '')
+        response['pdf_url'] = f"{base_url}/api/invoice/{invoice_id}/pdf"
     
     # Dodaj ostrzeżenie o refresh tokenie jeśli niedługo wygasa
     days_remaining, warning = check_refresh_token_expiry_for_company(company)
