@@ -1766,8 +1766,8 @@ def workflow_create_invoice():
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
-    # Seria faktur - domyślna dla TEST to "Eventy"
-    default_series = 'Eventy' if company == 'test' else ''
+    # Seria faktur - domyślna dla TEST i MD to "Eventy"
+    default_series = 'Eventy'  # Używana dla obu firm
     series_name = (body.get('series_name') or default_series).strip()
 
     # LOG: wejście requestu (bez danych wrażliwych)
@@ -1913,20 +1913,6 @@ def workflow_create_invoice():
             'error': 'Nie udało się uzyskać ID kontrahenta w wFirma',
             'status': status
         }), status or 502
-
-    # === DLA MD: tylko sprawdzanie kontrahenta, bez generowania faktury ===
-    if company == 'md':
-        print(f"[WORKFLOW] [MD] Tryb tylko sprawdzanie - bez generowania faktury")
-        return jsonify({
-            'success': True,
-            'mode': 'check_only',
-            'message': 'MD: Tylko sprawdzanie kontrahenta (generowanie faktur wyłączone)',
-            'company': company,
-            'contractor_found': bool(contractor_id),
-            'contractor_created': contractor_created,
-            'contractor': contractor,
-            'token_status': 'valid'
-        })
 
     # 3) Szukamy serii faktur (opcjonalnie)
     series_id = None
