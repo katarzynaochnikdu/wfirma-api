@@ -805,6 +805,56 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
         return None, resp
 
 
+def wfirma_list_series(token: str, company_id: str = None) -> list:
+    """
+    Pobierz listę wszystkich serii faktur.
+    Zwraca listę dict z 'id', 'name', 'template' itp.
+    """
+    api_url = "https://api2.wfirma.pl/series/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    headers = get_wfirma_headers(token)
+    
+    # Pobierz wszystkie serie (limit 100)
+    search_data = {
+        "series": {
+            "parameters": {
+                "limit": 100
+            }
+        }
+    }
+    
+    try:
+        print(f"[WFIRMA DEBUG] Pobieram listę serii...")
+        resp = requests.post(api_url, headers=headers, json=search_data)
+        print(f"[WFIRMA DEBUG] list_series status: {resp.status_code}")
+        
+        result = []
+        if resp.status_code == 200:
+            data = resp.json()
+            series_list = data.get('series', {})
+            if series_list and isinstance(series_list, dict):
+                for key in series_list:
+                    if key.isdigit():
+                        series = series_list[key].get('series', {})
+                        if series and series.get('id'):
+                            result.append({
+                                'id': series.get('id'),
+                                'name': series.get('name'),
+                                'template': series.get('template'),
+                                'module': series.get('module')
+                            })
+            print(f"[WFIRMA DEBUG] Znaleziono {len(result)} serii")
+            for s in result:
+                print(f"[WFIRMA DEBUG]   - ID: {s['id']}, Nazwa: {s['name']}, Szablon: {s['template']}")
+        else:
+            print(f"[WFIRMA DEBUG] list_series error: {resp.text[:300]}")
+        return result
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] list_series exception: {e}")
+        return []
+
+
 def wfirma_find_series_by_name(token: str, series_name: str, company_id: str = None) -> dict | None:
     """
     Znajdź serię faktur po nazwie.
@@ -1178,7 +1228,8 @@ def index():
             '📄 Faktury': {
                 '/api/invoice/create': 'POST - Utwórz fakturę',
                 '/api/invoice/<invoice_id>/pdf': 'GET - Pobierz PDF faktury',
-                '/api/invoice/<invoice_id>/send': 'POST - Wyślij fakturę emailem (body: {"email": "..."})'
+                '/api/invoice/<invoice_id>/send': 'POST - Wyślij fakturę emailem (body: {"email": "..."})',
+                '/api/series/list?company=test': 'GET - Lista dostępnych serii faktur'
             },
             '🚀 Workflow (All-in-One)': {
                 '/api/workflow/create-invoice-from-nip': 'POST - NIP→GUS→Kontrahent→Faktura→Email→PDF'
@@ -1498,6 +1549,33 @@ def download_invoice_pdf(token, invoice_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/series/list')
+@require_token
+def list_series(token):
+    """Pobierz listę wszystkich serii faktur"""
+    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        company = DEFAULT_COMPANY
+    
+    # Załaduj token dla wybranej firmy
+    token = load_token(silent=True, company=company)
+    if not token:
+        return jsonify({
+            'error': f'Brak autoryzacji dla firmy {company.upper()}',
+            'message': f'Przejdź do /auth?company={company}'
+        }), 401
+    
+    company_id = wfirma_get_company_id(token)
+    series_list = wfirma_list_series(token, company_id)
+    
+    return jsonify({
+        'success': True,
+        'company': company,
+        'series_count': len(series_list),
+        'series': series_list
+    })
+
+
 @app.route('/api/invoice/<invoice_id>/send', methods=['POST'])
 @require_api_key
 @require_token
@@ -1585,9 +1663,19 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     if invoice_input.get('place'):
         payload["issue_place"] = invoice_input.get('place')
 
-    # Pozycje – wFirma oczekuje struktury invoicecontents -> invoicecontent[]
-    invoice_contents = []
-    for pos in positions:
+    # Mapowanie stawek VAT na ID w wFirma (vat_code.id)
+    vat_code_map = {
+        "23": 222,
+        "8": 223,
+        "5": 224,
+        "0": 225,
+        "zw": 226,
+        "np": 227
+    }
+    
+    # Pozycje – wFirma wymaga struktury z kluczami numerycznymi: invoicecontents -> "0" -> invoicecontent
+    invoice_contents_dict = {}
+    for idx, pos in enumerate(positions):
         name = pos.get('name')
         qty = pos.get('quantity')
         price_net = pos.get('unit_price_net')
@@ -1600,34 +1688,39 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
             qty_num = float(qty) if isinstance(qty, str) else qty
             price_num = float(price_net) if isinstance(price_net, str) else price_net
             
-            # VAT jako string (kod stawki), np. "23", "zw", "np"
+            # VAT - pobierz vat_code_id z mapy
             if isinstance(vat_rate, float) and vat_rate.is_integer():
-                vat_code = str(int(vat_rate))
+                vat_str = str(int(vat_rate))
             else:
-                vat_code = str(vat_rate)
+                vat_str = str(vat_rate)
+            
+            vat_code_id = vat_code_map.get(vat_str, 222)  # domyślnie 23%
                 
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
         
-        # Tworzymy pozycję faktury z pełnymi danymi (bez polegania na katalogu)
-        # wFirma wymaga: name, count, unit, price, vat
-        invoice_contents.append({
-            "name": str(name),
-            "count": f"{qty_num:.4f}",
-            "unit": pos.get('unit', 'szt.'),
-            "price": f"{price_num:.2f}",
-            "vat": vat_code
-        })
-        print(f"[WFIRMA DEBUG] Position: {name}, qty={qty_num}, price={price_num}, vat={vat_code}")
+        # Tworzymy pozycję faktury z pełnymi danymi
+        # KLUCZOWE: używamy vat_code: {id: X} zamiast vat: "23"
+        # oraz struktury z kluczem numerycznym
+        invoice_contents_dict[str(idx)] = {
+            "invoicecontent": {
+                "name": str(name),
+                "count": qty_num,  # jako liczba, nie string
+                "unit": pos.get('unit', 'szt.'),
+                "price": price_num,  # jako liczba, nie string
+                "vat_code": {"id": vat_code_id}
+            }
+        }
+        print(f"[WFIRMA DEBUG] Position: {name}, qty={qty_num}, price={price_num}, vat_code_id={vat_code_id}")
 
-    # Struktura zgodna z dokumentacją XML -> JSON:
-    payload["invoicecontents"] = {"invoicecontent": invoice_contents}
+    # Struktura z kluczami numerycznymi (jak wFirma zwraca w odpowiedziach)
+    payload["invoicecontents"] = invoice_contents_dict
     
     # Debug: loguj typy danych w pierwszej pozycji
-    if invoice_contents:
-        first_pos = invoice_contents[0]
+    if invoice_contents_dict and "0" in invoice_contents_dict:
+        first_pos = invoice_contents_dict["0"]["invoicecontent"]
         try:
-            print(f"[WFIRMA DEBUG] invoice first position types: count={type(first_pos['count']).__name__}, price={type(first_pos['price']).__name__}, vat={type(first_pos['vat']).__name__}")
+            print(f"[WFIRMA DEBUG] invoice first position types: count={type(first_pos['count']).__name__}, price={type(first_pos['price']).__name__}, vat_code_id={first_pos['vat_code']['id']}")
         except Exception:
             pass
     
@@ -1673,7 +1766,9 @@ def workflow_create_invoice():
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
-    series_name = (body.get('series_name') or '').strip()  # Opcjonalna nazwa serii
+    # Seria faktur - domyślna dla TEST to "Eventy"
+    default_series = 'Eventy' if company == 'test' else ''
+    series_name = (body.get('series_name') or default_series).strip()
 
     # LOG: wejście requestu (bez danych wrażliwych)
     try:
@@ -1842,6 +1937,12 @@ def workflow_create_invoice():
             print(f"[WORKFLOW] Znaleziono serię '{series_name}' -> ID {series_id}")
         else:
             print(f"[WORKFLOW] UWAGA: Nie znaleziono serii '{series_name}', użyję domyślnej")
+            # Loguj dostępne serie żeby ułatwić debugowanie
+            available_series = wfirma_list_series(token, company_id)
+            if available_series:
+                print(f"[WORKFLOW] Dostępne serie ({len(available_series)}):")
+                for s in available_series:
+                    print(f"[WORKFLOW]   - '{s['name']}' (ID: {s['id']}, szablon: {s['template']})")
     
     # 4) Budujemy payload faktury
     invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id)
