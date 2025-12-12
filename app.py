@@ -587,10 +587,12 @@ def get_wfirma_headers(token: str, accept: str = "application/json", with_conten
     return headers
 
 
-def wfirma_find_contractor_by_nip(token: str, nip: str) -> tuple[dict | None, requests.Response | None]:
+def wfirma_find_contractor_by_nip(token: str, nip: str, company_id: str = None) -> tuple[dict | None, requests.Response | None]:
     """Znajdź kontrahenta po NIP; zwraca (contractor_dict|None, response)."""
     clean_nip = nip.replace("-", "").replace(" ", "")
     api_url = "https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
     headers = get_wfirma_headers(token)
     search_data = {
         "contractors": {
@@ -622,9 +624,11 @@ def wfirma_find_contractor_by_nip(token: str, nip: str) -> tuple[dict | None, re
         return None, resp
 
 
-def wfirma_add_contractor(token: str, contractor_payload: dict) -> tuple[dict | None, requests.Response | None]:
+def wfirma_add_contractor(token: str, contractor_payload: dict, company_id: str = None) -> tuple[dict | None, requests.Response | None]:
     """Dodaj kontrahenta; zwraca (contractor_dict|None, response)."""
     api_url = "https://api2.wfirma.pl/contractors/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
     headers = get_wfirma_headers(token)
     resp = None
     try:
@@ -766,9 +770,11 @@ def wfirma_get_or_create_good(token: str, name: str, price: float, unit: str = "
     return None
 
 
-def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | None, requests.Response | None]:
+def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = None) -> tuple[dict | None, requests.Response | None]:
     """Utwórz fakturę; zwraca (invoice_dict|None, response)."""
     api_url = "https://api2.wfirma.pl/invoices/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
     headers = get_wfirma_headers(token)
     resp = None
     try:
@@ -798,12 +804,14 @@ def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | Non
         return None, resp
 
 
-def wfirma_find_series_by_name(token: str, series_name: str) -> dict | None:
+def wfirma_find_series_by_name(token: str, series_name: str, company_id: str = None) -> dict | None:
     """
     Znajdź serię faktur po nazwie.
     Zwraca dict z 'id' serii lub None.
     """
     api_url = "https://api2.wfirma.pl/series/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
     headers = get_wfirma_headers(token)
     
     search_data = {
@@ -1689,8 +1697,8 @@ def workflow_create_invoice():
     else:
         print(f"[WFIRMA DEBUG] company_id: brak (użyje domyślnej firmy)")
 
-    # 1) Szukamy kontrahenta w wFirma
-    contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip)
+    # 1) Szukamy kontrahenta w wFirma (z company_id!)
+    contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
     contractor_id = contractor.get('id') if contractor else None
     contractor_created = False
 
@@ -1766,7 +1774,7 @@ def workflow_create_invoice():
         except Exception:
             pass
 
-        new_contractor, resp_add = wfirma_add_contractor(token, contractor_payload)
+        new_contractor, resp_add = wfirma_add_contractor(token, contractor_payload, company_id)
         try:
             print("[WFIRMA DEBUG] add contractor status:", resp_add.status_code if resp_add else None)
             if resp_add is not None:
@@ -1813,7 +1821,7 @@ def workflow_create_invoice():
     # 3) Szukamy serii faktur (opcjonalnie)
     series_id = None
     if series_name:
-        series = wfirma_find_series_by_name(token, series_name)
+        series = wfirma_find_series_by_name(token, series_name, company_id)
         if series and series.get('id'):
             series_id = int(series.get('id'))
             print(f"[WORKFLOW] Znaleziono serię '{series_name}' -> ID {series_id}")
@@ -1832,7 +1840,7 @@ def workflow_create_invoice():
     if map_err:
         return jsonify({'error': map_err}), 400
 
-    invoice, resp_inv = wfirma_create_invoice(token, invoice_payload)
+    invoice, resp_inv = wfirma_create_invoice(token, invoice_payload, company_id)
     try:
         print("[WFIRMA DEBUG] invoice create status:", resp_inv.status_code if resp_inv else None)
         if resp_inv is not None:
