@@ -798,6 +798,51 @@ def wfirma_create_invoice(token: str, invoice_payload: dict) -> tuple[dict | Non
         return None, resp
 
 
+def wfirma_find_series_by_name(token: str, series_name: str) -> dict | None:
+    """
+    Znajdź serię faktur po nazwie.
+    Zwraca dict z 'id' serii lub None.
+    """
+    api_url = "https://api2.wfirma.pl/series/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    headers = get_wfirma_headers(token)
+    
+    search_data = {
+        "series": {
+            "parameters": {
+                "conditions": {
+                    "condition": {
+                        "field": "name",
+                        "operator": "eq",
+                        "value": series_name
+                    }
+                }
+            }
+        }
+    }
+    
+    try:
+        print(f"[WFIRMA DEBUG] Szukam serii: {series_name}")
+        resp = requests.post(api_url, headers=headers, json=search_data)
+        print(f"[WFIRMA DEBUG] find_series status: {resp.status_code}")
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            series_list = data.get('series', {})
+            if series_list and isinstance(series_list, dict):
+                for key in series_list:
+                    if key.isdigit():
+                        series = series_list[key].get('series', {})
+                        if series and series.get('id'):
+                            print(f"[WFIRMA DEBUG] Znaleziono serię: {series_name} -> ID {series.get('id')}")
+                            return series
+        else:
+            print(f"[WFIRMA DEBUG] find_series error: {resp.text[:300]}")
+        return None
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] find_series exception: {e}")
+        return None
+
+
 def wfirma_get_company_id(token: str) -> str | None:
     """Pobierz ID pierwszej firmy użytkownika"""
     api_url = "https://api2.wfirma.pl/companies/find?inputFormat=json&outputFormat=json&oauth_version=2"
@@ -1479,10 +1524,11 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None) -> tuple[dict | None, str | None]:
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None) -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
+    Jeśli series_id podany - faktura będzie w tej serii.
     """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
@@ -1519,6 +1565,11 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         "type": invoice_input.get('type', 'normal'),
         "currency": invoice_input.get('currency', 'PLN'),
     }
+    
+    # Seria faktur (opcjonalnie)
+    if series_id:
+        payload["series"] = {"id": series_id}
+        print(f"[WFIRMA DEBUG] Używam serii ID: {series_id}")
     
     if sale_date:
         payload["sale_date"] = sale_date
@@ -1613,6 +1664,7 @@ def workflow_create_invoice():
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
+    series_name = (body.get('series_name') or '').strip()  # Opcjonalna nazwa serii
 
     # LOG: wejście requestu (bez danych wrażliwych)
     try:
@@ -1758,8 +1810,18 @@ def workflow_create_invoice():
             'status': status
         }), status or 502
 
-    # 3) Budujemy payload faktury - automatycznie tworzy produkty w katalogu wFirma!
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token)
+    # 3) Szukamy serii faktur (opcjonalnie)
+    series_id = None
+    if series_name:
+        series = wfirma_find_series_by_name(token, series_name)
+        if series and series.get('id'):
+            series_id = int(series.get('id'))
+            print(f"[WORKFLOW] Znaleziono serię '{series_name}' -> ID {series_id}")
+        else:
+            print(f"[WORKFLOW] UWAGA: Nie znaleziono serii '{series_name}', użyję domyślnej")
+    
+    # 4) Budujemy payload faktury
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
@@ -1858,6 +1920,8 @@ def workflow_create_invoice():
     response = {
         'success': True,
         'company': company,  # Dodaj informację o użytej firmie
+        'series_name': series_name if series_id else None,  # Użyta seria
+        'series_id': series_id,
         'contractor_created': contractor_created,
         'contractor': contractor,
         'invoice': invoice,
