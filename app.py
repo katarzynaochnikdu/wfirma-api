@@ -1007,8 +1007,10 @@ def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date:
     resp = None
     try:
         print(f"[WFIRMA DEBUG] Dodaję płatność: invoice_id={invoice_id}, amount={amount}, date={payment_date}")
+        print(f"[WFIRMA DEBUG] Payment request body: {json.dumps(payment_data, indent=2)}")
         resp = requests.post(api_url, headers=headers, json=payment_data)
         print(f"[WFIRMA DEBUG] add_payment status: {resp.status_code}")
+        print(f"[WFIRMA DEBUG] add_payment response: {resp.text[:1000]}")
         
         if resp.status_code == 200:
             result = resp.json()
@@ -1021,12 +1023,13 @@ def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date:
                         if key.isdigit():
                             payment = payments[key].get('payment', {})
                             if payment:
+                                print(f"[WFIRMA DEBUG] Utworzona płatność: id={payment.get('id')}, value={payment.get('value')}")
                                 return payment, resp
                 return {}, resp
             else:
                 print(f"[WFIRMA DEBUG] add_payment error: {result.get('status', {}).get('message')}")
         else:
-            print(f"[WFIRMA DEBUG] add_payment HTTP error: {resp.text[:300]}")
+            print(f"[WFIRMA DEBUG] add_payment HTTP error: {resp.text[:500]}")
         return None, resp
     except Exception as e:
         print(f"[WFIRMA DEBUG] add_payment exception: {e}")
