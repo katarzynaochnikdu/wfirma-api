@@ -971,6 +971,67 @@ def wfirma_get_invoice_pdf(token: str, invoice_id: str, company_id: str | None =
     return requests.post(api_url, headers=headers, params=params, json=body, stream=True)
 
 
+def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date: str = None, company_id: str | None = None) -> tuple[dict | None, requests.Response | None]:
+    """
+    Dodaj płatność do faktury (oznacz jako opłaconą).
+    
+    Args:
+        invoice_id: ID faktury
+        amount: Kwota płatności (powinna być równa total faktury)
+        payment_date: Data płatności (domyślnie dzisiaj)
+        company_id: ID firmy
+    """
+    import datetime
+    if not payment_date:
+        payment_date = datetime.date.today().isoformat()
+    
+    api_url = "https://api2.wfirma.pl/payments/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    
+    headers = get_wfirma_headers(token)
+    
+    # Struktura zgodna z dokumentacją
+    payment_data = {
+        "payments": {
+            "payment": {
+                "object_name": "invoice",
+                "object_id": int(invoice_id),
+                "value": amount,
+                "date": payment_date
+            }
+        }
+    }
+    
+    resp = None
+    try:
+        print(f"[WFIRMA DEBUG] Dodaję płatność: invoice_id={invoice_id}, amount={amount}, date={payment_date}")
+        resp = requests.post(api_url, headers=headers, json=payment_data)
+        print(f"[WFIRMA DEBUG] add_payment status: {resp.status_code}")
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            status = result.get('status', {}).get('code')
+            if status == 'OK':
+                print(f"[WFIRMA DEBUG] Płatność dodana pomyślnie")
+                payments = result.get('payments', {})
+                if isinstance(payments, dict):
+                    for key in payments:
+                        if key.isdigit():
+                            payment = payments[key].get('payment', {})
+                            if payment:
+                                return payment, resp
+                return {}, resp
+            else:
+                print(f"[WFIRMA DEBUG] add_payment error: {result.get('status', {}).get('message')}")
+        else:
+            print(f"[WFIRMA DEBUG] add_payment HTTP error: {resp.text[:300]}")
+        return None, resp
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] add_payment exception: {e}")
+        return None, resp
+
+
 def wfirma_send_invoice_email(token: str, invoice_id: str, email: str, company_id: str | None = None) -> requests.Response:
     """
     Wyślij fakturę e-mailem przez wFirma.
@@ -1979,6 +2040,21 @@ def workflow_create_invoice():
             'invoice': invoice
         }), 502
     
+    # Dodaj płatność (oznacz jako opłaconą) - domyślnie włączone
+    mark_as_paid = body.get('mark_as_paid', True)  # Domyślnie True
+    payment_result = None
+    if mark_as_paid:
+        invoice_total = float(invoice.get('total', 0))
+        if invoice_total > 0:
+            payment_date = invoice_input.get('issue_date') or invoice.get('date')
+            payment, resp_payment = wfirma_add_payment(token, invoice_id, invoice_total, payment_date, company_id)
+            if payment:
+                payment_result = {'success': True, 'payment': payment}
+                print(f"[WORKFLOW] Faktura oznaczona jako opłacona (kwota: {invoice_total})")
+            else:
+                payment_result = {'success': False, 'error': 'Nie udało się dodać płatności'}
+                print(f"[WORKFLOW] UWAGA: Nie udało się oznaczyć faktury jako opłaconej")
+
     # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
     pdf_filename = None
     try:
@@ -2035,6 +2111,8 @@ def workflow_create_invoice():
         'contractor_created': contractor_created,
         'contractor': contractor,
         'invoice': invoice,
+        'marked_as_paid': bool(payment_result and payment_result.get('success')),
+        'payment_result': payment_result,
         'email_sent': bool(email_result),
         'email_response': email_result,
         'pdf_saved': pdf_filename
