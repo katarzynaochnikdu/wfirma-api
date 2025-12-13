@@ -1813,9 +1813,16 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         if due_days is not None:
             try:
                 days_int = int(due_days)
-                payment_due_date = (datetime.date.today() + datetime.timedelta(days=days_int)).isoformat()
-            except Exception:
-                return None, 'Niepoprawny payment_due_days'
+                # Oblicz termin płatności od daty wystawienia (issue_date), nie od dzisiaj
+                if issue_date:
+                    base_date = datetime.date.fromisoformat(issue_date)
+                else:
+                    base_date = datetime.date.today()
+                payment_due_date = (base_date + datetime.timedelta(days=days_int)).isoformat()
+                print(f"[WFIRMA DEBUG] payment_due_date obliczony: {base_date} + {days_int} dni = {payment_due_date}")
+            except Exception as e:
+                print(f"[WFIRMA DEBUG] Błąd obliczania payment_due_date: {e}")
+                return None, 'Niepoprawny payment_due_days lub issue_date'
 
     # Używamy contractor_id (int) zamiast zagnieżdżonego obiektu
     try:
@@ -1985,14 +1992,18 @@ def workflow_create_invoice():
         # Fallback na mark_as_paid (domyślnie True)
         mark_as_paid = body.get('mark_as_paid', True)
     
-    # Termin płatności - top-level parametry (nadpisują wartości z invoice jeśli podane)
-    # 1. payment_due_days: ilość dni od daty wystawienia (np. 7, 14, 30)
-    # 2. payment_due_date: konkretna data (np. "2025-12-20")
+    # Top-level parametry dat (nadpisują wartości z invoice jeśli podane)
+    # issue_date: data wystawienia faktury (np. "2025-12-13")
+    # payment_due_days: ilość dni od daty wystawienia (np. 7, 14, 30)
+    # payment_due_date: konkretna data terminu płatności (np. "2025-12-20")
+    issue_date_param = body.get('issue_date')
     payment_due_days_param = body.get('payment_due_days')
     payment_due_date_param = body.get('payment_due_date')
     
     # Nadpisz wartości w invoice_input jeśli podano top-level parametry
     if invoice_input and isinstance(invoice_input, dict):
+        if issue_date_param:
+            invoice_input['issue_date'] = issue_date_param
         if payment_due_days_param is not None:
             invoice_input['payment_due_days'] = payment_due_days_param
         if payment_due_date_param:
@@ -2005,7 +2016,7 @@ def workflow_create_invoice():
         print("[WFIRMA DEBUG] clean nip:", clean_nip)
         print("[WFIRMA DEBUG] series_name:", series_name, "(case insensitive)")
         print("[WFIRMA DEBUG] payment_status:", payment_status_param if payment_status_param else "default", "-> mark_as_paid:", mark_as_paid)
-        print("[WFIRMA DEBUG] payment_due_days:", payment_due_days_param, "payment_due_date:", payment_due_date_param)
+        print("[WFIRMA DEBUG] issue_date:", issue_date_param, "payment_due_days:", payment_due_days_param, "payment_due_date:", payment_due_date_param)
         print("[WFIRMA DEBUG] invoice keys:", list(invoice_input.keys()) if isinstance(invoice_input, dict) else invoice_input)
         print("[WFIRMA DEBUG] send_email_requested:", send_email_requested, "email:", email_address)
     except Exception:
