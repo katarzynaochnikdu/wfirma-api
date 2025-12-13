@@ -1803,8 +1803,8 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     if not isinstance(positions, list) or len(positions) == 0:
         return None, 'Brak pozycji faktury'
 
-    # Daty
-    issue_date = invoice_input.get('issue_date')
+    # Daty - domyślnie dzisiaj
+    issue_date = invoice_input.get('issue_date') or datetime.date.today().isoformat()
     sale_date = invoice_input.get('sale_date') or issue_date
 
     payment_due_date = invoice_input.get('payment_due_date')
