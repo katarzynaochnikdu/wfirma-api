@@ -1984,6 +1984,19 @@ def workflow_create_invoice():
     else:
         # Fallback na mark_as_paid (domyślnie True)
         mark_as_paid = body.get('mark_as_paid', True)
+    
+    # Termin płatności - top-level parametry (nadpisują wartości z invoice jeśli podane)
+    # 1. payment_due_days: ilość dni od daty wystawienia (np. 7, 14, 30)
+    # 2. payment_due_date: konkretna data (np. "2025-12-20")
+    payment_due_days_param = body.get('payment_due_days')
+    payment_due_date_param = body.get('payment_due_date')
+    
+    # Nadpisz wartości w invoice_input jeśli podano top-level parametry
+    if invoice_input and isinstance(invoice_input, dict):
+        if payment_due_days_param is not None:
+            invoice_input['payment_due_days'] = payment_due_days_param
+        if payment_due_date_param:
+            invoice_input['payment_due_date'] = payment_due_date_param
 
     # LOG: wejście requestu (bez danych wrażliwych)
     try:
@@ -1992,6 +2005,7 @@ def workflow_create_invoice():
         print("[WFIRMA DEBUG] clean nip:", clean_nip)
         print("[WFIRMA DEBUG] series_name:", series_name, "(case insensitive)")
         print("[WFIRMA DEBUG] payment_status:", payment_status_param if payment_status_param else "default", "-> mark_as_paid:", mark_as_paid)
+        print("[WFIRMA DEBUG] payment_due_days:", payment_due_days_param, "payment_due_date:", payment_due_date_param)
         print("[WFIRMA DEBUG] invoice keys:", list(invoice_input.keys()) if isinstance(invoice_input, dict) else invoice_input)
         print("[WFIRMA DEBUG] send_email_requested:", send_email_requested, "email:", email_address)
     except Exception:
