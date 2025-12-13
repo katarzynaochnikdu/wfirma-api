@@ -913,45 +913,32 @@ def wfirma_list_series(token: str, company_id: str = None) -> list:
 
 def wfirma_find_series_by_name(token: str, series_name: str, company_id: str = None) -> dict | None:
     """
-    Znajdź serię faktur po nazwie.
+    Znajdź serię faktur po nazwie (case insensitive).
+    Pobiera wszystkie serie i szuka pasującej nazwy.
     Zwraca dict z 'id' serii lub None.
     """
-    api_url = "https://api2.wfirma.pl/series/find?inputFormat=json&outputFormat=json&oauth_version=2"
-    if company_id:
-        api_url += f"&company_id={company_id}"
-    headers = get_wfirma_headers(token)
-    
-    search_data = {
-        "series": {
-            "parameters": {
-                "conditions": {
-                    "condition": {
-                        "field": "name",
-                        "operator": "eq",
-                        "value": series_name
-                    }
-                }
-            }
-        }
-    }
-    
     try:
-        print(f"[WFIRMA DEBUG] Szukam serii: {series_name}")
-        resp = requests.post(api_url, headers=headers, json=search_data)
-        print(f"[WFIRMA DEBUG] find_series status: {resp.status_code}")
+        print(f"[WFIRMA DEBUG] Szukam serii: {series_name} (case insensitive)")
         
-        if resp.status_code == 200:
-            data = resp.json()
-            series_list = data.get('series', {})
-            if series_list and isinstance(series_list, dict):
-                for key in series_list:
-                    if key.isdigit():
-                        series = series_list[key].get('series', {})
-                        if series and series.get('id'):
-                            print(f"[WFIRMA DEBUG] Znaleziono serię: {series_name} -> ID {series.get('id')}")
-                            return series
-        else:
-            print(f"[WFIRMA DEBUG] find_series error: {resp.text[:300]}")
+        # Pobierz wszystkie serie
+        all_series = wfirma_list_series(token, company_id)
+        
+        if not all_series:
+            print(f"[WFIRMA DEBUG] Brak serii w systemie")
+            return None
+        
+        # Szukaj case insensitive
+        series_name_lower = series_name.lower().strip()
+        for series in all_series:
+            if series.get('name', '').lower().strip() == series_name_lower:
+                print(f"[WFIRMA DEBUG] Znaleziono serię: {series.get('name')} -> ID {series.get('id')}")
+                return series
+        
+        # Nie znaleziono - loguj dostępne serie
+        print(f"[WFIRMA DEBUG] Nie znaleziono serii '{series_name}'. Dostępne serie:")
+        for s in all_series:
+            print(f"[WFIRMA DEBUG]   - '{s.get('name')}'")
+        
         return None
     except Exception as e:
         print(f"[WFIRMA DEBUG] find_series exception: {e}")
@@ -1985,14 +1972,26 @@ def workflow_create_invoice():
     # Seria faktur - domyślna dla TEST i MD to "Eventy"
     default_series = 'Eventy'  # Używana dla obu firm
     series_name = (body.get('series_name') or default_series).strip()
-    # Oznacz jako opłaconą - domyślnie True
-    mark_as_paid = body.get('mark_as_paid', True)
+    
+    # Status płatności faktury - dwa sposoby przekazania:
+    # 1. payment_status: "paid" lub "unpaid" (preferowane)
+    # 2. mark_as_paid: true/false (kompatybilność wsteczna)
+    payment_status_param = body.get('payment_status', '').lower().strip()
+    if payment_status_param == 'paid':
+        mark_as_paid = True
+    elif payment_status_param == 'unpaid':
+        mark_as_paid = False
+    else:
+        # Fallback na mark_as_paid (domyślnie True)
+        mark_as_paid = body.get('mark_as_paid', True)
 
     # LOG: wejście requestu (bez danych wrażliwych)
     try:
         print("[WFIRMA DEBUG] workflow_create_invoice called")
         print("[WFIRMA DEBUG] raw nip:", nip_raw)
         print("[WFIRMA DEBUG] clean nip:", clean_nip)
+        print("[WFIRMA DEBUG] series_name:", series_name, "(case insensitive)")
+        print("[WFIRMA DEBUG] payment_status:", payment_status_param if payment_status_param else "default", "-> mark_as_paid:", mark_as_paid)
         print("[WFIRMA DEBUG] invoice keys:", list(invoice_input.keys()) if isinstance(invoice_input, dict) else invoice_input)
         print("[WFIRMA DEBUG] send_email_requested:", send_email_requested, "email:", email_address)
     except Exception:
