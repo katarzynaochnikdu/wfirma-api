@@ -1802,11 +1802,12 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None) -> tuple[dict | None, str | None]:
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False) -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
     Jeśli series_id podany - faktura będzie w tej serii.
+    Jeśli mark_as_paid=True - dodaje alreadypaid_initial z obliczoną kwotą brutto.
     """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
@@ -1854,7 +1855,7 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     if invoice_input.get('place'):
         payload["issue_place"] = invoice_input.get('place')
 
-    # Mapowanie stawek VAT na ID w wFirma (vat_code.id)
+    # Mapowanie stawek VAT na ID w wFirma (vat_code.id) oraz stawki procentowe
     vat_code_map = {
         "23": 222,
         "8": 223,
@@ -1863,9 +1864,19 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         "zw": 226,
         "np": 227
     }
-    
+    vat_rate_percent = {
+        "23": 0.23,
+        "8": 0.08,
+        "5": 0.05,
+        "0": 0.0,
+        "zw": 0.0,
+        "np": 0.0
+    }
+
     # Pozycje – wFirma wymaga struktury z kluczami numerycznymi: invoicecontents -> "0" -> invoicecontent
     invoice_contents_dict = {}
+    total_brutto = 0.0  # Suma brutto wszystkich pozycji
+    
     for idx, pos in enumerate(positions):
         name = pos.get('name')
         qty = pos.get('quantity')
@@ -1873,23 +1884,29 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         vat_rate = pos.get('vat_rate')
         if name is None or qty is None or price_net is None or vat_rate is None:
             return None, 'Pozycja wymaga pól: name, quantity, unit_price_net, vat_rate'
-        
+
         # Konwersja na liczby
         try:
             qty_num = float(qty) if isinstance(qty, str) else qty
             price_num = float(price_net) if isinstance(price_net, str) else price_net
-            
+
             # VAT - pobierz vat_code_id z mapy
             if isinstance(vat_rate, float) and vat_rate.is_integer():
                 vat_str = str(int(vat_rate))
             else:
                 vat_str = str(vat_rate)
-            
+
             vat_code_id = vat_code_map.get(vat_str, 222)  # domyślnie 23%
-                
+            vat_percent = vat_rate_percent.get(vat_str, 0.23)  # domyślnie 23%
+            
+            # Oblicz brutto dla tej pozycji
+            position_netto = qty_num * price_num
+            position_brutto = position_netto * (1 + vat_percent)
+            total_brutto += position_brutto
+
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
-        
+
         # Tworzymy pozycję faktury z pełnymi danymi
         # KLUCZOWE: używamy vat_code: {id: X} zamiast vat: "23"
         # oraz struktury z kluczem numerycznym
@@ -1906,6 +1923,14 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
 
     # Struktura z kluczami numerycznymi (jak wFirma zwraca w odpowiedziach)
     payload["invoicecontents"] = invoice_contents_dict
+    
+    # Jeśli mark_as_paid - dodaj alreadypaid_initial z obliczoną kwotą brutto
+    # To oznacza fakturę jako opłaconą już przy tworzeniu
+    if mark_as_paid and total_brutto > 0:
+        # Zaokrąglij do 2 miejsc po przecinku
+        total_brutto_rounded = round(total_brutto, 2)
+        payload["alreadypaid_initial"] = str(total_brutto_rounded)
+        print(f"[WFIRMA DEBUG] mark_as_paid=True, alreadypaid_initial={total_brutto_rounded}")
     
     # Debug: loguj typy danych w pierwszej pozycji
     if invoice_contents_dict and "0" in invoice_contents_dict:
@@ -1960,6 +1985,8 @@ def workflow_create_invoice():
     # Seria faktur - domyślna dla TEST i MD to "Eventy"
     default_series = 'Eventy'  # Używana dla obu firm
     series_name = (body.get('series_name') or default_series).strip()
+    # Oznacz jako opłaconą - domyślnie True
+    mark_as_paid = body.get('mark_as_paid', True)
 
     # LOG: wejście requestu (bez danych wrażliwych)
     try:
@@ -2121,8 +2148,8 @@ def workflow_create_invoice():
                 for s in available_series:
                     print(f"[WORKFLOW]   - '{s['name']}' (ID: {s['id']}, szablon: {s['template']})")
     
-    # 4) Budujemy payload faktury
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id)
+    # 4) Budujemy payload faktury (z alreadypaid_initial jeśli mark_as_paid=True)
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
@@ -2170,42 +2197,36 @@ def workflow_create_invoice():
             'invoice': invoice
         }), 502
     
-    # Dodaj płatność (oznacz jako opłaconą) - domyślnie włączone
-    mark_as_paid = body.get('mark_as_paid', True)  # Domyślnie True
+    # Sprawdź status płatności faktury
+    # (alreadypaid_initial jest ustawiony przy tworzeniu faktury jeśli mark_as_paid=True)
     payment_result = None
     if mark_as_paid:
-        invoice_total = float(invoice.get('total', 0))
-        if invoice_total > 0:
-            payment_date = invoice_input.get('issue_date') or invoice.get('date')
-            # Pobierz ID kasy z faktury (jeśli jest)
-            payment_cashbox_id = None
-            if invoice.get('payment_cashbox') and invoice['payment_cashbox'].get('id'):
-                payment_cashbox_id = invoice['payment_cashbox']['id']
-                if payment_cashbox_id and int(payment_cashbox_id) > 0:
-                    print(f"[WFIRMA DEBUG] Używam kasy z faktury: {payment_cashbox_id}")
-            payment, resp_payment = wfirma_add_payment(token, invoice_id, invoice_total, payment_date, company_id, payment_cashbox_id)
-            if payment:
-                payment_result = {'success': True, 'payment': payment}
-                print(f"[WORKFLOW] Płatność dodana (kwota: {invoice_total})")
-                
-                # DODATKOWE: Edytuj fakturę żeby ustawić alreadypaid_initial
-                # (payments/add nie zawsze aktualizuje status faktury automatycznie)
-                edit_success, resp_edit = wfirma_mark_invoice_paid(token, invoice_id, invoice_total, company_id)
-                if edit_success:
-                    print(f"[WORKFLOW] Faktura oznaczona jako opłacona (edit alreadypaid_initial)")
-                    payment_result['invoice_edited'] = True
+        payment_state = invoice.get('paymentstate', 'unknown')
+        already_paid = invoice.get('alreadypaid', '0')
+        already_paid_initial = invoice.get('alreadypaid_initial', '')
+        invoice_total = invoice.get('total', '0')
+        
+        print(f"[WORKFLOW] Status płatności faktury: paymentstate={payment_state}, alreadypaid={already_paid}, alreadypaid_initial={already_paid_initial}, total={invoice_total}")
+        
+        if payment_state == 'paid' or already_paid_initial:
+            payment_result = {'success': True, 'method': 'alreadypaid_initial', 'paymentstate': payment_state}
+            print(f"[WORKFLOW] Faktura oznaczona jako opłacona (alreadypaid_initial przy tworzeniu)")
+        else:
+            # Fallback: jeśli alreadypaid_initial nie zadziałał, spróbuj payments/add
+            print(f"[WORKFLOW] UWAGA: alreadypaid_initial nie zadziałał, próbuję payments/add...")
+            invoice_total_float = float(invoice_total) if invoice_total else 0
+            if invoice_total_float > 0:
+                payment_date = invoice_input.get('issue_date') or invoice.get('date')
+                payment_cashbox_id = None
+                if invoice.get('payment_cashbox') and invoice['payment_cashbox'].get('id'):
+                    payment_cashbox_id = invoice['payment_cashbox']['id']
+                payment, resp_payment = wfirma_add_payment(token, invoice_id, invoice_total_float, payment_date, company_id, payment_cashbox_id)
+                if payment:
+                    payment_result = {'success': True, 'method': 'payments_add', 'payment': payment}
+                    print(f"[WORKFLOW] Płatność dodana przez payments/add (kwota: {invoice_total_float})")
                 else:
-                    print(f"[WORKFLOW] UWAGA: Nie udało się edytować faktury (ale płatność została dodana)")
-                    payment_result['invoice_edited'] = False
-            else:
-                payment_result = {'success': False, 'error': 'Nie udało się dodać płatności'}
-                print(f"[WORKFLOW] UWAGA: Nie udało się oznaczyć faktury jako opłaconej")
-
-    # Opóźnienie jeśli dodano płatność - daj wFirma czas na przetworzenie
-    if mark_as_paid and payment_result and payment_result.get('success'):
-        import time
-        time.sleep(1.0)  # 1s opóźnienia (mniejsze bo już edytowaliśmy fakturę)
-        print(f"[WORKFLOW] Czekam 1s przed pobraniem PDF...")
+                    payment_result = {'success': False, 'error': 'Nie udało się dodać płatności'}
+                    print(f"[WORKFLOW] UWAGA: Nie udało się oznaczyć faktury jako opłaconej")
     
     # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
     pdf_filename = None
