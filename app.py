@@ -237,11 +237,66 @@ def refresh_access_token(forced_refresh_token=None, company=None):
     """
     Odśwież token używając refresh_token (z pliku lub argumentu).
     
+    WAŻNE: Zawiera blokadę na równoczesne odświeżanie - zapobiega race condition
+    gdy wiele requestów próbuje odświeżyć token jednocześnie.
+    
     Args:
         forced_refresh_token: Wymuszony refresh token
         company: Firma/zestaw danych ('md' lub 'test')
     """
     config = get_company_config(company)
+    prefix = config['env_prefix']
+    
+    # BLOKADA: Sprawdź czy ktoś inny właśnie odświeża token
+    # Jeśli ostatni refresh był < 30 sekund temu, poczekaj i sprawdź czy token jest już ważny
+    last_refresh_key = f"{prefix}LAST_REFRESH"
+    last_refresh_str = os.environ.get(last_refresh_key, '0')
+    try:
+        last_refresh_time = int(last_refresh_str)
+    except:
+        last_refresh_time = 0
+    
+    current_time = int(time.time())
+    time_since_refresh = current_time - last_refresh_time
+    
+    if time_since_refresh < 30:
+        # Ktoś inny mógł właśnie odświeżyć - poczekaj i sprawdź
+        print(f"[LOG] [{config['company'].upper()}] Ostatni refresh był {time_since_refresh}s temu - czekam na zakończenie...")
+        import time as time_module
+        time_module.sleep(3)  # Poczekaj 3 sekundy
+        
+        # Odśwież ENV z Render (pobierz najnowsze wartości)
+        if RENDER_API_KEY and RENDER_SERVICE_ID:
+            try:
+                url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars"
+                headers = {"Authorization": f"Bearer {RENDER_API_KEY}"}
+                resp = requests.get(url, headers=headers)
+                if resp.status_code == 200:
+                    for item in resp.json():
+                        env_var = item.get('envVar', {})
+                        key = env_var.get('key')
+                        value = env_var.get('value')
+                        if key and key.startswith(prefix):
+                            os.environ[key] = value
+                    print(f"[LOG] [{config['company'].upper()}] Odświeżono ENV z Render")
+            except Exception as e:
+                print(f"[LOG] [{config['company'].upper()}] Błąd pobierania ENV z Render: {e}")
+        
+        # Sprawdź czy token jest już ważny (odświeżony przez inny proces)
+        token_expires_str = os.environ.get(f"{prefix}TOKEN_EXPIRES", '0')
+        try:
+            token_expires = int(token_expires_str)
+            if token_expires > current_time + 60:  # Ważny jeszcze co najmniej 60s
+                access_token = os.environ.get(f"{prefix}ACCESS_TOKEN")
+                if access_token:
+                    print(f"[LOG] [{config['company'].upper()}] Token został odświeżony przez inny proces - używam go")
+                    return access_token
+        except:
+            pass
+    
+    # Oznacz że zaczynamy refresh (blokada dla innych procesów)
+    os.environ[last_refresh_key] = str(current_time)
+    update_render_env_var(last_refresh_key, str(current_time))
     
     refresh_token = forced_refresh_token
     if not refresh_token and company is None and os.path.exists(TOKEN_FILE):
