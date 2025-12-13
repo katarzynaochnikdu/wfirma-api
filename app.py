@@ -972,7 +972,7 @@ def wfirma_get_invoice_pdf(token: str, invoice_id: str, company_id: str | None =
     return requests.post(api_url, headers=headers, params=params, json=body, stream=True)
 
 
-def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date: str = None, company_id: str | None = None) -> tuple[dict | None, requests.Response | None]:
+def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date: str = None, company_id: str | None = None, payment_cashbox_id: str | int | None = None) -> tuple[dict | None, requests.Response | None]:
     """
     Dodaj płatność do faktury (oznacz jako opłaconą).
     
@@ -981,6 +981,7 @@ def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date:
         amount: Kwota płatności (powinna być równa total faktury)
         payment_date: Data płatności (domyślnie dzisiaj)
         company_id: ID firmy
+        payment_cashbox_id: ID kasy (opcjonalnie - pobrane z faktury)
     """
     import datetime
     if not payment_date:
@@ -993,15 +994,21 @@ def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date:
     headers = get_wfirma_headers(token)
     
     # Struktura zgodna z dokumentacją
+    payment_obj = {
+        "object_name": "invoice",
+        "object_id": int(invoice_id),
+        "value": amount,
+        "date": payment_date,
+        "payment_method": "transfer"  # Metoda płatności
+    }
+    
+    # Dodaj kasę jeśli podana
+    if payment_cashbox_id and int(payment_cashbox_id) > 0:
+        payment_obj["payment_cashbox"] = {"id": int(payment_cashbox_id)}
+    
     payment_data = {
         "payments": {
-            "payment": {
-                "object_name": "invoice",
-                "object_id": int(invoice_id),
-                "value": amount,
-                "date": payment_date,
-                "payment_method": "transfer"  # Metoda płatności
-            }
+            "payment": payment_obj
         }
     }
     
@@ -2052,7 +2059,13 @@ def workflow_create_invoice():
         invoice_total = float(invoice.get('total', 0))
         if invoice_total > 0:
             payment_date = invoice_input.get('issue_date') or invoice.get('date')
-            payment, resp_payment = wfirma_add_payment(token, invoice_id, invoice_total, payment_date, company_id)
+            # Pobierz ID kasy z faktury (jeśli jest)
+            payment_cashbox_id = None
+            if invoice.get('payment_cashbox') and invoice['payment_cashbox'].get('id'):
+                payment_cashbox_id = invoice['payment_cashbox']['id']
+                if payment_cashbox_id and int(payment_cashbox_id) > 0:
+                    print(f"[WFIRMA DEBUG] Używam kasy z faktury: {payment_cashbox_id}")
+            payment, resp_payment = wfirma_add_payment(token, invoice_id, invoice_total, payment_date, company_id, payment_cashbox_id)
             if payment:
                 payment_result = {'success': True, 'payment': payment}
                 print(f"[WORKFLOW] Faktura oznaczona jako opłacona (kwota: {invoice_total})")
@@ -2060,11 +2073,11 @@ def workflow_create_invoice():
                 payment_result = {'success': False, 'error': 'Nie udało się dodać płatności'}
                 print(f"[WORKFLOW] UWAGA: Nie udało się oznaczyć faktury jako opłaconej")
 
-    # Małe opóźnienie jeśli dodano płatność - daj wFirma czas na przetworzenie
+    # Opóźnienie jeśli dodano płatność - daj wFirma czas na przetworzenie
     if mark_as_paid and payment_result and payment_result.get('success'):
         import time
-        time.sleep(0.5)  # 500ms opóźnienia
-        print(f"[WORKFLOW] Czekam 500ms na przetworzenie płatności przed pobraniem PDF...")
+        time.sleep(1.5)  # 1.5s opóźnienia
+        print(f"[WORKFLOW] Czekam 1.5s na przetworzenie płatności przed pobraniem PDF...")
     
     # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
     pdf_filename = None
