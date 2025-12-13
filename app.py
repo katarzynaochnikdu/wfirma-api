@@ -2283,11 +2283,16 @@ def workflow_create_invoice():
             email_result = {}
 
     # Przygotuj odpowiedź
+    # Pobierz status płatności z faktury (dla Make.com)
+    invoice_payment_status = invoice.get('paymentstate', 'unknown')  # paid/unpaid/undefined
+    
     response = {
         'success': True,
-        'company': company,  # Dodaj informację o użytej firmie
-        'series_name': series_name if series_id else None,  # Użyta seria
+        'company': company,  # Użyta firma (md/test)
+        'series_name': series_name,  # Użyta seria faktur (np. "Eventy")
         'series_id': series_id,
+        'invoice_number': invoice.get('fullnumber', ''),  # Pełny numer faktury (np. FV/EV/23/12/2025)
+        'invoice_payment_status': invoice_payment_status,  # Status płatności: paid/unpaid/undefined
         'contractor_created': contractor_created,
         'contractor': contractor,
         'invoice': invoice,
