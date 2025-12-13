@@ -2290,11 +2290,20 @@ def workflow_create_invoice():
         'company': company,  # Użyta firma (md/test)
         'series_name': series_name,  # Użyta seria faktur (np. "Eventy")
         'series_id': series_id,
+        
+        # Główne dane faktury (łatwy dostęp dla Make.com)
+        'invoice_id': invoice.get('id', ''),
         'invoice_number': invoice.get('fullnumber', ''),  # Pełny numer faktury (np. FV/EV/23/12/2025)
+        'invoice_date': invoice.get('date', ''),  # Data wystawienia
+        'invoice_sale_date': invoice.get('disposaldate', ''),  # Data sprzedaży
         'invoice_payment_status': invoice_payment_status,  # Status płatności: paid/unpaid/undefined
+        'invoice_payment_due_date': invoice.get('paymentdate', ''),  # Termin płatności (gdy unpaid)
+        'invoice_total': invoice.get('total', ''),  # Kwota brutto
+        'invoice_remaining': invoice.get('remaining', ''),  # Pozostało do zapłaty
+        
         'contractor_created': contractor_created,
         'contractor': contractor,
-        'invoice': invoice,
+        'invoice': invoice,  # Pełny obiekt faktury (dla zaawansowanych)
         'marked_as_paid': bool(payment_result and payment_result.get('success')),
         'payment_result': payment_result,
         'email_sent': bool(email_result),
