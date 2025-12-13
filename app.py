@@ -1644,6 +1644,7 @@ def token_status():
     return jsonify(status)
 
 @app.route('/api/contractor/<nip>')
+@require_api_key
 @require_token
 def check_contractor(token, nip):
     """Sprawdź czy kontrahent istnieje po NIP"""
@@ -1728,6 +1729,7 @@ def download_invoice_pdf(token, invoice_id):
 
 
 @app.route('/api/series/list')
+@require_api_key
 @require_token
 def list_series(token):
     """Pobierz listę wszystkich serii faktur"""
@@ -2552,24 +2554,6 @@ def gus_name_by_nip():
         print(f"[GUS] FIRST record={repr(data_list[0])}")
 
     return jsonify({'data': data_list}), 200
-
-
-# ==================== ENDPOINTY FAKTURA: PDF i WYSYŁKA MAILEM ====================
-
-
-@app.route('/api/invoice/<invoice_id>/pdf')
-@require_token
-def invoice_pdf(token, invoice_id):
-    """Pobierz PDF faktury z wFirma (proxy)."""
-    resp = wfirma_get_invoice_pdf(token, invoice_id)
-    if resp.status_code == 200 and resp.content:
-        return Response(resp.content, mimetype='application/pdf')
-
-    return jsonify({
-        'error': 'Nie udało się pobrać PDF faktury',
-        'status': resp.status_code,
-        'details': resp.text[:500] if resp.text else ''
-    }), resp.status_code
 
 
 @app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
