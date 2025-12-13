@@ -245,7 +245,7 @@ def refresh_access_token(forced_refresh_token=None, company=None):
         company: Firma/zestaw danych ('md' lub 'test')
     """
     config = get_company_config(company)
-    prefix = config['env_prefix']
+    prefix = config['prefix']
     
     # BLOKADA: Sprawdź czy ktoś inny właśnie odświeża token
     # Jeśli ostatni refresh był < 30 sekund temu, poczekaj i sprawdź czy token jest już ważny
