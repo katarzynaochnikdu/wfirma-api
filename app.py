@@ -999,7 +999,8 @@ def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date:
                 "object_name": "invoice",
                 "object_id": int(invoice_id),
                 "value": amount,
-                "date": payment_date
+                "date": payment_date,
+                "payment_method": "transfer"  # Metoda płatności
             }
         }
     }
@@ -2059,6 +2060,12 @@ def workflow_create_invoice():
                 payment_result = {'success': False, 'error': 'Nie udało się dodać płatności'}
                 print(f"[WORKFLOW] UWAGA: Nie udało się oznaczyć faktury jako opłaconej")
 
+    # Małe opóźnienie jeśli dodano płatność - daj wFirma czas na przetworzenie
+    if mark_as_paid and payment_result and payment_result.get('success'):
+        import time
+        time.sleep(0.5)  # 500ms opóźnienia
+        print(f"[WORKFLOW] Czekam 500ms na przetworzenie płatności przed pobraniem PDF...")
+    
     # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
     pdf_filename = None
     pdf_base64 = None
