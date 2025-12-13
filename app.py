@@ -1099,6 +1099,69 @@ def wfirma_add_payment(token: str, invoice_id: str, amount: float, payment_date:
         return None, resp
 
 
+def wfirma_mark_invoice_paid(token: str, invoice_id: str, amount: float, company_id: str | None = None) -> tuple[bool, requests.Response | None]:
+    """
+    Oznacz fakturę jako opłaconą przez edycję pola alreadypaid_initial.
+    
+    To jest alternatywne podejście do payments/add - bezpośrednia edycja faktury.
+    
+    Args:
+        invoice_id: ID faktury
+        amount: Kwota zapłacona (powinna być równa total faktury)
+        company_id: ID firmy
+        
+    Returns:
+        (success: bool, response: Response)
+    """
+    api_url = f"https://api2.wfirma.pl/invoices/edit/{invoice_id}?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    
+    headers = get_wfirma_headers(token)
+    
+    # Edytuj fakturę - ustaw alreadypaid_initial na pełną kwotę
+    edit_data = {
+        "invoices": {
+            "invoice": {
+                "alreadypaid_initial": str(amount)
+            }
+        }
+    }
+    
+    resp = None
+    try:
+        print(f"[WFIRMA DEBUG] Oznaczam fakturę jako opłaconą (edit): invoice_id={invoice_id}, amount={amount}")
+        print(f"[WFIRMA DEBUG] Invoice edit request body: {json.dumps(edit_data, indent=2)}")
+        resp = requests.post(api_url, headers=headers, json=edit_data)
+        print(f"[WFIRMA DEBUG] invoice_edit status: {resp.status_code}")
+        print(f"[WFIRMA DEBUG] invoice_edit response: {resp.text[:1000]}")
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            status = result.get('status', {}).get('code')
+            if status == 'OK':
+                # Sprawdź czy faktura ma teraz paymentstate = paid
+                invoices = result.get('invoices', {})
+                if isinstance(invoices, dict):
+                    for key in invoices:
+                        if key.isdigit():
+                            invoice = invoices[key].get('invoice', {})
+                            if invoice:
+                                new_state = invoice.get('paymentstate')
+                                new_alreadypaid = invoice.get('alreadypaid')
+                                print(f"[WFIRMA DEBUG] Po edycji: paymentstate={new_state}, alreadypaid={new_alreadypaid}")
+                                return True, resp
+                return True, resp
+            else:
+                print(f"[WFIRMA DEBUG] invoice_edit error: {result.get('status', {}).get('message')}")
+        else:
+            print(f"[WFIRMA DEBUG] invoice_edit HTTP error: {resp.text[:500]}")
+        return False, resp
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] invoice_edit exception: {e}")
+        return False, resp
+
+
 def wfirma_send_invoice_email(token: str, invoice_id: str, email: str, company_id: str | None = None) -> requests.Response:
     """
     Wyślij fakturę e-mailem przez wFirma.
@@ -2123,7 +2186,17 @@ def workflow_create_invoice():
             payment, resp_payment = wfirma_add_payment(token, invoice_id, invoice_total, payment_date, company_id, payment_cashbox_id)
             if payment:
                 payment_result = {'success': True, 'payment': payment}
-                print(f"[WORKFLOW] Faktura oznaczona jako opłacona (kwota: {invoice_total})")
+                print(f"[WORKFLOW] Płatność dodana (kwota: {invoice_total})")
+                
+                # DODATKOWE: Edytuj fakturę żeby ustawić alreadypaid_initial
+                # (payments/add nie zawsze aktualizuje status faktury automatycznie)
+                edit_success, resp_edit = wfirma_mark_invoice_paid(token, invoice_id, invoice_total, company_id)
+                if edit_success:
+                    print(f"[WORKFLOW] Faktura oznaczona jako opłacona (edit alreadypaid_initial)")
+                    payment_result['invoice_edited'] = True
+                else:
+                    print(f"[WORKFLOW] UWAGA: Nie udało się edytować faktury (ale płatność została dodana)")
+                    payment_result['invoice_edited'] = False
             else:
                 payment_result = {'success': False, 'error': 'Nie udało się dodać płatności'}
                 print(f"[WORKFLOW] UWAGA: Nie udało się oznaczyć faktury jako opłaconej")
@@ -2131,8 +2204,8 @@ def workflow_create_invoice():
     # Opóźnienie jeśli dodano płatność - daj wFirma czas na przetworzenie
     if mark_as_paid and payment_result and payment_result.get('success'):
         import time
-        time.sleep(1.5)  # 1.5s opóźnienia
-        print(f"[WORKFLOW] Czekam 1.5s na przetworzenie płatności przed pobraniem PDF...")
+        time.sleep(1.0)  # 1s opóźnienia (mniejsze bo już edytowaliśmy fakturę)
+        print(f"[WORKFLOW] Czekam 1s przed pobraniem PDF...")
     
     # ZAWSZE pobierz PDF faktury (niezależnie od emaila)
     pdf_filename = None
