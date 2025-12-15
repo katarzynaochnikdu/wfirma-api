@@ -2002,6 +2002,9 @@ def workflow_create_invoice():
     payment_due_days_param = body.get('payment_due_days')
     payment_due_date_param = body.get('payment_due_date')
     
+    # Komentarz/opis na fakturze (np. nazwa wydarzenia)
+    description_param = (body.get('description') or '').strip()
+    
     # Nadpisz wartości w invoice_input jeśli podano top-level parametry
     if invoice_input and isinstance(invoice_input, dict):
         if issue_date_param:
@@ -2186,16 +2189,26 @@ def workflow_create_invoice():
     if map_err:
         return jsonify({'error': map_err}), 400
 
-    # Dla trybu TEST dodaj ostrzeżenie na fakturze
-    if company == 'test' and invoice_payload:
-        invoice_payload["description"] = (
-            "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
-            "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
-            "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
-            "*** DOKUMENT WYSTAWIONY W CELACH TESTOWYCH ***\n"
-            "*** NIE STANOWI PODSTAWY DO ZAPŁATY ***"
-        )
-        print("[WORKFLOW] Tryb TEST - dodano ostrzeżenie na fakturze")
+    # Dodaj description (komentarz/nazwa wydarzenia) do faktury
+    if invoice_payload:
+        if company == 'test':
+            # Tryb TEST: ostrzeżenie + opcjonalnie nazwa wydarzenia
+            test_warning = (
+                "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
+                "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
+                "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
+                "*** DOKUMENT WYSTAWIONY W CELACH TESTOWYCH ***\n"
+                "*** NIE STANOWI PODSTAWY DO ZAPŁATY ***"
+            )
+            if description_param:
+                invoice_payload["description"] = f"{test_warning}\n\n{description_param}"
+            else:
+                invoice_payload["description"] = test_warning
+            print("[WORKFLOW] Tryb TEST - dodano ostrzeżenie na fakturze")
+        elif description_param:
+            # Tryb PRODUKCJA: tylko nazwa wydarzenia (jeśli podana)
+            invoice_payload["description"] = description_param
+            print(f"[WORKFLOW] Dodano opis na fakturze: {description_param}")
 
     invoice, resp_inv = wfirma_create_invoice(token, invoice_payload, company_id)
     try:
