@@ -2186,6 +2186,11 @@ def workflow_create_invoice():
     if map_err:
         return jsonify({'error': map_err}), 400
 
+    # Dla trybu TEST dodaj ostrzeżenie na fakturze
+    if company == 'test' and invoice_payload:
+        invoice_payload["description"] = "*** FAKTURA NIEWAŻNA - TRYB TESTOWY ***"
+        print("[WORKFLOW] Tryb TEST - dodano ostrzeżenie na fakturze")
+
     invoice, resp_inv = wfirma_create_invoice(token, invoice_payload, company_id)
     try:
         print("[WFIRMA DEBUG] invoice create status:", resp_inv.status_code if resp_inv else None)
