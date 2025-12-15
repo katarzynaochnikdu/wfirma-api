@@ -24,20 +24,29 @@ REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/callback')
 TOKEN_FILE = "wfirma_token.json"
 
 # Obsługiwane firmy/zestawy danych
-SUPPORTED_COMPANIES = ['md', 'test']
+# md = Medidesk produkcja
+# test = Konto testowe (osobne tokeny)
+# md_test = Medidesk produkcja + ostrzeżenie testowe na fakturach
+SUPPORTED_COMPANIES = ['md', 'test', 'md_test']
 DEFAULT_COMPANY = 'md'  # Domyślna firma jeśli nie podano
 
 
 def get_company_config(company: str = None) -> dict:
     """
-    Pobierz konfigurację dla danej firmy (md lub test).
+    Pobierz konfigurację dla danej firmy (md, test, md_test).
     Zwraca dict z client_id, client_secret, access_token, refresh_token, token_expires.
+    
+    md_test używa danych MD (te same tokeny co produkcja) ale z ostrzeżeniem testowym.
     """
     company = (company or DEFAULT_COMPANY).lower().strip()
     if company not in SUPPORTED_COMPANIES:
         company = DEFAULT_COMPANY
     
-    prefix = f"WFIRMA_{company.upper()}_"
+    # md_test używa tych samych danych co md (prefix WFIRMA_MD_)
+    if company == 'md_test':
+        prefix = "WFIRMA_MD_"
+    else:
+        prefix = f"WFIRMA_{company.upper()}_"
     
     return {
         'company': company,
@@ -2191,8 +2200,8 @@ def workflow_create_invoice():
 
     # Dodaj description (komentarz/nazwa wydarzenia) do faktury
     if invoice_payload:
-        if company == 'test':
-            # Tryb TEST: ostrzeżenie + opcjonalnie nazwa wydarzenia
+        if company in ('test', 'md_test'):
+            # Tryb TEST lub MD_TEST: ostrzeżenie + opcjonalnie nazwa wydarzenia
             test_warning = (
                 "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
                 "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
@@ -2204,9 +2213,9 @@ def workflow_create_invoice():
                 invoice_payload["description"] = f"{test_warning}\n\n{description_param}"
             else:
                 invoice_payload["description"] = test_warning
-            print("[WORKFLOW] Tryb TEST - dodano ostrzeżenie na fakturze")
+            print(f"[WORKFLOW] Tryb {company.upper()} - dodano ostrzeżenie na fakturze")
         elif description_param:
-            # Tryb PRODUKCJA: tylko nazwa wydarzenia (jeśli podana)
+            # Tryb PRODUKCJA (md): tylko nazwa wydarzenia (jeśli podana)
             invoice_payload["description"] = description_param
             print(f"[WORKFLOW] Dodano opis na fakturze: {description_param}")
 
