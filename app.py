@@ -2653,6 +2653,81 @@ def gus_name_by_nip():
     return jsonify({'data': data_list}), 200
 
 
+@app.route('/api/gus/validate-nip', methods=['POST'])
+@require_api_key
+def gus_validate_nip():
+    """
+    Sprawdź czy NIP jest poprawny i istnieje w bazie GUS/REGON.
+    Wejście: JSON { "nip": "1234567890" }
+    Wyjście: { "valid": true/false, "exists": true/false, "data": {...} lub "error": "..." }
+    """
+    body = request.get_json(silent=True) or {}
+    
+    nip_raw = str(body.get('nip', '')).strip()
+    clean_nip = re.sub(r'[^0-9]', '', nip_raw)
+    
+    # Walidacja formatu NIP
+    if not clean_nip:
+        return jsonify({
+            'valid': False,
+            'exists': False,
+            'error': 'Brak NIP',
+            'nip_provided': nip_raw
+        }), 200
+    
+    if len(clean_nip) != 10:
+        return jsonify({
+            'valid': False,
+            'exists': False,
+            'error': 'NIP musi mieć dokładnie 10 cyfr',
+            'nip_provided': nip_raw,
+            'nip_cleaned': clean_nip,
+            'nip_length': len(clean_nip)
+        }), 200
+    
+    # Sprawdź w GUS/REGON
+    print(f"[GUS] validate-nip nip={clean_nip}")
+    gus_records, gus_err = gus_lookup_nip(clean_nip)
+    
+    if gus_err:
+        return jsonify({
+            'valid': True,  # Format NIP poprawny
+            'exists': False,  # Ale nie znaleziono w GUS
+            'error': gus_err,
+            'nip': clean_nip
+        }), 200
+    
+    if not gus_records or len(gus_records) == 0:
+        return jsonify({
+            'valid': True,  # Format NIP poprawny
+            'exists': False,  # Ale nie znaleziono w GUS
+            'nip': clean_nip,
+            'message': 'NIP nie istnieje w bazie GUS/REGON'
+        }), 200
+    
+    # NIP znaleziony w GUS
+    gus_first = gus_records[0]
+    return jsonify({
+        'valid': True,
+        'exists': True,
+        'nip': clean_nip,
+        'data': {
+            'name': gus_first.get('nazwa'),
+            'regon': gus_first.get('regon'),
+            'city': gus_first.get('miejscowosc'),
+            'zip': gus_first.get('kodPocztowy'),
+            'street': gus_first.get('ulica'),
+            'house_number': gus_first.get('nrNieruchomosci'),
+            'apartment_number': gus_first.get('nrLokalu'),
+            'voivodeship': gus_first.get('wojewodztwo'),
+            'county': gus_first.get('powiat'),
+            'commune': gus_first.get('gmina'),
+            'type': gus_first.get('typ'),
+            'krs': gus_first.get('krs')
+        }
+    }), 200
+
+
 @app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
 @require_api_key
 @require_token
