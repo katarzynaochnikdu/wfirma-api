@@ -2707,6 +2707,10 @@ def gus_validate_nip():
         street_parts[1] = f"{street_parts[1]}/{gus_first.get('nrLokalu')}" if len(street_parts) > 1 else gus_first.get('nrLokalu')
     full_street = ' '.join(filter(None, street_parts))
     
+    # Województwo na małe litery
+    voivodeship = gus_first.get('wojewodztwo') or ''
+    voivodeship_lower = voivodeship.lower() if voivodeship else None
+    
     return jsonify({
         'nip_status': 'poprawny',
         'nip': clean_nip,
@@ -2716,7 +2720,7 @@ def gus_validate_nip():
             'street': full_street,
             'zip': gus_first.get('kodPocztowy'),
             'city': gus_first.get('miejscowosc'),
-            'voivodeship': gus_first.get('wojewodztwo'),
+            'voivodeship': voivodeship_lower,
             'krs': gus_first.get('krs')
         }
     }), 200
