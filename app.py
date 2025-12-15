@@ -1984,6 +1984,14 @@ def workflow_create_invoice():
             send_token_expiry_notification(days_remaining, warning)
     nip_raw = str(body.get('nip', '')).strip()
     clean_nip = re.sub(r'[^0-9]', '', nip_raw)
+    nip_valid = len(clean_nip) == 10  # Flaga czy NIP jest poprawny
+    
+    # Dane kontrahenta z wywołania (fallback gdy brak/niepoprawny NIP)
+    purchaser_name = (body.get('purchaser_name') or '').strip()
+    purchaser_address = (body.get('purchaser_address') or '').strip()
+    purchaser_zip = (body.get('purchaser_zip') or '').strip()
+    purchaser_city = (body.get('purchaser_city') or '').strip()
+    
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
@@ -2036,8 +2044,13 @@ def workflow_create_invoice():
     except Exception:
         pass
 
-    if not clean_nip or len(clean_nip) != 10:
-        return jsonify({'error': 'NIP musi mieć 10 cyfr'}), 400
+    # Walidacja: musi być albo poprawny NIP albo dane purchaser
+    if not nip_valid and not purchaser_name:
+        return jsonify({
+            'error': 'Wymagany poprawny NIP (10 cyfr) lub dane purchaser_name',
+            'nip_provided': nip_raw,
+            'nip_valid': nip_valid
+        }), 400
     if not invoice_input:
         return jsonify({'error': 'Brak sekcji invoice'}), 400
 
@@ -2049,24 +2062,34 @@ def workflow_create_invoice():
     else:
         print(f"[WFIRMA DEBUG] company_id: brak (użyje domyślnej firmy)")
 
-    # 1) Szukamy kontrahenta w wFirma (z company_id!)
-    contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
-    contractor_id = contractor.get('id') if contractor else None
+    # 1) Szukamy kontrahenta lub tworzymy na podstawie danych z wywołania
+    contractor = None
+    contractor_id = None
     contractor_created = False
-
-    try:
-        print("[WFIRMA DEBUG] find_contractor_by_nip contractor_id:", contractor_id)
-        print("[WFIRMA DEBUG] find_contractor_by_nip raw contractor:", contractor)
-        if resp_find is not None:
-            print("[WFIRMA DEBUG] find response status:", resp_find.status_code)
-            body_txt = resp_find.text or ""
-            print("[WFIRMA DEBUG] find response body len:", len(body_txt))
-            print("[WFIRMA DEBUG] find response body snippet 2000:", body_txt[:2000])
-    except Exception:
-        pass
-
-    # 2) Jeśli brak kontrahenta – spróbuj GUS i utwórz w wFirma
-    if not contractor_id:
+    contractor_source = None  # 'wfirma', 'gus', 'purchaser'
+    resp_find = None  # Inicjalizacja dla przypadku gdy nie szukamy po NIP
+    
+    if nip_valid:
+        # NIP poprawny - szukamy w wFirma
+        contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
+        contractor_id = contractor.get('id') if contractor else None
+        
+        try:
+            print("[WFIRMA DEBUG] find_contractor_by_nip contractor_id:", contractor_id)
+            print("[WFIRMA DEBUG] find_contractor_by_nip raw contractor:", contractor)
+            if resp_find is not None:
+                print("[WFIRMA DEBUG] find response status:", resp_find.status_code)
+                body_txt = resp_find.text or ""
+                print("[WFIRMA DEBUG] find response body len:", len(body_txt))
+                print("[WFIRMA DEBUG] find response body snippet 2000:", body_txt[:2000])
+        except Exception:
+            pass
+        
+        if contractor_id:
+            contractor_source = 'wfirma'
+    
+    # 2) Jeśli brak kontrahenta i NIP poprawny – spróbuj GUS
+    if not contractor_id and nip_valid:
         gus_records, gus_err = gus_lookup_nip(clean_nip)
         try:
             print("[WFIRMA DEBUG] gus_lookup_nip records len:", len(gus_records) if gus_records else gus_records, "err:", gus_err)
@@ -2074,81 +2097,122 @@ def workflow_create_invoice():
                 print("[WFIRMA DEBUG] gus first record:", gus_records[0])
         except Exception:
             pass
-        if gus_err:
-            return jsonify({'error': 'GUS lookup failed', 'details': gus_err}), 502
-        if gus_records is None:
-            return jsonify({'error': 'GUS zwrócił błąd'}), 502
-        if len(gus_records) == 0:
-            return jsonify({'error': 'GUS nie znalazł firmy dla podanego NIP'}), 404
-
-        gus_first = gus_records[0]
-        # Sklejamy ulicę z numerem domu/lokalu – wFirma często wymaga pełnego adresu
-        street_parts = []
-        if gus_first.get('ulica'):
-            street_parts.append(gus_first.get('ulica'))
-        if gus_first.get('nrNieruchomosci'):
-            street_parts.append(gus_first.get('nrNieruchomosci'))
-        if gus_first.get('nrLokalu'):
-            street_parts.append(gus_first.get('nrLokalu'))
-        # Format adresu jak w wFirma - z UKOŚNIKIEM między numerem domu a lokalu
-        street_base = gus_first.get('ulica') or ""
-        nr_domu = gus_first.get('nrNieruchomosci') or ""
-        nr_lokalu = gus_first.get('nrLokalu') or ""
         
-        if street_base and nr_domu and nr_lokalu:
-            street_full = f"{street_base} {nr_domu}/{nr_lokalu}"
-        elif street_base and nr_domu:
-            street_full = f"{street_base} {nr_domu}"
+        # Jeśli GUS znalazł dane - użyj ich do stworzenia kontrahenta
+        if gus_records and len(gus_records) > 0:
+            gus_first = gus_records[0]
+            # Format adresu jak w wFirma
+            street_base = gus_first.get('ulica') or ""
+            nr_domu = gus_first.get('nrNieruchomosci') or ""
+            nr_lokalu = gus_first.get('nrLokalu') or ""
+            
+            if street_base and nr_domu and nr_lokalu:
+                street_full = f"{street_base} {nr_domu}/{nr_lokalu}"
+            elif street_base and nr_domu:
+                street_full = f"{street_base} {nr_domu}"
+            else:
+                street_full = street_base
+
+            contractor_payload = {
+                "name": gus_first.get('nazwa') or clean_nip,
+                "altname": gus_first.get('nazwa') or clean_nip,
+                "nip": clean_nip,
+                "tax_id_type": "nip",
+                "street": street_full,
+                "zip": gus_first.get('kodPocztowy') or "",
+                "city": gus_first.get('miejscowosc') or "",
+                "country": "PL",
+            }
+            contractor_source = 'gus'
+            print(f"[WORKFLOW] Tworzę kontrahenta z danych GUS: {contractor_payload.get('name')}")
         else:
-            street_full = street_base
-
-        try:
-            print("[WFIRMA DEBUG] street_base:", street_base)
-            print("[WFIRMA DEBUG] nr_domu:", nr_domu, "nr_lokalu:", nr_lokalu)
-            print("[WFIRMA DEBUG] street_full:", street_full)
-        except Exception:
-            pass
-
-        # Payload zgodny z formatem zwracanym przez wFirma (po analizie ręcznie dodanego kontrahenta)
-        contractor_payload = {
-            "name": gus_first.get('nazwa') or clean_nip,
-            "altname": gus_first.get('nazwa') or clean_nip,  # WYMAGANE - taka sama wartość jak name
-            "nip": clean_nip,
-            "tax_id_type": "nip",  # WYMAGANE - typ identyfikatora
-            "street": street_full,
-            "zip": gus_first.get('kodPocztowy') or "",
-            "city": gus_first.get('miejscowosc') or "",
-            "country": "PL",  # ISO kod
-        }
-
+            # GUS nie znalazł - fallback na dane purchaser jeśli dostępne
+            if purchaser_name:
+                print(f"[WORKFLOW] GUS nie znalazł NIP {clean_nip}, używam danych purchaser")
+                contractor_payload = {
+                    "name": purchaser_name,
+                    "altname": purchaser_name,
+                    "nip": clean_nip,  # Zachowaj NIP nawet jeśli GUS go nie zna
+                    "tax_id_type": "nip",
+                    "street": purchaser_address,
+                    "zip": purchaser_zip,
+                    "city": purchaser_city,
+                    "country": "PL",
+                }
+                contractor_source = 'purchaser_fallback'
+            else:
+                return jsonify({'error': 'GUS nie znalazł firmy dla podanego NIP i brak danych purchaser'}), 404
+        
         try:
             print("[WFIRMA DEBUG] create contractor payload:", contractor_payload)
         except Exception:
             pass
 
         new_contractor, resp_add = wfirma_add_contractor(token, contractor_payload, company_id)
+        
+        # Obsługa wyniku tworzenia kontrahenta
         try:
             print("[WFIRMA DEBUG] add contractor status:", resp_add.status_code if resp_add else None)
             if resp_add is not None:
                 body_txt = resp_add.text or ""
                 print("[WFIRMA DEBUG] add contractor body len:", len(body_txt))
-                print("[WFIRMA DEBUG] add contractor FULL body:", body_txt)  # pełna odpowiedź
-                try:
-                    resp_json = resp_add.json()
-                    if 'status' in resp_json:
-                        print("[WFIRMA DEBUG] status object:", resp_json['status'])
-                except:
-                    pass
-            print("[WFIRMA DEBUG] new contractor:", new_contractor)
+                print("[WFIRMA DEBUG] add contractor FULL body:", body_txt)
         except Exception:
             pass
+        
         if not new_contractor:
             status = resp_add.status_code if resp_add else None
             return jsonify({
                 'error': 'Nie udało się dodać kontrahenta w wFirma',
                 'status': status,
                 'details': resp_add.text if resp_add else 'Brak odpowiedzi',
-                'contractor_payload': contractor_payload
+                'contractor_payload': contractor_payload,
+                'contractor_source': contractor_source
+            }), status or 502
+
+        contractor = new_contractor
+        contractor_id = contractor.get('id')
+        contractor_created = True
+    
+    # 3) Jeśli NIP niepoprawny - użyj danych purchaser (osoba fizyczna)
+    elif not contractor_id and not nip_valid and purchaser_name:
+        print(f"[WORKFLOW] NIP niepoprawny/brak, tworzę kontrahenta z danych purchaser: {purchaser_name}")
+        contractor_payload = {
+            "name": purchaser_name,
+            "altname": purchaser_name,
+            "tax_id_type": "none",  # Osoba fizyczna bez NIP
+            "street": purchaser_address,
+            "zip": purchaser_zip,
+            "city": purchaser_city,
+            "country": "PL",
+        }
+        contractor_source = 'purchaser'
+        
+        try:
+            print("[WFIRMA DEBUG] create contractor payload (purchaser):", contractor_payload)
+        except Exception:
+            pass
+
+        new_contractor, resp_add = wfirma_add_contractor(token, contractor_payload, company_id)
+        
+        # Obsługa wyniku tworzenia kontrahenta
+        try:
+            print("[WFIRMA DEBUG] add contractor status:", resp_add.status_code if resp_add else None)
+            if resp_add is not None:
+                body_txt = resp_add.text or ""
+                print("[WFIRMA DEBUG] add contractor body len:", len(body_txt))
+                print("[WFIRMA DEBUG] add contractor FULL body:", body_txt)
+        except Exception:
+            pass
+        
+        if not new_contractor:
+            status = resp_add.status_code if resp_add else None
+            return jsonify({
+                'error': 'Nie udało się dodać kontrahenta w wFirma',
+                'status': status,
+                'details': resp_add.text if resp_add else 'Brak odpowiedzi',
+                'contractor_payload': contractor_payload,
+                'contractor_source': contractor_source
             }), status or 502
 
         contractor = new_contractor
