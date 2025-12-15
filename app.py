@@ -2188,7 +2188,13 @@ def workflow_create_invoice():
 
     # Dla trybu TEST dodaj ostrzeżenie na fakturze
     if company == 'test' and invoice_payload:
-        invoice_payload["description"] = "*** FAKTURA NIEWAŻNA - TRYB TESTOWY ***"
+        invoice_payload["description"] = (
+            "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
+            "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
+            "!!! FAKTURA NIEWAŻNA - TRYB TESTOWY !!!\n"
+            "*** DOKUMENT WYSTAWIONY W CELACH TESTOWYCH ***\n"
+            "*** NIE STANOWI PODSTAWY DO ZAPŁATY ***"
+        )
         print("[WORKFLOW] Tryb TEST - dodano ostrzeżenie na fakturze")
 
     invoice, resp_inv = wfirma_create_invoice(token, invoice_payload, company_id)
