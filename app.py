@@ -1800,13 +1800,14 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal') -> tuple[dict | None, str | None]:
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None) -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
     Jeśli series_id podany - faktura będzie w tej serii.
     Jeśli mark_as_paid=True - dodaje alreadypaid_initial z obliczoną kwotą brutto.
-    document_type: 'normal' (faktura VAT), 'proforma' (pro forma), 'proforma_bill' (pro forma bez VAT)
+    document_type: 'normal' (faktura VAT), 'proforma', 'proforma_bill', 'accounting_note' (nota księgowa), 'receipt_fiscal_normal' (paragon)
+    ereceipt_email: email do wysyłki e-paragonu (tylko dla receipt_fiscal_normal)
     """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
@@ -1946,6 +1947,13 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         except Exception:
             pass
     
+    # E-paragon: dodaj sekcję ereceipt_integration_receipt jeśli to paragon i podano email
+    if document_type == 'receipt_fiscal_normal' and ereceipt_email:
+        payload["ereceipt_integration_receipt"] = {
+            "email_to_auto_send": ereceipt_email
+        }
+        print(f"[WFIRMA DEBUG] E-paragon: email={ereceipt_email}")
+    
     return payload, None
 
 
@@ -2023,10 +2031,13 @@ def workflow_create_invoice():
     # Komentarz/opis na fakturze (np. nazwa wydarzenia)
     description_param = (body.get('description') or '').strip()
     
-    # Typ dokumentu: "normal" (faktura VAT) lub "proforma" (pro forma)
+    # Typ dokumentu: "normal" (faktura VAT), "proforma", "accounting_note" (nota księgowa), "receipt_fiscal_normal" (paragon)
     document_type_param = (body.get('document_type') or 'normal').lower().strip()
-    if document_type_param not in ('normal', 'proforma', 'proforma_bill'):
+    if document_type_param not in ('normal', 'proforma', 'proforma_bill', 'accounting_note', 'receipt_fiscal_normal'):
         document_type_param = 'normal'  # Domyślnie faktura VAT
+    
+    # E-paragon: email do wysyłki (tylko dla receipt_fiscal_normal)
+    ereceipt_email = (body.get('ereceipt_email') or '').strip()
     
     # Nadpisz wartości w invoice_input jeśli podano top-level parametry
     if invoice_input and isinstance(invoice_input, dict):
@@ -2256,8 +2267,8 @@ def workflow_create_invoice():
                 for s in available_series:
                     print(f"[WORKFLOW]   - '{s['name']}' (ID: {s['id']}, szablon: {s['template']})")
     
-    # 4) Budujemy payload faktury/proformy (z alreadypaid_initial jeśli mark_as_paid=True)
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param)
+    # 4) Budujemy payload faktury/proformy/paragonu (z alreadypaid_initial jeśli mark_as_paid=True)
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
@@ -2755,6 +2766,217 @@ def invoice_send_email(token, invoice_id):
         'status': resp.status_code,
         'details': resp.text[:500] if resp.text else ''
     }), resp.status_code
+
+
+# ==================== FAKTURA KORYGUJĄCA ====================
+
+
+def wfirma_get_invoice(token: str, invoice_id: str, company_id: str = None) -> tuple[dict | None, str | None]:
+    """
+    Pobierz szczegóły faktury z wFirma (invoices/get).
+    Zwraca (invoice_dict, error_message).
+    """
+    api_url = f"https://api2.wfirma.pl/invoices/get/{invoice_id}?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    
+    headers = get_wfirma_headers(token)
+    try:
+        resp = requests.get(api_url, headers=headers)
+        print(f"[WFIRMA] invoices/get/{invoice_id} status={resp.status_code}")
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            invoices = result.get('invoices', {})
+            if isinstance(invoices, dict):
+                for key, val in invoices.items():
+                    if isinstance(val, dict) and 'invoice' in val:
+                        return val['invoice'], None
+            return None, "Nie znaleziono faktury w odpowiedzi"
+        else:
+            return None, f"Błąd API: {resp.status_code} - {resp.text[:300]}"
+    except Exception as e:
+        return None, str(e)
+
+
+@app.route('/api/workflow/correction', methods=['POST'])
+@require_api_key
+@require_token
+def workflow_create_correction(token):
+    """
+    Utwórz fakturę korygującą do istniejącej faktury.
+    
+    Wejście JSON:
+    {
+        "company": "md",                      # Opcjonalnie (domyślnie md)
+        "parent_invoice_id": 12345,           # WYMAGANE - ID faktury oryginalnej
+        "correction_reason": "Błąd w cenie",  # Powód korekty (opis)
+        "positions": [                        # WYMAGANE - pozycje korekty
+            {
+                "parent_position_id": 67890,  # WYMAGANE - ID pozycji oryginalnej
+                "name": "Nazwa usługi",       # Opcjonalnie (pobierze z oryginału)
+                "quantity": 1,                # Nowa ilość (po korekcie)
+                "unit_price_net": 100.00,     # Nowa cena netto (po korekcie)
+                "vat_rate": "23"              # VAT
+            }
+        ],
+        "issue_date": "2025-12-12",           # Opcjonalnie (domyślnie dziś)
+        "series_name": "Korekty"              # Opcjonalnie - seria numeracji
+    }
+    """
+    body = request.get_json(silent=True) or {}
+    
+    # Parametry
+    company = (body.get('company') or DEFAULT_COMPANY).lower().strip()
+    parent_invoice_id = body.get('parent_invoice_id')
+    correction_reason = (body.get('correction_reason') or 'Korekta faktury').strip()
+    positions = body.get('positions') or []
+    issue_date = body.get('issue_date') or datetime.date.today().isoformat()
+    series_name = (body.get('series_name') or '').strip()
+    
+    # Walidacja
+    if not parent_invoice_id:
+        return jsonify({'error': 'Brak parent_invoice_id - ID faktury oryginalnej jest wymagane'}), 400
+    
+    if not positions or not isinstance(positions, list):
+        return jsonify({'error': 'Brak pozycji korekty (positions)'}), 400
+    
+    # Sprawdź czy wszystkie pozycje mają parent_position_id
+    for idx, pos in enumerate(positions):
+        if not pos.get('parent_position_id'):
+            return jsonify({'error': f'Pozycja {idx+1} nie ma parent_position_id'}), 400
+    
+    print(f"[CORRECTION] Tworzę korektę dla faktury ID={parent_invoice_id}, company={company}")
+    
+    # 1) Pobierz oryginalną fakturę żeby uzyskać dane kontrahenta i pozycji
+    original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id))
+    if err or not original_invoice:
+        return jsonify({
+            'error': 'Nie udało się pobrać faktury oryginalnej',
+            'details': err,
+            'parent_invoice_id': parent_invoice_id
+        }), 404
+    
+    print(f"[CORRECTION] Pobrano fakturę oryginalną: {original_invoice.get('fullnumber')}")
+    
+    # Pobierz contractor_id z oryginalnej faktury
+    contractor_data = original_invoice.get('contractor', {})
+    contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
+    if not contractor_id:
+        return jsonify({'error': 'Nie można odczytać kontrahenta z faktury oryginalnej'}), 400
+    
+    # 2) Pobierz serię jeśli podano nazwę
+    series_id = None
+    if series_name:
+        resp_series = wfirma_find_series(token, series_name)
+        if resp_series.status_code == 200:
+            try:
+                series_list = resp_series.json().get('series', [])
+                if isinstance(series_list, dict):
+                    for key, val in series_list.items():
+                        if isinstance(val, dict) and 'serie' in val:
+                            s = val['serie']
+                            if s.get('name', '').lower() == series_name.lower():
+                                series_id = int(s.get('id'))
+                                print(f"[CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
+                                break
+            except Exception as e:
+                print(f"[CORRECTION] Błąd parsowania serii: {e}")
+    
+    # 3) Buduj payload faktury korygującej
+    # Mapowanie stawek VAT
+    vat_code_map = {
+        "23": 222, "8": 223, "5": 224, "0": 225, "zw": 226, "np": 227
+    }
+    vat_rate_percent = {
+        "23": 0.23, "8": 0.08, "5": 0.05, "0": 0.0, "zw": 0.0, "np": 0.0
+    }
+    
+    # Pozycje korekty
+    invoice_contents_dict = {}
+    total_brutto = 0.0
+    
+    for idx, pos in enumerate(positions):
+        parent_pos_id = pos.get('parent_position_id')
+        name = pos.get('name', f'Pozycja korekty {idx+1}')
+        qty = pos.get('quantity', 1)
+        price_net = pos.get('unit_price_net', 0)
+        vat_rate = str(pos.get('vat_rate', '23')).lower()
+        
+        try:
+            qty_num = float(qty) if isinstance(qty, str) else qty
+            price_num = float(price_net) if isinstance(price_net, str) else price_net
+            vat_percent = vat_rate_percent.get(vat_rate, 0.23)
+            pos_brutto = qty_num * price_num * (1 + vat_percent)
+            total_brutto += pos_brutto
+        except Exception:
+            pass
+        
+        vat_code_id = vat_code_map.get(vat_rate, 222)
+        
+        content = {
+            "invoicecontent": {
+                "name": name,
+                "unit": pos.get('unit', 'szt.'),
+                "count": qty,
+                "price": price_net,
+                "vat_code": {"id": vat_code_id},
+                "parent": {"id": int(parent_pos_id)}  # Powiązanie z oryginalną pozycją
+            }
+        }
+        invoice_contents_dict[str(idx)] = content
+    
+    # Payload faktury korygującej
+    correction_payload = {
+        "contractor_id": int(contractor_id),
+        "date": issue_date,
+        "type": "correction",
+        "parent": {"id": int(parent_invoice_id)},  # Powiązanie z fakturą oryginalną
+        "description": correction_reason,
+        "invoicecontents": invoice_contents_dict
+    }
+    
+    # Seria (opcjonalnie)
+    if series_id:
+        correction_payload["series"] = {"id": series_id}
+    
+    print(f"[CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(positions)}")
+    
+    # 4) Utwórz fakturę korygującą
+    invoice_result, resp = wfirma_create_invoice(token, correction_payload)
+    
+    if invoice_result and invoice_result.get('id'):
+        return jsonify({
+            'success': True,
+            'message': 'Faktura korygująca utworzona',
+            'correction_invoice': {
+                'id': invoice_result.get('id'),
+                'fullnumber': invoice_result.get('fullnumber'),
+                'type': invoice_result.get('type'),
+                'parent_invoice_id': parent_invoice_id,
+                'netto': invoice_result.get('netto'),
+                'brutto': invoice_result.get('brutto'),
+                'contractor_id': contractor_id,
+                'correction_reason': correction_reason
+            },
+            'original_invoice': {
+                'id': original_invoice.get('id'),
+                'fullnumber': original_invoice.get('fullnumber')
+            }
+        }), 200
+    else:
+        # Błąd
+        error_details = ''
+        if resp:
+            try:
+                error_details = resp.text[:1000]
+            except Exception:
+                pass
+        return jsonify({
+            'error': 'Nie udało się utworzyć faktury korygującej',
+            'details': error_details,
+            'parent_invoice_id': parent_invoice_id
+        }), 500
 
 
 # ==================== START SERWERA ====================
