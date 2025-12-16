@@ -1800,12 +1800,13 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False) -> tuple[dict | None, str | None]:
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal') -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
     Jeśli series_id podany - faktura będzie w tej serii.
     Jeśli mark_as_paid=True - dodaje alreadypaid_initial z obliczoną kwotą brutto.
+    document_type: 'normal' (faktura VAT), 'proforma' (pro forma), 'proforma_bill' (pro forma bez VAT)
     """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
@@ -1846,7 +1847,7 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         "date": issue_date,
         "payment_date": payment_due_date,
         "paymenttype": invoice_input.get('payment_method', 'transfer'),
-        "type": invoice_input.get('type', 'normal'),
+        "type": document_type,  # 'normal', 'proforma', 'proforma_bill'
         "currency": invoice_input.get('currency', 'PLN'),
     }
     
@@ -2021,6 +2022,11 @@ def workflow_create_invoice():
     
     # Komentarz/opis na fakturze (np. nazwa wydarzenia)
     description_param = (body.get('description') or '').strip()
+    
+    # Typ dokumentu: "normal" (faktura VAT) lub "proforma" (pro forma)
+    document_type_param = (body.get('document_type') or 'normal').lower().strip()
+    if document_type_param not in ('normal', 'proforma', 'proforma_bill'):
+        document_type_param = 'normal'  # Domyślnie faktura VAT
     
     # Nadpisz wartości w invoice_input jeśli podano top-level parametry
     if invoice_input and isinstance(invoice_input, dict):
@@ -2250,8 +2256,8 @@ def workflow_create_invoice():
                 for s in available_series:
                     print(f"[WORKFLOW]   - '{s['name']}' (ID: {s['id']}, szablon: {s['template']})")
     
-    # 4) Budujemy payload faktury (z alreadypaid_initial jeśli mark_as_paid=True)
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid)
+    # 4) Budujemy payload faktury/proformy (z alreadypaid_initial jeśli mark_as_paid=True)
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
