@@ -185,7 +185,32 @@ Tworzy fakturę, proformę, notę księgową lub paragon.
 ```json
 {
   "company": "md",
-  "purchaser_name": "Firma ABC Sp. z o.o.",
+  "purchaser_name": "Katarzyna Ochnik",
+  "document_type": "normal",
+  "payment_status": "paid",
+  "invoice": {
+    "positions": [
+      {
+        "name": "Usługa",
+        "quantity": 1,
+        "unit_price_net": 100.00,
+        "vat_rate": "23"
+      }
+    ]
+  }
+}
+```
+
+**Uwaga:** Jeśli nie podasz danych adresowych, zostaną użyte domyślne:
+- `purchaser_address` → `-`
+- `purchaser_zip` → `00-000`
+- `purchaser_city` → `-`
+
+#### Faktura bez NIP z pełnymi danymi:
+```json
+{
+  "company": "md",
+  "purchaser_name": "Jan Kowalski",
   "purchaser_address": "ul. Testowa 123",
   "purchaser_zip": "00-001",
   "purchaser_city": "Warszawa",

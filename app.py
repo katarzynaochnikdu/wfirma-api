@@ -1996,10 +1996,11 @@ def workflow_create_invoice():
     nip_valid = len(clean_nip) == 10  # Flaga czy NIP jest poprawny
     
     # Dane kontrahenta z wywołania (fallback gdy brak/niepoprawny NIP)
+    # wFirma wymaga name, street, zip, city - domyślne wartości jeśli puste
     purchaser_name = (body.get('purchaser_name') or '').strip()
-    purchaser_address = (body.get('purchaser_address') or '').strip()
-    purchaser_zip = (body.get('purchaser_zip') or '').strip()
-    purchaser_city = (body.get('purchaser_city') or '').strip()
+    purchaser_address = (body.get('purchaser_address') or '').strip() or '-'  # Domyślnie "-"
+    purchaser_zip = (body.get('purchaser_zip') or '').strip() or '00-000'     # Domyślnie "00-000"
+    purchaser_city = (body.get('purchaser_city') or '').strip() or '-'        # Domyślnie "-"
     
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
