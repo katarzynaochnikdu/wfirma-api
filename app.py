@@ -1325,6 +1325,13 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
             el = dane.find(tag)
             return el.text if el is not None else None
 
+        # Sprawdź czy to błąd GUS (ErrorCode) zamiast danych podmiotu
+        error_code = get_text('ErrorCode')
+        if error_code:
+            error_msg = get_text('ErrorMessagePl') or get_text('ErrorMessageEn') or ''
+            print(f"[GUS-LOOKUP] GUS zwrócił ErrorCode={error_code}: {error_msg}")
+            continue  # Pomiń ten "rekord" - to błąd, nie dane
+
         mapped = {
             'regon': get_text('Regon'),
             'nip': get_text('Nip'),
@@ -1342,7 +1349,12 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
             'miejscowoscPoczty': get_text('MiejscowoscPoczty'),
             'krs': get_text('Krs'),
         }
-        data_list.append(mapped)
+        
+        # Dodaj tylko jeśli jest nazwa (prawdziwy podmiot)
+        if mapped.get('nazwa'):
+            data_list.append(mapped)
+        else:
+            print(f"[GUS-LOOKUP] Pominięto rekord bez nazwy: {mapped}")
 
     print(f"[GUS-LOOKUP] === KONIEC NIP={clean_nip} znaleziono {len(data_list)} rekordów ===")
     if data_list:
