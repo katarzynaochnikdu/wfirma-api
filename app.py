@@ -10,6 +10,7 @@ import time
 import re
 import datetime
 import base64
+import uuid
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
@@ -70,6 +71,9 @@ MAKE_RENDER_API_KEY = os.environ.get('MAKE_RENDER_API_KEY')  # Ustaw w Render EN
 # jeśli brak – użyjemy ewentualnej BIR1_medidesk (z GCP).
 GUS_API_KEY = os.environ.get('GUS_API_KEY') or os.environ.get('BIR1_medidesk')
 GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
+
+# GitHub token do uploadu zdjęć stopki email
+GITHUB_STOPKA_TOKEN = os.environ.get('ADMINZOHO_GITHUB_STOPKA_TOKEN')
 
 # Powiadomienia o wygasającym refresh tokenie
 EMAIL_REFRESH_TOKEN_EXPIRE = os.environ.get('EMAIL_REFRESH_TOKEN_EXPIRE')  # Email do powiadomień
@@ -3022,6 +3026,79 @@ def workflow_create_correction(token):
             'details': error_details,
             'parent_invoice_id': parent_invoice_id
         }), 500
+
+
+# ==================== ENDPOINT STOPKA EMAIL - UPLOAD ZDJĘĆ ====================
+
+@app.route('/api/stopka/upload-photo', methods=['POST'])
+@require_api_key
+def upload_stopka_photo():
+    """
+    Przyjmuje zdjęcie base64, pushuje na GitHub repo Stopka_email,
+    zwraca publiczny URL raw.githubusercontent.com
+    
+    Body: { "image_base64": "data:image/png;base64,..." }
+    Response: { "success": true, "url": "https://raw.githubusercontent.com/...", "filename": "abc123.png" }
+    """
+    data = request.get_json(silent=True) or {}
+    
+    if 'image_base64' not in data:
+        return jsonify({'success': False, 'error': 'Brak image_base64'}), 400
+    
+    if not GITHUB_STOPKA_TOKEN:
+        return jsonify({'success': False, 'error': 'Brak ADMINZOHO_GITHUB_STOPKA_TOKEN w konfiguracji'}), 500
+    
+    try:
+        # Dekoduj base64
+        image_data = data['image_base64']
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]  # usuń prefix "data:image/png;base64,"
+        
+        image_bytes = base64.b64decode(image_data)
+        
+        # Generuj losową nazwę
+        random_name = uuid.uuid4().hex[:12]
+        filename = f"{random_name}.png"
+        filepath = f"photos/{filename}"
+        
+        # Push na GitHub via API
+        repo = "adminzohomedidesk/Stopka_email"
+        branch = "main"
+        
+        url = f"https://api.github.com/repos/{repo}/contents/{filepath}"
+        
+        headers = {
+            "Authorization": f"token {GITHUB_STOPKA_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        payload = {
+            "message": f"Add photo {filename}",
+            "content": base64.b64encode(image_bytes).decode('utf-8'),
+            "branch": branch
+        }
+        
+        print(f"[STOPKA] Upload photo: {filename} -> {repo}/{filepath}")
+        response = requests.put(url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code in [200, 201]:
+            public_url = f"https://raw.githubusercontent.com/{repo}/{branch}/{filepath}"
+            print(f"[STOPKA] Upload OK: {public_url}")
+            return jsonify({
+                'success': True,
+                'url': public_url,
+                'filename': filename
+            })
+        else:
+            print(f"[STOPKA] GitHub API error: {response.status_code} - {response.text[:500]}")
+            return jsonify({
+                'success': False,
+                'error': f"GitHub API error: {response.status_code} - {response.text}"
+            }), 500
+    
+    except Exception as e:
+        print(f"[STOPKA] Exception: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ==================== START SERWERA ====================
