@@ -75,6 +75,12 @@ GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 # GitHub token do uploadu zdjęć stopki email
 GITHUB_STOPKA_TOKEN = os.environ.get('ADMINZOHO_GITHUB_STOPKA_TOKEN')
 
+# Token dla endpointu stopka/upload-photo (osobny od MAKE_RENDER_API_KEY)
+HTML_GENERATOR_API_KEY_TOKEN = os.environ.get('HTML_GENERATOR_API_KEY_TOKEN')
+
+# Token dla endpointów GUS/REGON (osobny od MAKE_RENDER_API_KEY)
+REGON_API_KEY_TOKEN = os.environ.get('REGON_API_KEY_TOKEN')
+
 # Powiadomienia o wygasającym refresh tokenie
 EMAIL_REFRESH_TOKEN_EXPIRE = os.environ.get('EMAIL_REFRESH_TOKEN_EXPIRE')  # Email do powiadomień
 WEBHOOK_TOKEN_EXPIRE_NOTIFY = os.environ.get('WEBHOOK_TOKEN_EXPIRE_NOTIFY')  # URL webhooka (np. Make.com)
@@ -2531,13 +2537,20 @@ def workflow_create_invoice():
 # ==================== ENDPOINTY GUS / REGON ====================
 
 @app.route('/api/gus/name-by-nip', methods=['POST'])
-@require_api_key
 def gus_name_by_nip():
     """
     Prosty port endpointu /api/gus/name-by-nip z backendu Googie_GUS.
+    Headers: X-API-Key: <REGON_API_KEY_TOKEN>
     Wejście: JSON { "nip": "1234567890" }
     Wyjście: { "data": [ { regon, nip, nazwa, ... } ] } albo komunikat błędu.
     """
+    # Sprawdź osobny token dla endpointów GUS/REGON
+    api_key_header = request.headers.get('X-API-Key', '')
+    if not REGON_API_KEY_TOKEN:
+        return jsonify({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}), 500
+    if api_key_header != REGON_API_KEY_TOKEN:
+        return jsonify({'error': 'Unauthorized - nieprawidłowy token'}), 401
+    
     body = request.get_json(silent=True) or {}
 
     # Walidacja i oczyszczenie NIP (jak w Node)
@@ -2726,13 +2739,20 @@ def gus_name_by_nip():
 
 
 @app.route('/api/gus/validate-nip', methods=['POST'])
-@require_api_key
 def gus_validate_nip():
     """
     Sprawdź czy NIP jest poprawny i czy istnieje w bazie GUS/REGON.
+    Headers: X-API-Key: <REGON_API_KEY_TOKEN>
     Wejście: JSON { "nip": "1234567890" }
     Wyjście: { "nip_status": "brak/niepoprawny/poprawny", "gus_data": {...} lub null }
     """
+    # Sprawdź osobny token dla endpointów GUS/REGON
+    api_key_header = request.headers.get('X-API-Key', '')
+    if not REGON_API_KEY_TOKEN:
+        return jsonify({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}), 500
+    if api_key_header != REGON_API_KEY_TOKEN:
+        return jsonify({'error': 'Unauthorized - nieprawidłowy token'}), 401
+    
     body = request.get_json(silent=True) or {}
 
     nip_raw = str(body.get('nip', '')).strip()
@@ -3031,15 +3051,22 @@ def workflow_create_correction(token):
 # ==================== ENDPOINT STOPKA EMAIL - UPLOAD ZDJĘĆ ====================
 
 @app.route('/api/stopka/upload-photo', methods=['POST'])
-@require_api_key
 def upload_stopka_photo():
     """
     Przyjmuje zdjęcie base64, pushuje na GitHub repo Stopka_email,
     zwraca publiczny URL raw.githubusercontent.com
     
+    Headers: X-API-Key: <HTML_GENERATOR_API_KEY_TOKEN>
     Body: { "image_base64": "data:image/png;base64,..." }
     Response: { "success": true, "url": "https://raw.githubusercontent.com/...", "filename": "abc123.png" }
     """
+    # Sprawdź osobny token dla tego endpointu
+    api_key = request.headers.get('X-API-Key', '')
+    if not HTML_GENERATOR_API_KEY_TOKEN:
+        return jsonify({'success': False, 'error': 'Brak HTML_GENERATOR_API_KEY_TOKEN w konfiguracji serwera'}), 500
+    if api_key != HTML_GENERATOR_API_KEY_TOKEN:
+        return jsonify({'success': False, 'error': 'Unauthorized - nieprawidłowy token'}), 401
+    
     data = request.get_json(silent=True) or {}
     
     if 'image_base64' not in data:
