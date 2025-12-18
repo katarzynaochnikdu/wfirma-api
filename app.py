@@ -1330,6 +1330,20 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
 
 # ==================== FUNKCJE GUS/BIR (prosty port z Googie_GUS) ====================
 
+def validate_nip_checksum(nip: str) -> bool:
+    """
+    Walidacja sumy kontrolnej NIP (cyfra kontrolna).
+    NIP musi mieć dokładnie 10 cyfr. Zwraca True jeśli suma kontrolna poprawna.
+    """
+    if len(nip) != 10 or not nip.isdigit():
+        return False
+    weights = [6, 5, 7, 2, 3, 4, 5, 6, 7]
+    checksum = sum(int(nip[i]) * weights[i] for i in range(9)) % 11
+    if checksum == 10:
+        checksum = 0
+    return checksum == int(nip[9])
+
+
 def escape_xml(unsafe: str) -> str:
     """
     Bezpieczne wstawianie wartości do SOAP XML (ochrona przed SOAP injection).
@@ -2692,24 +2706,23 @@ def gus_validate_nip():
             'gus_data': None
         }), 200
 
-    # Niepoprawny format (nie 10 cyfr)
-    if len(clean_nip) != 10:
+    # Niepoprawny format (nie 10 cyfr) lub błędna suma kontrolna
+    if len(clean_nip) != 10 or not validate_nip_checksum(clean_nip):
         return jsonify({
             'nip_status': 'niepoprawny',
             'nip_provided': nip_raw,
             'nip_cleaned': clean_nip,
-            'nip_length': len(clean_nip),
             'gus_data': None
         }), 200
 
-    # NIP ma poprawny format - sprawdź w GUS/REGON
+    # NIP ma poprawny format i sumę kontrolną - sprawdź w GUS/REGON
     print(f"[GUS] validate-nip nip={clean_nip}")
     gus_records, gus_err = gus_lookup_nip(clean_nip)
 
-    # Poprawny format ale brak w GUS lub błąd
+    # Nie znaleziono w GUS lub błąd
     if gus_err or not gus_records or len(gus_records) == 0:
         return jsonify({
-            'nip_status': 'poprawny',
+            'nip_status': 'niepoprawny',
             'nip': clean_nip,
             'gus_data': None
         }), 200
