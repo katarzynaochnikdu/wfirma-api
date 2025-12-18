@@ -3050,7 +3050,16 @@ def workflow_create_correction(token):
 
 # ==================== ENDPOINT STOPKA EMAIL - UPLOAD ZDJĘĆ ====================
 
-@app.route('/api/stopka/upload-photo', methods=['POST'])
+def cors_response(data, status=200):
+    """Helper do zwracania odpowiedzi z nagłówkami CORS"""
+    response = jsonify(data)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key'
+    return response, status
+
+
+@app.route('/api/stopka/upload-photo', methods=['POST', 'OPTIONS'])
 def upload_stopka_photo():
     """
     Przyjmuje zdjęcie base64, pushuje na GitHub repo Stopka_email,
@@ -3060,23 +3069,27 @@ def upload_stopka_photo():
     Body: { "image_base64": "data:image/png;base64,..." }
     Response: { "success": true, "url": "https://raw.githubusercontent.com/...", "filename": "abc123.png" }
     """
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     # Sprawdź osobny token dla tego endpointu
     api_key = request.headers.get('X-API-Key', '')
     if not HTML_GENERATOR_API_KEY_TOKEN:
-        return jsonify({'success': False, 'error': 'Brak HTML_GENERATOR_API_KEY_TOKEN w konfiguracji serwera'}), 500
+        return cors_response({'success': False, 'error': 'Brak HTML_GENERATOR_API_KEY_TOKEN w konfiguracji serwera'}, 500)
     if api_key != HTML_GENERATOR_API_KEY_TOKEN:
-        return jsonify({'success': False, 'error': 'Unauthorized - nieprawidłowy token'}), 401
+        return cors_response({'success': False, 'error': 'Unauthorized - nieprawidłowy token'}, 401)
     
     print(f"[STOPKA] === START upload-photo ===")
     data = request.get_json(silent=True) or {}
     
     if 'image_base64' not in data:
         print(f"[STOPKA] BŁĄD: Brak image_base64 w request body")
-        return jsonify({'success': False, 'error': 'Brak image_base64'}), 400
+        return cors_response({'success': False, 'error': 'Brak image_base64'}, 400)
     
     if not GITHUB_STOPKA_TOKEN:
         print(f"[STOPKA] BŁĄD: Brak ADMINZOHO_GITHUB_STOPKA_TOKEN w ENV")
-        return jsonify({'success': False, 'error': 'Brak ADMINZOHO_GITHUB_STOPKA_TOKEN w konfiguracji'}), 500
+        return cors_response({'success': False, 'error': 'Brak ADMINZOHO_GITHUB_STOPKA_TOKEN w konfiguracji'}, 500)
     
     try:
         # Dekoduj base64
@@ -3128,21 +3141,21 @@ def upload_stopka_photo():
         if response.status_code in [200, 201]:
             public_url = f"https://raw.githubusercontent.com/{repo}/{branch}/{filepath}"
             print(f"[STOPKA] Upload OK: {public_url}")
-            return jsonify({
+            return cors_response({
                 'success': True,
                 'url': public_url,
                 'filename': filename
             })
         else:
             print(f"[STOPKA] GitHub API error: {response.status_code} - {response.text[:500]}")
-            return jsonify({
+            return cors_response({
                 'success': False,
                 'error': f"GitHub API error: {response.status_code} - {response.text}"
-            }), 500
+            }, 500)
     
     except Exception as e:
         print(f"[STOPKA] Exception: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return cors_response({'success': False, 'error': str(e)}, 500)
 
 
 # ==================== START SERWERA ====================
