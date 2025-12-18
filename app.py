@@ -3056,8 +3056,8 @@ def upload_stopka_photo():
         
         image_bytes = base64.b64decode(image_data)
         
-        # Generuj losową nazwę
-        random_name = uuid.uuid4().hex[:12]
+        # Generuj losową nazwę (40 znaków)
+        random_name = uuid.uuid4().hex + uuid.uuid4().hex[:8]  # 32 + 8 = 40 znaków
         filename = f"{random_name}.png"
         filepath = f"photos/{filename}"
         
