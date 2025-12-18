@@ -1334,13 +1334,15 @@ def validate_nip_checksum(nip: str) -> bool:
     """
     Walidacja sumy kontrolnej NIP (cyfra kontrolna).
     NIP musi mieć dokładnie 10 cyfr. Zwraca True jeśli suma kontrolna poprawna.
+    Gdy reszta z dzielenia przez 11 = 10, NIP jest nieważny (cyfra kontrolna 0-9).
     """
     if len(nip) != 10 or not nip.isdigit():
         return False
     weights = [6, 5, 7, 2, 3, 4, 5, 6, 7]
     checksum = sum(int(nip[i]) * weights[i] for i in range(9)) % 11
+    # Reszta 10 oznacza NIP nieważny - nie można zakodować w jednej cyfrze
     if checksum == 10:
-        checksum = 0
+        return False
     return checksum == int(nip[9])
 
 
@@ -2706,16 +2708,7 @@ def gus_validate_nip():
             'gus_data': None
         }), 200
 
-    # Niepoprawny format (nie 10 cyfr) lub błędna suma kontrolna
-    if len(clean_nip) != 10 or not validate_nip_checksum(clean_nip):
-        return jsonify({
-            'nip_status': 'niepoprawny',
-            'nip_provided': nip_raw,
-            'nip_cleaned': clean_nip,
-            'gus_data': None
-        }), 200
-
-    # NIP ma poprawny format i sumę kontrolną - sprawdź w GUS/REGON
+    # Sprawdź w GUS/REGON
     print(f"[GUS] validate-nip nip={clean_nip}")
     gus_records, gus_err = gus_lookup_nip(clean_nip)
 
