@@ -3067,34 +3067,50 @@ def upload_stopka_photo():
     if api_key != HTML_GENERATOR_API_KEY_TOKEN:
         return jsonify({'success': False, 'error': 'Unauthorized - nieprawidłowy token'}), 401
     
+    print(f"[STOPKA] === START upload-photo ===")
     data = request.get_json(silent=True) or {}
     
     if 'image_base64' not in data:
+        print(f"[STOPKA] BŁĄD: Brak image_base64 w request body")
         return jsonify({'success': False, 'error': 'Brak image_base64'}), 400
     
     if not GITHUB_STOPKA_TOKEN:
+        print(f"[STOPKA] BŁĄD: Brak ADMINZOHO_GITHUB_STOPKA_TOKEN w ENV")
         return jsonify({'success': False, 'error': 'Brak ADMINZOHO_GITHUB_STOPKA_TOKEN w konfiguracji'}), 500
     
     try:
         # Dekoduj base64
         image_data = data['image_base64']
+        original_length = len(image_data)
+        print(f"[STOPKA] Otrzymano image_base64, długość={original_length}")
+        
         if ',' in image_data:
             image_data = image_data.split(',')[1]  # usuń prefix "data:image/png;base64,"
+            print(f"[STOPKA] Usunięto prefix data:..., nowa długość={len(image_data)}")
         
         image_bytes = base64.b64decode(image_data)
+        print(f"[STOPKA] Zdekodowano base64, rozmiar obrazu={len(image_bytes)} bajtów ({len(image_bytes)/1024:.1f} KB)")
         
         # Generuj losową nazwę (40 znaków)
         random_name = uuid.uuid4().hex + uuid.uuid4().hex[:8]  # 32 + 8 = 40 znaków
         filename = f"{random_name}.png"
         filepath = f"photos/{filename}"
+        print(f"[STOPKA] Wygenerowano nazwę pliku: {filename}")
         
         # Push na GitHub via API
         repo = "adminzohomedidesk/Stopka_email"
         branch = "main"
         
         url = f"https://api.github.com/repos/{repo}/contents/{filepath}"
+        print(f"[STOPKA] GitHub API URL: {url}")
         
         headers = {
+            "Authorization": f"token {GITHUB_STOPKA_TOKEN[:4]}...{GITHUB_STOPKA_TOKEN[-4:]}",  # log tylko fragment tokena
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # Przygotuj prawdziwe headery (pełny token)
+        real_headers = {
             "Authorization": f"token {GITHUB_STOPKA_TOKEN}",
             "Accept": "application/vnd.github.v3+json"
         }
@@ -3105,8 +3121,9 @@ def upload_stopka_photo():
             "branch": branch
         }
         
-        print(f"[STOPKA] Upload photo: {filename} -> {repo}/{filepath}")
-        response = requests.put(url, json=payload, headers=headers, timeout=30)
+        print(f"[STOPKA] Wysyłam PUT do GitHub API (token: {GITHUB_STOPKA_TOKEN[:4]}...)")
+        response = requests.put(url, json=payload, headers=real_headers, timeout=30)
+        print(f"[STOPKA] GitHub response status={response.status_code}")
         
         if response.status_code in [200, 201]:
             public_url = f"https://raw.githubusercontent.com/{repo}/{branch}/{filepath}"
