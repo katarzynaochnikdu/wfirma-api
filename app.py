@@ -1201,15 +1201,18 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
     Minimalny helper do ponownego użycia w workflow (bez HTTP round-trip do własnego endpointu).
     Zwraca (lista rekordów lub None, komunikat błędu lub None).
     """
+    print(f"[GUS-LOOKUP] === START dla NIP={clean_nip} ===")
     from_header_key = ''
     api_key = GUS_API_KEY or ''
 
     if not api_key:
+        print(f"[GUS-LOOKUP] BŁĄD: Brak klucza GUS_API_KEY")
         return None, 'Brak klucza GUS_API_KEY'
 
     use_test_env = api_key == 'abcde12345abcde12345' or GUS_USE_TEST
     bir_host = 'wyszukiwarkaregontest.stat.gov.pl' if use_test_env else 'wyszukiwarkaregon.stat.gov.pl'
     bir_url = f'https://{bir_host}/wsBIR/UslugaBIRzewnPubl.svc'
+    print(f"[GUS-LOOKUP] Środowisko: {'TEST' if use_test_env else 'PROD'}, host={bir_host}")
 
     safe_api_key = escape_xml(api_key)
     login_envelope = (
@@ -1227,14 +1230,19 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
         '</soap:Envelope>'
     )
 
+    print(f"[GUS-LOOKUP] Wysyłam Zaloguj request...")
     try:
         login_resp = post_soap_gus(bir_host, login_envelope, sid=None, timeout=10)
+        print(f"[GUS-LOOKUP] Zaloguj response status={login_resp.status_code}")
     except Exception as e:
+        print(f"[GUS-LOOKUP] BŁĄD logowania: {e}")
         return None, f'Błąd komunikacji z GUS podczas logowania: {e}'
 
     sid_match = re.search(r'<ZalogujResult>([^<]*)</ZalogujResult>', login_resp.text or '')
     sid = sid_match.group(1).strip() if sid_match else ''
+    print(f"[GUS-LOOKUP] SID={'[JEST]' if sid else '[BRAK]'} (długość={len(sid) if sid else 0})")
     if not sid:
+        print(f"[GUS-LOOKUP] BŁĄD: Brak SID, response body={login_resp.text[:500] if login_resp.text else 'EMPTY'}")
         return None, 'Logowanie do GUS nie powiodło się (brak SID)'
 
     safe_nip = escape_xml(clean_nip)
@@ -1264,12 +1272,17 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
         '</soap:Envelope>'
     )
 
+    print(f"[GUS-LOOKUP] Wysyłam DaneSzukajPodmioty dla NIP={clean_nip}...")
     try:
         search_resp = post_soap_gus(bir_host, search_envelope, sid=sid, timeout=10)
+        print(f"[GUS-LOOKUP] Search response status={search_resp.status_code}")
     except Exception as e:
+        print(f"[GUS-LOOKUP] BŁĄD wyszukiwania: {e}")
         return None, f'Błąd komunikacji z GUS podczas wyszukiwania: {e}'
 
     soap_part = search_resp.text or ''
+    print(f"[GUS-LOOKUP] Raw response length={len(soap_part)}")
+    
     if 'Content-Type: application/xop+xml' in soap_part:
         match = re.search(
             r'Content-Type: application/xop\+xml[^\r\n]*\r?\n\r?\n([\s\S]*?)\r?\n--uuid:',
@@ -1278,8 +1291,10 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
         )
         if match:
             soap_part = match.group(1)
+            print(f"[GUS-LOOKUP] Extracted SOAP part length={len(soap_part)}")
 
     if re.search(r'<DaneSzukajResult\s*/>', soap_part):
+        print(f"[GUS-LOOKUP] WYNIK: Pusty <DaneSzukajResult/> - NIP nie znaleziony")
         return [], None
 
     result_match = re.search(
@@ -1288,11 +1303,15 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
         re.MULTILINE | re.DOTALL,
     )
     inner_xml = result_match.group(1) if result_match else ''
+    print(f"[GUS-LOOKUP] inner_xml length={len(inner_xml)}, preview={inner_xml[:200] if inner_xml else 'EMPTY'}...")
     if not inner_xml:
+        print(f"[GUS-LOOKUP] BŁĄD: Brak DaneSzukajPodmiotyResult, soap_part={soap_part[:500]}")
         return None, 'Brak danych w odpowiedzi GUS (DaneSzukajPodmiotyResult pusty)'
 
     decoded_xml = decode_bir_inner_xml(inner_xml)
+    print(f"[GUS-LOOKUP] decoded_xml length={len(decoded_xml) if decoded_xml else 0}")
     if not decoded_xml:
+        print(f"[GUS-LOOKUP] BŁĄD: decode_bir_inner_xml zwrócił None/pusty")
         return None, 'Brak danych po dekodowaniu odpowiedzi GUS'
 
     try:
@@ -1325,6 +1344,9 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
         }
         data_list.append(mapped)
 
+    print(f"[GUS-LOOKUP] === KONIEC NIP={clean_nip} znaleziono {len(data_list)} rekordów ===")
+    if data_list:
+        print(f"[GUS-LOOKUP] Pierwszy rekord: nazwa={data_list[0].get('nazwa')}, regon={data_list[0].get('regon')}")
     return data_list, None
 
 
@@ -2702,6 +2724,7 @@ def gus_validate_nip():
 
     # Brak NIP
     if not clean_nip:
+        print(f"[GUS] validate-nip BRAK nip_raw='{nip_raw}'")
         return jsonify({
             'nip_status': 'brak',
             'nip_provided': nip_raw,
@@ -2709,11 +2732,13 @@ def gus_validate_nip():
         }), 200
 
     # Sprawdź w GUS/REGON
-    print(f"[GUS] validate-nip nip={clean_nip}")
+    print(f"[GUS] validate-nip START nip={clean_nip}")
     gus_records, gus_err = gus_lookup_nip(clean_nip)
+    print(f"[GUS] validate-nip RESULT nip={clean_nip} err={gus_err} records_count={len(gus_records) if gus_records else 0}")
 
     # Nie znaleziono w GUS lub błąd
     if gus_err or not gus_records or len(gus_records) == 0:
+        print(f"[GUS] validate-nip NIEPOPRAWNY nip={clean_nip} (err={gus_err}, records={gus_records})")
         return jsonify({
             'nip_status': 'niepoprawny',
             'nip': clean_nip,
@@ -2721,6 +2746,7 @@ def gus_validate_nip():
         }), 200
 
     # NIP znaleziony w GUS
+    print(f"[GUS] validate-nip POPRAWNY nip={clean_nip}")
     gus_first = gus_records[0]
     
     # Składamy pełny adres
