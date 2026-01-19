@@ -106,10 +106,17 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # sandbox - czy to test
-    sandbox = payload.get("sandbox") or raw.get("sandbox") or False
-    if isinstance(sandbox, str):
-        sandbox = sandbox.lower() in ("true", "1", "yes")
-    _log("DEBUG", "Sandbox mode", {"sandbox": sandbox})
+    # Jeśli pole sandbox istnieje i ma jakąkolwiek wartość (nawet "{$sandbox}"), to sandbox = True
+    sandbox_raw = payload.get("sandbox") or raw.get("sandbox")
+    if sandbox_raw is None or sandbox_raw == "" or sandbox_raw is False:
+        sandbox = False
+    elif isinstance(sandbox_raw, bool):
+        sandbox = sandbox_raw
+    elif isinstance(sandbox_raw, str) and sandbox_raw.lower() in ("false", "0", "no"):
+        sandbox = False
+    else:
+        sandbox = True  # Każda inna wartość = sandbox mode
+    _log("DEBUG", "Sandbox mode", {"sandbox": sandbox, "sandbox_raw": sandbox_raw})
 
     # Pobierz dane z buyer_details lub customFormData (Backstage format)
     buyer_details = payload.get("buyer_details") or raw.get("buyer_details") or []
