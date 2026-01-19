@@ -79,7 +79,7 @@ def _generate_dedupe_key(event_order_id: str, event_id: str) -> str:
 def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Wyciąga dane zamówienia z payloadu Backstage.
-    Obsługuje różne warianty struktury (raw/nested).
+    Obsługuje różne warianty struktury (raw/nested/flat).
     """
     # Backstage wysyła dane w różnych formatach - próbujemy kilka ścieżek
     raw = payload.get("raw") or payload
@@ -105,12 +105,25 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or ""
     )
 
-    # Pobierz dane z buyer_details (Backstage format) - może być w payload lub w raw
+    # sandbox - czy to test
+    sandbox = payload.get("sandbox") or raw.get("sandbox") or False
+    if isinstance(sandbox, str):
+        sandbox = sandbox.lower() in ("true", "1", "yes")
+    _log("DEBUG", "Sandbox mode", {"sandbox": sandbox})
+
+    # Pobierz dane z buyer_details lub customFormData (Backstage format)
     buyer_details = payload.get("buyer_details") or raw.get("buyer_details") or []
+    custom_form_data = payload.get("customFormData") or raw.get("customFormData") or []
+    
     buyer_form = {}
+    # Próbuj buyer_details najpierw
     if buyer_details and isinstance(buyer_details, list) and len(buyer_details) > 0:
         buyer_form = buyer_details[0].get("formEntries") or {}
         _log("DEBUG", "Znaleziono buyer_details", {"buyer_form_keys": list(buyer_form.keys()) if buyer_form else []})
+    # Fallback na customFormData
+    elif custom_form_data and isinstance(custom_form_data, list) and len(custom_form_data) > 0:
+        buyer_form = custom_form_data[0].get("formEntries") or {}
+        _log("DEBUG", "Znaleziono customFormData", {"buyer_form_keys": list(buyer_form.keys()) if buyer_form else []})
 
     # purchaser info - próbuj z różnych źródeł
     purchaser_email = (
@@ -119,6 +132,7 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or raw.get("purchaserEmail")
         or buyer_form.get("purchaser_email")
         or raw.get("eventOrder_orderBy")  # Backstage: email zamawiającego
+        or payload.get("eventOrder_orderBy")  # Może być na top level
         or ""
     )
     purchaser_first_name = (
@@ -126,6 +140,8 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or raw.get("purchaserFirstName")
         or buyer_form.get("purchaser_first_name")
         or payload.get("purchaser_first_name")
+        or raw.get("userProfile_name")  # Backup: Backstage userProfile
+        or payload.get("userProfile_name")
         or ""
     )
     purchaser_last_name = (
@@ -133,6 +149,8 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or raw.get("purchaserLastName")
         or buyer_form.get("purchaser_last_name")
         or payload.get("purchaser_last_name")
+        or raw.get("userProfile_lastName")  # Backup: Backstage userProfile
+        or payload.get("userProfile_lastName")
         or ""
     )
     purchaser_phone = (
@@ -141,6 +159,8 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or buyer_form.get("purchaser_mobile_no")  # Backstage format
         or buyer_form.get("purchaser_phone")
         or payload.get("purchaser_phone")
+        or raw.get("userProfile_telephone")  # Backup: Backstage userProfile
+        or payload.get("userProfile_telephone")
         or ""
     )
 
@@ -171,12 +191,14 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     # payment info
     payment_option_name = (
         raw.get("eventOrder_paymentOptionName")
+        or payload.get("eventOrder_paymentOptionName")
         or raw.get("payment_option_name")
         or raw.get("paymentOptionName")
         or ""
     )
     payment_type_raw = (
         raw.get("eventOrder_paymentType")
+        or payload.get("eventOrder_paymentType")
         or raw.get("payment_type")
         or raw.get("paymentType")
     )
@@ -187,6 +209,7 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         payload.get("total")  # Top level w webhook
         or raw.get("total")
         or raw.get("orderCost_grandTotal")  # Backstage format
+        or payload.get("orderCost_grandTotal")  # Może być na top level
         or raw.get("eventOrder_total")
         or raw.get("order_total")
         or 0
@@ -201,6 +224,8 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         raw.get("promo_code")
         or raw.get("promoCode")
         or raw.get("eventOrder_promoCode")
+        or raw.get("orderCost_promoCode")  # Backstage format
+        or payload.get("orderCost_promoCode")  # Może być na top level
         or ""
     )
 
@@ -208,6 +233,7 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     currency = (
         raw.get("currency")
         or raw.get("eventOrder_currency")
+        or payload.get("currency")
         or "PLN"
     )
 
@@ -224,6 +250,7 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         "total": total,
         "promo_code": str(promo_code).strip(),
         "currency": str(currency).strip().upper() or "PLN",
+        "sandbox": sandbox,
     }
 
 
