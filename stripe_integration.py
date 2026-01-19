@@ -407,8 +407,8 @@ def handle_checkout_expired(session_data: Dict[str, Any]) -> Dict[str, Any]:
     # Aktualizuj status sesji Stripe
     if checkout_session_id:
         try:
-            from pg_storage import get_db_connection
-            conn = get_db_connection()
+            from pg_storage import _with_conn, _put_conn
+            pool, conn = _with_conn()
             cur = conn.cursor()
             cur.execute("""
                 UPDATE stripe_sessions 
@@ -417,7 +417,7 @@ def handle_checkout_expired(session_data: Dict[str, Any]) -> Dict[str, Any]:
             """, (checkout_session_id,))
             conn.commit()
             cur.close()
-            conn.close()
+            _put_conn(pool, conn)
         except Exception as e:
             print(f"[STRIPE] Błąd aktualizacji sesji: {e}")
     
@@ -450,8 +450,8 @@ def handle_checkout_payment_failed(session_data: Dict[str, Any]) -> Dict[str, An
     # Aktualizuj status sesji Stripe
     if checkout_session_id:
         try:
-            from pg_storage import get_db_connection
-            conn = get_db_connection()
+            from pg_storage import _with_conn, _put_conn
+            pool, conn = _with_conn()
             cur = conn.cursor()
             cur.execute("""
                 UPDATE stripe_sessions 
@@ -460,7 +460,7 @@ def handle_checkout_payment_failed(session_data: Dict[str, Any]) -> Dict[str, An
             """, (checkout_session_id,))
             conn.commit()
             cur.close()
-            conn.close()
+            _put_conn(pool, conn)
         except Exception as e:
             print(f"[STRIPE] Błąd aktualizacji sesji: {e}")
     
