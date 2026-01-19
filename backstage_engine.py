@@ -14,6 +14,9 @@ from typing import Any, Dict, List, Optional, Tuple
 MAKE_WEBHOOK_SEND_EMAIL_REQUEST = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUEST", "")
 RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", "")
 
+# Email wewnętrzny - info techniczne o błędach
+BACKSTAGE_TECHNICAL_INFO_EMAIL = os.environ.get("BACKSTAGE_TECHNICAL_INFO_EMAIL", "")
+
 
 # ---------------------------------------------------------------------------
 # LOGGING
@@ -136,6 +139,94 @@ def _send_email_via_make(
             "success": False,
             "error": str(e),
         }
+
+
+def _send_error_notification(
+    error_type: str,
+    error_message: str,
+    event_order_id: str = "",
+    event_id: str = "",
+    extra_data: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Wysyła email wewnętrzny o błędzie.
+    
+    Args:
+        error_type: Typ błędu (np. "EVENT_NOT_FOUND", "TICKET_NOT_FOUND", "EMAIL_ERROR")
+        error_message: Szczegółowy opis błędu
+        event_order_id: ID zamówienia
+        event_id: ID wydarzenia
+        extra_data: Dodatkowe dane do wyświetlenia
+    """
+    if not BACKSTAGE_TECHNICAL_INFO_EMAIL:
+        _log("WARN", f"Brak BACKSTAGE_TECHNICAL_INFO_EMAIL - nie wysłano powiadomienia o błędzie: {error_type}")
+        return
+    
+    if not _is_make_email_configured():
+        _log("WARN", f"Make webhook nie skonfigurowany - nie wysłano powiadomienia o błędzie: {error_type}")
+        return
+    
+    ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    # Przygotuj dodatkowe dane jako HTML
+    extra_html = ""
+    if extra_data:
+        extra_items = []
+        for k, v in extra_data.items():
+            val_str = str(v)[:500] if len(str(v)) > 500 else str(v)
+            extra_items.append(f"<li><strong>{k}:</strong> {val_str}</li>")
+        extra_html = f"<ul>{''.join(extra_items)}</ul>"
+    
+    subject = f"[ERROR] {error_type} – Backstage Engine"
+    body_html = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="color: #dc3545;">🚨 Błąd w Backstage Engine</h2>
+        <p><strong>Typ błędu:</strong> {error_type}</p>
+        <p><strong>Czas:</strong> {ts}</p>
+        <hr>
+        <p><strong>Zamówienie:</strong> {event_order_id or "(brak)"}</p>
+        <p><strong>Event ID:</strong> {event_id or "(brak)"}</p>
+        <hr>
+        <p><strong>Komunikat błędu:</strong></p>
+        <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto;">{error_message}</pre>
+        {f'<hr><p><strong>Dodatkowe dane:</strong></p>{extra_html}' if extra_html else ''}
+        <hr>
+        <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez Backstage Engine (Render).</p>
+    </body>
+    </html>
+    """
+    
+    _log("INFO", f"Wysyłam powiadomienie o błędzie: {error_type}", {"to": BACKSTAGE_TECHNICAL_INFO_EMAIL})
+    
+    try:
+        payload = {
+            "to": BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            "subject": subject,
+            "body_html": body_html,
+            "event_order_id": event_order_id,
+            "template_type": f"error_{error_type.lower()}",
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "x-make-apikey": RENDER_EMAIL_KEY_SEND_REQUEST,
+        }
+        
+        response = requests.post(
+            MAKE_WEBHOOK_SEND_EMAIL_REQUEST,
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        
+        if response.status_code in (200, 202):
+            _log("INFO", f"Powiadomienie o błędzie wysłane | status={response.status_code}")
+        else:
+            _log("ERROR", f"Błąd wysyłki powiadomienia: {response.status_code} | {response.text[:200]}")
+            
+    except Exception as e:
+        _log("ERROR", f"Wyjątek przy wysyłce powiadomienia o błędzie: {e}")
 
 
 from pg_storage import (
@@ -657,6 +748,20 @@ def _handle_stripe_flow(
     if error:
         _log("ERROR", f"STRIPE FLOW: Błąd tworzenia sesji: {error}")
         stripe_error = error
+        
+        # Wyślij powiadomienie o błędzie Stripe
+        _send_error_notification(
+            error_type="STRIPE_SESSION_ERROR",
+            error_message=f"Nie udało się utworzyć sesji płatności Stripe.\nBłąd: {error}",
+            event_order_id=event_order_id,
+            event_id=event_id,
+            extra_data={
+                "purchaser_email": purchaser_email,
+                "event_name": event_name,
+                "total": total,
+                "sandbox": is_sandbox,
+            },
+        )
     elif session_data:
         stripe_url = session_data.get("url")
         stripe_session_id = session_data.get("checkout_session_id")
@@ -746,6 +851,20 @@ def _handle_stripe_flow(
         else:
             email_error = result.get("error")
             _log("ERROR", f"STRIPE FLOW: Błąd wysyłki email ({email_method}): {email_error}")
+            
+            # Wyślij powiadomienie o błędzie wysyłki
+            _send_error_notification(
+                error_type="EMAIL_SEND_ERROR",
+                error_message=f"Nie udało się wysłać emaila z linkiem do płatności Stripe.\nMetoda: {email_method}\nBłąd: {email_error}",
+                event_order_id=event_order_id,
+                event_id=event_id,
+                extra_data={
+                    "purchaser_email": purchaser_email,
+                    "event_name": event_name,
+                    "stripe_url": stripe_url or "(brak)",
+                    "total": total,
+                },
+            )
     elif not stripe_url:
         _log("WARN", "STRIPE FLOW: Brak URL Stripe - email nie wysłany")
     elif not purchaser_email:
@@ -858,6 +977,14 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         if not event_order_id:
             _log("ERROR", "Brak event_order_id w payload!")
+            _send_error_notification(
+                error_type="MISSING_ORDER_ID",
+                error_message="Webhook Backstage nie zawiera event_order_id. Nie można przetworzyć zamówienia.",
+                extra_data={
+                    "purchaser_email": order_data.get("purchaser_email", ""),
+                    "event_id": order_data.get("event_id", ""),
+                },
+            )
             return {
                 "status": "error",
                 "error": "Brak event_order_id w payload",
@@ -865,6 +992,14 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         if not event_id:
             _log("ERROR", "Brak event_id w payload!")
+            _send_error_notification(
+                error_type="MISSING_EVENT_ID",
+                error_message="Webhook Backstage nie zawiera event_id. Nie można zidentyfikować wydarzenia.",
+                event_order_id=event_order_id,
+                extra_data={
+                    "purchaser_email": order_data.get("purchaser_email", ""),
+                },
+            )
             return {
                 "status": "error",
                 "error": "Brak event_id w payload",
@@ -909,6 +1044,19 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             # Event nie jest skonfigurowany - zwróć błąd ale zapisz webhook
             _log("ERROR", f"Event {event_id} NIE ZNALEZIONY w bazie!", {"event_id": event_id})
             mark_backstage_webhook_processed(dedupe_key, "failed", f"Event {event_id} nie znaleziony w konfiguracji")
+            
+            # Wyślij powiadomienie o błędzie
+            _send_error_notification(
+                error_type="EVENT_NOT_FOUND",
+                error_message=f"Event o ID '{event_id}' nie jest skonfigurowany w systemie. Zamówienie nie może być przetworzone.",
+                event_order_id=event_order_id,
+                event_id=event_id,
+                extra_data={
+                    "purchaser_email": order_data.get("purchaser_email", ""),
+                    "total": order_data.get("total", 0),
+                },
+            )
+            
             return {
                 "status": "error",
                 "order_id": event_order_id,
@@ -958,6 +1106,21 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             result = _handle_stripe_flow(order_data, event_config, rule)
         else:
             _log("ERROR", f"Nieznany flow: {flow}")
+            
+            # Wyślij powiadomienie o błędzie
+            _send_error_notification(
+                error_type="UNKNOWN_FLOW",
+                error_message=f"Nieznany flow płatności: '{flow}'. Sprawdź konfigurację reguł płatności.",
+                event_order_id=event_order_id,
+                event_id=event_id,
+                extra_data={
+                    "flow": flow,
+                    "event_name": event_config.get("event_name", ""),
+                    "payment_option_name": order_data.get("payment_option_name", ""),
+                    "total": order_data.get("total", 0),
+                },
+            )
+            
             result = {
                 "flow": flow,
                 "status": "error",
@@ -1006,7 +1169,17 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         _log("ERROR", f"WYJĄTEK podczas przetwarzania: {str(e)}", {"exception": str(e)})
         import traceback
-        _log("ERROR", f"Traceback: {traceback.format_exc()}")
+        tb = traceback.format_exc()
+        _log("ERROR", f"Traceback: {tb}")
+        
+        # Wyślij powiadomienie o wyjątku
+        _send_error_notification(
+            error_type="EXCEPTION",
+            error_message=f"Wyjątek podczas przetwarzania webhooka Backstage:\n{str(e)}\n\nTraceback:\n{tb[:1000]}",
+            event_order_id=order_data.get("event_order_id", "") if 'order_data' in dir() else "",
+            event_id=order_data.get("event_id", "") if 'order_data' in dir() else "",
+        )
+        
         return {
             "status": "error",
             "error": str(e),
