@@ -4,8 +4,32 @@ Odpowiada za routing płatności (FOC / PROFORMA / STRIPE) i generowanie mail_ta
 """
 import hashlib
 import json
+import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# LOGGING
+# ---------------------------------------------------------------------------
+
+def _log(level: str, message: str, data: Optional[Dict[str, Any]] = None) -> None:
+    """Loguje wiadomość z timestampem i opcjonalnymi danymi."""
+    ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    prefix = f"[{ts}] [BACKSTAGE] [{level}]"
+    if data:
+        # Skróć długie wartości
+        safe_data = {}
+        for k, v in data.items():
+            if isinstance(v, str) and len(v) > 200:
+                safe_data[k] = v[:200] + "..."
+            elif isinstance(v, dict) and len(str(v)) > 500:
+                safe_data[k] = f"<dict with {len(v)} keys>"
+            else:
+                safe_data[k] = v
+        print(f"{prefix} {message} | {json.dumps(safe_data, ensure_ascii=False, default=str)}")
+    else:
+        print(f"{prefix} {message}")
 
 from pg_storage import (
     get_event,
@@ -531,26 +555,46 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
     - stripe_action: (opcjonalnie) akcja do wykonania w Stripe
     - error: (opcjonalnie) komunikat błędu
     """
+    _log("INFO", "========== NOWY WEBHOOK BACKSTAGE ==========")
+    _log("DEBUG", "Otrzymano payload", {"payload_keys": list(payload.keys()) if isinstance(payload, dict) else "not_dict"})
+    
     try:
         # 1. Wyciągnij dane zamówienia
+        _log("INFO", "Krok 1: Ekstrakcja danych zamówienia...")
         order_data = _extract_order_data(payload)
         event_order_id = order_data["event_order_id"]
         event_id = order_data["event_id"]
+        
+        _log("INFO", "Wyekstrahowane dane", {
+            "event_order_id": event_order_id,
+            "event_id": event_id,
+            "purchaser_email": order_data.get("purchaser_email"),
+            "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
+            "total": order_data.get("total"),
+            "currency": order_data.get("currency"),
+            "payment_option_name": order_data.get("payment_option_name"),
+            "payment_type": order_data.get("payment_type"),
+        })
 
         if not event_order_id:
+            _log("ERROR", "Brak event_order_id w payload!")
             return {
                 "status": "error",
                 "error": "Brak event_order_id w payload",
             }
 
         if not event_id:
+            _log("ERROR", "Brak event_id w payload!")
             return {
                 "status": "error",
                 "error": "Brak event_id w payload",
             }
 
         # 2. Sprawdź idempotencję (deduplikacja)
+        _log("INFO", "Krok 2: Sprawdzanie idempotencji...")
         dedupe_key = _generate_dedupe_key(event_order_id, event_id)
+        _log("DEBUG", "Wygenerowany dedupe_key", {"dedupe_key": dedupe_key})
+        
         is_new, webhook_record = save_backstage_webhook(
             dedupe_key=dedupe_key,
             event_order_id=event_order_id,
@@ -560,6 +604,7 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         if not is_new:
             # Webhook już był przetworzony
+            _log("WARN", "Webhook już był przetworzony (duplikat)", {"event_order_id": event_order_id})
             existing_order = get_order(event_order_id)
             return {
                 "status": "duplicate",
@@ -567,19 +612,26 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "message": "Webhook już został przetworzony",
                 "existing_status": existing_order.get("status") if existing_order else None,
             }
+        
+        _log("INFO", "Webhook zapisany do bazy (nowy)")
 
         # 3. Pobierz konfigurację eventu
+        _log("INFO", "Krok 3: Pobieranie konfiguracji eventu...", {"event_id": event_id})
         event_config = _get_event_config(event_id)
         if not event_config:
             # Event nie jest skonfigurowany - zwróć błąd ale zapisz webhook
+            _log("ERROR", f"Event {event_id} NIE ZNALEZIONY w bazie!", {"event_id": event_id})
             mark_backstage_webhook_processed(dedupe_key, "failed", f"Event {event_id} nie znaleziony w konfiguracji")
             return {
                 "status": "error",
                 "order_id": event_order_id,
                 "error": f"Event {event_id} nie jest skonfigurowany w systemie",
             }
+        
+        _log("INFO", "Event znaleziony", {"event_name": event_config.get("event_name")})
 
         # 4. Utwórz/zaktualizuj zamówienie w bazie
+        _log("INFO", "Krok 4: Tworzenie/aktualizacja zamówienia w bazie...")
         upsert_order(
             event_order_id=event_order_id,
             event_id=event_id,
@@ -596,11 +648,21 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             status="received",
             raw=payload,
         )
+        _log("INFO", "Zamówienie zapisane w bazie", {"event_order_id": event_order_id, "status": "received"})
 
         # 5. Określ flow
+        _log("INFO", "Krok 5: Określanie flow płatności...")
         flow, rule = _determine_flow(order_data)
+        _log("INFO", "Flow określony", {
+            "flow": flow,
+            "rule_id": rule.get("id") if rule else None,
+            "rule_pattern": rule.get("payment_option_name_pattern") if rule else None,
+            "total": order_data.get("total"),
+            "payment_option_name": order_data.get("payment_option_name"),
+        })
 
         # 6. Wykonaj odpowiedni handler
+        _log("INFO", f"Krok 6: Wykonywanie handlera dla flow={flow}...")
         if flow == FLOW_FOC:
             result = _handle_foc_flow(order_data, event_config)
         elif flow == FLOW_PROFORMA:
@@ -608,14 +670,22 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif flow == FLOW_STRIPE:
             result = _handle_stripe_flow(order_data, event_config, rule)
         else:
+            _log("ERROR", f"Nieznany flow: {flow}")
             result = {
                 "flow": flow,
                 "status": "error",
                 "error": f"Nieznany flow: {flow}",
             }
+        
+        _log("INFO", "Handler zakończony", {
+            "flow": flow,
+            "order_status": result.get("order_status"),
+            "mail_tasks_count": len(result.get("mail_tasks", [])),
+        })
 
         # 7. Zapisz mail tasks do logu
-        for mt in result.get("mail_tasks", []):
+        _log("INFO", "Krok 7: Zapisywanie mail tasks...")
+        for i, mt in enumerate(result.get("mail_tasks", [])):
             save_mail_log(
                 event_order_id=event_order_id,
                 direction=mt.get("direction", "purchaser"),
@@ -624,9 +694,21 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
                 subject=mt.get("subject", ""),
                 data=mt.get("data", {}),
             )
+            _log("DEBUG", f"Mail task {i+1} zapisany", {
+                "template": mt.get("template"),
+                "to": mt.get("to"),
+                "direction": mt.get("direction"),
+            })
 
         # 8. Oznacz webhook jako przetworzony
         mark_backstage_webhook_processed(dedupe_key, "processed")
+        _log("INFO", "Krok 8: Webhook oznaczony jako przetworzony")
+        
+        _log("INFO", "========== WEBHOOK PRZETWORZONY POMYŚLNIE ==========", {
+            "event_order_id": event_order_id,
+            "flow": flow,
+            "status": "ok",
+        })
 
         return {
             "status": "ok",
@@ -635,6 +717,9 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as e:
+        _log("ERROR", f"WYJĄTEK podczas przetwarzania: {str(e)}", {"exception": str(e)})
+        import traceback
+        _log("ERROR", f"Traceback: {traceback.format_exc()}")
         return {
             "status": "error",
             "error": str(e),
