@@ -2298,6 +2298,81 @@ def email_stripe_test():
         }), 500
 
 
+@app.route('/api/email/confirm-sent', methods=['POST'])
+@require_api_key
+def email_confirm_sent():
+    """
+    Callback z Make.com - potwierdza że email został wysłany.
+    
+    Body:
+    {
+        "event_order_id": "24311000000805010",
+        "status": "sent" | "failed",
+        "to": "email@example.com",
+        "message_id": "opcjonalnie - ID z Make/SMTP",
+        "error": "opcjonalnie - komunikat błędu"
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        
+        event_order_id = data.get("event_order_id")
+        status = data.get("status", "sent")
+        to_email = data.get("to", "")
+        message_id = data.get("message_id", "")
+        error = data.get("error", "")
+        
+        print(f"[EMAIL CALLBACK] order={event_order_id}, status={status}, to={to_email}, message_id={message_id}")
+        
+        if not event_order_id:
+            return jsonify({
+                'success': False,
+                'error': 'Brak event_order_id'
+            }), 400
+        
+        # Zaktualizuj mail_log w bazie
+        try:
+            from pg_storage import get_db_connection
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Znajdź ostatni mail_log dla tego zamówienia i zaktualizuj status
+            cur.execute("""
+                UPDATE mail_log 
+                SET status = %s, 
+                    sent_at = CASE WHEN %s = 'sent' THEN NOW() ELSE sent_at END,
+                    error_message = %s,
+                    updated_at = NOW()
+                WHERE event_order_id = %s 
+                AND status = 'pending'
+                AND direction = 'purchaser'
+            """, (status, status, error or None, event_order_id))
+            
+            rows_updated = cur.rowcount
+            conn.commit()
+            cur.close()
+            conn.close()
+            
+            print(f"[EMAIL CALLBACK] Updated {rows_updated} mail_log rows for order {event_order_id}")
+            
+        except Exception as db_err:
+            print(f"[EMAIL CALLBACK] DB error: {db_err}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Email status updated to {status}',
+            'event_order_id': event_order_id,
+            'status': status,
+        }), 200
+        
+    except Exception as e:
+        print(f"[EMAIL CALLBACK] Error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/auth')
 def auth():
     """
