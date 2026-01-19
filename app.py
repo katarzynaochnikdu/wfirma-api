@@ -17,6 +17,14 @@ from functools import wraps
 
 app = Flask(__name__)
 
+# Panel admin (konfiguracja eventów w Postgres)
+try:
+    from admin_panel import admin_bp
+    app.register_blueprint(admin_bp, url_prefix="/admin")
+except Exception as e:
+    # Nie blokuj startu serwera, jeśli zależności panelu nie są gotowe.
+    print(f"[ADMIN] Panel admin nieaktywny: {e}")
+
 # Konfiguracja z zmiennych środowiskowych (wFirma OAuth)
 # UWAGA: Teraz obsługujemy dwa zestawy danych: WFIRMA_MD_* i WFIRMA_TEST_*
 CLIENT_ID = os.environ.get('CLIENT_ID')

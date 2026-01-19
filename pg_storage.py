@@ -1,6 +1,7 @@
+import json
 import os
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import psycopg2
@@ -303,4 +304,204 @@ def get_db_status() -> Dict[str, Any]:
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
+
+
+def _dict_cursor(conn: Any):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)  # type: ignore[attr-defined]
+
+
+def list_events(limit: int = 200) -> List[Dict[str, Any]]:
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            "SELECT event_id, event_name, status, notes, data, created_at, updated_at "
+            "FROM events ORDER BY updated_at DESC LIMIT %s",
+            (int(limit),),
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_event(event_id: str) -> Optional[Dict[str, Any]]:
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            "SELECT event_id, event_name, status, notes, data, created_at, updated_at "
+            "FROM events WHERE event_id=%s",
+            (str(event_id),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def upsert_event(event_id: str, event_name: str, status: str, notes: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO events(event_id, event_name, status, notes, data)
+            VALUES(%s, %s, %s, %s, %s)
+            ON CONFLICT (event_id) DO UPDATE SET
+              event_name=EXCLUDED.event_name,
+              status=EXCLUDED.status,
+              notes=EXCLUDED.notes,
+              data=EXCLUDED.data,
+              updated_at=NOW()
+            """,
+            (
+                str(event_id),
+                str(event_name),
+                (status or None),
+                (notes or None),
+                psycopg2.extras.Json(data),  # type: ignore[attr-defined]
+            ),
+        )
+        ev = get_event(event_id)
+        return ev or {"event_id": event_id, "event_name": event_name, "status": status, "notes": notes, "data": data}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def delete_event(event_id: str) -> None:
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM events WHERE event_id=%s", (str(event_id),))
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_ticket_classes(event_id: str) -> List[Dict[str, Any]]:
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            "SELECT event_id, ticket_class_id, ticket_name, data, created_at, updated_at "
+            "FROM event_ticket_classes WHERE event_id=%s ORDER BY ticket_class_id ASC",
+            (str(event_id),),
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def replace_ticket_classes(event_id: str, classes: List[Dict[str, Any]]) -> None:
+    """
+    Najprostszy model edycji: replace-all dla danego eventu.
+    `classes` to lista obiektów z kluczami: ticket_class_id, ticket_name, data (opcjonalnie).
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM event_ticket_classes WHERE event_id=%s", (str(event_id),))
+        for item in classes or []:
+            tci = str(item.get("ticket_class_id") or "").strip()
+            if not tci:
+                continue
+            ticket_name = item.get("ticket_name")
+            data = item.get("data") or {}
+            cur.execute(
+                """
+                INSERT INTO event_ticket_classes(event_id, ticket_class_id, ticket_name, data)
+                VALUES(%s, %s, %s, %s)
+                """,
+                (
+                    str(event_id),
+                    tci,
+                    (str(ticket_name) if ticket_name is not None else None),
+                    psycopg2.extras.Json(data),  # type: ignore[attr-defined]
+                ),
+            )
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def parse_kv_lines(text: str) -> Dict[str, Any]:
+    """
+    Parser do wklejania z arkusza: linie typu:
+      key<TAB>value
+      key: value
+    Zwraca dict. Nie próbuje na siłę typów – ale rozpoznaje JSON/boolean/int/float.
+    """
+    out: Dict[str, Any] = {}
+    if not text:
+        return out
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        key = None
+        value = None
+        if "\t" in line:
+            key, value = line.split("\t", 1)
+        elif ":" in line:
+            key, value = line.split(":", 1)
+        elif ";" in line:
+            key, value = line.split(";", 1)
+        else:
+            continue
+
+        k = (key or "").strip()
+        v = (value or "").strip()
+        if not k:
+            continue
+
+        # Typy podstawowe
+        low = v.lower()
+        if low in ("true", "false"):
+            out[k] = (low == "true")
+            continue
+
+        # Liczby
+        try:
+            if "." in v:
+                out[k] = float(v)
+            else:
+                out[k] = int(v)
+            continue
+        except Exception:
+            pass
+
+        # JSON (obiekt/array) jeśli wygląda sensownie
+        if (v.startswith("{") and v.endswith("}")) or (v.startswith("[") and v.endswith("]")):
+            try:
+                out[k] = json.loads(v)
+                continue
+            except Exception:
+                pass
+
+        out[k] = v
+    return out
+
 
