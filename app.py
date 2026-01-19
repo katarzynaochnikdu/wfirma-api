@@ -99,7 +99,7 @@ MAKE_WEBHOOK_SEND_EMAIL_REQUEST = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUES
 RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", "")
 
 # Token monitor: docelowy odbiorca
-WFIRMA_TOKEN_NOTIFY_EMAIL = os.environ.get("WFIRMA_TOKEN_NOTIFY_EMAIL", "adam.pragacz@medidesk.com")
+WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL = os.environ.get("WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL", "adam.pragacz@medidesk.com")
 
 # Link do autoryzacji (MD)
 WFIRMA_AUTH_URL_MD = os.environ.get("WFIRMA_AUTH_URL_MD", "https://wfirma-api.onrender.com/auth?company=md")
@@ -857,14 +857,14 @@ def run_wfirma_token_monitor_once(company: str = "md") -> dict:
                 return {"ok": True, "skipped": True, "reason": kind, "company": company, "days_remaining": round(float(days_remaining), 2)}
             subject, body_html = _render_token_monitor_email(company, float(days_remaining), expires_at)
 
-        ok = _send_email_via_make_token_monitor(WFIRMA_TOKEN_NOTIFY_EMAIL, subject, body_html)
+        ok = _send_email_via_make_token_monitor(WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL, subject, body_html)
         if ok:
             upsert_token_monitor_state(
                 company=company,
                 last_email_at=datetime.datetime.utcnow().isoformat(),
                 last_email_kind=kind,
             )
-        return {"ok": ok, "company": company, "email_to": WFIRMA_TOKEN_NOTIFY_EMAIL, "kind": kind, "days_remaining": round(float(days_remaining), 2) if days_remaining is not None else None}
+        return {"ok": ok, "company": company, "email_to": WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL, "kind": kind, "days_remaining": round(float(days_remaining), 2) if days_remaining is not None else None}
     finally:
         advisory_unlock(WFIRMA_TOKEN_MONITOR_LOCK_ID)
 

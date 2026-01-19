@@ -47,7 +47,7 @@
 | `WFIRMA_COMPANY` | Firma (md lub test) | `md` |
 | `WFIRMA_SERIES_NAME` | Seria faktur | `FV/EV` |
 | `WFIRMA_AUTH_URL_MD` | URL autoryzacji | auto |
-| `WFIRMA_TOKEN_NOTIFY_EMAIL` | Email do powiadomień o tokenie | `adam.pragacz@medidesk.com` |
+| `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL` | Email do alertów o wygasającym tokenie | `adam.pragacz@medidesk.com` |
 
 ---
 
@@ -68,8 +68,9 @@
 
 | Zmienna | Opis |
 |---------|------|
-| `BACKSTAGE_TECHNICAL_INFO_EMAIL` | Email do powiadomień technicznych (błędy itp.) |
-| `EMAIL_REFRESH_TOKEN_EXPIRE` | Email do powiadomień o wygasającym tokenie |
+| `BACKSTAGE_TECHNICAL_INFO_EMAIL` | Email do powiadomień o **błędach** (GUS error, email error, payment failed) |
+| `BACKSTAGE_EVENT_INFO_EMAIL` | Email do powiadomień o **zamówieniach/płatnościach** (nowe zamówienie, płatność OK) |
+| `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL` | Email do alertów o wygasającym tokenie wFirma (domyślnie: adam.pragacz@medidesk.com) |
 | `WEBHOOK_TOKEN_EXPIRE_NOTIFY` | URL webhooka do powiadomień o tokenie |
 
 ---
@@ -118,7 +119,8 @@ WFIRMA_MD_ACCESS_TOKEN=auto  # wypełni się po /auth
 WFIRMA_MD_REFRESH_TOKEN=auto # wypełni się po /auth
 
 # Powiadomienia
-BACKSTAGE_TECHNICAL_INFO_EMAIL=adminzoho@medidesk.com
+BACKSTAGE_TECHNICAL_INFO_EMAIL=adminzoho@medidesk.com  # błędy
+BACKSTAGE_EVENT_INFO_EMAIL=eventy@medidesk.com        # zamówienia/płatności
 ```
 
 ---

@@ -16,6 +16,8 @@ RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", 
 
 # Email wewnętrzny - info techniczne o błędach
 BACKSTAGE_TECHNICAL_INFO_EMAIL = os.environ.get("BACKSTAGE_TECHNICAL_INFO_EMAIL", "")
+# Email wewnętrzny - powiadomienia o zamówieniach/płatnościach (nie błędy)
+BACKSTAGE_EVENT_INFO_EMAIL = os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL", "")
 
 
 # ---------------------------------------------------------------------------
@@ -1681,8 +1683,8 @@ def _handle_foc_flow(
             direction="purchaser",
         ))
 
-    # Mail wewnętrzny: powiadomienie o zamówieniu
-    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    # Mail wewnętrzny: powiadomienie o zamówieniu (info, nie error)
+    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL
     if internal_email:
         mail_tasks.append(_build_mail_task(
             template_key=TEMPLATE_INTERNAL_ORDER_RECEIVED,
@@ -1795,8 +1797,8 @@ def _handle_proforma_flow(
         proforma_error = str(e)
         _log("ERROR", "PROFORMA FLOW: Wyjątek podczas tworzenia proformy", {"error": proforma_error})
 
-    # Mail wewnętrzny o nowym zamówieniu
-    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_TECHNICAL_INFO_EMAIL
+    # Mail wewnętrzny o nowym zamówieniu (info, nie error)
+    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL
     if internal_email:
         proforma_info = ""
         if proforma_result:
@@ -2292,8 +2294,8 @@ def _handle_stripe_flow(
             direction="purchaser",
         ))
 
-    # Mail wewnętrzny
-    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    # Mail wewnętrzny (info o zamówieniu, nie error)
+    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL
     if internal_email:
         mail_tasks.append(_build_mail_task(
             template_key=TEMPLATE_INTERNAL_ORDER_RECEIVED,

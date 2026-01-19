@@ -37,8 +37,10 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 STRIPE_SANDBOX_API_KEY = os.environ.get("STRIPE_RENDER_API_KEY_SANDBOX")
 STRIPE_SANDBOX_WEBHOOK_SECRET = os.environ.get("STRIPE_SANDBOX_WEBHOOK_SECRET")
 
-# Email wewnętrzny - info techniczne
+# Email wewnętrzny - info techniczne (błędy)
 BACKSTAGE_TECHNICAL_INFO_EMAIL = os.environ.get("BACKSTAGE_TECHNICAL_INFO_EMAIL", "")
+# Email wewnętrzny - powiadomienia o zamówieniach/płatnościach (nie błędy)
+BACKSTAGE_EVENT_INFO_EMAIL = os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL", "")
 
 # Make.com webhook do wysyłki emaili
 MAKE_WEBHOOK_SEND_EMAIL_REQUEST = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUEST", "")
@@ -394,7 +396,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         total_value = 0.0
     currency_value = order.get("currency", "PLN") if order else "PLN"
-    internal_email = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    # internal_email_target jest określany niżej, zależnie od wyniku wysyłki
 
     try:
         print(f"[STRIPE] order summary | event_id={order.get('event_id') if order else None}, total={total_value} ({type(total_raw).__name__}=>float), currency={currency_value}, purchaser_email={purchaser_email}")
@@ -533,7 +535,15 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         print(f"[STRIPE] skip purchaser email (recovery_mode) | to={purchaser_email}")
     
     # 2. Mail wewnętrzny - zależny od wyniku wysyłki do kupującego
-    if internal_email:
+    # Dla sukcesu: BACKSTAGE_EVENT_INFO_EMAIL, dla błędów: BACKSTAGE_TECHNICAL_INFO_EMAIL
+    if purchaser_email_sent:
+        # SUKCES - klient poinformowany → email eventowy
+        internal_email_target = BACKSTAGE_EVENT_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    else:
+        # BŁĄD lub brak emaila → email techniczny
+        internal_email_target = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    
+    if internal_email_target:
         if purchaser_email_sent:
             # SUKCES - klient poinformowany
             internal_subject = f"[PAID OK] Płatność dokonana, klient poinformowany – {event_name}"
@@ -603,7 +613,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         
         internal_task = {
             "template": template_key,
-            "to": internal_email,
+            "to": internal_email_target,
             "subject": internal_subject,
             "direction": "internal",
             "data": {
@@ -625,14 +635,14 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             event_order_id=event_order_id,
             direction="internal",
             template_key=template_key,
-            to_email=internal_email,
+            to_email=internal_email_target,
             subject=internal_subject,
             data=internal_task["data"],
         )
         
         # Wysyłka emaila wewnętrznego przez Make
         _send_email_via_make_stripe(
-            to_email=internal_email,
+            to_email=internal_email_target,
             subject=internal_subject,
             body_html=internal_body_html,
             event_order_id=event_order_id,
