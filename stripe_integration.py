@@ -401,12 +401,10 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         pass
     
-    # Wyciągnij i wzbogać bilety do tabeli w emailu
-    tickets_table_html = ""
+    # Wyciągnij i wzbogać bilety do emaila
     enriched_tickets = []
     try:
         from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
-        from email_templates import generate_tickets_table_rows, format_currency
         
         raw_payload = order.get("raw", {}) if order else {}
         raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
@@ -414,35 +412,33 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         
         if raw_tickets:
             enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id_for_tickets)
-            
-            # Przygotuj bilety do tabeli (format: name, quantity, price)
-            tickets_for_table = []
-            for t in enriched_tickets:
-                tickets_for_table.append({
-                    "name": t.get("name", "Bilet"),
-                    "quantity": t.get("quantity", 1),
-                    "price": t.get("unit_price_gross", 0),
-                })
-            
-            # Generuj wiersze tabeli
-            tickets_rows = generate_tickets_table_rows(tickets_for_table)
-            
-            if tickets_rows:
-                tickets_table_html = f'''
-                <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; margin: 16px 0; border: 1px solid #DEE2E6;">
-                    <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: #28a745;">Szczegóły zamówienia</td>
-                    </tr>
-                    {tickets_rows}
-                    <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #28a745; color: #ffffff;">Razem zapłacono</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #28a745; color: #ffffff; text-align: right;">{format_currency(total_value)}</td>
-                    </tr>
-                </table>
-                '''
-                print(f"[STRIPE] Wygenerowano tabelę biletów ({len(enriched_tickets)} pozycji)")
+            print(f"[STRIPE] Wygenerowano bilety do emaila ({len(enriched_tickets)} pozycji)")
     except Exception as e:
-        print(f"[STRIPE] Błąd generowania tabeli biletów: {e}")
+        print(f"[STRIPE] Błąd pobierania biletów: {e}")
+    
+    # Wyciągnij dane kupującego
+    purchaser_first_name = ""
+    purchaser_last_name = ""
+    purchaser_phone = ""
+    try:
+        if order:
+            raw_payload = order.get("raw", {})
+            # Spróbuj wyciągnąć z buyer_details
+            buyer_details = raw_payload.get("buyer_details", {})
+            if not buyer_details:
+                # Spróbuj z customFormData
+                custom_forms = raw_payload.get("customFormData", [])
+                if custom_forms:
+                    form_entries = custom_forms[0].get("formEntries", {})
+                    purchaser_first_name = form_entries.get("purchaser_first_name", "")
+                    purchaser_last_name = form_entries.get("purchaser_last_name", "")
+                    purchaser_phone = form_entries.get("purchaser_mobile_no", "")
+            else:
+                purchaser_first_name = buyer_details.get("purchaser_first_name", "")
+                purchaser_last_name = buyer_details.get("purchaser_last_name", "")
+                purchaser_phone = buyer_details.get("purchaser_mobile_no", "")
+    except Exception:
+        pass
     
     # 1. Mail do kupującego: potwierdzenie płatności
     purchaser_email_sent = False
@@ -450,22 +446,40 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     
     if purchaser_email and not skip_purchaser_email:
         purchaser_subject = f"Potwierdzenie płatności – {event_name}"
-        purchaser_body_html = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2 style="color: #28a745;">Dziękujemy za dokonanie płatności!</h2>
-            <p>Szanowny/a <strong>{purchaser_name}</strong>,</p>
-            <p>Potwierdzamy otrzymanie płatności za zamówienie.</p>
-            <hr>
-            <p><strong>Wydarzenie:</strong> {event_name}</p>
-            <p><strong>Numer zamówienia:</strong> {event_order_id}</p>
-            {tickets_table_html}
-            <hr>
-            <p>W przypadku pytań prosimy o kontakt.</p>
-            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie.</p>
-        </body>
-        </html>
-        """
+        
+        # Użyj stylizowanego szablonu
+        try:
+            from email_templates import render_payment_confirmation_email
+            
+            purchaser_body_html = render_payment_confirmation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name or purchaser_name.split()[0] if purchaser_name else "Uczestnik",
+                purchaser_last_name=purchaser_last_name or (purchaser_name.split()[-1] if purchaser_name and len(purchaser_name.split()) > 1 else ""),
+                purchaser_email=purchaser_email,
+                purchaser_phone=purchaser_phone,
+                total_gross=total_value,
+                event_config=event_data,
+                tickets=enriched_tickets,
+            )
+            print(f"[STRIPE] Wygenerowano stylizowany email potwierdzenia płatności")
+        except Exception as e:
+            print(f"[STRIPE] Błąd renderowania szablonu, używam podstawowego: {e}")
+            # Fallback do podstawowego emaila
+            purchaser_body_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #28a745;">Dziękujemy za dokonanie płatności!</h2>
+                <p>Szanowny/a <strong>{purchaser_name}</strong>,</p>
+                <p>Potwierdzamy otrzymanie płatności za zamówienie.</p>
+                <hr>
+                <p><strong>Wydarzenie:</strong> {event_name}</p>
+                <p><strong>Numer zamówienia:</strong> {event_order_id}</p>
+                <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+                <hr>
+                <p>W przypadku pytań prosimy o kontakt.</p>
+            </body>
+            </html>
+            """
         
         mail_task = {
             "template": "payment_confirmation",
@@ -485,7 +499,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         mail_tasks.append(mail_task)
 
         try:
-            print(f"[STRIPE] mail_task purchaser queued | to={purchaser_email}, total={total_value}, tickets_table={'yes' if bool(tickets_table_html) else 'no'}")
+            print(f"[STRIPE] mail_task purchaser queued | to={purchaser_email}, total={total_value}")
         except Exception:
             pass
         

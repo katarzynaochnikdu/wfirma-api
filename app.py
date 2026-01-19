@@ -1876,6 +1876,147 @@ def backstage_order():
 
 
 # ---------------------------------------------------------------------------
+# PARTICIPANTS - uczestnicy wydarzeń (przypisani do biletów)
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/participants/<event_order_id>', methods=['GET'])
+@require_api_key
+def get_participants(event_order_id: str):
+    """
+    Pobiera listę uczestników dla zamówienia.
+    
+    Response:
+    {
+        "event_order_id": "...",
+        "participants": [
+            {
+                "id": 1,
+                "ticket_id": "...",
+                "ticket_class_id": "...",
+                "email": "...",
+                "first_name": "...",
+                "last_name": "...",
+                "phone": "...",
+                "status": "pending|registered|emailed|cancelled",
+                "data": {...}
+            }
+        ],
+        "stats": {"pending": 2, "registered": 1}
+    }
+    """
+    try:
+        from pg_storage import get_participants_for_order, count_participants_by_status
+        
+        participants = get_participants_for_order(event_order_id)
+        stats = count_participants_by_status(event_order_id)
+        
+        # Konwertuj daty na ISO format
+        for p in participants:
+            if p.get("created_at"):
+                p["created_at"] = p["created_at"].isoformat() if hasattr(p["created_at"], "isoformat") else str(p["created_at"])
+            if p.get("updated_at"):
+                p["updated_at"] = p["updated_at"].isoformat() if hasattr(p["updated_at"], "isoformat") else str(p["updated_at"])
+        
+        return jsonify({
+            "event_order_id": event_order_id,
+            "participants": participants,
+            "stats": stats,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/participants/<event_order_id>/<ticket_id>', methods=['PUT'])
+@require_api_key
+def update_participant(event_order_id: str, ticket_id: str):
+    """
+    Aktualizuje dane uczestnika przypisanego do biletu.
+    Używane gdy uczestnik wypełnia swoje dane (np. przez link w emailu).
+    
+    Body (JSON):
+    {
+        "email": "...",
+        "first_name": "...",
+        "last_name": "...",
+        "phone": "...",
+        "extra_data": {...}  // opcjonalne dodatkowe dane
+    }
+    
+    Response:
+    {
+        "success": true,
+        "event_order_id": "...",
+        "ticket_id": "...",
+        "status": "registered"
+    }
+    """
+    try:
+        from pg_storage import update_participant_details, get_participant_by_ticket
+        
+        data = request.get_json(silent=True) or {}
+        
+        email = data.get("email", "")
+        if not email:
+            return jsonify({"error": "Email jest wymagany"}), 400
+        
+        success = update_participant_details(
+            event_order_id=event_order_id,
+            ticket_id=ticket_id,
+            email=email,
+            first_name=data.get("first_name", ""),
+            last_name=data.get("last_name", ""),
+            phone=data.get("phone", ""),
+            status="registered",
+            extra_data=data.get("extra_data"),
+        )
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "event_order_id": event_order_id,
+                "ticket_id": ticket_id,
+                "status": "registered",
+            }), 200
+        else:
+            # Sprawdź czy uczestnik istnieje
+            participant = get_participant_by_ticket(event_order_id, ticket_id)
+            if not participant:
+                return jsonify({"error": "Nie znaleziono uczestnika dla podanego biletu"}), 404
+            return jsonify({"error": "Nie udało się zaktualizować danych uczestnika"}), 500
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/participants/<event_order_id>/pending', methods=['GET'])
+@require_api_key
+def get_pending_participants_endpoint(event_order_id: str):
+    """
+    Pobiera uczestników ze statusem 'pending' (do wypełnienia).
+    
+    Response:
+    {
+        "event_order_id": "...",
+        "pending_count": 2,
+        "participants": [...]
+    }
+    """
+    try:
+        from pg_storage import get_pending_participants
+        
+        participants = get_pending_participants(event_order_id)
+        
+        return jsonify({
+            "event_order_id": event_order_id,
+            "pending_count": len(participants),
+            "participants": participants,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # STRIPE INTEGRATION
 # ---------------------------------------------------------------------------
 

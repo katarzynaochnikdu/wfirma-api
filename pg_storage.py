@@ -1349,3 +1349,216 @@ def parse_kv_lines(text: str) -> Dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# PARTICIPANTS (uczestnicy wydarzeń - osoby przypisane do biletów)
+# ---------------------------------------------------------------------------
+
+def save_participant(
+    event_order_id: str,
+    ticket_id: str,
+    ticket_class_id: str = "",
+    email: str = "",
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = "",
+    status: str = "pending",  # pending/registered/emailed/failed/cancelled
+    data: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
+    """
+    Zapisuje uczestnika (slot biletu) do bazy.
+    Zwraca ID rekordu lub None przy błędzie.
+    
+    Status:
+    - pending: bilet zarezerwowany, dane uczestnika nie wypełnione
+    - registered: dane uczestnika uzupełnione
+    - emailed: wysłano email do uczestnika
+    - cancelled: anulowany
+    """
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO participants (
+                event_order_id, ticket_id, ticket_class_id,
+                email, first_name, last_name, phone, status, data
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (event_order_id, email, ticket_id) DO UPDATE SET
+                ticket_class_id = EXCLUDED.ticket_class_id,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                phone = EXCLUDED.phone,
+                status = EXCLUDED.status,
+                data = participants.data || EXCLUDED.data,
+                updated_at = NOW()
+            RETURNING id
+        """, (
+            event_order_id, ticket_id, ticket_class_id,
+            email or "", first_name or "", last_name or "", phone or "",
+            status, json.dumps(data or {})
+        ))
+        result = cur.fetchone()
+        conn.commit()
+        return result[0] if result else None
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] save_participant error: {e}")
+        return None
+    finally:
+        _put_conn(conn)
+
+
+def get_participants_for_order(event_order_id: str) -> List[Dict[str, Any]]:
+    """Pobiera wszystkich uczestników dla zamówienia."""
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, event_order_id, ticket_id, ticket_class_id,
+                   email, first_name, last_name, phone, status, data,
+                   created_at, updated_at
+            FROM participants
+            WHERE event_order_id = %s
+            ORDER BY id
+        """, (event_order_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        print(f"[DB] get_participants_for_order error: {e}")
+        return []
+    finally:
+        _put_conn(conn)
+
+
+def get_participant_by_ticket(event_order_id: str, ticket_id: str) -> Optional[Dict[str, Any]]:
+    """Pobiera uczestnika przypisanego do konkretnego biletu."""
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, event_order_id, ticket_id, ticket_class_id,
+                   email, first_name, last_name, phone, status, data,
+                   created_at, updated_at
+            FROM participants
+            WHERE event_order_id = %s AND ticket_id = %s
+        """, (event_order_id, ticket_id))
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+    except Exception as e:
+        print(f"[DB] get_participant_by_ticket error: {e}")
+        return None
+    finally:
+        _put_conn(conn)
+
+
+def update_participant_status(participant_id: int, status: str) -> bool:
+    """Aktualizuje status uczestnika."""
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE participants SET status = %s, updated_at = NOW()
+            WHERE id = %s
+        """, (status, participant_id))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] update_participant_status error: {e}")
+        return False
+    finally:
+        _put_conn(conn)
+
+
+def update_participant_details(
+    event_order_id: str,
+    ticket_id: str,
+    email: str,
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = "",
+    status: str = "registered",
+    extra_data: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Aktualizuje dane uczestnika przypisanego do biletu.
+    Używane gdy uczestnik wypełnia swoje dane przez link.
+    """
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        
+        # Jeśli jest extra_data, merguj z istniejącymi
+        data_update = ""
+        params = [email, first_name, last_name, phone, status, event_order_id, ticket_id]
+        if extra_data:
+            data_update = ", data = data || %s::jsonb"
+            params = [email, first_name, last_name, phone, status, json.dumps(extra_data), event_order_id, ticket_id]
+        
+        cur.execute(f"""
+            UPDATE participants SET
+                email = %s,
+                first_name = %s,
+                last_name = %s,
+                phone = %s,
+                status = %s,
+                updated_at = NOW()
+                {data_update}
+            WHERE event_order_id = %s AND ticket_id = %s
+        """, params)
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] update_participant_details error: {e}")
+        return False
+    finally:
+        _put_conn(conn)
+
+
+def get_pending_participants(event_order_id: str) -> List[Dict[str, Any]]:
+    """Pobiera uczestników ze statusem 'pending' (do wypełnienia)."""
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, event_order_id, ticket_id, ticket_class_id,
+                   email, first_name, last_name, phone, status, data,
+                   created_at, updated_at
+            FROM participants
+            WHERE event_order_id = %s AND status = 'pending'
+            ORDER BY id
+        """, (event_order_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        print(f"[DB] get_pending_participants error: {e}")
+        return []
+    finally:
+        _put_conn(conn)
+
+
+def count_participants_by_status(event_order_id: str) -> Dict[str, int]:
+    """Zlicza uczestników wg statusu dla zamówienia."""
+    conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT status, COUNT(*) as cnt
+            FROM participants
+            WHERE event_order_id = %s
+            GROUP BY status
+        """, (event_order_id,))
+        rows = cur.fetchall()
+        return {r[0]: r[1] for r in rows}
+    except Exception as e:
+        print(f"[DB] count_participants_by_status error: {e}")
+        return {}
+    finally:
+        _put_conn(conn)
+
+

@@ -675,6 +675,231 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
     return aggregated_list
 
 
+def _extract_individual_tickets_for_participants(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Ekstrahuje INDYWIDUALNE bilety (nie zagregowane) z payloadu Backstage.
+    Każdy bilet ma swój unikalny ticket_id - potrzebne do przypisania uczestników.
+    
+    Zwraca listę: [{ticket_id, ticket_class_id, ticket_name, price, ...}]
+    """
+    raw = payload.get("raw") or payload
+    
+    tickets_raw = (
+        payload.get("tickets") or 
+        raw.get("orderTickets") or 
+        raw.get("tickets") or 
+        []
+    )
+    
+    if not tickets_raw or not isinstance(tickets_raw, list):
+        return []
+    
+    individual_tickets = []
+    for t in tickets_raw:
+        ticket_id = t.get("ticketId") or t.get("ticket_id") or t.get("id") or ""
+        ticket_class_id = t.get("ticketClass") or t.get("ticket_class_id") or ""
+        ticket_name = t.get("ticketName") or t.get("ticket_name") or ""
+        
+        # Cena z lineItemPayments lub bezpośrednio
+        line_item = None
+        try:
+            lip = t.get("lineItemPayments")
+            if isinstance(lip, list) and lip:
+                line_item = lip[0] if isinstance(lip[0], dict) else None
+        except Exception:
+            pass
+        
+        price_gross = 0.0
+        price_net = 0.0
+        discount = 0.0
+        try:
+            if line_item:
+                price_gross = float(line_item.get("totalAmount") or 0)
+                price_net = float(line_item.get("itemPrice") or line_item.get("actualPrice") or 0)
+                discount = float(line_item.get("discountAmount") or 0)
+            else:
+                price_gross = float(t.get("totalPrice") or 0)
+                price_net = float(t.get("ticketPrice") or t.get("actualTicketPrice") or 0)
+                discount = float(t.get("discount") or t.get("discountAmount") or 0)
+        except (ValueError, TypeError):
+            pass
+        
+        individual_tickets.append({
+            "ticket_id": str(ticket_id),
+            "ticket_class_id": str(ticket_class_id),
+            "ticket_name": ticket_name,
+            "price_gross": round(price_gross, 2),
+            "price_net": round(price_net, 2),
+            "discount_amount": round(discount, 2),
+            "promo_code": t.get("promoCode") or "",
+            "raw": t,  # Zachowaj surowe dane
+        })
+    
+    return individual_tickets
+
+
+def _extract_attendees_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Ekstrahuje dane uczestników z payloadu Backstage.
+    Zwraca listę uczestników z ich danymi.
+    
+    Struktura attendee w Backstage (gdy wypełnione):
+    - ticketId: ID biletu
+    - email, firstName, lastName, phone
+    - formEntries: dodatkowe pola formularza
+    """
+    raw = payload.get("raw") or payload
+    attendees_raw = raw.get("attendees") or payload.get("attendees") or []
+    
+    if not attendees_raw or not isinstance(attendees_raw, list):
+        return []
+    
+    attendees = []
+    for a in attendees_raw:
+        ticket_id = a.get("ticketId") or a.get("ticket_id") or a.get("orderTicketId") or ""
+        
+        # Dane mogą być bezpośrednio lub w formEntries
+        form_entries = a.get("formEntries") or {}
+        
+        attendees.append({
+            "ticket_id": str(ticket_id),
+            "email": a.get("email") or form_entries.get("email") or form_entries.get("attendee_email") or "",
+            "first_name": a.get("firstName") or a.get("first_name") or form_entries.get("firstName") or form_entries.get("first_name") or form_entries.get("attendee_first_name") or "",
+            "last_name": a.get("lastName") or a.get("last_name") or form_entries.get("lastName") or form_entries.get("last_name") or form_entries.get("attendee_last_name") or "",
+            "phone": a.get("phone") or a.get("mobile") or form_entries.get("phone") or form_entries.get("mobile") or form_entries.get("attendee_phone") or "",
+            "raw": a,
+        })
+    
+    return attendees
+
+
+def _save_participants_for_order(
+    event_order_id: str,
+    purchaser_data: Dict[str, Any],
+    individual_tickets: List[Dict[str, Any]],
+    attendees: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Zapisuje uczestników dla zamówienia.
+    
+    Logika:
+    1. Dla każdego biletu tworzy slot uczestnika
+    2. Jeśli są dane attendee dla biletu - wypełnia je
+    3. Jeśli tylko 1 bilet i brak attendees - przypisuje purchasera
+    4. W przeciwnym razie - status 'pending' (do wypełnienia)
+    
+    Zwraca: {"saved": int, "pending": int, "registered": int}
+    """
+    from pg_storage import save_participant
+    
+    stats = {"saved": 0, "pending": 0, "registered": 0}
+    
+    # Mapuj attendees po ticket_id
+    attendee_by_ticket = {}
+    for att in attendees:
+        tid = att.get("ticket_id")
+        if tid:
+            attendee_by_ticket[tid] = att
+    
+    purchaser_email = purchaser_data.get("purchaser_email", "")
+    purchaser_first = purchaser_data.get("purchaser_first_name", "")
+    purchaser_last = purchaser_data.get("purchaser_last_name", "")
+    purchaser_phone = purchaser_data.get("purchaser_phone", "")
+    
+    for i, ticket in enumerate(individual_tickets):
+        ticket_id = ticket.get("ticket_id", "")
+        ticket_class_id = ticket.get("ticket_class_id", "")
+        
+        if not ticket_id:
+            continue
+        
+        # Sprawdź czy mamy dane attendee dla tego biletu
+        attendee = attendee_by_ticket.get(ticket_id)
+        
+        if attendee and attendee.get("email"):
+            # Mamy dane uczestnika
+            participant_id = save_participant(
+                event_order_id=event_order_id,
+                ticket_id=ticket_id,
+                ticket_class_id=ticket_class_id,
+                email=attendee.get("email", ""),
+                first_name=attendee.get("first_name", ""),
+                last_name=attendee.get("last_name", ""),
+                phone=attendee.get("phone", ""),
+                status="registered",
+                data={
+                    "ticket_name": ticket.get("ticket_name", ""),
+                    "price_gross": ticket.get("price_gross", 0),
+                    "source": "attendee_data",
+                },
+            )
+            if participant_id:
+                stats["saved"] += 1
+                stats["registered"] += 1
+        elif len(individual_tickets) == 1 and purchaser_email:
+            # Tylko 1 bilet, brak attendees - purchaser jest uczestnikiem
+            participant_id = save_participant(
+                event_order_id=event_order_id,
+                ticket_id=ticket_id,
+                ticket_class_id=ticket_class_id,
+                email=purchaser_email,
+                first_name=purchaser_first,
+                last_name=purchaser_last,
+                phone=purchaser_phone,
+                status="registered",
+                data={
+                    "ticket_name": ticket.get("ticket_name", ""),
+                    "price_gross": ticket.get("price_gross", 0),
+                    "source": "purchaser_single_ticket",
+                },
+            )
+            if participant_id:
+                stats["saved"] += 1
+                stats["registered"] += 1
+        elif i == 0 and purchaser_email and not attendees:
+            # Pierwszy bilet - przypisz purchasera jako pierwszego uczestnika
+            participant_id = save_participant(
+                event_order_id=event_order_id,
+                ticket_id=ticket_id,
+                ticket_class_id=ticket_class_id,
+                email=purchaser_email,
+                first_name=purchaser_first,
+                last_name=purchaser_last,
+                phone=purchaser_phone,
+                status="registered",
+                data={
+                    "ticket_name": ticket.get("ticket_name", ""),
+                    "price_gross": ticket.get("price_gross", 0),
+                    "source": "purchaser_first_ticket",
+                },
+            )
+            if participant_id:
+                stats["saved"] += 1
+                stats["registered"] += 1
+        else:
+            # Brak danych - slot do wypełnienia
+            participant_id = save_participant(
+                event_order_id=event_order_id,
+                ticket_id=ticket_id,
+                ticket_class_id=ticket_class_id,
+                email="",
+                first_name="",
+                last_name="",
+                phone="",
+                status="pending",
+                data={
+                    "ticket_name": ticket.get("ticket_name", ""),
+                    "price_gross": ticket.get("price_gross", 0),
+                    "source": "pending_slot",
+                },
+            )
+            if participant_id:
+                stats["saved"] += 1
+                stats["pending"] += 1
+    
+    return stats
+
+
 def _enrich_tickets_with_names(tickets: List[Dict[str, Any]], event_id: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     Wzbogaca bilety o nazwy z bazy danych (event_ticket_classes).
@@ -2100,6 +2325,36 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             raw=payload,
         )
         _log("INFO", "Zamówienie zapisane w bazie", {"event_order_id": event_order_id, "status": "received"})
+
+        # 4b. Zapisz uczestników (sloty biletów)
+        try:
+            individual_tickets = _extract_individual_tickets_for_participants(payload)
+            attendees = _extract_attendees_from_payload(payload)
+            
+            if individual_tickets:
+                participant_stats = _save_participants_for_order(
+                    event_order_id=event_order_id,
+                    purchaser_data={
+                        "purchaser_email": order_data["purchaser_email"],
+                        "purchaser_first_name": order_data["purchaser_first_name"],
+                        "purchaser_last_name": order_data["purchaser_last_name"],
+                        "purchaser_phone": order_data["purchaser_phone"],
+                    },
+                    individual_tickets=individual_tickets,
+                    attendees=attendees,
+                )
+                _log("INFO", "Uczestnicy zapisani", {
+                    "event_order_id": event_order_id,
+                    "tickets_count": len(individual_tickets),
+                    "attendees_from_payload": len(attendees),
+                    "saved": participant_stats.get("saved", 0),
+                    "registered": participant_stats.get("registered", 0),
+                    "pending": participant_stats.get("pending", 0),
+                })
+            else:
+                _log("DEBUG", "Brak indywidualnych biletów do zapisania uczestników", {"event_order_id": event_order_id})
+        except Exception as e:
+            _log("WARNING", "Błąd zapisywania uczestników", {"event_order_id": event_order_id, "error": str(e)})
 
         # 5. Określ flow
         _log("INFO", "Krok 5: Określanie flow płatności...")
