@@ -105,11 +105,12 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or ""
     )
 
-    # Pobierz dane z buyer_details (Backstage format)
-    buyer_details = raw.get("buyer_details") or []
+    # Pobierz dane z buyer_details (Backstage format) - może być w payload lub w raw
+    buyer_details = payload.get("buyer_details") or raw.get("buyer_details") or []
     buyer_form = {}
     if buyer_details and isinstance(buyer_details, list) and len(buyer_details) > 0:
         buyer_form = buyer_details[0].get("formEntries") or {}
+        _log("DEBUG", "Znaleziono buyer_details", {"buyer_form_keys": list(buyer_form.keys()) if buyer_form else []})
 
     # purchaser info - próbuj z różnych źródeł
     purchaser_email = (
