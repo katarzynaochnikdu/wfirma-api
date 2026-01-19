@@ -586,6 +586,15 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
     _log("INFO", "========== NOWY WEBHOOK BACKSTAGE ==========")
     _log("DEBUG", "Otrzymano payload", {"payload_keys": list(payload.keys()) if isinstance(payload, dict) else "not_dict"})
     
+    # Loguj pełny payload (do debugowania)
+    try:
+        payload_str = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+        print(f"[BACKSTAGE] [RAW_PAYLOAD] >>>")
+        print(payload_str)
+        print(f"[BACKSTAGE] [RAW_PAYLOAD] <<<")
+    except Exception as e:
+        _log("WARN", f"Nie udało się zserializować payload: {e}")
+    
     try:
         # 1. Wyciągnij dane zamówienia
         _log("INFO", "Krok 1: Ekstrakcja danych zamówienia...")
