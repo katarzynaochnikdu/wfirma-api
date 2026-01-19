@@ -687,6 +687,51 @@ def render_stripe_payment_email(
     event_config = event_config or get_default_event_config()
     tickets = tickets or []
     gus_data = gus_data or {}
+
+    # Normalizuj bilety do formatu oczekiwanego przez generate_tickets_table_rows:
+    # [{name, quantity, price}] gdzie price = cena jedn. brutto
+    normalized_tickets: List[Dict[str, Any]] = []
+    for t in tickets:
+        try:
+            name = (
+                t.get("name")
+                or t.get("ticket_name")
+                or t.get("ticketName")
+                or "Bilet"
+            )
+            qty = t.get("quantity", 1)
+            try:
+                qty_num = int(qty) if qty is not None else 1
+            except (ValueError, TypeError):
+                qty_num = 1
+
+            price = t.get("price")
+            if price is None:
+                price = t.get("unit_price_gross")
+            if price is None:
+                price = t.get("unit_price")
+            if price is None:
+                # fallback: jeśli mamy total_gross, przelicz na jednostkową
+                total_gross = t.get("total_gross")
+                if total_gross is not None and qty_num > 0:
+                    try:
+                        price = float(total_gross) / float(qty_num)
+                    except (ValueError, TypeError):
+                        price = 0
+
+            try:
+                price_num = float(price) if price is not None else 0.0
+            except (ValueError, TypeError):
+                price_num = 0.0
+
+            normalized_tickets.append({
+                "name": str(name),
+                "quantity": qty_num,
+                "price": price_num,
+            })
+        except Exception:
+            # Nie blokuj renderu emaila przez jeden błędny rekord biletu
+            continue
     
     # Oblicz wartości
     vat_calc = calculate_vat(total_gross)
@@ -703,7 +748,7 @@ def render_stripe_payment_email(
         "total_net_formatted": format_currency(vat_calc["net"]),
         "total_vat_formatted": format_currency(vat_calc["vat"]),
         "stripe_payment_url": stripe_payment_url,
-        "tickets_rows": generate_tickets_table_rows(tickets, event_config.get("color_gradient_1", "#2563eb")),
+        "tickets_rows": generate_tickets_table_rows(normalized_tickets, event_config.get("color_gradient_1", "#2563eb")),
         "event_datetime_section": _build_event_datetime_section(event_config),
         "event_location_section": _build_event_location_section(event_config),
         # Event config

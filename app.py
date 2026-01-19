@@ -1759,6 +1759,21 @@ def stripe_webhook():
         
         # Przetwórz event
         result = process_webhook_event(event_type, event_data)
+
+        # Upewnij się, że zwracany JSON nie zawiera Decimal itp.
+        try:
+            from decimal import Decimal
+            def _json_safe(v):
+                if isinstance(v, Decimal):
+                    return float(v)
+                if isinstance(v, dict):
+                    return {k: _json_safe(x) for k, x in v.items()}
+                if isinstance(v, list):
+                    return [_json_safe(x) for x in v]
+                return v
+            result = _json_safe(result)
+        except Exception:
+            pass
         
         # Stripe wymaga 200 OK nawet dla zignorowanych eventów
         return jsonify(result), 200
@@ -1927,6 +1942,21 @@ def stripe_sandbox_webhook():
         
         result = process_webhook_event(event_type, event_data)
         result['mode'] = 'sandbox'
+
+        # Upewnij się, że zwracany JSON nie zawiera Decimal itp.
+        try:
+            from decimal import Decimal
+            def _json_safe(v):
+                if isinstance(v, Decimal):
+                    return float(v)
+                if isinstance(v, dict):
+                    return {k: _json_safe(x) for k, x in v.items()}
+                if isinstance(v, list):
+                    return [_json_safe(x) for x in v]
+                return v
+            result = _json_safe(result)
+        except Exception:
+            pass
         
         return jsonify(result), 200
         
@@ -2330,23 +2360,44 @@ def email_confirm_sent():
                 'error': 'Brak event_order_id'
             }), 400
         
-        # Zaktualizuj mail_log w bazie
+        # Zaktualizuj mail_log w bazie (zgodnie ze schematem w pg_storage.py)
         try:
             from pg_storage import _with_conn, _put_conn
             pool, conn = _with_conn()
             cur = conn.cursor()
-            
-            # Znajdź ostatni mail_log dla tego zamówienia i zaktualizuj status
+
+            # Normalizacja statusu z Make
+            status_in = (status or "").lower().strip()
+            if status_in in ("sent", "ok", "success", "delivered"):
+                status_db = "sent"
+            elif status_in in ("failed", "error", "fail"):
+                status_db = "failed"
+            else:
+                status_db = status_in or "sent"
+
+            # Zaktualizuj OSTATNI rekord dla kupującego, który jest jeszcze "queued"
+            # (schemat mail_log: status=queued/sent/failed, error=TEXT)
             cur.execute("""
-                UPDATE mail_log 
-                SET status = %s, 
-                    sent_at = CASE WHEN %s = 'sent' THEN NOW() ELSE sent_at END,
-                    error_message = %s,
-                    updated_at = NOW()
-                WHERE event_order_id = %s 
-                AND status = 'pending'
-                AND direction = 'purchaser'
-            """, (status, status, error or None, event_order_id))
+                UPDATE mail_log
+                SET status = %s,
+                    error = %s
+                WHERE id = (
+                    SELECT id
+                    FROM mail_log
+                    WHERE event_order_id = %s
+                      AND direction = 'purchaser'
+                      AND status = 'queued'
+                      AND (%s = '' OR to_email = %s)
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+            """, (
+                status_db,
+                (error or None),
+                event_order_id,
+                to_email or "",
+                to_email or "",
+            ))
             
             rows_updated = cur.rowcount
             conn.commit()

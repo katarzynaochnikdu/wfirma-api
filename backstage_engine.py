@@ -147,6 +147,9 @@ def _send_error_notification(
     event_order_id: str = "",
     event_id: str = "",
     extra_data: Optional[Dict[str, Any]] = None,
+    # Kompatybilność wsteczna (w kodzie były wywołania z event_name/extra_context)
+    event_name: str = "",
+    extra_context: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Wysyła email wewnętrzny o błędzie.
@@ -168,6 +171,21 @@ def _send_error_notification(
     
     ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     
+    # Kompatybilność: scal extra_context -> extra_data
+    if extra_context:
+        if extra_data:
+            merged = dict(extra_data)
+            merged.update(extra_context)
+            extra_data = merged
+        else:
+            extra_data = dict(extra_context)
+    if event_name:
+        # ułatwia czytanie alertu; nie nadpisuj jeśli już jest
+        if extra_data is None:
+            extra_data = {"event_name": event_name}
+        elif "event_name" not in extra_data:
+            extra_data["event_name"] = event_name
+
     # Przygotuj dodatkowe dane jako HTML
     extra_html = ""
     if extra_data:
@@ -507,18 +525,72 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
         return []
     
     tickets = []
-    for t in tickets_raw:
+    for idx, t in enumerate(tickets_raw):
         # Backstage format
         ticket_class_id = t.get("ticketClass") or t.get("ticket_class_id") or ""
-        ticket_price = float(t.get("ticketPrice") or t.get("actualTicketPrice") or t.get("price") or 0)
-        total_price = float(t.get("totalPrice") or t.get("total_price") or ticket_price)
-        vat_amount = float(t.get("taxedPrice") or t.get("vat_amount") or 0)
-        
-        # Oblicz stawkę VAT (domyślnie 23%)
-        if ticket_price > 0 and vat_amount > 0:
-            vat_rate = round((vat_amount / ticket_price) * 100)
+        # Ceny mogą być wprost na obiekcie biletu albo w lineItemPayments[0]
+        line_item = None
+        try:
+            lip = t.get("lineItemPayments")
+            if isinstance(lip, list) and lip:
+                line_item = lip[0] if isinstance(lip[0], dict) else None
+        except Exception:
+            line_item = None
+
+        # Preferuj kwoty z lineItemPayments (są najbardziej wiarygodne)
+        unit_gross_raw = (
+            (line_item or {}).get("totalAmount")
+            or t.get("totalPrice")
+            or t.get("total_price")
+            or None
+        )
+        unit_net_raw = (
+            (line_item or {}).get("itemPrice")
+            or (line_item or {}).get("actualPrice")
+            or t.get("ticketPrice")
+            or t.get("actualTicketPrice")
+            or t.get("price")
+            or 0
+        )
+        tax_percent_raw = (line_item or {}).get("taxPercent")
+        tax_amount_raw = (line_item or {}).get("taxAmount")
+
+        try:
+            unit_net = float(unit_net_raw or 0)
+        except (ValueError, TypeError):
+            unit_net = 0.0
+
+        # VAT amount / gross
+        try:
+            vat_amount = float(tax_amount_raw if tax_amount_raw is not None else (t.get("taxedPrice") or t.get("vat_amount") or 0))
+        except (ValueError, TypeError):
+            vat_amount = 0.0
+
+        try:
+            vat_rate = float(tax_percent_raw) if tax_percent_raw is not None else 23.0
+        except (ValueError, TypeError):
+            vat_rate = 23.0
+
+        # Gross unit: jeśli totalAmount jest podane (na 1 bilet), użyj go; w przeciwnym razie wylicz z netto+VAT
+        if unit_gross_raw is not None:
+            try:
+                unit_gross = float(unit_gross_raw)
+            except (ValueError, TypeError):
+                unit_gross = 0.0
         else:
-            vat_rate = 23
+            if vat_rate and vat_rate > 0:
+                unit_gross = round(unit_net * (1 + (vat_rate / 100.0)), 2)
+            else:
+                unit_gross = unit_net
+
+        total_price = unit_gross  # 1 rekord = 1 bilet w Backstage
+        
+        # Jeśli nie było taxPercent, spróbuj wyliczyć z kwot (fallback)
+        if (tax_percent_raw is None) and unit_net > 0 and vat_amount > 0:
+            try:
+                vat_rate = round((vat_amount / unit_net) * 100)
+            except Exception:
+                vat_rate = 23.0
         
         # Pobierz nazwę biletu - najpierw z ticket class, potem domyślna
         ticket_name = t.get("ticketName") or t.get("ticket_name") or f"Bilet ({ticket_class_id[:8]}...)" if ticket_class_id else "Bilet"
@@ -527,12 +599,32 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
             "ticket_class_id": str(ticket_class_id),
             "name": ticket_name,
             "quantity": 1,  # Każdy rekord to 1 bilet w Backstage
-            "unit_price_net": round(ticket_price / (1 + vat_rate/100), 2),
-            "unit_price_gross": ticket_price,
+            "unit_price_net": round(unit_net, 2),
+            "unit_price_gross": round(unit_gross, 2),
             "total_gross": total_price,
             "vat_rate": vat_rate,
             "vat_amount": vat_amount,
         })
+
+        # Szczegółowe logi cenowe (limituj, żeby nie zalać logów)
+        if idx < 20:
+            _log("DEBUG", "TICKET RAW->CALC", {
+                "idx": idx,
+                "ticket_class_id": str(ticket_class_id),
+                "ticket_name": ticket_name,
+                "has_lineItemPayments": bool(line_item),
+                "src_totalAmount": (line_item or {}).get("totalAmount") if line_item else None,
+                "src_itemPrice": (line_item or {}).get("itemPrice") if line_item else None,
+                "src_actualPrice": (line_item or {}).get("actualPrice") if line_item else None,
+                "src_taxPercent": (line_item or {}).get("taxPercent") if line_item else None,
+                "src_taxAmount": (line_item or {}).get("taxAmount") if line_item else None,
+                "src_ticketPrice": t.get("ticketPrice"),
+                "src_actualTicketPrice": t.get("actualTicketPrice"),
+                "calc_unit_net": round(unit_net, 2),
+                "calc_unit_gross": round(unit_gross, 2),
+                "calc_vat_rate": vat_rate,
+                "calc_vat_amount": round(vat_amount, 2),
+            })
     
     # Agreguj bilety o tym samym ticket_class_id
     aggregated = {}
@@ -544,8 +636,32 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
             aggregated[key]["vat_amount"] += t["vat_amount"]
         else:
             aggregated[key] = t.copy()
-    
-    return list(aggregated.values())
+
+    aggregated_list = list(aggregated.values())
+    try:
+        # Podsumowanie po agregacji (też limitowane)
+        preview = []
+        for a in aggregated_list[:10]:
+            preview.append({
+                "ticket_class_id": a.get("ticket_class_id"),
+                "name": a.get("name"),
+                "quantity": a.get("quantity"),
+                "unit_price_gross": a.get("unit_price_gross"),
+                "unit_price_net": a.get("unit_price_net"),
+                "total_gross": round(float(a.get("total_gross") or 0), 2),
+                "vat_rate": a.get("vat_rate"),
+                "vat_amount": round(float(a.get("vat_amount") or 0), 2),
+            })
+        _log("DEBUG", "TICKETS EXTRACTED (aggregated)", {
+            "tickets_raw_count": len(tickets_raw) if isinstance(tickets_raw, list) else None,
+            "tickets_items_count": len(tickets),
+            "tickets_aggregated_count": len(aggregated_list),
+            "preview_first": preview,
+        })
+    except Exception:
+        pass
+
+    return aggregated_list
 
 
 def _enrich_tickets_with_names(tickets: List[Dict[str, Any]], event_id: str) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -1165,7 +1281,7 @@ def _handle_stripe_flow(
             error_type="STRIPE_SESSION_ERROR",
             error_message=f"Nie udało się utworzyć sesji płatności Stripe.\nBłąd: {error}",
             event_order_id=event_order_id,
-            event_id=event_id,
+            event_id=order_data.get("event_id", ""),
             extra_data={
                 "purchaser_email": purchaser_email,
                 "event_name": event_name,
