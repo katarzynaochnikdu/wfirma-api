@@ -146,6 +146,35 @@ def get_scopes_for_company(company: str = None) -> list:
         return SCOPES_TEST
     return SCOPES_MD
 
+
+def require_api_key(f):
+    """Decorator wymagający API Key w headerze X-API-Key (ochrona przed nieuprawnionymi wywołaniami)"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Jeśli MAKE_RENDER_API_KEY nie jest ustawiony w ENV - pomijamy weryfikację (dev mode)
+        if not MAKE_RENDER_API_KEY:
+            print("[WARNING] MAKE_RENDER_API_KEY nie jest ustawiony - brak ochrony API!")
+            return f(*args, **kwargs)
+        
+        # Sprawdź header X-API-Key
+        provided_key = request.headers.get('X-API-Key', '').strip()
+        
+        if not provided_key:
+            return jsonify({
+                'error': 'Brak autoryzacji',
+                'message': 'Wymagany header X-API-Key'
+            }), 401
+        
+        if provided_key != MAKE_RENDER_API_KEY:
+            return jsonify({
+                'error': 'Nieprawidłowy klucz API',
+                'message': 'X-API-Key jest niepoprawny'
+            }), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 # ==================== FUNKCJE POMOCNICZE ====================
 
 def update_render_env_var(key, value):
@@ -906,34 +935,6 @@ def require_token(f):
                 'message': 'Przejdź do /auth aby się zalogować'
             }), 401
         return f(token, *args, **kwargs)
-    return decorated_function
-
-
-def require_api_key(f):
-    """Decorator wymagający API Key w headerze X-API-Key (ochrona przed nieuprawnionymi wywołaniami)"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # Jeśli MAKE_RENDER_API_KEY nie jest ustawiony w ENV - pomijamy weryfikację (dev mode)
-        if not MAKE_RENDER_API_KEY:
-            print("[WARNING] MAKE_RENDER_API_KEY nie jest ustawiony - brak ochrony API!")
-            return f(*args, **kwargs)
-        
-        # Sprawdź header X-API-Key
-        provided_key = request.headers.get('X-API-Key', '').strip()
-        
-        if not provided_key:
-            return jsonify({
-                'error': 'Brak autoryzacji',
-                'message': 'Wymagany header X-API-Key'
-            }), 401
-        
-        if provided_key != MAKE_RENDER_API_KEY:
-            return jsonify({
-                'error': 'Nieprawidłowy klucz API',
-                'message': 'X-API-Key jest niepoprawny'
-            }), 403
-        
-        return f(*args, **kwargs)
     return decorated_function
 
 
