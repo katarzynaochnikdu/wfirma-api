@@ -723,6 +723,20 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         invoice_error = str(e)
         print(f"[STRIPE] WYJĄTEK podczas tworzenia faktury: {e}")
     
+    # 4. Wyślij indywidualne emaile z biletami do WSZYSTKICH uczestników
+    participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0}
+    try:
+        from backstage_engine import send_participant_ticket_emails
+        
+        participant_email_stats = send_participant_ticket_emails(
+            event_order_id=event_order_id,
+            event_name=event_name,
+            event_config=event_data,
+        )
+        print(f"[STRIPE] Emaile do uczestników: sent={participant_email_stats.get('sent', 0)}, failed={participant_email_stats.get('failed', 0)}, skipped={participant_email_stats.get('skipped', 0)}")
+    except Exception as e:
+        print(f"[STRIPE] Błąd wysyłki emaili do uczestników: {e}")
+    
     return {
         "status": "ok",
         "order_id": event_order_id,
@@ -737,6 +751,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         "invoice_error": invoice_error,
         "recovery_mode": recovery_mode,
         "recovery_reason": recovery_reason or None,
+        "participant_emails": participant_email_stats,
     }
 
 

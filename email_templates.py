@@ -1237,3 +1237,211 @@ def render_payment_confirmation_email(
     }
     
     return TEMPLATE_PAYMENT_CONFIRMATION.format(**data)
+
+
+# =============================================================================
+# SZABLON: Potwierdzenie biletu dla UCZESTNIKA (indywidualny email)
+# =============================================================================
+
+TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Twój bilet – {event_name}</title>
+</head>
+<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 20px 0;">
+        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <tr>
+            <td>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                
+                <!-- TOP BANNER -->
+                <tr>
+                  <td valign="top">
+                    <a href="{url_event}" target="_blank">
+                      <img src="{event_mail_link_top_banner}" alt="{event_name}" style="display: block; width: 100%; max-width: 600px; height: auto;">
+                    </a>
+                  </td>
+                </tr>
+
+                <!-- HEADER: Twój bilet -->
+                <tr>
+                  <td style="padding: 24px 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%;">
+                      <tr>
+                        <td style="background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); padding: 16px 20px; border-radius: 8px;">
+                          <h1 style="margin: 0; font-size: 24px; color: #ffffff; font-weight: bold;">🎫 Twój bilet jest gotowy!</h1>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- GREETING -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <p style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Cześć <strong>{participant_first_name}</strong>!</p>
+                    <p style="margin: 0; font-size: 15px; color: #555; line-height: 1.5;">
+                      Masz potwierdzony bilet na wydarzenie <strong>{event_name}</strong>. 
+                      Poniżej znajdziesz szczegóły swojego biletu.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- TICKET CARD -->
+                <tr>
+                  <td style="padding: 0 24px 20px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; border: 2px solid {color_gradient_1}; border-radius: 12px; overflow: hidden;">
+                      <!-- Ticket header -->
+                      <tr>
+                        <td style="background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); padding: 12px 16px;">
+                          <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 1px;">Bilet</p>
+                          <p style="margin: 4px 0 0 0; font-size: 20px; color: #ffffff; font-weight: bold;">{ticket_name}</p>
+                        </td>
+                      </tr>
+                      <!-- Ticket details -->
+                      <tr>
+                        <td style="padding: 16px;">
+                          <table cellpadding="0" cellspacing="0" style="width: 100%;">
+                            <tr>
+                              <td style="padding: 8px 0; border-bottom: 1px dashed #e0e0e0;">
+                                <span style="font-size: 13px; color: #888;">Uczestnik</span><br>
+                                <span style="font-size: 15px; color: #333; font-weight: 500;">{participant_full_name}</span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 8px 0; border-bottom: 1px dashed #e0e0e0;">
+                                <span style="font-size: 13px; color: #888;">Email</span><br>
+                                <span style="font-size: 15px; color: #333;">{participant_email}</span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 8px 0; border-bottom: 1px dashed #e0e0e0;">
+                                <span style="font-size: 13px; color: #888;">Wartość biletu</span><br>
+                                <span style="font-size: 18px; color: {color_gradient_1}; font-weight: bold;">{ticket_price_formatted}</span>
+                                {discount_info}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 8px 0;">
+                                <span style="font-size: 13px; color: #888;">ID biletu</span><br>
+                                <span style="font-size: 12px; color: #666; font-family: monospace;">{ticket_id}</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- EVENT DETAILS -->
+                {event_datetime_section}
+                {event_location_section}
+
+                <!-- INFO BOX -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #FFF8E1; border: 1px solid #FFE082; border-radius: 8px;">
+                      <tr>
+                        <td style="padding: 12px 16px;">
+                          <p style="margin: 0; font-size: 14px; color: #F57C00;">
+                            💡 <strong>Pamiętaj:</strong> Zachowaj ten email – może być potrzebny do weryfikacji przy wejściu na wydarzenie.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- FOOTER -->
+                <tr>
+                  <td valign="top">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: {color_gradient_1};">
+                      <tr>
+                        <td style="padding: 12px 24px;">
+                          <p style="text-align: center; color: #ffffff; font-size: 14px; margin: 0;">
+                            Masz pytania? Napisz do nas: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
+
+
+def render_participant_ticket_email(
+    event_name: str,
+    participant_first_name: str,
+    participant_last_name: str,
+    participant_email: str,
+    ticket_name: str,
+    ticket_id: str,
+    ticket_price: float,
+    discount_amount: float = 0.0,
+    event_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Renderuje email z potwierdzeniem biletu dla UCZESTNIKA (nie purchasera).
+    
+    Każdy uczestnik dostaje swój własny email z informacją o swoim bilecie.
+    
+    Args:
+        event_name: Nazwa eventu
+        participant_*: Dane uczestnika
+        ticket_name: Nazwa/typ biletu
+        ticket_id: ID biletu (do weryfikacji)
+        ticket_price: Cena biletu (brutto)
+        discount_amount: Kwota rabatu (jeśli był)
+        event_config: Konfiguracja eventu
+    
+    Returns:
+        Gotowy HTML email
+    """
+    event_config = event_config or get_default_event_config()
+    
+    # Discount info
+    discount_info = ""
+    if discount_amount and discount_amount > 0:
+        discount_info = f'<br><span style="font-size: 12px; color: #4CAF50;">✓ Uwzględniono rabat: -{format_currency(discount_amount)}</span>'
+    
+    # Free ticket
+    if ticket_price <= 0:
+        price_formatted = "BEZPŁATNY"
+    else:
+        price_formatted = format_currency(ticket_price)
+    
+    data = {
+        "event_name": event_name,
+        "participant_first_name": participant_first_name or "Uczestnik",
+        "participant_full_name": f"{participant_first_name} {participant_last_name}".strip() or "Uczestnik",
+        "participant_email": participant_email,
+        "ticket_name": ticket_name or "Bilet",
+        "ticket_id": ticket_id or "-",
+        "ticket_price_formatted": price_formatted,
+        "discount_info": discount_info,
+        "event_datetime_section": _build_event_datetime_section(event_config),
+        "event_location_section": _build_event_location_section(event_config),
+        # Event config
+        "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
+        "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
+        "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
+        "url_event": event_config.get("url_event", "https://medidesk.com"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+    }
+    
+    return TEMPLATE_PARTICIPANT_TICKET.format(**data)

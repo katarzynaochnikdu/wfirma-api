@@ -247,6 +247,165 @@ def _send_error_notification(
         _log("ERROR", f"Wyjątek przy wysyłce powiadomienia o błędzie: {e}")
 
 
+def send_participant_ticket_emails(
+    event_order_id: str,
+    event_name: str,
+    event_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Wysyła emaile z biletami do WSZYSTKICH uczestników zamówienia.
+    
+    Każdy uczestnik dostaje swój indywidualny email z informacją o swoim bilecie:
+    - nazwa/typ biletu
+    - cena
+    - ewentualne zniżki
+    - szczegóły wydarzenia
+    
+    Args:
+        event_order_id: ID zamówienia
+        event_name: Nazwa wydarzenia
+        event_config: Konfiguracja wydarzenia (kolory, banery, etc.)
+    
+    Returns:
+        Dict z statystykami: {"sent": X, "failed": Y, "skipped": Z, "details": [...]}
+    """
+    from pg_storage import get_participants_for_order, get_ticket_classes, update_participant_status
+    from email_templates import render_participant_ticket_email
+    
+    stats = {"sent": 0, "failed": 0, "skipped": 0, "details": []}
+    
+    # Pobierz uczestników
+    participants = get_participants_for_order(event_order_id)
+    if not participants:
+        _log("INFO", "Brak uczestników do wysłania emaili", {"event_order_id": event_order_id})
+        return stats
+    
+    _log("INFO", "Rozpoczynam wysyłkę emaili do uczestników", {
+        "event_order_id": event_order_id,
+        "participants_count": len(participants),
+    })
+    
+    # Pobierz nazwy biletów
+    ticket_name_map = {}
+    if participants:
+        # Znajdź event_id z pierwszego uczestnika (z data lub z order)
+        try:
+            order = get_order(event_order_id)
+            event_id = order.get("event_id", "") if order else ""
+            if event_id:
+                ticket_classes = get_ticket_classes(event_id)
+                ticket_name_map = {tc["ticket_class_id"]: tc["ticket_name"] for tc in ticket_classes}
+                _log("DEBUG", "Mapa nazw biletów dla uczestników", {"count": len(ticket_name_map)})
+        except Exception as e:
+            _log("WARNING", f"Nie udało się pobrać nazw biletów: {e}")
+    
+    for p in participants:
+        participant_email = p.get("email", "")
+        participant_first_name = p.get("first_name", "")
+        participant_last_name = p.get("last_name", "")
+        ticket_id = p.get("ticket_id", "")
+        ticket_class_id = p.get("ticket_class_id", "")
+        participant_data = p.get("data", {}) or {}
+        participant_id = p.get("id")
+        status = p.get("status", "")
+        
+        # Pomiń jeśli brak emaila lub status cancelled
+        if not participant_email:
+            _log("DEBUG", "Pomijam uczestnika bez emaila", {"ticket_id": ticket_id})
+            stats["skipped"] += 1
+            stats["details"].append({"ticket_id": ticket_id, "status": "skipped", "reason": "no_email"})
+            continue
+        
+        if status == "cancelled":
+            _log("DEBUG", "Pomijam anulowanego uczestnika", {"ticket_id": ticket_id, "email": participant_email})
+            stats["skipped"] += 1
+            stats["details"].append({"ticket_id": ticket_id, "status": "skipped", "reason": "cancelled"})
+            continue
+        
+        if status == "emailed":
+            _log("DEBUG", "Uczestnik już otrzymał email", {"ticket_id": ticket_id, "email": participant_email})
+            stats["skipped"] += 1
+            stats["details"].append({"ticket_id": ticket_id, "status": "skipped", "reason": "already_emailed"})
+            continue
+        
+        # Pobierz dane biletu
+        ticket_name = (
+            ticket_name_map.get(ticket_class_id)
+            or participant_data.get("ticket_name")
+            or "Bilet"
+        )
+        ticket_price = participant_data.get("price_gross", 0)
+        discount_amount = participant_data.get("discount_amount", 0)
+        
+        # Renderuj email
+        try:
+            body_html = render_participant_ticket_email(
+                event_name=event_name,
+                participant_first_name=participant_first_name,
+                participant_last_name=participant_last_name,
+                participant_email=participant_email,
+                ticket_name=ticket_name,
+                ticket_id=ticket_id,
+                ticket_price=float(ticket_price) if ticket_price else 0.0,
+                discount_amount=float(discount_amount) if discount_amount else 0.0,
+                event_config=event_config,
+            )
+        except Exception as e:
+            _log("ERROR", f"Błąd renderowania emaila uczestnika: {e}", {"ticket_id": ticket_id})
+            stats["failed"] += 1
+            stats["details"].append({"ticket_id": ticket_id, "email": participant_email, "status": "failed", "error": str(e)})
+            continue
+        
+        # Wyślij email
+        subject = f"Twój bilet – {event_name}"
+        
+        _log("INFO", "Wysyłam email do uczestnika", {
+            "to": participant_email,
+            "ticket_name": ticket_name,
+            "ticket_id": ticket_id[:20] + "..." if len(ticket_id) > 20 else ticket_id,
+        })
+        
+        result = _send_email_via_make(
+            to_email=participant_email,
+            subject=subject,
+            body_html=body_html,
+            event_order_id=event_order_id,
+            template_type="participant_ticket",
+        )
+        
+        if result.get("success"):
+            stats["sent"] += 1
+            stats["details"].append({"ticket_id": ticket_id, "email": participant_email, "status": "sent"})
+            
+            # Zaktualizuj status uczestnika na 'emailed'
+            if participant_id:
+                try:
+                    update_participant_status(participant_id, "emailed")
+                except Exception:
+                    pass
+        else:
+            stats["failed"] += 1
+            stats["details"].append({
+                "ticket_id": ticket_id,
+                "email": participant_email,
+                "status": "failed",
+                "error": result.get("error", "Unknown error"),
+            })
+            _log("WARNING", "Nie udało się wysłać emaila do uczestnika", {
+                "email": participant_email,
+                "error": result.get("error"),
+            })
+    
+    _log("INFO", "Zakończono wysyłkę emaili do uczestników", {
+        "event_order_id": event_order_id,
+        "sent": stats["sent"],
+        "failed": stats["failed"],
+        "skipped": stats["skipped"],
+    })
+    
+    return stats
+
+
 from pg_storage import (
     get_event,
     match_payment_rule,
@@ -1557,9 +1716,26 @@ def _handle_foc_flow(
             direction="internal",
         ))
 
+    # Wyślij indywidualne emaile do WSZYSTKICH uczestników (każdy swój bilet)
+    participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0}
+    try:
+        participant_email_stats = send_participant_ticket_emails(
+            event_order_id=event_order_id,
+            event_name=event_name,
+            event_config=event_data,
+        )
+        _log("INFO", "FOC FLOW: Emaile do uczestników wysłane", {
+            "sent": participant_email_stats.get("sent", 0),
+            "failed": participant_email_stats.get("failed", 0),
+            "skipped": participant_email_stats.get("skipped", 0),
+        })
+    except Exception as e:
+        _log("ERROR", f"FOC FLOW: Błąd wysyłki emaili do uczestników: {e}")
+
     _log("INFO", "FOC FLOW: Zakończono", {
         "event_order_id": event_order_id,
         "email_sent": email_sent,
+        "participant_emails_sent": participant_email_stats.get("sent", 0),
         "mail_tasks_count": len(mail_tasks),
     })
 
