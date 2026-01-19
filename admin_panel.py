@@ -254,6 +254,10 @@ def import_page():
           <li>upsert eventów (po <code>eventId</code>)</li>
           <li>replace klas biletów dla eventów z pliku</li>
         </ul>
+        <div class="warn">
+          <b>Uwaga:</b> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
+          Dzięki temu archiwalne eventy z <code>Bilety.csv</code> nie wywalą importu (FK w bazie).
+        </div>
       </div>
       <form method="post" action="{url_for('admin_bp.import_run')}" enctype="multipart/form-data" style="margin-top:12px;">
         <input type="hidden" name="token" value="{token}" />
@@ -319,11 +323,17 @@ def import_run():
 
     # Import ticket classes grouped by event
     imported_ticket_classes = 0
+    skipped_ticket_events: List[str] = []
     if bilety_records:
+        event_id_set = set(event_ids)
         by_event: Dict[str, List[Dict[str, Any]]] = {}
         for r in bilety_records:
             eid = (r.get("eventId") or "").strip()
             if not eid:
+                continue
+            # Importuj bilety tylko dla eventów, które istnieją w Wydarzenia.csv
+            if eid not in event_id_set:
+                skipped_ticket_events.append(eid)
                 continue
             by_event.setdefault(eid, []).append(
                 {
@@ -337,6 +347,17 @@ def import_run():
             replace_ticket_classes(eid, classes)
             imported_ticket_classes += len(classes)
 
+    skipped_html = ""
+    if skipped_ticket_events:
+        uniq = sorted(set(skipped_ticket_events))
+        skipped_html = (
+            "<div class='warn' style='margin-top:12px;'>"
+            "<b>Pominięte bilety dla eventów (brak w Wydarzenia.csv):</b><br/>"
+            + " ".join(f"<code>{x}</code>" for x in uniq[:50])
+            + ("<div class='muted' style='margin-top:6px;'>… (ucięto listę)</div>" if len(uniq) > 50 else "")
+            + "</div>"
+        )
+
     body = f"""
     <div class="ok"><b>Import zakończony.</b></div>
     <div style="height:10px;"></div>
@@ -346,6 +367,7 @@ def import_run():
         <div class="muted">Zaimportowane klasy biletów</div><div><b>{imported_ticket_classes}</b></div>
       </div>
     </div>
+    {skipped_html}
     <div style="height:12px;"></div>
     <a class="btn btnPrimary" href="{url_for('admin_bp.events_list', token=token)}">Przejdź do listy wydarzeń</a>
     """
