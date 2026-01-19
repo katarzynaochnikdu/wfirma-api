@@ -1211,19 +1211,93 @@ def _handle_foc_flow(
     """
     Obsługuje flow FOC (Free of Charge).
     - Ustawia status na 'paid' (darmowe)
-    - Generuje mail z potwierdzeniem rejestracji
+    - Wysyła email z potwierdzeniem rejestracji (przez Make webhook)
     """
     event_order_id = order_data["event_order_id"]
     purchaser_email = order_data["purchaser_email"]
+    purchaser_first_name = order_data.get("purchaser_first_name", "")
+    purchaser_last_name = order_data.get("purchaser_last_name", "")
+    purchaser_phone = order_data.get("purchaser_phone", "")
     event_name = (event_config.get("event_name") if event_config else "") or "Wydarzenie"
     event_data = (event_config.get("data") if event_config else {}) or {}
+    event_id = order_data.get("event_id", "")
+
+    _log("INFO", "FOC FLOW: Rozpoczynam przetwarzanie", {
+        "event_order_id": event_order_id,
+        "event_name": event_name,
+        "purchaser_email": purchaser_email,
+    })
 
     # Aktualizuj status zamówienia na 'paid' (darmowe = od razu opłacone)
     update_order_status(event_order_id, "paid")
 
     mail_tasks = []
+    email_sent = False
 
-    # Mail do kupującego: potwierdzenie rejestracji
+    # Wzbogać bilety o nazwy z bazy
+    raw_tickets = order_data.get("tickets", [])
+    if raw_tickets and event_id:
+        enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+        if unknown_ids:
+            _log("DEBUG", "FOC FLOW: Nierozpoznane ticket_class_id", {"unknown_ids": unknown_ids[:5]})
+    else:
+        enriched_tickets = raw_tickets
+
+    # Mail do kupującego: potwierdzenie rejestracji (wysyłka przez Make)
+    if purchaser_email and _is_make_email_configured():
+        try:
+            from email_templates import render_foc_confirmation_email
+            
+            subject = f"Potwierdzenie rejestracji – {event_name}"
+            body_html = render_foc_confirmation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name,
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                purchaser_phone=purchaser_phone,
+                event_config=event_data,
+                tickets=enriched_tickets,
+            )
+            
+            _log("INFO", "FOC FLOW: Wysyłam email potwierdzenia przez Make", {
+                "to": purchaser_email,
+                "subject": subject,
+            })
+            
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=subject,
+                body_html=body_html,
+                event_order_id=event_order_id,
+                template_type="foc_confirmation",
+            )
+            
+            if result.get("success"):
+                _log("INFO", "FOC FLOW: Email wysłany pomyślnie!", {"to": purchaser_email})
+                email_sent = True
+            else:
+                _log("WARNING", "FOC FLOW: Błąd wysyłki emaila", {"error": result.get("error")})
+                # Wyślij powiadomienie wewnętrzne o błędzie
+                _send_error_notification(
+                    error_type="FOC_EMAIL_ERROR",
+                    error_message=f"Nie udało się wysłać potwierdzenia rejestracji FOC.\n\nBłąd: {result.get('error')}",
+                    event_order_id=event_order_id,
+                    event_id=event_id,
+                    extra_data={
+                        "purchaser_email": purchaser_email,
+                        "event_name": event_name,
+                    },
+                )
+        except Exception as e:
+            _log("ERROR", "FOC FLOW: Wyjątek przy wysyłce emaila", {"error": str(e)})
+            _send_error_notification(
+                error_type="FOC_EMAIL_EXCEPTION",
+                error_message=f"Wyjątek przy wysyłce potwierdzenia FOC.\n\nBłąd: {str(e)}",
+                event_order_id=event_order_id,
+                event_id=event_id,
+            )
+
+    # Mail task do logu (nawet jeśli wysłany bezpośrednio)
     if purchaser_email:
         mail_tasks.append(_build_mail_task(
             template_key=TEMPLATE_REGISTRATION_CONFIRMATION,
@@ -1232,9 +1306,10 @@ def _handle_foc_flow(
             data={
                 "event_order_id": event_order_id,
                 "event_name": event_name,
-                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
+                "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
                 "purchaser_email": purchaser_email,
-                **event_data,  # Dodaj wszystkie dane eventu (banery, linki, etc.)
+                "email_sent_via_make": email_sent,
+                **event_data,
             },
             direction="purchaser",
         ))
@@ -1252,16 +1327,23 @@ def _handle_foc_flow(
                 "flow": FLOW_FOC,
                 "total": 0,
                 "purchaser_email": purchaser_email,
-                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
+                "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
             },
             direction="internal",
         ))
+
+    _log("INFO", "FOC FLOW: Zakończono", {
+        "event_order_id": event_order_id,
+        "email_sent": email_sent,
+        "mail_tasks_count": len(mail_tasks),
+    })
 
     return {
         "flow": FLOW_FOC,
         "status": "completed",
         "order_status": "paid",
         "mail_tasks": mail_tasks,
+        "email_sent": email_sent,
     }
 
 
