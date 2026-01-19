@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Potwierdzenie rejestracji – {{16.event_name}}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    p, h1, h2, h3, h4, h5, h6, ul {margin: 0;}
+    
+    @media screen and (max-width: 620px) {
+      .wrapper { padding: 8px !important; }
+      .main-table { width: 100% !important; max-width: 100% !important; }
+      .inner-table { width: 100% !important; }
+      .content-cell { padding-left: 16px !important; padding-right: 16px !important; }
+      .two-column td { display: block !important; width: 100% !important; border-right: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ════════════════════════════════════════════════════════════════════
+       MAIL: Link do płatności Stripe + NIP POPRAWNY (dane z GUS)
+       ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- PREHEADER -->
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+    Potwierdź rezerwację na {{16.event_name}} – zapłać {{formatNumber(16.purchase_gross_value; 2; ","; " ")}} zł
+    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+  </div>
+
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
+    <tr>
+      <td class="wrapper" style="padding: 32px">
+        <table border="0" width="600" cellpadding="0" cellspacing="0" class="main-table" style="width: 600px; margin: auto; max-width: 600px;">
+          <tr>
+            <td>
+              <table border="0" cellpadding="0" cellspacing="0" class="inner-table" style="font-family: Arial, Helvetica, sans-serif; padding:0; color: #000; width: 600px; line-height: 22px; background-color: #fff; font-size: 14px; text-align: left; box-sizing: content-box; border-collapse: collapse; border: 1px solid #DEDEDE;">
+                
+                <!-- ══════════════════════════════════════════════════════════
+                     TOP BANNER
+                     ══════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td valign="top" style="padding: 0;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #FFFFFF;">
+                      <tr>
+                        <td style="padding: 0; line-height: 0;">
+                          <a href="{{30.data.url_event}}">
+                            <img src="{{30.data.event_mail_link_top_banner}}" alt="{{16.event_name}}" width="598" style="width: 100%; max-width: 100%; display: block;">
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     TREŚĆ GŁÓWNA + INFORMACJE O WYDARZENIU + CTA
+                     ══════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td valign="top" style="padding: 12px 24px 24px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important;">
+                      <tr>
+                        <td style="padding: 0;">
+                          <h2 style="font-size: 22px; margin: 0;">Cześć <strong>{{9.customFormData[].formEntries.purchaser_first_name}}</strong></h2>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 0;">
+                          <p>Dziękujemy za rejestrację na <strong>{{16.event_name}}</strong>. Aby potwierdzić rezerwację miejsca, wymagane jest dokonanie płatności.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                      
+                      <!-- DATA -->
+                      <tr>
+                        <td style="padding: 0;">
+                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="width: 20px; vertical-align: middle;">
+                                <img src="https://static.zohocdn.com/backstage/v1.0/images/date_time-icon-c5bd02a43dbfa5720976303479fa3071.png" alt="Data" width="20" style="width: 20px; max-width: 100%;">
+                              </td>
+                              <td style="padding-left: 5px; vertical-align: middle;">
+                                <p>{{30.data.event_day_text_1}}, {{30.data.event_time_text}}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <!-- LOKALIZACJA -->
+                      <tr>
+                        <td style="padding: 0;">
+                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="width: 20px; vertical-align: top;">
+                                <img src="https://static.zohocdn.com/backstage/v1.0/images/mini_location-icon-cabc9c63a7da9a671cee8477f28c09c4.png" alt="Lokalizacja" width="20" style="width: 20px; max-width: 100%;">
+                              </td>
+                              <td style="padding-left: 5px; vertical-align: top;">
+                                <p style="font-weight: bold;">{{30.data.event_location_place}}</p>
+                                <p>{{30.data.event_location_address}}, {{30.data.event_location_zip}} {{30.data.event_location_city}}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                      
+                      <!-- PRZYCISK PŁATNOŚCI (CTA - gradient_1) -->
+                      <tr>
+                        <td style="padding: 0;">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{2.body.url}}" style="v-text-anchor:middle; height:43px; width:180px" arcsize="5%" stroke="false" fillcolor="{{30.data.color_gradient_1}}">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff; font-size:16px; font-weight:bold;">Opłać rezerwację</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <table border="0" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="display: inline-block; border-radius: 8px; background-color: {{30.data.color_gradient_1}};">
+                                <a href="{{2.body.url}}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 12px 16px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold; text-align: center;">Opłać rezerwację</a>
+                              </td>
+                            </tr>
+                          </table>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     SZCZEGÓŁY ZAMÓWIENIA
+                     Nagłówek: gradient_1
+                     Linia podsumowania: gradient_2
+                     ══════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 8px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                      <tr>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 8px 6px; color: {{30.data.color_gradient_1}};">Szczegóły zamówienia</td>
+                      </tr>
+{{45.text}}                      
+                      <!-- PODSUMOWANIE -->
+                      <tr>
+                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {{30.data.color_gradient_2}};">Kwota netto</td>
+                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {{30.data.color_gradient_2}}; text-align: right;">{{formatNumber(16.purchase_net_value; 2; ","; " ")}} zł</td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA;">VAT (23%)</td>
+                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; text-align: right;">{{formatNumber(16.purchase_gross_value - 16.purchase_net_value; 2; ","; " ")}} zł</td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {{30.data.color_gradient_2}}; color: #ffffff; border-top: 1px solid {{30.data.color_gradient_2}};">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {{30.data.color_gradient_2}}; color: #ffffff; border-top: 1px solid {{30.data.color_gradient_2}}; text-align: right;">{{formatNumber(16.purchase_gross_value; 2; ","; " ")}} zł</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     DANE ROZLICZENIOWE
+                     Nagłówek: gradient_1
+                     ══════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                      <tr>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 8px 6px; color: {{30.data.color_gradient_1}};">Dane rozliczeniowe</td>
+                      </tr>
+                      <tr class="two-column">
+                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                          <p style="margin-bottom: 2px; font-weight: bold;">{{16.purchaser_full}}</p>
+                          <p style="margin-bottom: 2px;">{{16.purchaser_email}}</p>
+                          <p>{{9.customFormData[].formEntries.purchaser_mobile_no}}</p>
+                        </td>
+                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                          <p style="margin-bottom: 2px; font-weight: bold;">{{16.billing_company_name}}</p>
+                          <p style="margin-bottom: 2px;">{{33.billing_address_full_new_line}}</p>
+                          <p>NIP: {{16.purchaser_nip}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     WALIDACJA NIP – POPRAWNY (dane z GUS)
+                     ══════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #4CAF50;">
+                      <tr>
+                        <td colspan="2" style="font-size: 14px; font-weight: bold; line-height: 24px; padding: 8px 6px; background-color: #E8F5E9; color: #2E7D32;">
+                          ✅ Weryfikacja NIP
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-size: 13px; padding: 8px 6px; background-color: #F1F8E9;">
+                          <p style="margin: 0 0 4px 0;"><strong>NIP:</strong> {{114.data.gus_data.nip}} — <span style="color: #2E7D32; font-weight: bold;">POPRAWNY</span></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-size: 12px; padding: 8px 6px; color: #666; border-top: 1px dashed #C8E6C9;">
+                          <p style="margin: 0 0 2px 0; font-weight: bold; color: #333;">Dane z rejestru GUS:</p>
+                          <p style="margin: 0 0 2px 0;">🏢 {{114.data.gus_data.name}}</p>
+                          <p style="margin: 0 0 2px 0;">📍 {{114.data.gus_data.street}}, {{114.data.gus_data.zip}} {{114.data.gus_data.city}}</p>
+                          <p style="margin: 0 0 2px 0;">🗺️ woj. {{114.data.gus_data.voivodeship}}</p>
+                          <p style="margin: 0;">📋 REGON: {{114.data.gus_data.regon}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     FOOTER (gradient_1)
+                     ══════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td valign="top">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: {{30.data.color_gradient_1}};">
+                      <tr>
+                        <td style="padding: 10px 24px;">
+                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{{30.data.md_email_kontakt}}" style="color: #ffffff; text-decoration: underline;">{{30.data.md_email_kontakt}}</a></p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

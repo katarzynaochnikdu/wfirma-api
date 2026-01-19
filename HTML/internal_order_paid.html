@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nowe zamówienie – {{11.data.eventName}}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    p, h1, h2, h3, h4, h5, h6, ul {margin: 0;}
+    @media screen and (max-width: 620px) {
+      .main-table { width: 100% !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ════════════════════════════════════════════════════════════════════
+       MAIL WEWNĘTRZNY: Nowe opłacone zamówienie
+       Format tabelaryczny zgodny z Backstage
+       ════════════════════════════════════════════════════════════════════ -->
+
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+    PAID: {{9.data.purchaser_first_name}} {{9.data.purchaser_last_name}} | {{9.data.purchase_net_value}} | {{9.data.event_name}}
+  </div>
+
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;" bgcolor="#f5f5f5">
+    <tr>
+      <td style="padding: 16px">
+        <table border="0" width="600" cellpadding="0" cellspacing="0" class="main-table" style="width: 600px; margin: auto; max-width: 600px; font-family: Arial, sans-serif; font-size: 14px; background-color: #fff; border: 1px solid #ddd;" bgcolor="#ffffff">
+          
+          <!-- TOP BANNER -->
+          <tr>
+            <td style="padding: 0; line-height: 0;">
+              <img src="{{11.data.event_mail_link_top_banner}}" alt="{{11.data.eventName}}" width="600" style="width: 100%; max-width: 100%; display: block;">
+            </td>
+          </tr>
+
+          <!-- NAGŁÓWEK: PAID -->
+          <tr>
+            <td style="padding: 12px 20px; background-color: #22C55E; text-align: center;" bgcolor="#22C55E">
+              <p style="color: #fff; font-size: 16px; font-weight: bold; margin: 0;">✓ PAID – Nowe opłacone zamówienie</p>
+            </td>
+          </tr>
+
+          <!-- TABELA JAK W BACKSTAGE -->
+          <tr>
+            <td style="padding: 0 12px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                <!-- NAGŁÓWKI -->
+                <tr>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Purchased By</td>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Date &amp; Time</td>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Amount</td>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Status</td>
+                </tr>
+                <!-- DANE -->
+                <tr>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{{9.data.purchaser_first_name}} {{9.data.purchaser_last_name}}</p>
+                    <p style="font-size: 12px; color: #666; margin: 2px 0 0 0;">{{9.data.purchaser_email}}</p>
+                  </td>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{{9.data.order_date_day}}</p>
+                    <p style="font-size: 12px; color: #666; margin: 2px 0 0 0;">{{9.data.order_date_time}}</p>
+                  </td>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 16px; font-weight: bold; color: #000; margin: 0;">{{9.data.purchase_gross_value}} </p>
+                  </td>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <!--[if mso]>
+                    <table cellpadding="0" cellspacing="0" border="0"><tr><td style="background-color:#22C55E; padding:4px 12px; border-radius:12px;">
+                    <span style="color:#fff; font-size:12px; font-weight:bold;">Paid</span>
+                    </td></tr></table>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <span style="display: inline-block; padding: 4px 12px; background-color: #22C55E; color: #fff; font-size: 12px; font-weight: bold; border-radius: 12px;">Paid</span>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- WYDARZENIE + ORDER ID -->
+          <tr>
+            <td style="padding: 14px 20px; background-color: #f8f9fa;" bgcolor="#f8f9fa">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="70%" style="vertical-align: top;">
+                    <p style="font-size: 11px; color: #888; margin: 0 0 2px 0;">Wydarzenie</p>
+                    <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{{9.data.event_name}}</p>
+                  </td>
+                  <td width="30%" style="vertical-align: top; text-align: right;">
+                    <p style="font-size: 11px; color: #888; margin: 0 0 2px 0;">Order ID</p>
+                    <p style="font-size: 14px; font-weight: bold; color: {{11.data.color_gradient_1}}; margin: 0;">#{{9.data.order_id}}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- PRZYCISK BACKSTAGE -->
+          <tr>
+            <td style="padding: 16px 20px; text-align: center;">
+              <!--[if mso]>
+              <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{11.data.event_orders_link}}" style="v-text-anchor:middle; height:40px; width:280px;" arcsize="10%" stroke="false" fillcolor="{{11.data.color_gradient_1}}">
+                <w:anchorlock/>
+                <center style="color:#ffffff; font-size:14px; font-weight:bold;">Otwórz w Backstage</center>
+              </v:roundrect>
+              <![endif]-->
+              <!--[if !mso]><!-->
+              <a href="{{11.data.event_orders_link}}" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: {{11.data.color_gradient_1}}; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold;">Otwórz w Backstage</a>
+              <!--<![endif]-->
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="padding: 10px 20px; background-color: #333; text-align: center;" bgcolor="#333333">
+              <p style="color: #999; font-size: 11px; margin: 0;">Powiadomienie wewnętrzne | {{11.data.md_email_kontakt}}</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

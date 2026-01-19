@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>MASTER TEMPLATE REFERENCE – Email System</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    p, h1, h2, h3, h4, h5, h6, ul {margin: 0;}
+    
+    @media screen and (max-width: 620px) {
+      .wrapper { padding: 8px !important; }
+      .main-table { width: 100% !important; max-width: 100% !important; }
+      .inner-table { width: 100% !important; }
+      .content-cell { padding-left: 16px !important; padding-right: 16px !important; }
+      .two-column td { display: block !important; width: 100% !important; border-right: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 
+  ═══════════════════════════════════════════════════════════════════════════════
+  MASTER TEMPLATE REFERENCE – SYSTEM EMAILI
+  ═══════════════════════════════════════════════════════════════════════════════
+  
+  Ten szablon jest WZORCEM/DOKUMENTACJĄ dla wszystkich emaili w systemie.
+  Pokazuje strukturę, zmienne kolorystyczne i sekcje opcjonalne/obowiązkowe.
+  
+  ZMIENNE KOLORYSTYCZNE (ZAWSZE):
+  - {{color_gradient_1}}        → Kolor podstawowy gradientu (np. #4A90E2)
+  - {{color_gradient_2}}        → Kolor końcowy gradientu (np. #357ABD)
+  - {{color_gradient_angle}}    → Kąt gradientu (np. 90 dla poziomego)
+  
+  ZMIENNE LINKOWE (ZAWSZE):
+  - {{event_mail_link_top_banner}} → Link do obrazka top banner (pełna szerokość)
+  - {{url_event}}                  → Link do strony wydarzenia
+  - {{md_email_kontakt}}           → Email kontaktowy w stopce
+  
+  STRUKTURA MAILA:
+  1. [OPCJONALNIE] Preheader – ukryty tekst dla podglądu
+  2. [OBOWIĄZKOWO] Top Banner – obrazek pełnej szerokości
+  3. [OBOWIĄZKOWO] Treść główna – dowolne bloki/sekcje
+  4. [OPCJONALNIE] Sekcje specjalne (zamówienie, rozliczeniowe, GUS, etc.)
+  5. [OBOWIĄZKOWO] Footer – belka w kolorze gradient_1
+  
+  ═══════════════════════════════════════════════════════════════════════════════
+  -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════════════
+       [OPCJONALNIE] PREHEADER
+       Ukryty tekst widoczny w podglądzie emaila (przed otwarciem).
+       Używaj do: krótkiego streszczenia treści maila.
+       ═══════════════════════════════════════════════════════════════════════════ -->
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+    [PREHEADER TEXT] – krótkie streszczenie treści maila
+    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+  </div>
+
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
+    <tr>
+      <td class="wrapper" style="padding: 32px">
+        <table border="0" width="600" cellpadding="0" cellspacing="0" class="main-table" style="width: 600px; margin: auto; max-width: 600px;">
+          <tr>
+            <td>
+              <table border="0" cellpadding="0" cellspacing="0" class="inner-table" style="font-family: Arial, Helvetica, sans-serif; padding:0; color: #000; width: 600px; line-height: 22px; background-color: #fff; font-size: 14px; text-align: left; box-sizing: content-box; border-collapse: collapse; border: 1px solid #DEDEDE;">
+                
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OBOWIĄZKOWO] TOP BANNER
+                     Obrazek pełnej szerokości na górze maila.
+                     
+                     ZMIENNA: {{event_mail_link_top_banner}}
+                     FORMAT: Link do obrazka (jpg/png), zalecany rozmiar 600px szerokości
+                     LINK: {{url_event}} – link do strony wydarzenia (opcjonalnie)
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td valign="top" style="padding: 0;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #FFFFFF;">
+                      <tr>
+                        <td style="padding: 0; line-height: 0;">
+                          <a href="{{url_event}}">
+                            <img src="{{event_mail_link_top_banner}}" alt="{{event_name}}" width="598" style="width: 100%; max-width: 100%; display: block;">
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OBOWIĄZKOWO] TREŚĆ GŁÓWNA
+                     Główny blok z komunikatem/powitaniem.
+                     
+                     ZMIENNE PRZYKŁADOWE:
+                     - {{purchaser_first_name}} → Imię użytkownika
+                     - {{event_name}} → Nazwa wydarzenia
+                     
+                     KOLOR AKCENTU: {{color_gradient_2}} dla podkreśleń/wyróżnień
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td valign="top" style="padding: 12px 24px 24px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important;">
+                      <tr>
+                        <td style="padding: 0;">
+                          <h2 style="font-size: 22px; margin: 0;">
+                            Cześć <strong>{{purchaser_first_name}}</strong>
+                            <!-- OPCJONALNIE: dodaj wyróżnienie kolorem -->
+                            <!-- <span style="color: {{color_gradient_2}};">tekst wyróżniony</span> -->
+                          </h2>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 0;">
+                          <p>[GŁÓWNA TREŚĆ WIADOMOŚCI] – dowolny tekst/komunikat</p>
+                          <p>Przykład: Dziękujemy za rejestrację na <strong>{{event_name}}</strong>.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                      
+                      <!-- ═══════════════════════════════════════════════════════
+                           [OPCJONALNIE] INFORMACJE O WYDARZENIU
+                           Data, godzina, lokalizacja.
+                           
+                           ZMIENNE:
+                           - {{event_day_text_1}} → Data wydarzenia (tekst)
+                           - {{event_time_text}} → Godzina wydarzenia
+                           - {{event_location_place}} → Nazwa miejsca
+                           - {{event_location_address}} → Adres
+                           - {{event_location_zip}} → Kod pocztowy
+                           - {{event_location_city}} → Miasto
+                           ══════════════════════════════════════════════════════ -->
+                      <!-- DATA -->
+                      <tr>
+                        <td style="padding: 0;">
+                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="width: 20px; vertical-align: middle;">
+                                <img src="https://static.zohocdn.com/backstage/v1.0/images/date_time-icon-c5bd02a43dbfa5720976303479fa3071.png" alt="Data" width="20" style="width: 20px; max-width: 100%;">
+                              </td>
+                              <td style="padding-left: 5px; vertical-align: middle;">
+                                <p>{{event_day_text_1}}, {{event_time_text}}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <!-- LOKALIZACJA -->
+                      <tr>
+                        <td style="padding: 0;">
+                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="width: 20px; vertical-align: top;">
+                                <img src="https://static.zohocdn.com/backstage/v1.0/images/mini_location-icon-cabc9c63a7da9a671cee8477f28c09c4.png" alt="Lokalizacja" width="20" style="width: 20px; max-width: 100%;">
+                              </td>
+                              <td style="padding-left: 5px; vertical-align: top;">
+                                <p style="font-weight: bold;">{{event_location_place}}</p>
+                                <p>{{event_location_address}}, {{event_location_zip}} {{event_location_city}}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                      
+                      <!-- ═══════════════════════════════════════════════════════
+                           [OPCJONALNIE] PRZYCISK CTA (Call To Action)
+                           
+                           ZMIENNE:
+                           - {{cta_link}} → URL docelowy przycisku
+                           - [TEKST PRZYCISKU] → np. "Opłać rezerwację", "Zobacz szczegóły"
+                           
+                           KOLORY: 
+                           - Background: {{color_gradient_1}}
+                           - Border-radius: 8px (zaokrąglenie)
+                           
+                           UWAGA MSO: VML roundrect dla Outlook
+                           ══════════════════════════════════════════════════════ -->
+                      <tr>
+                        <td style="padding: 0;">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{cta_link}}" style="v-text-anchor:middle; height:43px; width:180px" arcsize="5%" stroke="false" fillcolor="{{color_gradient_1}}">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff; font-size:16px; font-weight:bold;">[TEKST PRZYCISKU]</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <table border="0" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="display: inline-block; border-radius: 8px; background-color: {{color_gradient_1}};">
+                                <a href="{{cta_link}}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 12px 16px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold; text-align: center;">[TEKST PRZYCISKU]</a>
+                              </td>
+                            </tr>
+                          </table>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="height: 24px;"></td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OPCJONALNIE] SZCZEGÓŁY ZAMÓWIENIA
+                     Tabela z listą biletów/produktów + podsumowanie kwot.
+                     
+                     ZMIENNE:
+                     - {{order_items_html}} → HTML tabeli pozycji zamówienia
+                     - {{purchase_net_value}} → Kwota netto
+                     - {{purchase_gross_value}} → Kwota brutto
+                     
+                     KOLORY:
+                     - Nagłówek: {{color_gradient_1}}
+                     - Linia podsumowania: {{color_gradient_2}}
+                     - Kwota finalna: {{color_gradient_1}}
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 8px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                      <tr>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 8px 6px; color: {{color_gradient_1}};">Szczegóły zamówienia</td>
+                      </tr>
+                      
+                      <!-- POZYCJE ZAMÓWIENIA (dynamicznie wstawiane) -->
+                      <!-- Przykład struktury:
+                      <tr>
+                        <td style="padding: 4px 6px;">Nazwa biletu</td>
+                        <td style="padding: 4px 6px; text-align: center;">Ilość</td>
+                        <td style="padding: 4px 6px; text-align: right;">Cena</td>
+                      </tr>
+                      -->
+                      {{order_items_html}}
+                      
+                      <!-- PODSUMOWANIE KWOT -->
+                      <tr>
+                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {{color_gradient_2}};">Kwota netto</td>
+                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {{color_gradient_2}}; text-align: right;">{{formatNumber(purchase_net_value; 2; ","; " ")}} zł</td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA;">VAT (23%)</td>
+                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; text-align: right;">{{formatNumber(purchase_gross_value - purchase_net_value; 2; ","; " ")}} zł</td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {{color_gradient_2}}; color: #ffffff; border-top: 1px solid {{color_gradient_2}};">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {{color_gradient_2}}; color: #ffffff; border-top: 1px solid {{color_gradient_2}}; text-align: right;">{{formatNumber(purchase_gross_value; 2; ","; " ")}} zł</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OPCJONALNIE] DANE ROZLICZENIOWE
+                     Informacje o kupującym i firmie (do faktury).
+                     
+                     ZMIENNE:
+                     - {{purchaser_full}} → Imię i nazwisko
+                     - {{purchaser_email}} → Email
+                     - {{purchaser_mobile_no}} → Telefon
+                     - {{billing_company_name}} → Nazwa firmy
+                     - {{billing_address_full}} → Adres (wieloliniowy)
+                     - {{purchaser_nip}} → NIP
+                     
+                     KOLORY:
+                     - Nagłówek: {{color_gradient_1}}
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                      <tr>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 8px 6px; color: {{color_gradient_1}};">Dane rozliczeniowe</td>
+                      </tr>
+                      <tr class="two-column">
+                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                          <p style="margin-bottom: 2px; font-weight: bold;">{{purchaser_full}}</p>
+                          <p style="margin-bottom: 2px;">{{purchaser_email}}</p>
+                          <p>{{purchaser_mobile_no}}</p>
+                        </td>
+                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                          <p style="margin-bottom: 2px; font-weight: bold;">{{billing_company_name}}</p>
+                          <p style="margin-bottom: 2px;">{{billing_address_full}}</p>
+                          <p>NIP: {{purchaser_nip}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OPCJONALNIE] WALIDACJA NIP – POPRAWNY
+                     Pokazuje dane firmy z GUS (gdy NIP jest poprawny).
+                     
+                     ZMIENNE:
+                     - {{gus_nip}} → NIP z GUS
+                     - {{gus_name}} → Nazwa firmy
+                     - {{gus_street}} → Ulica
+                     - {{gus_zip}} → Kod pocztowy
+                     - {{gus_city}} → Miasto
+                     - {{gus_voivodeship}} → Województwo
+                     - {{gus_regon}} → REGON
+                     
+                     KOLORY:
+                     - Border/nagłówek: #4CAF50 (zielony)
+                     - Tło: #E8F5E9, #F1F8E9
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #4CAF50;">
+                      <tr>
+                        <td colspan="2" style="font-size: 14px; font-weight: bold; line-height: 24px; padding: 8px 6px; background-color: #E8F5E9; color: #2E7D32;">
+                          ✅ Weryfikacja NIP
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-size: 13px; padding: 8px 6px; background-color: #F1F8E9;">
+                          <p style="margin: 0 0 4px 0;"><strong>NIP:</strong> {{gus_nip}} — <span style="color: #2E7D32; font-weight: bold;">POPRAWNY</span></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colspan="2" style="font-size: 12px; padding: 8px 6px; color: #666; border-top: 1px dashed #C8E6C9;">
+                          <p style="margin: 0 0 2px 0; font-weight: bold; color: #333;">Dane z rejestru GUS:</p>
+                          <p style="margin: 0 0 2px 0;">🏢 {{gus_name}}</p>
+                          <p style="margin: 0 0 2px 0;">📍 {{gus_street}}, {{gus_zip}} {{gus_city}}</p>
+                          <p style="margin: 0 0 2px 0;">🗺️ woj. {{gus_voivodeship}}</p>
+                          <p style="margin: 0;">📋 REGON: {{gus_regon}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OPCJONALNIE] WALIDACJA NIP – NIEPOPRAWNY
+                     Ostrzeżenie o błędnym NIP + przycisk ponownej rejestracji.
+                     
+                     ZMIENNE:
+                     - {{purchaser_nip}} → Podany NIP
+                     - {{url_event}} → Link do ponownej rejestracji
+                     
+                     KOLORY:
+                     - Border/nagłówek: #FF9800 (pomarańczowy)
+                     - Tło: #FFF3E0, #FFF8E1
+                     - Przycisk: #E65100
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #FF9800;">
+                      <tr>
+                        <td style="font-size: 14px; font-weight: bold; line-height: 24px; padding: 8px 6px; background-color: #FFF3E0; color: #E65100;">
+                          ⚠️ Weryfikacja NIP
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="font-size: 13px; padding: 8px 6px; background-color: #FFF8E1;">
+                          <p style="margin: 0 0 4px 0;"><strong>NIP:</strong> {{purchaser_nip}} — <span style="color: #E65100; font-weight: bold;">NIEPOPRAWNY</span></p>
+                          <p style="margin: 0; font-size: 12px; color: #666;">Podany NIP nie przeszedł walidacji. Prosimy o weryfikację numeru.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="font-size: 12px; padding: 8px 6px; background-color: #FFF8E1; border-top: 1px dashed #FFE0B2;">
+                          <p style="margin: 0 0 8px 0; color: #E65100;">📄 <strong>Jeśli dokonasz płatności</strong>, faktura zostanie wystawiona na osobę fizyczną.</p>
+                          <p style="margin: 0; color: #333;">Aby otrzymać fakturę na firmę, dokonaj ponownie zamówienia z poprawnym NIP.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 6px; background-color: #FFF8E1; text-align: center;">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{url_event}}" style="v-text-anchor:middle; height:40px; width:200px" arcsize="5%" stroke="false" fillcolor="#E65100">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff; font-size:14px; font-weight:bold;">🔄 Zarejestruj się ponownie</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{{url_event}}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 10px 20px; background-color: #E65100; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 6px;">🔄 Zarejestruj się ponownie</a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OPCJONALNIE] BLOK INFORMACYJNY / OSTRZEŻENIE
+                     Uniwersalny blok do komunikatów specjalnych.
+                     
+                     TYPY:
+                     - INFO (niebieski): border #2196F3, tło #E3F2FD, tekst #1565C0
+                     - SUKCES (zielony): border #4CAF50, tło #E8F5E9, tekst #2E7D32
+                     - OSTRZEŻENIE (pomarańczowy): border #FF9800, tło #FFF3E0, tekst #E65100
+                     - BŁĄD (czerwony): border #D32F2F, tło #FFF5F5, tekst #D32F2F
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #2196F3;">
+                      <tr>
+                        <td style="font-size: 13px; padding: 8px 6px; background-color: #E3F2FD;">
+                          <p style="margin: 0; color: #1565C0;">ℹ️ <strong>[TYTUŁ INFORMACJI]</strong> – treść komunikatu.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- ═══════════════════════════════════════════════════════════════
+                     [OBOWIĄZKOWO] FOOTER / STOPKA
+                     Belka na dole maila z kontaktem.
+                     
+                     ZMIENNE:
+                     - {{md_email_kontakt}} → Email kontaktowy
+                     - [DODATKOWY TEKST] → np. "Masz pytania? Skontaktuj się..."
+                     
+                     KOLORY:
+                     - Background: {{color_gradient_1}} (ZAWSZE!)
+                     - Tekst: #ffffff (biały)
+                     
+                     UWAGA: Footer zawsze używa color_gradient_1 jako tło!
+                     ══════════════════════════════════════════════════════════════ -->
+                <tr>
+                  <td valign="top">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: {{color_gradient_1}};">
+                      <tr>
+                        <td style="padding: 10px 24px;">
+                          <p style="text-align: center; color: #ffffff; font-size: 14px;">
+                            Masz pytania? Skontaktuj się z nami: 
+                            <a href="mailto:{{md_email_kontakt}}" style="color: #ffffff; text-decoration: underline;">{{md_email_kontakt}}</a>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- 
+  ═══════════════════════════════════════════════════════════════════════════════
+  KONIEC MASTER TEMPLATE
+  ═══════════════════════════════════════════════════════════════════════════════
+  
+  PODSUMOWANIE ZMIENNYCH KOLORYSTYCZNYCH:
+  
+  {{color_gradient_1}} → UŻYWANY W:
+    - Przyciski CTA (background)
+    - Nagłówki sekcji (Szczegóły zamówienia, Dane rozliczeniowe)
+    - Footer (background) – ZAWSZE!
+    - MSO roundrect (fillcolor)
+  
+  {{color_gradient_2}} → UŻYWANY W:
+    - Akcenty tekstowe (wyróżnienia w nagłówkach)
+    - Linie podsumowania w tabelach (border-top)
+    - Background wierszy podsumowania (Razem do zapłaty)
+  
+  {{color_gradient_angle}} → UŻYWANY W:
+    - Gradienty linear-gradient (jeśli używane zamiast solid color)
+    - Przykład: background: linear-gradient({{color_gradient_angle}}deg, {{color_gradient_1}} 0%, {{color_gradient_2}} 100%)
+  
+  WERSJONOWANIE:
+  v1.0 – 2024 – Master template reference
+  ═══════════════════════════════════════════════════════════════════════════════
+  -->
+
+</body>
+</html>

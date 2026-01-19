@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>🚨 Make | Wydarzenie nie znalezione | #{{9.event_order_id}}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    p, h1, h2, h3, h4, h5, h6, ul {margin: 0;}
+    @media screen and (max-width: 620px) {
+      .main-table { width: 100% !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ════════════════════════════════════════════════════════════════════
+       MAIL WEWNĘTRZNY ALARMUJĄCY: Wydarzenie nie znalezione w Data Storage
+       Dane z JSON Parse (moduł 9)
+       ════════════════════════════════════════════════════════════════════ -->
+
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+    🚨 Make | Wydarzenie nie znalezione | #{{9.event_order_id}} | {{9.purchaser_email}}
+  </div>
+  
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;" bgcolor="#f5f5f5">
+    <tr>
+      <td style="padding: 16px">
+        <table border="0" width="600" cellpadding="0" cellspacing="0" class="main-table" style="width: 600px; margin: auto; max-width: 600px; font-family: Arial, sans-serif; font-size: 14px; background-color: #fff; border: 1px solid #ddd;" bgcolor="#ffffff">
+          
+          <!-- CZERWONY NAGŁÓWEK -->
+          <tr>
+            <td style="padding: 12px 20px; background-color: #D32F2F; text-align: center;" bgcolor="#D32F2F">
+              <p style="color: #fff; font-size: 16px; font-weight: bold; margin: 0;">🚨 BŁĄD MAKE – Wydarzenie nie znalezione w Data Storage</p>
+            </td>
+          </tr>
+
+          <!-- KOMUNIKAT -->
+          <tr>
+            <td style="padding: 16px 20px; background-color: #FFF5F5; border-bottom: 2px solid #D32F2F;" bgcolor="#FFF5F5">
+              <p style="font-size: 14px; color: #C62828; margin: 0;">Make nie mógł odnaleźć rekordu wydarzenia w Data Storage. Sprawdź konfigurację wydarzenia.</p>
+            </td>
+          </tr>
+
+          <!-- TABELA JAK W BACKSTAGE -->
+          <tr>
+            <td style="padding: 0 12px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                <!-- NAGŁÓWKI -->
+                <tr>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Purchaser Email</td>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Order ID</td>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Total</td>
+                  <td style="padding: 12px 8px; border-bottom: 2px solid #eee; font-size: 11px; color: #666; font-weight: normal;">Tickets</td>
+                </tr>
+                <!-- DANE -->
+                <tr>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{{9.purchaser_email}}</p>
+                  </td>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 14px; font-weight: bold; color: #D32F2F; margin: 0;">#{{9.event_order_id}}</p>
+                  </td>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 16px; font-weight: bold; color: #000; margin: 0;">{{9.total}}</p>
+                  </td>
+                  <td style="padding: 14px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
+                    <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{{9.tickets}}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- EVENTS INFO -->
+          <tr>
+            <td style="padding: 14px 20px; background-color: #f8f9fa;" bgcolor="#f8f9fa">
+              <p style="font-size: 11px; color: #888; margin: 0 0 4px 0;">Events (z webhooka)</p>
+              <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{{9.events}}</p>
+            </td>
+          </tr>
+
+          <!-- BUYER DETAILS -->
+          <tr>
+            <td style="padding: 16px 20px; border-top: 1px solid #eee;">
+              <p style="font-size: 12px; font-weight: bold; color: #666; text-transform: uppercase; margin: 0 0 8px 0;">Buyer Details</p>
+              <table width="100%" cellpadding="4" cellspacing="0" style="font-size: 12px; background-color: #fafafa; border: 1px solid #eee;">
+                <tr>
+                  <td style="color: #888; border-bottom: 1px solid #eee; width: 120px;">buyer_details</td>
+                  <td style="word-break: break-all; border-bottom: 1px solid #eee;">{{9.buyer_details}}</td>
+                </tr>
+                <tr>
+                  <td style="color: #888; border-bottom: 1px solid #eee;">billing</td>
+                  <td style="word-break: break-all; border-bottom: 1px solid #eee;">{{9.billing}}</td>
+                </tr>
+                <tr>
+                  <td style="color: #888;">tickets_types</td>
+                  <td style="word-break: break-all;">{{9.tickets_types}}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CO SPRAWDZIĆ -->
+          <tr>
+            <td style="padding: 16px 20px; background-color: #FFF5F5;" bgcolor="#FFF5F5">
+              <p style="font-size: 12px; font-weight: bold; color: #C62828; margin: 0 0 8px 0;">Co sprawdzić:</p>
+              <ul style="font-size: 13px; color: #333; margin: 0; padding-left: 20px;">
+                <li>Czy wydarzenie istnieje w Data Storage?</li>
+                <li>Czy klucz wydarzenia jest poprawny?</li>
+                <li>Czy webhook zawiera prawidłowe dane?</li>
+              </ul>
+            </td>
+          </tr>
+
+          <!-- RAW DATA -->
+          <tr>
+            <td style="padding: 16px 20px;">
+              <p style="font-size: 12px; font-weight: bold; color: #666; text-transform: uppercase; margin: 0 0 8px 0;">Raw Webhook Data</p>
+              <div style="background-color: #f5f5f5; border: 1px solid #ddd; padding: 12px; font-family: monospace; font-size: 11px; word-break: break-all; max-height: 150px; overflow: auto;">
+                {{9.raw}}
+              </div>
+            </td>
+          </tr>
+
+          <!-- PRZYCISK BACKSTAGE (skonstruowany link) -->
+          <tr>
+            <td style="padding: 16px 20px; text-align: center;">
+              <a href="https://backstage.zoho.eu/home#/portal/20101549222/brand/24311000000002010/event/{{9.eventOrder_eventId}}/overview" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: #D32F2F; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold;">Otwórz w Backstage</a>
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="padding: 10px 20px; background-color: #333; text-align: center;" bgcolor="#333333">
+              <p style="color: #999; font-size: 11px; margin: 0;">Powiadomienie wewnętrzne Make</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+
