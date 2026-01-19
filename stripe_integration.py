@@ -294,14 +294,36 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     print(f"[STRIPE] handle_checkout_completed | session={checkout_session_id}, payment_intent={payment_intent_id}, order={event_order_id}")
     
     if not checkout_session_id:
+        print("[STRIPE] ERROR: Brak checkout_session_id w session_data")
         return {"status": "error", "error": "Brak checkout_session_id"}
     
     if not event_order_id:
+        print(f"[STRIPE] ERROR: Brak event_order_id w metadata/client_reference_id | metadata_keys={list(metadata.keys())}")
         return {"status": "error", "error": "Brak event_order_id w metadata/client_reference_id"}
     
     # Sprawdź czy sesja istnieje w bazie
     existing = get_stripe_session_by_checkout_id(checkout_session_id)
+    try:
+        print(f"[STRIPE] existing stripe_session | found={bool(existing)}, status={(existing or {}).get('status')}, order_id={(existing or {}).get('event_order_id')}")
+    except Exception:
+        pass
     if existing and existing.get("status") == "paid":
+        # Dodatkowa diagnostyka: czy mamy już dokumenty w wFirma dla tego zamówienia?
+        try:
+            from pg_storage import get_wfirma_documents
+            docs = get_wfirma_documents(event_order_id)
+            docs_preview = []
+            for d in (docs or [])[:3]:
+                docs_preview.append({
+                    "id": d.get("id"),
+                    "wfirma_number": d.get("wfirma_number"),
+                    "document_type": d.get("document_type"),
+                    "status": d.get("status"),
+                    "created_at": str(d.get("created_at"))[:19] if d.get("created_at") else None,
+                })
+            print(f"[STRIPE] DUPLICATE: payment already processed | wfirma_docs_count={len(docs or [])}, docs_preview={docs_preview}")
+        except Exception as e:
+            print(f"[STRIPE] DUPLICATE: nie udało się pobrać wfirma_documents: {e}")
         return {
             "status": "duplicate",
             "message": "Płatność już została przetworzona",
@@ -309,9 +331,11 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     # Oznacz sesję jako opłaconą
+    print(f"[STRIPE] update_stripe_session_paid | session={checkout_session_id}, payment_intent={payment_intent_id}")
     update_stripe_session_paid(checkout_session_id, payment_intent_id)
     
     # Aktualizuj status zamówienia
+    print(f"[STRIPE] update_order_status -> paid | order={event_order_id}")
     update_order_status(event_order_id, "paid")
     
     # Pobierz dane zamówienia i eventu do mail tasks

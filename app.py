@@ -1963,6 +1963,10 @@ def stripe_sandbox_webhook():
         
         result = process_webhook_event(event_type, event_data)
         result['mode'] = 'sandbox'
+        try:
+            print(f"[STRIPE SANDBOX WEBHOOK] result_status={(result or {}).get('status')}, order_id={(result or {}).get('order_id')}")
+        except Exception:
+            pass
 
         # Upewnij się, że zwracany JSON nie zawiera Decimal itp.
         try:
