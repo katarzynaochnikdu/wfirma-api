@@ -1528,6 +1528,440 @@ def db_status():
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
+
+# ---------------------------------------------------------------------------
+# BACKSTAGE ENGINE - obsługa webhooków z Zoho Backstage
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/backstage/order', methods=['POST'])
+@require_api_key
+def backstage_order():
+    """
+    Endpoint do obsługi webhooków z Zoho Backstage.
+    
+    Przyjmuje payload z zamówieniem, routuje do odpowiedniego flow:
+    - FOC (Free of Charge) - total=0
+    - PROFORMA - wystawiamy proformę w wFirma
+    - STRIPE - generujemy link do płatności online
+    
+    Zwraca listę mail_tasks do wysłania przez Make.com
+    oraz (opcjonalnie) akcje do wykonania w wFirma/Stripe.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Body (JSON): payload z Backstage (struktura zależna od konfiguracji webhooka)
+    
+    Response:
+    {
+        "status": "ok" | "error" | "duplicate",
+        "order_id": "...",
+        "flow": "FOC" | "PROFORMA" | "STRIPE",
+        "order_status": "paid" | "pending_payment",
+        "mail_tasks": [...],
+        "wfirma_action": {...},  // tylko dla PROFORMA
+        "stripe_action": {...},  // tylko dla STRIPE
+        "error": "..."  // tylko gdy status=error
+    }
+    """
+    try:
+        from backstage_engine import process_backstage_order
+        
+        payload = request.get_json(silent=True)
+        if not payload:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak JSON payload w request body'
+            }), 400
+        
+        result = process_backstage_order(payload)
+        
+        # Zwróć odpowiedni status HTTP
+        if result.get('status') == 'error':
+            return jsonify(result), 400
+        if result.get('status') == 'duplicate':
+            return jsonify(result), 200  # OK, ale już przetworzony
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+# ---------------------------------------------------------------------------
+# STRIPE INTEGRATION
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/stripe/status', methods=['GET'])
+@require_api_key
+def stripe_status():
+    """
+    Diagnostyka Stripe - sprawdza czy klucz API jest skonfigurowany.
+    """
+    try:
+        from stripe_integration import _get_stripe_status
+        return jsonify(_get_stripe_status())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stripe/create-session', methods=['POST'])
+@require_api_key
+def stripe_create_session():
+    """
+    Tworzy Stripe Checkout Session.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Body (JSON):
+    {
+        "event_order_id": "...",
+        "amount": 299.00,  // kwota w PLN (zostanie przeliczona na grosze)
+        "currency": "PLN",
+        "customer_email": "...",
+        "description": "...",
+        "success_url": "https://...",
+        "cancel_url": "https://...",
+        "metadata": {...}
+    }
+    
+    Response:
+    {
+        "status": "ok",
+        "checkout_session_id": "cs_...",
+        "url": "https://checkout.stripe.com/...",
+        "amount_cents": 29900,
+        "currency": "PLN"
+    }
+    """
+    try:
+        from stripe_integration import create_checkout_session, is_stripe_configured
+        
+        if not is_stripe_configured():
+            return jsonify({
+                'status': 'error',
+                'error': 'Stripe nie jest skonfigurowany (brak STRIPE_RENDER_API_KEY)'
+            }), 500
+        
+        body = request.get_json(silent=True) or {}
+        
+        event_order_id = (body.get('event_order_id') or '').strip()
+        if not event_order_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Wymagany parametr: event_order_id'
+            }), 400
+        
+        # Kwota - przyjmujemy w PLN, przeliczamy na grosze
+        amount = body.get('amount', 0)
+        try:
+            amount_cents = int(float(amount) * 100)
+        except (ValueError, TypeError):
+            return jsonify({
+                'status': 'error',
+                'error': 'Nieprawidłowa kwota (amount)'
+            }), 400
+        
+        if amount_cents <= 0:
+            return jsonify({
+                'status': 'error',
+                'error': 'Kwota musi być większa od 0'
+            }), 400
+        
+        currency = (body.get('currency') or 'PLN').upper()
+        customer_email = (body.get('customer_email') or '').strip() or None
+        description = (body.get('description') or '').strip() or None
+        success_url = (body.get('success_url') or '').strip()
+        cancel_url = (body.get('cancel_url') or '').strip()
+        metadata = body.get('metadata') or {}
+        
+        result, error = create_checkout_session(
+            event_order_id=event_order_id,
+            amount_cents=amount_cents,
+            currency=currency.lower(),
+            customer_email=customer_email,
+            description=description,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata,
+        )
+        
+        if error:
+            return jsonify({
+                'status': 'error',
+                'error': error
+            }), 400
+        
+        return jsonify({
+            'status': 'ok',
+            **result
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    """
+    Webhook Stripe - odbiera eventy o płatnościach.
+    
+    UWAGA: Ten endpoint NIE wymaga X-API-Key!
+    Zamiast tego weryfikuje podpis Stripe (header Stripe-Signature).
+    
+    Obsługiwane eventy:
+    - checkout.session.completed - płatność zakończona sukcesem
+    
+    Response:
+    {
+        "status": "ok",
+        "order_id": "...",
+        "order_status": "paid",
+        "mail_tasks": [...],
+        "wfirma_action": {...}
+    }
+    """
+    try:
+        from stripe_integration import verify_webhook_signature, process_webhook_event
+        
+        # Pobierz raw body (potrzebne do weryfikacji podpisu)
+        payload = request.get_data()
+        signature = request.headers.get('Stripe-Signature', '')
+        
+        # Weryfikuj podpis
+        is_valid, error = verify_webhook_signature(payload, signature)
+        if not is_valid:
+            return jsonify({
+                'status': 'error',
+                'error': error or 'Invalid signature'
+            }), 400
+        
+        # Parsuj JSON
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid JSON payload'
+            }), 400
+        
+        event_type = event.get('type', '')
+        event_data = event.get('data', {}).get('object', {})
+        
+        # Przetwórz event
+        result = process_webhook_event(event_type, event_data)
+        
+        # Stripe wymaga 200 OK nawet dla zignorowanych eventów
+        return jsonify(result), 200
+        
+    except Exception as e:
+        # Loguj błąd ale zwróć 200 żeby Stripe nie ponawiał
+        print(f"[STRIPE WEBHOOK ERROR] {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 200
+
+
+# ---------------------------------------------------------------------------
+# MAIL TASKS API (dla Make.com)
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/mail-tasks', methods=['GET'])
+@require_api_key
+def list_mail_tasks():
+    """
+    Pobiera listę oczekujących maili do wysłania.
+    Make.com może pollować ten endpoint żeby pobierać nowe taski.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Query params:
+        limit: max liczba tasków (domyślnie 50)
+    
+    Response:
+    {
+        "status": "ok",
+        "count": 3,
+        "mail_tasks": [
+            {
+                "id": 123,
+                "event_order_id": "...",
+                "direction": "purchaser",
+                "template": "payment_confirmation",
+                "to": "klient@email.com",
+                "subject": "Potwierdzenie płatności",
+                "data": {...},
+                "created_at": "..."
+            }
+        ]
+    }
+    """
+    try:
+        from pg_storage import list_pending_mail_tasks
+        
+        limit = int(request.args.get('limit', 50))
+        if limit < 1:
+            limit = 1
+        if limit > 200:
+            limit = 200
+        
+        tasks = list_pending_mail_tasks(limit=limit)
+        
+        # Formatuj odpowiedź w strukturze dla Make.com
+        formatted_tasks = []
+        for t in tasks:
+            formatted_tasks.append({
+                "id": t.get("id"),
+                "event_order_id": t.get("event_order_id"),
+                "direction": t.get("direction"),
+                "template": t.get("template_key"),
+                "to": t.get("to_email"),
+                "subject": t.get("subject"),
+                "data": t.get("data") or {},
+                "created_at": str(t.get("created_at", "")),
+            })
+        
+        return jsonify({
+            "status": "ok",
+            "count": len(formatted_tasks),
+            "mail_tasks": formatted_tasks,
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/mail-tasks/<int:mail_id>', methods=['GET'])
+@require_api_key
+def get_mail_task_detail(mail_id: int):
+    """
+    Pobiera szczegóły pojedynczego mail taska.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Response:
+    {
+        "status": "ok",
+        "mail_task": {
+            "id": 123,
+            "event_order_id": "...",
+            "direction": "purchaser",
+            "template": "payment_confirmation",
+            "to": "klient@email.com",
+            "subject": "Potwierdzenie płatności",
+            "data": {...},
+            "status": "queued",
+            "created_at": "..."
+        }
+    }
+    """
+    try:
+        from pg_storage import get_mail_task
+        
+        task = get_mail_task(mail_id)
+        if not task:
+            return jsonify({
+                'status': 'error',
+                'error': 'Mail task nie znaleziony'
+            }), 404
+        
+        return jsonify({
+            "status": "ok",
+            "mail_task": {
+                "id": task.get("id"),
+                "event_order_id": task.get("event_order_id"),
+                "direction": task.get("direction"),
+                "template": task.get("template_key"),
+                "to": task.get("to_email"),
+                "subject": task.get("subject"),
+                "data": task.get("data") or {},
+                "status": task.get("status"),
+                "error": task.get("error"),
+                "created_at": str(task.get("created_at", "")),
+            },
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/mail-tasks/<int:mail_id>/mark-sent', methods=['POST'])
+@require_api_key
+def mark_mail_task_sent(mail_id: int):
+    """
+    Oznacza mail task jako wysłany (lub nieudany).
+    Make.com wywołuje ten endpoint po wysłaniu maila.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Body (JSON, opcjonalnie):
+    {
+        "error": "Treść błędu jeśli wysyłka nieudana"
+    }
+    
+    Response:
+    {
+        "status": "ok",
+        "mail_task": {
+            "id": 123,
+            "status": "sent"
+        }
+    }
+    """
+    try:
+        from pg_storage import mark_mail_sent, get_mail_task
+        
+        # Sprawdź czy task istnieje
+        task = get_mail_task(mail_id)
+        if not task:
+            return jsonify({
+                'status': 'error',
+                'error': 'Mail task nie znaleziony'
+            }), 404
+        
+        # Pobierz opcjonalny błąd z body
+        body = request.get_json(silent=True) or {}
+        error = (body.get('error') or '').strip() or None
+        
+        # Oznacz jako wysłany/nieudany
+        updated = mark_mail_sent(mail_id, error=error)
+        
+        return jsonify({
+            "status": "ok",
+            "mail_task": {
+                "id": updated.get("id") if updated else mail_id,
+                "status": updated.get("status") if updated else ("failed" if error else "sent"),
+                "error": updated.get("error") if updated else error,
+            },
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @app.route('/auth')
 def auth():
     """

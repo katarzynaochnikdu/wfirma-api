@@ -14,6 +14,16 @@ from pg_storage import (
     parse_kv_lines,
     replace_ticket_classes,
     upsert_event,
+    # Payment rules
+    list_payment_rules,
+    get_payment_rule,
+    upsert_payment_rule,
+    delete_payment_rule,
+    # Orders
+    list_orders,
+    get_order,
+    update_order_status,
+    get_wfirma_documents,
 )
 
 
@@ -405,6 +415,7 @@ def events_list():
     <div style="margin-bottom:14px;">
       <a class="btn btnPrimary" href="{url_for('admin_bp.event_new', token=token)}">+ Nowe wydarzenie</a>
       <a class="btn" style="margin-left:10px;" href="{url_for('admin_bp.import_page', token=token)}">Import CSV</a>
+      <a class="btn" style="margin-left:10px; background:#e3f2fd;" href="{url_for('admin_bp.orders_list', token=token)}">Zamówienia</a>
       <span class="muted" style="margin-left:10px;">Zalecane: trzymaj token tylko u adminów.</span>
     </div>
     <div class="grid">
@@ -697,8 +708,10 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
         )
 
     preview_link = ""
+    rules_link = ""
     if event_id:
         preview_link = f'<a class="btn" href="{url_for("admin_bp.event_preview", event_id=event_id, token=token)}">Podgląd</a>'
+        rules_link = f'<a class="btn" style="background:#e3f2fd;" href="{url_for("admin_bp.payment_rules_list", event_id=event_id, token=token)}">Reguły płatności</a>'
 
     delete_form = ""
     if event_id:
@@ -713,6 +726,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     <div style="margin-bottom:12px;">
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
       {preview_link}
+      {rules_link}
       {delete_form}
     </div>
 
@@ -778,6 +792,564 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     </div>
     """
     return _page("Edytuj wydarzenie" if not is_new else "Nowe wydarzenie", body)
+
+
+# ---------------------------------------------------------------------------
+# PAYMENT RULES MANAGEMENT
+# ---------------------------------------------------------------------------
+
+FLOW_OPTIONS = ["FOC", "PROFORMA", "STRIPE"]
+WFIRMA_DOC_TYPES = ["proforma", "normal", "proforma_bill"]
+
+
+@admin_bp.route("/events/<event_id>/rules", methods=["GET"])
+def payment_rules_list(event_id: str):
+    """Lista reguł płatności dla eventu."""
+    token = _require_admin_token()
+    ev = get_event(event_id)
+    if not ev:
+        abort(404, description="Nie znaleziono eventu")
+
+    rules = list_payment_rules(event_id)
+
+    rows = []
+    for r in rules:
+        flow = r.get("flow", "")
+        flow_class = {
+            "FOC": "background:#ecfdf3;",
+            "PROFORMA": "background:#fff8e1;",
+            "STRIPE": "background:#e3f2fd;",
+        }.get(flow, "")
+
+        pattern = r.get("payment_option_name_pattern") or ""
+        ptype = r.get("payment_type")
+        is_default = r.get("is_default")
+
+        match_desc = []
+        if pattern:
+            match_desc.append(f'nazwa zawiera: <code>{pattern}</code>')
+        if ptype is not None:
+            match_desc.append(f'payment_type = <code>{ptype}</code>')
+        if is_default:
+            match_desc.append('<span class="pill" style="background:#fef3c7;">DOMYŚLNA</span>')
+        if not match_desc:
+            match_desc.append('<span class="muted">brak warunków</span>')
+
+        rows.append(f"""
+            <div class="card" style="margin-bottom:10px;">
+              <div style="display:flex; justify-content:space-between; align-items:start; gap:10px;">
+                <div>
+                  <div style="font-weight:700;">
+                    <span class="pill" style="{flow_class}">{flow}</span>
+                  </div>
+                  <div class="muted" style="margin-top:6px;">
+                    Dopasowanie: {' | '.join(match_desc)}
+                  </div>
+                  <div class="muted" style="margin-top:4px;">
+                    wFirma: {r.get('wfirma_document_type') or '—'} / seria: {r.get('wfirma_series_name') or '—'}
+                  </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <a class="btn" href="{url_for('admin_bp.payment_rule_edit', event_id=event_id, rule_id=r.get('id'), token=token)}">Edytuj</a>
+                  <form method="post" action="{url_for('admin_bp.payment_rule_delete', event_id=event_id, rule_id=r.get('id'))}" onsubmit="return confirm('Usunąć regułę?');" style="display:inline;">
+                    <input type="hidden" name="token" value="{token}" />
+                    <button class="btn btnDanger" type="submit">Usuń</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+        """)
+
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do eventu</a>
+      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-weight:700;">{ev.get('event_name', '')}</div>
+      <div class="muted"><code>{event_id}</code></div>
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <a class="btn btnPrimary" href="{url_for('admin_bp.payment_rule_new', event_id=event_id, token=token)}">+ Nowa reguła płatności</a>
+    </div>
+
+    <div class="muted" style="margin-bottom:10px;">
+      <b>Jak działa routing?</b><br/>
+      1. Jeśli <code>total = 0</code> → zawsze <b>FOC</b> (Free of Charge)<br/>
+      2. Inaczej: dopasuj regułę po <code>payment_option_name</code> (zawiera) lub <code>payment_type</code><br/>
+      3. Jeśli brak dopasowania → użyj reguły domyślnej
+    </div>
+
+    {''.join(rows) if rows else '<div class="muted">Brak reguł. Dodaj pierwszą regułę płatności.</div>'}
+    """
+    return _page(f"Reguły płatności – {ev.get('event_name', '')}", body)
+
+
+@admin_bp.route("/events/<event_id>/rules/new", methods=["GET"])
+def payment_rule_new(event_id: str):
+    """Formularz nowej reguły płatności."""
+    token = _require_admin_token()
+    ev = get_event(event_id)
+    if not ev:
+        abort(404, description="Nie znaleziono eventu")
+    return _payment_rule_form(token, ev, rule=None)
+
+
+@admin_bp.route("/events/<event_id>/rules/<int:rule_id>/edit", methods=["GET"])
+def payment_rule_edit(event_id: str, rule_id: int):
+    """Formularz edycji reguły płatności."""
+    token = _require_admin_token()
+    ev = get_event(event_id)
+    if not ev:
+        abort(404, description="Nie znaleziono eventu")
+    rule = get_payment_rule(rule_id)
+    if not rule or rule.get("event_id") != event_id:
+        abort(404, description="Nie znaleziono reguły")
+    return _payment_rule_form(token, ev, rule=rule)
+
+
+@admin_bp.route("/events/<event_id>/rules/save", methods=["POST"])
+def payment_rule_save(event_id: str):
+    """Zapisuje regułę płatności."""
+    token = _require_admin_token()
+    ev = get_event(event_id)
+    if not ev:
+        abort(404, description="Nie znaleziono eventu")
+
+    rule_id_str = (request.form.get("rule_id") or "").strip()
+    rule_id = int(rule_id_str) if rule_id_str else None
+
+    flow = (request.form.get("flow") or "").strip().upper()
+    if flow not in FLOW_OPTIONS:
+        body = f'<div class="error">Nieprawidłowy flow: {flow}</div><p><a class="btn" href="{url_for("admin_bp.payment_rules_list", event_id=event_id, token=token)}">Wróć</a></p>'
+        return _page("Błąd", body), 400
+
+    payment_option_name_pattern = (request.form.get("payment_option_name_pattern") or "").strip() or None
+    payment_type_str = (request.form.get("payment_type") or "").strip()
+    payment_type = int(payment_type_str) if payment_type_str else None
+    is_default = (request.form.get("is_default") or "").lower() == "on"
+
+    wfirma_company = (request.form.get("wfirma_company") or "").strip() or None
+    wfirma_series_name = (request.form.get("wfirma_series_name") or "").strip() or None
+    wfirma_document_type = (request.form.get("wfirma_document_type") or "").strip() or None
+    wfirma_payment_due_days_str = (request.form.get("wfirma_payment_due_days") or "").strip()
+    wfirma_payment_due_days = int(wfirma_payment_due_days_str) if wfirma_payment_due_days_str else None
+
+    upsert_payment_rule(
+        event_id=event_id,
+        flow=flow,
+        rule_id=rule_id,
+        payment_option_id=None,
+        payment_type=payment_type,
+        payment_option_name_pattern=payment_option_name_pattern,
+        is_default=is_default,
+        wfirma_company=wfirma_company,
+        wfirma_series_name=wfirma_series_name,
+        wfirma_document_type=wfirma_document_type,
+        wfirma_payment_due_days=wfirma_payment_due_days,
+    )
+
+    return redirect(url_for("admin_bp.payment_rules_list", event_id=event_id, token=token))
+
+
+@admin_bp.route("/events/<event_id>/rules/<int:rule_id>/delete", methods=["POST"])
+def payment_rule_delete(event_id: str, rule_id: int):
+    """Usuwa regułę płatności."""
+    token = _require_admin_token()
+    delete_payment_rule(rule_id)
+    return redirect(url_for("admin_bp.payment_rules_list", event_id=event_id, token=token))
+
+
+def _payment_rule_form(token: str, event: Dict[str, Any], rule: Optional[Dict[str, Any]]) -> str:
+    """Renderuje formularz reguły płatności."""
+    is_new = rule is None
+    event_id = event.get("event_id", "")
+    event_name = event.get("event_name", "")
+
+    rule_id = "" if is_new else (rule.get("id") or "")
+    flow = "" if is_new else (rule.get("flow") or "")
+    payment_option_name_pattern = "" if is_new else (rule.get("payment_option_name_pattern") or "")
+    payment_type = "" if is_new else (rule.get("payment_type") if rule.get("payment_type") is not None else "")
+    is_default = False if is_new else bool(rule.get("is_default"))
+    wfirma_company = "" if is_new else (rule.get("wfirma_company") or "")
+    wfirma_series_name = "" if is_new else (rule.get("wfirma_series_name") or "")
+    wfirma_document_type = "" if is_new else (rule.get("wfirma_document_type") or "")
+    wfirma_payment_due_days = "" if is_new else (rule.get("wfirma_payment_due_days") if rule.get("wfirma_payment_due_days") is not None else "")
+
+    flow_options_html = "".join(
+        f'<option value="{f}" {"selected" if f == flow else ""}>{f}</option>'
+        for f in FLOW_OPTIONS
+    )
+
+    doc_type_options_html = '<option value="">— (domyślny)</option>' + "".join(
+        f'<option value="{d}" {"selected" if d == wfirma_document_type else ""}>{d}</option>'
+        for d in WFIRMA_DOC_TYPES
+    )
+
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.payment_rules_list', event_id=event_id, token=token)}">← Wróć do listy reguł</a>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-weight:700;">{event_name}</div>
+      <div class="muted"><code>{event_id}</code></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:10px;">{'Nowa reguła' if is_new else 'Edytuj regułę'}</div>
+        <form method="post" action="{url_for('admin_bp.payment_rule_save', event_id=event_id)}">
+          <input type="hidden" name="token" value="{token}" />
+          <input type="hidden" name="rule_id" value="{rule_id}" />
+
+          <div class="muted">Flow (typ przepływu) *</div>
+          <select name="flow" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc;">
+            <option value="">— wybierz —</option>
+            {flow_options_html}
+          </select>
+          <div class="formHint">
+            <b>FOC</b> = Free of Charge (darmowe, tylko mail)<br/>
+            <b>PROFORMA</b> = wystawiamy proformę w wFirma, czekamy na przelew<br/>
+            <b>STRIPE</b> = generujemy link do płatności online
+          </div>
+          <div style="height:14px;"></div>
+
+          <div class="muted">Dopasowanie: payment_option_name zawiera</div>
+          <input type="text" name="payment_option_name_pattern" value="{payment_option_name_pattern}" placeholder="np. Pro-forma lub online" />
+          <div class="formHint">Jeśli nazwa opcji płatności (z Backstage) zawiera ten tekst → reguła pasuje.</div>
+          <div style="height:10px;"></div>
+
+          <div class="muted">Dopasowanie: payment_type (opcjonalnie)</div>
+          <input type="text" name="payment_type" value="{payment_type}" placeholder="np. 4" />
+          <div class="formHint">Dokładna wartość payment_type z Backstage (liczbowa).</div>
+          <div style="height:10px;"></div>
+
+          <div>
+            <label>
+              <input type="checkbox" name="is_default" {"checked" if is_default else ""} />
+              Reguła domyślna (fallback)
+            </label>
+          </div>
+          <div class="formHint">Użyta gdy żadna inna reguła nie pasuje.</div>
+          <div style="height:14px;"></div>
+
+          <div style="border-top:1px solid #eee; padding-top:14px; margin-top:10px;">
+            <div class="muted" style="font-weight:700;">Ustawienia wFirma (dla PROFORMA / STRIPE)</div>
+          </div>
+          <div style="height:10px;"></div>
+
+          <div class="muted">wfirma_company</div>
+          <input type="text" name="wfirma_company" value="{wfirma_company}" placeholder="np. md lub test" />
+          <div class="formHint">Który zestaw tokenów wFirma (md/test/md_test).</div>
+          <div style="height:10px;"></div>
+
+          <div class="muted">wfirma_series_name</div>
+          <input type="text" name="wfirma_series_name" value="{wfirma_series_name}" placeholder="np. FV/2026" />
+          <div class="formHint">Seria numeracji faktury/proformy.</div>
+          <div style="height:10px;"></div>
+
+          <div class="muted">wfirma_document_type</div>
+          <select name="wfirma_document_type" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc;">
+            {doc_type_options_html}
+          </select>
+          <div class="formHint">Typ dokumentu: proforma / normal / proforma_bill.</div>
+          <div style="height:10px;"></div>
+
+          <div class="muted">wfirma_payment_due_days</div>
+          <input type="text" name="wfirma_payment_due_days" value="{wfirma_payment_due_days}" placeholder="np. 14" />
+          <div class="formHint">Termin płatności w dniach.</div>
+          <div style="height:14px;"></div>
+
+          <button class="btn btnPrimary" type="submit">Zapisz</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:10px;">Instrukcja</div>
+        <div class="muted">
+          <b>Jak działa routing płatności?</b><br/><br/>
+          1. Jeśli <code>total = 0</code> → zawsze <b>FOC</b><br/>
+          2. Dopasuj regułę:<br/>
+          &nbsp;&nbsp;• najpierw po <code>payment_option_name</code><br/>
+          &nbsp;&nbsp;• potem po <code>payment_type</code><br/>
+          3. Jeśli brak dopasowania → reguła domyślna<br/><br/>
+          <b>Typowa konfiguracja:</b><br/>
+          • Reguła 1: pattern = <code>Pro-forma</code> → flow = <code>PROFORMA</code><br/>
+          • Reguła 2: pattern = <code>online</code> → flow = <code>STRIPE</code><br/>
+          • Reguła 3: domyślna → flow = <code>STRIPE</code> (fallback)
+        </div>
+      </div>
+    </div>
+    """
+    return _page("Reguła płatności", body)
+
+
+# ---------------------------------------------------------------------------
+# ORDERS MANAGEMENT
+# ---------------------------------------------------------------------------
+
+ORDER_STATUS_LABELS = {
+    "received": ("Otrzymane", "background:#f3f4f6;"),
+    "pending_payment": ("Oczekuje na płatność", "background:#fff8e1;"),
+    "paid": ("Opłacone", "background:#ecfdf3;"),
+    "failed": ("Błąd", "background:#fff5f5;"),
+    "cancelled": ("Anulowane", "background:#f3f4f6;"),
+}
+
+
+@admin_bp.route("/orders", methods=["GET"])
+def orders_list():
+    """Lista zamówień z filtrowaniem."""
+    token = _require_admin_token()
+
+    # Filtrowanie
+    status_filter = (request.args.get("status") or "").strip()
+    event_filter = (request.args.get("event_id") or "").strip()
+
+    orders = list_orders(
+        event_id=event_filter or None,
+        status=status_filter or None,
+        limit=200,
+    )
+
+    # Pobierz listę eventów do filtrowania
+    events = list_events(limit=100)
+    event_options = "".join(
+        f'<option value="{e.get("event_id", "")}" {"selected" if e.get("event_id") == event_filter else ""}>{e.get("event_name", "")}</option>'
+        for e in events
+    )
+
+    status_options = "".join(
+        f'<option value="{s}" {"selected" if s == status_filter else ""}>{label}</option>'
+        for s, (label, _) in ORDER_STATUS_LABELS.items()
+    )
+
+    rows = []
+    for o in orders:
+        status = o.get("status", "received")
+        label, style = ORDER_STATUS_LABELS.get(status, ("?", ""))
+        total = o.get("total") or 0
+        currency = o.get("currency", "PLN")
+
+        rows.append(f"""
+            <tr>
+              <td><a href="{url_for('admin_bp.order_detail', order_id=o.get('event_order_id', ''), token=token)}"><code>{o.get('event_order_id', '')[:16]}...</code></a></td>
+              <td>{o.get('purchaser_email', '') or '—'}</td>
+              <td>{o.get('purchaser_first_name', '')} {o.get('purchaser_last_name', '')}</td>
+              <td style="text-align:right;">{total:.2f} {currency}</td>
+              <td><span class="pill" style="{style}">{label}</span></td>
+              <td class="muted">{str(o.get('created_at', ''))[:16]}</td>
+            </tr>
+        """)
+
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <form method="get" action="{url_for('admin_bp.orders_list')}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+        <input type="hidden" name="token" value="{token}" />
+        <div>
+          <div class="muted">Status</div>
+          <select name="status" style="padding:8px; border-radius:6px; border:1px solid #ccc;">
+            <option value="">— wszystkie —</option>
+            {status_options}
+          </select>
+        </div>
+        <div>
+          <div class="muted">Wydarzenie</div>
+          <select name="event_id" style="padding:8px; border-radius:6px; border:1px solid #ccc;">
+            <option value="">— wszystkie —</option>
+            {event_options}
+          </select>
+        </div>
+        <button class="btn" type="submit">Filtruj</button>
+        <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">Wyczyść</a>
+      </form>
+    </div>
+
+    <div class="card">
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <thead>
+          <tr style="border-bottom:2px solid #eee;">
+            <th style="text-align:left; padding:8px;">ID</th>
+            <th style="text-align:left; padding:8px;">Email</th>
+            <th style="text-align:left; padding:8px;">Nabywca</th>
+            <th style="text-align:right; padding:8px;">Kwota</th>
+            <th style="text-align:left; padding:8px;">Status</th>
+            <th style="text-align:left; padding:8px;">Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(rows) if rows else '<tr><td colspan="6" class="muted" style="padding:20px; text-align:center;">Brak zamówień</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    """
+    return _page("Zamówienia", body)
+
+
+@admin_bp.route("/orders/<order_id>", methods=["GET"])
+def order_detail(order_id: str):
+    """Szczegóły zamówienia."""
+    token = _require_admin_token()
+
+    order = get_order(order_id)
+    if not order:
+        abort(404, description="Nie znaleziono zamówienia")
+
+    status = order.get("status", "received")
+    label, style = ORDER_STATUS_LABELS.get(status, ("?", ""))
+    total = order.get("total") or 0
+    currency = order.get("currency", "PLN")
+    event_id = order.get("event_id", "")
+
+    # Pobierz event
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+
+    # Pobierz dokumenty wFirma
+    wfirma_docs = get_wfirma_documents(order_id)
+    docs_html = ""
+    if wfirma_docs:
+        docs_rows = "".join(
+            f"<tr><td>{d.get('document_type', '')}</td><td><code>{d.get('wfirma_number', '')}</code></td><td>{d.get('status', '')}</td></tr>"
+            for d in wfirma_docs
+        )
+        docs_html = f"""
+        <div style="margin-top:16px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">Dokumenty wFirma</div>
+          <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <tr style="border-bottom:1px solid #eee;"><th style="text-align:left;">Typ</th><th style="text-align:left;">Numer</th><th style="text-align:left;">Status</th></tr>
+            {docs_rows}
+          </table>
+        </div>
+        """
+
+    # Przycisk "Oznacz jako opłacone" tylko dla pending_payment
+    mark_paid_form = ""
+    if status == "pending_payment":
+        mark_paid_form = f"""
+        <div style="margin-top:16px; padding-top:16px; border-top:1px solid #eee;">
+          <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" onsubmit="return confirm('Oznaczyć zamówienie jako opłacone? Zostanie wygenerowana faktura VAT.');">
+            <input type="hidden" name="token" value="{token}" />
+            <button class="btn btnPrimary" type="submit">Oznacz jako opłacone</button>
+            <span class="muted" style="margin-left:10px;">Po kliknięciu: status → paid, wygenerowany mail task do faktury</span>
+          </form>
+        </div>
+        """
+
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
+      {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:start;">
+        <div>
+          <div style="font-weight:700;">Zamówienie</div>
+          <div class="muted"><code>{order_id}</code></div>
+        </div>
+        <div>
+          <span class="pill" style="{style}">{label}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:10px;">Dane nabywcy</div>
+        <div class="kv">
+          <div class="muted">Email</div><div>{order.get('purchaser_email', '') or '—'}</div>
+          <div class="muted">Imię</div><div>{order.get('purchaser_first_name', '') or '—'}</div>
+          <div class="muted">Nazwisko</div><div>{order.get('purchaser_last_name', '') or '—'}</div>
+          <div class="muted">Telefon</div><div>{order.get('purchaser_phone', '') or '—'}</div>
+          <div class="muted">NIP</div><div>{order.get('purchaser_nip', '') or '—'}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:10px;">Płatność</div>
+        <div class="kv">
+          <div class="muted">Kwota</div><div><b>{total:.2f} {currency}</b></div>
+          <div class="muted">Opcja płatności</div><div>{order.get('payment_option_name', '') or '—'}</div>
+          <div class="muted">Kod promocyjny</div><div>{order.get('promo_code', '') or '—'}</div>
+          <div class="muted">Wydarzenie</div><div>{event_name or '—'} <code class="muted">{event_id}</code></div>
+        </div>
+        {docs_html}
+        {mark_paid_form}
+      </div>
+    </div>
+    """
+    return _page("Szczegóły zamówienia", body)
+
+
+@admin_bp.route("/orders/<order_id>/mark-paid", methods=["POST"])
+def order_mark_paid(order_id: str):
+    """Oznacza zamówienie jako opłacone (dla proform)."""
+    token = _require_admin_token()
+
+    order = get_order(order_id)
+    if not order:
+        abort(404, description="Nie znaleziono zamówienia")
+
+    # Aktualizuj status
+    update_order_status(order_id, "paid")
+
+    # Pobierz dane eventu
+    event_id = order.get("event_id", "")
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+    event_data = ev.get("data", {}) if ev else {}
+
+    # Zapisz mail task do logu (Make może go pobrać)
+    from pg_storage import save_mail_log
+
+    purchaser_email = order.get("purchaser_email", "")
+    if purchaser_email:
+        save_mail_log(
+            event_order_id=order_id,
+            direction="purchaser",
+            template_key="payment_confirmation",
+            to_email=purchaser_email,
+            subject=f"Potwierdzenie płatności – {event_name}",
+            data={
+                "event_order_id": order_id,
+                "event_name": event_name,
+                "purchaser_name": f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip(),
+                "purchaser_email": purchaser_email,
+                "total": order.get("total", 0),
+                "currency": order.get("currency", "PLN"),
+                "payment_method": "Przelew (proforma)",
+                **event_data,
+            },
+        )
+
+    # Mail wewnętrzny
+    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    if internal_email:
+        save_mail_log(
+            event_order_id=order_id,
+            direction="internal",
+            template_key="internal_order_paid",
+            to_email=internal_email,
+            subject=f"[PAID] Zamówienie opłacone – {event_name}",
+            data={
+                "event_order_id": order_id,
+                "event_name": event_name,
+                "purchaser_email": purchaser_email,
+                "total": order.get("total", 0),
+                "currency": order.get("currency", "PLN"),
+                "payment_method": "Przelew (proforma)",
+            },
+        )
+
+    return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
 
 
 @admin_bp.errorhandler(401)
