@@ -183,12 +183,26 @@ def update_render_env_var(key, value):
     Pobiera najpierw wszystkie zmienne, modyfikuje jedną, zapisuje całość.
     WAŻNE: Również aktualizuje os.environ żeby zmiany były widoczne natychmiast!
     """
+    # #region agent log - DEBUG H1-H5
+    import json as _json
+    _debug_log_path = r"c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log"
+    def _dbg(hyp, msg, data=None):
+        try:
+            with open(_debug_log_path, "a", encoding="utf-8") as f:
+                f.write(_json.dumps({"hypothesisId": hyp, "location": "app.py:update_render_env_var", "message": msg, "data": data, "timestamp": int(__import__('time').time()*1000)}, ensure_ascii=False) + "\n")
+        except: pass
+    _dbg("H1", "ENTRY update_render_env_var", {"key": key, "value_len": len(str(value)) if value else 0})
+    # #endregion
+    
     # ZAWSZE aktualizuj pamięć procesu - nawet jeśli Render API nie jest skonfigurowane
     os.environ[key] = value
     print(f"[LOG] update_render_env_var: zaktualizowano os.environ[{key}]")
     
     if not RENDER_API_KEY or not RENDER_SERVICE_ID:
         print(f"[LOG] update_render_env_var: brak RENDER_API_KEY lub RENDER_SERVICE_ID - tylko pamięć lokalna")
+        # #region agent log
+        _dbg("H1", "SKIP - no RENDER_API_KEY/SERVICE_ID", {"has_api_key": bool(RENDER_API_KEY), "has_service_id": bool(RENDER_SERVICE_ID)})
+        # #endregion
         return True  # Zwracamy True bo os.environ zostało zaktualizowane
     
     url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars"
@@ -200,20 +214,44 @@ def update_render_env_var(key, value):
     try:
         # 1) POBIERZ wszystkie aktualne zmienne
         get_resp = requests.get(url, headers=headers)
+        # #region agent log
+        _dbg("H1", "GET response", {"status": get_resp.status_code, "body_len": len(get_resp.text) if get_resp.text else 0})
+        # #endregion
         if get_resp.status_code != 200:
             print(f"[LOG] update_render_env_var: błąd GET {get_resp.status_code} {get_resp.text[:200]}")
+            _dbg("H1", "GET FAILED - returning False", {"status": get_resp.status_code})
             return False
         
         current_vars = get_resp.json()  # Lista obiektów [{"envVar": {"key": "X", "value": "Y"}}, ...]
         print(f"[LOG] update_render_env_var: pobrano {len(current_vars)} zmiennych")
+        # #region agent log
+        _dbg("H1", "GET parsed", {"vars_count": len(current_vars), "first_item_keys": list(current_vars[0].keys()) if current_vars else []})
+        # #endregion
+        
+        # BEZPIECZNIK H1: Jeśli GET zwróciło pustą listę, NIE rób PUT!
+        if len(current_vars) < 5:
+            print(f"[LOG] update_render_env_var: ABORT! GET zwróciło tylko {len(current_vars)} zmiennych - to podejrzane!")
+            _dbg("H1", "ABORT - too few vars from GET", {"vars_count": len(current_vars)})
+            return False
         
         # 2) Przekształć na prostą listę do PUT
         env_list = []
         key_found = False
+        null_keys_count = 0
         for item in current_vars:
             env_var = item.get('envVar', {})
             existing_key = env_var.get('key')
             existing_value = env_var.get('value')
+            
+            # #region agent log - H2/H4
+            if existing_key is None or existing_value is None:
+                null_keys_count += 1
+                _dbg("H2", "NULL key/value detected", {"existing_key": existing_key, "existing_value_is_none": existing_value is None, "item": item})
+            # #endregion
+            
+            # BEZPIECZNIK H2/H4: Pomiń zmienne z None key
+            if existing_key is None:
+                continue
             
             if existing_key == key:
                 # Aktualizuj tę zmienną
@@ -229,8 +267,21 @@ def update_render_env_var(key, value):
             env_list.append({"key": key, "value": value})
             print(f"[LOG] update_render_env_var: dodaję nową zmienną {key} w Render")
         
+        # #region agent log
+        _dbg("H1", "PRE-PUT summary", {"env_list_count": len(env_list), "null_keys_skipped": null_keys_count, "key_found": key_found})
+        # #endregion
+        
+        # BEZPIECZNIK: Jeśli env_list ma znacznie mniej niż current_vars, coś poszło nie tak
+        if len(env_list) < len(current_vars) - 2:
+            print(f"[LOG] update_render_env_var: ABORT! env_list ({len(env_list)}) znacznie mniejsza niż current_vars ({len(current_vars)})")
+            _dbg("H1", "ABORT - env_list too small", {"env_list": len(env_list), "current_vars": len(current_vars)})
+            return False
+        
         # 4) ZAPISZ całą listę (PUT)
         put_resp = requests.put(url, headers=headers, json=env_list)
+        # #region agent log
+        _dbg("H1", "PUT response", {"status": put_resp.status_code, "env_list_count": len(env_list)})
+        # #endregion
         if put_resp.status_code == 200:
             print(f"[LOG] update_render_env_var: sukces - zaktualizowano {key} w Render")
             return True
@@ -240,6 +291,9 @@ def update_render_env_var(key, value):
             
     except Exception as e:
         print(f"[LOG] update_render_env_var: wyjątek {e}")
+        # #region agent log
+        _dbg("H5", "EXCEPTION", {"error": str(e)})
+        # #endregion
         return False
 
 def save_token(access_token, expires_in, refresh_token=None, company=None):

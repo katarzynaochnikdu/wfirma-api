@@ -28,16 +28,18 @@
 
 ---
 
-## 🏢 wFirma (faktury) - prefiks MD_
+## 🏢 wFirma (faktury) - prefiks WFIRMA_MD_
 
 | Zmienna | Opis |
 |---------|------|
-| `MD_CLIENT_ID` | OAuth2 Client ID dla wFirma |
-| `MD_CLIENT_SECRET` | OAuth2 Client Secret |
-| `MD_ACCESS_TOKEN` | Token dostępu (auto-odświeżany) |
-| `MD_REFRESH_TOKEN` | Token odświeżania (ważny ~360 dni) |
-| `MD_TOKEN_EXPIRES` | Timestamp wygaśnięcia access token |
-| `MD_REFRESH_TOKEN_EXPIRES` | Timestamp wygaśnięcia refresh token |
+| `WFIRMA_MD_CLIENT_ID` | OAuth2 Client ID dla wFirma (lub `CLIENT_ID` jako fallback) |
+| `WFIRMA_MD_CLIENT_SECRET` | OAuth2 Client Secret (lub `CLIENT_SECRET` jako fallback) |
+| `WFIRMA_MD_ACCESS_TOKEN` | Token dostępu (auto-odświeżany) |
+| `WFIRMA_MD_REFRESH_TOKEN` | Token odświeżania (ważny ~360 dni) |
+| `WFIRMA_MD_TOKEN_EXPIRES` | Timestamp wygaśnięcia access token |
+| `WFIRMA_MD_REFRESH_TOKEN_EXPIRES` | Timestamp wygaśnięcia refresh token |
+
+**Alternatywnie (fallback):** `CLIENT_ID`, `CLIENT_SECRET` - używane gdy brak WFIRMA_MD_*
 
 ### Dodatkowe wFirma
 | Zmienna | Opis | Domyślnie |
@@ -51,10 +53,14 @@
 
 ## 🔍 GUS/BIR (dane firm z REGON)
 
-| Zmienna | Opis |
-|---------|------|
-| `GUS_API_KEY` | Klucz API do BIR/GUS (produkcja) |
-| `GUS_USE_TEST` | Użyj testowego API GUS | `false` (zawsze!) |
+| Zmienna | Opis | Wymagane |
+|---------|------|----------|
+| `GUS_API_KEY` | Klucz API do BIR/GUS (produkcja) | ✅ (lub BIR1_medidesk) |
+| `BIR1_medidesk` | Alternatywna nazwa klucza GUS (fallback) | opcjonalne |
+| `GUS_USE_TEST` | `false` = produkcja, `true` = test | `false` zawsze! |
+| `REGON_API_KEY_TOKEN` | Token X-API-Key dla `/api/gus/*` endpointów | dla zewnętrznych wywołań |
+
+**Uwaga:** System szuka klucza w kolejności: `GUS_API_KEY` → `BIR1_medidesk`
 
 ---
 
@@ -106,10 +112,10 @@ MAKE_RENDER_API_KEY=twoj-klucz-api
 GUS_API_KEY=twoj-klucz-gus
 
 # wFirma (po autoryzacji /auth?company=md)
-MD_CLIENT_ID=...
-MD_CLIENT_SECRET=...
-MD_ACCESS_TOKEN=auto
-MD_REFRESH_TOKEN=auto
+WFIRMA_MD_CLIENT_ID=...      # lub CLIENT_ID
+WFIRMA_MD_CLIENT_SECRET=...  # lub CLIENT_SECRET
+WFIRMA_MD_ACCESS_TOKEN=auto  # wypełni się po /auth
+WFIRMA_MD_REFRESH_TOKEN=auto # wypełni się po /auth
 
 # Powiadomienia
 BACKSTAGE_TECHNICAL_INFO_EMAIL=adminzoho@medidesk.com
