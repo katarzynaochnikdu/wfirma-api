@@ -554,6 +554,7 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
         )
         tax_percent_raw = (line_item or {}).get("taxPercent")
         tax_amount_raw = (line_item or {}).get("taxAmount")
+        discount_amount_raw = (line_item or {}).get("discountAmount") if line_item else (t.get("discountAmount") or t.get("discount"))
 
         try:
             unit_net = float(unit_net_raw or 0)
@@ -565,6 +566,11 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
             vat_amount = float(tax_amount_raw if tax_amount_raw is not None else (t.get("taxedPrice") or t.get("vat_amount") or 0))
         except (ValueError, TypeError):
             vat_amount = 0.0
+
+        try:
+            discount_amount = float(discount_amount_raw) if discount_amount_raw is not None else 0.0
+        except (ValueError, TypeError):
+            discount_amount = 0.0
 
         try:
             vat_rate = float(tax_percent_raw) if tax_percent_raw is not None else 23.0
@@ -604,6 +610,7 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
             "total_gross": total_price,
             "vat_rate": vat_rate,
             "vat_amount": vat_amount,
+            "discount_amount": round(discount_amount, 2),
         })
 
         # Szczegółowe logi cenowe (limituj, żeby nie zalać logów)
@@ -618,12 +625,14 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
                 "src_actualPrice": (line_item or {}).get("actualPrice") if line_item else None,
                 "src_taxPercent": (line_item or {}).get("taxPercent") if line_item else None,
                 "src_taxAmount": (line_item or {}).get("taxAmount") if line_item else None,
+                "src_discountAmount": (line_item or {}).get("discountAmount") if line_item else t.get("discountAmount"),
                 "src_ticketPrice": t.get("ticketPrice"),
                 "src_actualTicketPrice": t.get("actualTicketPrice"),
                 "calc_unit_net": round(unit_net, 2),
                 "calc_unit_gross": round(unit_gross, 2),
                 "calc_vat_rate": vat_rate,
                 "calc_vat_amount": round(vat_amount, 2),
+                "calc_discount_amount": round(discount_amount, 2),
             })
     
     # Agreguj bilety o tym samym ticket_class_id
@@ -634,6 +643,7 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
             aggregated[key]["quantity"] += 1
             aggregated[key]["total_gross"] += t["total_gross"]
             aggregated[key]["vat_amount"] += t["vat_amount"]
+            aggregated[key]["discount_amount"] += t.get("discount_amount", 0)
         else:
             aggregated[key] = t.copy()
 
@@ -651,6 +661,7 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
                 "total_gross": round(float(a.get("total_gross") or 0), 2),
                 "vat_rate": a.get("vat_rate"),
                 "vat_amount": round(float(a.get("vat_amount") or 0), 2),
+                "discount_amount": round(float(a.get("discount_amount") or 0), 2),
             })
         _log("DEBUG", "TICKETS EXTRACTED (aggregated)", {
             "tickets_raw_count": len(tickets_raw) if isinstance(tickets_raw, list) else None,
@@ -1231,6 +1242,7 @@ def _handle_stripe_flow(
     total = order_data.get("total", 0)
     currency = order_data.get("currency", "PLN")
     is_sandbox = order_data.get("sandbox", False)
+    promo_code = order_data.get("promo_code", "")
     
     event_name = (event_config.get("event_name") if event_config else "") or "Wydarzenie"
     event_data = (event_config.get("data") if event_config else {}) or {}
@@ -1253,15 +1265,110 @@ def _handle_stripe_flow(
     stripe_session_id = None
     stripe_error = None
 
+    # Przygotuj line_items do Stripe z biletów (ładny widok w Checkout)
+    event_id_for_tickets = order_data.get("event_id", "")
+    raw_tickets_for_stripe = order_data.get("tickets", []) or []
+    enriched_tickets_for_stripe, _unknown_ids_for_stripe = _enrich_tickets_with_names(raw_tickets_for_stripe, event_id_for_tickets)
+
+    def _build_stripe_line_items_from_tickets(tickets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for t in tickets:
+            try:
+                name = (t.get("name") or "Bilet").strip()
+                qty = t.get("quantity", 1)
+                try:
+                    qty_i = int(qty) if qty is not None else 1
+                except (ValueError, TypeError):
+                    qty_i = 1
+                if qty_i <= 0:
+                    qty_i = 1
+
+                unit_gross = t.get("unit_price_gross")
+                try:
+                    unit_gross_f = float(unit_gross) if unit_gross is not None else 0.0
+                except (ValueError, TypeError):
+                    unit_gross_f = 0.0
+
+                unit_amount = int(round(unit_gross_f * 100))
+                if unit_amount <= 0:
+                    # fallback: jeśli brak ceny na bilecie, nie buduj tej pozycji (zostanie korekta)
+                    continue
+
+                discount_amount = t.get("discount_amount", 0) or 0
+                try:
+                    discount_f = float(discount_amount)
+                except (ValueError, TypeError):
+                    discount_f = 0.0
+
+                desc_parts = [event_name]
+                if promo_code:
+                    desc_parts.append(f"Kod: {promo_code}")
+                if discount_f > 0:
+                    desc_parts.append(f"Rabat: {discount_f:.2f} zł")
+                description_txt = " | ".join(desc_parts)[:500]
+
+                items.append({
+                    "price_data": {
+                        "currency": currency.lower(),
+                        "unit_amount": unit_amount,
+                        "product_data": {
+                            "name": name[:120],
+                            "description": description_txt,
+                            "metadata": {
+                                "event_order_id": event_order_id,
+                                "event_id": event_id_for_tickets,
+                                "ticket_class_id": str(t.get("ticket_class_id", "")),
+                            },
+                        },
+                    },
+                    "quantity": qty_i,
+                })
+            except Exception:
+                continue
+        return items
+
+    stripe_line_items = _build_stripe_line_items_from_tickets(enriched_tickets_for_stripe)
+
+    # Korekta groszy (zaokrąglenia) - dopasuj sumę line_items do total
+    amount_cents = int(round(float(total or 0) * 100))
+    if stripe_line_items:
+        try:
+            sum_cents = 0
+            for it in stripe_line_items:
+                qa = int(it.get("quantity", 1) or 1)
+                ua = int(it.get("price_data", {}).get("unit_amount", 0) or 0)
+                sum_cents += qa * ua
+            delta = amount_cents - sum_cents
+            if delta != 0:
+                # najprościej: skoryguj ostatnią pozycję o deltę (zwykle kilka groszy)
+                last = stripe_line_items[-1]
+                ua_last = int(last.get("price_data", {}).get("unit_amount", 0) or 0)
+                ua_new = ua_last + delta
+                if ua_new > 0:
+                    last["price_data"]["unit_amount"] = ua_new
+                    _log("DEBUG", "STRIPE line_items: korekta zaokrągleń", {"sum_cents": sum_cents, "amount_cents": amount_cents, "delta": delta})
+                else:
+                    _log("WARNING", "STRIPE line_items: nie udało się zastosować korekty (ujemna cena)", {"sum_cents": sum_cents, "amount_cents": amount_cents, "delta": delta, "ua_last": ua_last})
+        except Exception as e:
+            _log("WARNING", "STRIPE line_items: błąd korekty sumy", {"error": str(e)})
+
+    if stripe_line_items:
+        _log("INFO", "STRIPE FLOW: Checkout będzie miał pozycje biletów", {
+            "items_count": len(stripe_line_items),
+            "first_item_name": stripe_line_items[0].get("price_data", {}).get("product_data", {}).get("name") if stripe_line_items else None,
+        })
+    else:
+        _log("WARNING", "STRIPE FLOW: brak line_items z biletów - fallback do jednej pozycji", {"tickets_count": len(enriched_tickets_for_stripe)})
+
     # 1. Utwórz sesję Stripe Checkout
     _log("INFO", "STRIPE FLOW: Tworzę sesję Stripe Checkout...", {"sandbox": is_sandbox})
     
     session_data, error = create_checkout_session(
         event_order_id=event_order_id,
-        amount_cents=int(total * 100),
+        amount_cents=amount_cents,
         currency=currency.lower(),
         customer_email=purchaser_email,
-        description=f"{event_name} - {event_order_id}",
+        description=event_name,
         success_url=success_url + (f"?order_id={event_order_id}" if "?" not in success_url else f"&order_id={event_order_id}"),
         cancel_url=cancel_url + (f"?order_id={event_order_id}" if "?" not in cancel_url else f"&order_id={event_order_id}"),
         metadata={
@@ -1269,6 +1376,7 @@ def _handle_stripe_flow(
             "event_id": order_data.get("event_id", ""),
             "event_name": event_name,
         },
+        line_items=stripe_line_items if stripe_line_items else None,
         sandbox=is_sandbox,
     )
     

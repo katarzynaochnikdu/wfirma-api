@@ -148,6 +148,7 @@ def create_checkout_session(
     success_url: str = "",
     cancel_url: str = "",
     metadata: Optional[Dict[str, str]] = None,
+    line_items: Optional[list] = None,
     sandbox: bool = False,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
@@ -185,22 +186,24 @@ def create_checkout_session(
         meta["event_order_id"] = event_order_id
         meta["stripe_mode"] = "sandbox" if sandbox else "live"
         
-        # Przygotuj line_items
-        line_items = [{
-            "price_data": {
-                "currency": currency.lower(),
-                "unit_amount": amount_cents,
-                "product_data": {
-                    "name": description or f"Zamówienie {event_order_id}",
+        # Przygotuj line_items (jeśli nie podano - fallback do jednej pozycji)
+        final_line_items = line_items
+        if not final_line_items:
+            final_line_items = [{
+                "price_data": {
+                    "currency": currency.lower(),
+                    "unit_amount": amount_cents,
+                    "product_data": {
+                        "name": description or f"Zamówienie {event_order_id}",
+                    },
                 },
-            },
-            "quantity": 1,
-        }]
+                "quantity": 1,
+            }]
         
         # Parametry sesji
         session_params = {
             "payment_method_types": ["card", "blik", "p24"],  # Karty, BLIK, Przelewy24
-            "line_items": line_items,
+            "line_items": final_line_items,
             "mode": "payment",
             "metadata": meta,
             "client_reference_id": event_order_id,
