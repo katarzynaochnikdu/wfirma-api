@@ -5,6 +5,7 @@ Używa STRIPE_RENDER_API_KEY z ENV (produkcyjny klucz Stripe).
 import os
 import hmac
 import hashlib
+import requests
 from typing import Any, Dict, Optional, Tuple
 
 try:
@@ -36,9 +37,66 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 STRIPE_SANDBOX_API_KEY = os.environ.get("STRIPE_RENDER_API_KEY_SANDBOX")
 STRIPE_SANDBOX_WEBHOOK_SECRET = os.environ.get("STRIPE_SANDBOX_WEBHOOK_SECRET")
 
+# Email wewnętrzny - info techniczne
+BACKSTAGE_TECHNICAL_INFO_EMAIL = os.environ.get("BACKSTAGE_TECHNICAL_INFO_EMAIL", "")
+
+# Make.com webhook do wysyłki emaili
+MAKE_WEBHOOK_SEND_EMAIL_REQUEST = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUEST", "")
+RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", "")
+
 # Inicjalizacja Stripe (domyślnie produkcja)
 if stripe and STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
+
+
+def _send_email_via_make_stripe(
+    to_email: str,
+    subject: str,
+    body_html: str,
+    event_order_id: str = "",
+    template_type: str = "",
+) -> Dict[str, Any]:
+    """
+    Wysyła email przez webhook Make.com (dla Stripe webhooków).
+    """
+    if not MAKE_WEBHOOK_SEND_EMAIL_REQUEST or not RENDER_EMAIL_KEY_SEND_REQUEST:
+        print(f"[STRIPE EMAIL] Make webhook nie skonfigurowany")
+        return {"success": False, "error": "Make webhook nie skonfigurowany"}
+    
+    print(f"[STRIPE EMAIL] Wysyłam email przez Make | to={to_email}, template={template_type}")
+    
+    try:
+        payload = {
+            "to": to_email,
+            "subject": subject,
+            "body_html": body_html,
+            "event_order_id": event_order_id,
+            "template_type": template_type,
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "x-make-apikey": RENDER_EMAIL_KEY_SEND_REQUEST,
+        }
+        
+        response = requests.post(
+            MAKE_WEBHOOK_SEND_EMAIL_REQUEST,
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        
+        print(f"[STRIPE EMAIL] Make response: {response.status_code} | {response.text[:200]}")
+        
+        return {
+            "success": response.status_code in (200, 202),
+            "status_code": response.status_code,
+            "response": response.text[:500],
+        }
+        
+    except Exception as e:
+        print(f"[STRIPE EMAIL] Błąd wysyłki: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # ---------------------------------------------------------------------------
@@ -302,21 +360,44 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             data=mail_task["data"],
         )
     
-    # Mail wewnętrzny
-    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    # Mail wewnętrzny - użyj BACKSTAGE_TECHNICAL_INFO_EMAIL lub z event_data
+    internal_email = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
     if internal_email:
+        total_value = order.get("total", 0) if order else 0
+        currency_value = order.get("currency", "PLN") if order else "PLN"
+        
+        internal_subject = f"[PAID] Zamówienie opłacone – {event_name}"
+        internal_body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #28a745;">✅ Płatność potwierdzona</h2>
+            <p><strong>Zamówienie:</strong> {event_order_id}</p>
+            <p><strong>Wydarzenie:</strong> {event_name}</p>
+            <hr>
+            <p><strong>Kupujący:</strong> {purchaser_name}</p>
+            <p><strong>Email:</strong> {purchaser_email}</p>
+            <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+            <p><strong>Metoda płatności:</strong> Stripe</p>
+            <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
+            <p><strong>Payment Intent:</strong> {payment_intent_id}</p>
+            <hr>
+            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+        </body>
+        </html>
+        """
+        
         internal_task = {
             "template": "internal_order_paid",
             "to": internal_email,
-            "subject": f"[PAID] Zamówienie opłacone – {event_name}",
+            "subject": internal_subject,
             "direction": "internal",
             "data": {
                 "event_order_id": event_order_id,
                 "event_name": event_name,
                 "purchaser_name": purchaser_name,
                 "purchaser_email": purchaser_email,
-                "total": order.get("total", 0) if order else 0,
-                "currency": order.get("currency", "PLN") if order else "PLN",
+                "total": total_value,
+                "currency": currency_value,
                 "payment_method": "Stripe",
                 "checkout_session_id": checkout_session_id,
             },
@@ -328,8 +409,17 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             direction="internal",
             template_key="internal_order_paid",
             to_email=internal_email,
-            subject=internal_task["subject"],
+            subject=internal_subject,
             data=internal_task["data"],
+        )
+        
+        # Wysyłka emaila przez Make
+        _send_email_via_make_stripe(
+            to_email=internal_email,
+            subject=internal_subject,
+            body_html=internal_body_html,
+            event_order_id=event_order_id,
+            template_type="internal_order_paid",
         )
     
     return {
@@ -404,6 +494,20 @@ def handle_checkout_expired(session_data: Dict[str, Any]) -> Dict[str, Any]:
     # Aktualizuj status zamówienia
     update_order_status(event_order_id, "payment_expired")
     
+    # Pobierz dane zamówienia
+    order = get_order(event_order_id)
+    event_config = None
+    event_name = "Wydarzenie"
+    if order:
+        ev = get_event(order.get("event_id", ""))
+        if ev:
+            event_name = ev.get("event_name", "Wydarzenie")
+    
+    purchaser_email = order.get("purchaser_email", "") if order else ""
+    purchaser_name = ""
+    if order:
+        purchaser_name = f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip()
+    
     # Aktualizuj status sesji Stripe
     if checkout_session_id:
         try:
@@ -420,6 +524,47 @@ def handle_checkout_expired(session_data: Dict[str, Any]) -> Dict[str, Any]:
             _put_conn(pool, conn)
         except Exception as e:
             print(f"[STRIPE] Błąd aktualizacji sesji: {e}")
+    
+    # Wyślij email wewnętrzny o wygasłej sesji
+    if BACKSTAGE_TECHNICAL_INFO_EMAIL:
+        total_value = order.get("total", 0) if order else 0
+        currency_value = order.get("currency", "PLN") if order else "PLN"
+        
+        internal_subject = f"[EXPIRED] Sesja płatności wygasła – {event_name}"
+        internal_body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #ffc107;">⏰ Sesja płatności wygasła</h2>
+            <p><strong>Zamówienie:</strong> {event_order_id}</p>
+            <p><strong>Wydarzenie:</strong> {event_name}</p>
+            <hr>
+            <p><strong>Kupujący:</strong> {purchaser_name}</p>
+            <p><strong>Email:</strong> {purchaser_email}</p>
+            <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+            <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
+            <hr>
+            <p style="color: #666;">Klient nie dokonał płatności w wymaganym czasie. Sesja Stripe wygasła.</p>
+            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+        </body>
+        </html>
+        """
+        
+        save_mail_log(
+            event_order_id=event_order_id,
+            direction="internal",
+            template_key="internal_payment_expired",
+            to_email=BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            subject=internal_subject,
+            data={"event_order_id": event_order_id, "event_name": event_name},
+        )
+        
+        _send_email_via_make_stripe(
+            to_email=BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            subject=internal_subject,
+            body_html=internal_body_html,
+            event_order_id=event_order_id,
+            template_type="internal_payment_expired",
+        )
     
     return {
         "status": "ok",
@@ -447,6 +592,19 @@ def handle_checkout_payment_failed(session_data: Dict[str, Any]) -> Dict[str, An
     # Aktualizuj status zamówienia
     update_order_status(event_order_id, "payment_failed")
     
+    # Pobierz dane zamówienia
+    order = get_order(event_order_id)
+    event_name = "Wydarzenie"
+    if order:
+        ev = get_event(order.get("event_id", ""))
+        if ev:
+            event_name = ev.get("event_name", "Wydarzenie")
+    
+    purchaser_email = order.get("purchaser_email", "") if order else ""
+    purchaser_name = ""
+    if order:
+        purchaser_name = f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip()
+    
     # Aktualizuj status sesji Stripe
     if checkout_session_id:
         try:
@@ -463,6 +621,47 @@ def handle_checkout_payment_failed(session_data: Dict[str, Any]) -> Dict[str, An
             _put_conn(pool, conn)
         except Exception as e:
             print(f"[STRIPE] Błąd aktualizacji sesji: {e}")
+    
+    # Wyślij email wewnętrzny o nieudanej płatności
+    if BACKSTAGE_TECHNICAL_INFO_EMAIL:
+        total_value = order.get("total", 0) if order else 0
+        currency_value = order.get("currency", "PLN") if order else "PLN"
+        
+        internal_subject = f"[FAILED] Płatność nieudana – {event_name}"
+        internal_body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #dc3545;">❌ Płatność nieudana</h2>
+            <p><strong>Zamówienie:</strong> {event_order_id}</p>
+            <p><strong>Wydarzenie:</strong> {event_name}</p>
+            <hr>
+            <p><strong>Kupujący:</strong> {purchaser_name}</p>
+            <p><strong>Email:</strong> {purchaser_email}</p>
+            <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+            <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
+            <hr>
+            <p style="color: #dc3545;"><strong>Płatność asynchroniczna (BLIK/P24) nie powiodła się.</strong></p>
+            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+        </body>
+        </html>
+        """
+        
+        save_mail_log(
+            event_order_id=event_order_id,
+            direction="internal",
+            template_key="internal_payment_failed",
+            to_email=BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            subject=internal_subject,
+            data={"event_order_id": event_order_id, "event_name": event_name},
+        )
+        
+        _send_email_via_make_stripe(
+            to_email=BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            subject=internal_subject,
+            body_html=internal_body_html,
+            event_order_id=event_order_id,
+            template_type="internal_payment_failed",
+        )
     
     return {
         "status": "ok",
