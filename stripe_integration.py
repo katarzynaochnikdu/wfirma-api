@@ -290,6 +290,11 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     payment_intent_id = session_data.get("payment_intent")
     metadata = session_data.get("metadata") or {}
     event_order_id = metadata.get("event_order_id") or session_data.get("client_reference_id")
+    stripe_mode = (metadata.get("stripe_mode") or "").lower().strip()
+    is_sandbox = stripe_mode == "sandbox"
+    recovery_mode = False
+    recovery_reason = ""
+    skip_purchaser_email = False
 
     print(f"[STRIPE] handle_checkout_completed | session={checkout_session_id}, payment_intent={payment_intent_id}, order={event_order_id}")
     
@@ -308,7 +313,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         pass
     if existing and existing.get("status") == "paid":
-        # Dodatkowa diagnostyka: czy mamy już dokumenty w wFirma dla tego zamówienia?
+        # Jeśli sesja jest paid, ale nie mamy jeszcze faktury, to dokończ proces (recovery).
         try:
             from pg_storage import get_wfirma_documents
             docs = get_wfirma_documents(event_order_id)
@@ -321,18 +326,38 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
                     "status": d.get("status"),
                     "created_at": str(d.get("created_at"))[:19] if d.get("created_at") else None,
                 })
-            print(f"[STRIPE] DUPLICATE: payment already processed | wfirma_docs_count={len(docs or [])}, docs_preview={docs_preview}")
+            has_normal_invoice = any((d or {}).get("document_type") == "normal" for d in (docs or []))
+            print(f"[STRIPE] paid session detected | wfirma_docs_count={len(docs or [])}, has_normal_invoice={has_normal_invoice}, docs_preview={docs_preview}")
+
+            if has_normal_invoice:
+                return {
+                    "status": "duplicate",
+                    "message": "Płatność już została przetworzona (faktura istnieje)",
+                    "order_id": event_order_id,
+                }
+
+            # Recovery: brak faktury mimo paid
+            recovery_mode = True
+            recovery_reason = "paid_session_but_no_normal_invoice"
+            # nie wysyłaj ponownie maila do klienta w recovery (żeby nie dublować)
+            skip_purchaser_email = True
+            print(f"[STRIPE] RECOVERY MODE enabled | reason={recovery_reason}, sandbox={is_sandbox}")
+
         except Exception as e:
+            # Jeśli nie umiemy sprawdzić faktur, zachowaj ostrożność: nie twórz nowych
             print(f"[STRIPE] DUPLICATE: nie udało się pobrać wfirma_documents: {e}")
-        return {
-            "status": "duplicate",
-            "message": "Płatność już została przetworzona",
-            "order_id": event_order_id,
-        }
+            return {
+                "status": "duplicate",
+                "message": "Płatność już została przetworzona (brak weryfikacji faktury)",
+                "order_id": event_order_id,
+            }
     
     # Oznacz sesję jako opłaconą
-    print(f"[STRIPE] update_stripe_session_paid | session={checkout_session_id}, payment_intent={payment_intent_id}")
-    update_stripe_session_paid(checkout_session_id, payment_intent_id)
+    if not recovery_mode:
+        print(f"[STRIPE] update_stripe_session_paid | session={checkout_session_id}, payment_intent={payment_intent_id}")
+        update_stripe_session_paid(checkout_session_id, payment_intent_id)
+    else:
+        print(f"[STRIPE] skip update_stripe_session_paid (already paid) | session={checkout_session_id}")
     
     # Aktualizuj status zamówienia
     print(f"[STRIPE] update_order_status -> paid | order={event_order_id}")
@@ -423,7 +448,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     purchaser_email_sent = False
     purchaser_email_error = None
     
-    if purchaser_email:
+    if purchaser_email and not skip_purchaser_email:
         purchaser_subject = f"Potwierdzenie płatności – {event_name}"
         purchaser_body_html = f"""
         <html>
@@ -490,6 +515,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             purchaser_email_error = result.get("error", "Nieznany błąd")
             print(f"[STRIPE] BŁĄD wysyłki emaila do kupującego: {purchaser_email_error}")
+    elif purchaser_email and skip_purchaser_email:
+        print(f"[STRIPE] skip purchaser email (recovery_mode) | to={purchaser_email}")
     
     # 2. Mail wewnętrzny - zależny od wyniku wysyłki do kupującego
     if internal_email:
@@ -694,6 +721,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         "invoice_number": invoice_number,
         "invoice_email_sent": invoice_email_sent,
         "invoice_error": invoice_error,
+        "recovery_mode": recovery_mode,
+        "recovery_reason": recovery_reason or None,
     }
 
 
