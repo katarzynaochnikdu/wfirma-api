@@ -369,9 +369,105 @@ def process_webhook_event(event_type: str, event_data: Dict[str, Any]) -> Dict[s
     if event_type == "checkout.session.completed":
         return handle_checkout_completed(event_data)
     
-    # Inne eventy - ignorujemy na razie
+    if event_type == "checkout.session.async_payment_succeeded":
+        # Płatność asynchroniczna się powiodła (np. BLIK, przelewy24)
+        return handle_checkout_completed(event_data)
+    
+    if event_type == "checkout.session.expired":
+        return handle_checkout_expired(event_data)
+    
+    if event_type == "checkout.session.async_payment_failed":
+        return handle_checkout_payment_failed(event_data)
+    
+    # Inne eventy - ignorujemy
     return {
         "status": "ignored",
         "event_type": event_type,
         "message": f"Event type {event_type} nie jest obsługiwany",
+    }
+
+
+def handle_checkout_expired(session_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event checkout.session.expired.
+    Klient nie zapłacił w wymaganym czasie.
+    """
+    checkout_session_id = session_data.get("id")
+    metadata = session_data.get("metadata") or {}
+    event_order_id = metadata.get("event_order_id") or session_data.get("client_reference_id")
+    
+    print(f"[STRIPE] checkout.session.expired | order={event_order_id}, session={checkout_session_id}")
+    
+    if not event_order_id:
+        return {"status": "error", "error": "Brak event_order_id"}
+    
+    # Aktualizuj status zamówienia
+    update_order_status(event_order_id, "payment_expired")
+    
+    # Aktualizuj status sesji Stripe
+    if checkout_session_id:
+        try:
+            from pg_storage import get_db_connection
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE stripe_sessions 
+                SET status = 'expired', updated_at = NOW()
+                WHERE checkout_session_id = %s
+            """, (checkout_session_id,))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"[STRIPE] Błąd aktualizacji sesji: {e}")
+    
+    return {
+        "status": "ok",
+        "event_type": "checkout.session.expired",
+        "order_id": event_order_id,
+        "order_status": "payment_expired",
+        "message": "Sesja płatności wygasła",
+    }
+
+
+def handle_checkout_payment_failed(session_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event checkout.session.async_payment_failed.
+    Płatność asynchroniczna nie powiodła się.
+    """
+    checkout_session_id = session_data.get("id")
+    metadata = session_data.get("metadata") or {}
+    event_order_id = metadata.get("event_order_id") or session_data.get("client_reference_id")
+    
+    print(f"[STRIPE] checkout.session.async_payment_failed | order={event_order_id}, session={checkout_session_id}")
+    
+    if not event_order_id:
+        return {"status": "error", "error": "Brak event_order_id"}
+    
+    # Aktualizuj status zamówienia
+    update_order_status(event_order_id, "payment_failed")
+    
+    # Aktualizuj status sesji Stripe
+    if checkout_session_id:
+        try:
+            from pg_storage import get_db_connection
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE stripe_sessions 
+                SET status = 'failed', updated_at = NOW()
+                WHERE checkout_session_id = %s
+            """, (checkout_session_id,))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"[STRIPE] Błąd aktualizacji sesji: {e}")
+    
+    return {
+        "status": "ok",
+        "event_type": "checkout.session.async_payment_failed",
+        "order_id": event_order_id,
+        "order_status": "payment_failed",
+        "message": "Płatność nie powiodła się",
     }
