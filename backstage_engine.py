@@ -1072,6 +1072,30 @@ def _create_wfirma_invoice(
                 "details": result.get("details", "")[:200] if result.get("details") else None,
                 "response_snippet": (response.text or "")[:500],
             })
+            # Jeśli 401 - token wygasł / brak autoryzacji: wyślij jednoznaczny alert
+            if response.status_code == 401:
+                try:
+                    _send_error_notification(
+                        error_type="WFIRMA_AUTH_REQUIRED",
+                        error_message=(
+                            "wFirma odmówiła dostępu (401). Najczęściej oznacza to, że refresh token wygasł.\n\n"
+                            f"Company: {WFIRMA_COMPANY}\n"
+                            "WYMAGANA AKCJA: wejdź na /auth?company=md i przejdź pełną autoryzację OAuth.\n"
+                            "Po autoryzacji system zapisze nowe tokeny (WFIRMA_MD_*)."
+                        ),
+                        event_order_id=event_order_id,
+                        event_id=order_data.get("event_id", ""),
+                        extra_data={
+                            "status_code": response.status_code,
+                            "error": error_msg,
+                            "document_type": document_type,
+                            "payment_status": payment_status,
+                            "event_name": event_name,
+                            "purchaser_email": purchaser_email,
+                        },
+                    )
+                except Exception:
+                    pass
             return False, None, error_msg
             
     except requests.exceptions.Timeout:
