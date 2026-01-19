@@ -803,23 +803,44 @@ def _determine_flow(order_data: Dict[str, Any]) -> Tuple[str, Optional[Dict[str,
     payment_option_name = order_data.get("payment_option_name", "")
     payment_type = order_data.get("payment_type")
 
+    payment_option_lower = (payment_option_name or "").lower().strip()
+    _log("DEBUG", "FLOW: dane wejściowe", {
+        "event_id": event_id,
+        "total": total,
+        "payment_option_name": payment_option_name,
+        "payment_option_lower": payment_option_lower,
+        "payment_type": payment_type,
+    })
+
     # 1. Jeśli total = 0 → zawsze FOC
     if total == 0 or total is None:
+        _log("INFO", "FLOW: wybrano FOC (total=0)", {"event_id": event_id, "payment_option_name": payment_option_name, "payment_type": payment_type})
         return FLOW_FOC, None
 
     # 2. Spróbuj dopasować regułę z bazy
     rule = match_payment_rule(event_id, payment_option_name, payment_type)
     if rule:
+        _log("INFO", "FLOW: dopasowano regułę z bazy", {
+            "rule_id": rule.get("id"),
+            "rule_flow": rule.get("flow"),
+            "payment_option_name_pattern": rule.get("payment_option_name_pattern"),
+            "payment_option_id": rule.get("payment_option_id"),
+            "payment_type": rule.get("payment_type"),
+            "is_default": rule.get("is_default"),
+        })
         return rule.get("flow", FLOW_STRIPE), rule
 
     # 3. Fallback: heurystyka na podstawie nazwy opcji płatności
-    payment_option_lower = payment_option_name.lower()
-    if "pro-forma" in payment_option_lower or "proforma" in payment_option_lower:
+    # UWAGA: Backstage potrafi mieć "Pro forma" z odstępem, albo "pro-forma"
+    if ("pro-forma" in payment_option_lower) or ("proforma" in payment_option_lower) or ("pro forma" in payment_option_lower):
+        _log("INFO", "FLOW: wybrano PROFORMA (heurystyka po nazwie opcji)", {"payment_option_name": payment_option_name})
         return FLOW_PROFORMA, None
     if "online" in payment_option_lower or "karta" in payment_option_lower:
+        _log("INFO", "FLOW: wybrano STRIPE (heurystyka po nazwie opcji)", {"payment_option_name": payment_option_name})
         return FLOW_STRIPE, None
 
     # 4. Domyślnie: STRIPE
+    _log("INFO", "FLOW: wybrano STRIPE (fallback domyślny)", {"payment_option_name": payment_option_name})
     return FLOW_STRIPE, None
 
 
@@ -872,10 +893,17 @@ def _create_wfirma_invoice(
     """
     event_order_id = order_data.get("event_order_id", "")
     
-    _log("INFO", f"WFIRMA: Tworzę fakturę {document_type}", {
+    _log("INFO", "WFIRMA: START tworzenia dokumentu", {
+        "document_type": document_type,
         "event_order_id": event_order_id,
         "payment_status": payment_status,
+        "company": WFIRMA_COMPANY,
+        "series_name": WFIRMA_SERIES_NAME,
         "event_name": event_name[:30] if event_name else None,
+        "total": order_data.get("total", 0),
+        "currency": order_data.get("currency", "PLN"),
+        "purchaser_email": order_data.get("purchaser_email", ""),
+        "purchaser_nip": (order_data.get("purchaser_nip", "")[:5] + "...") if order_data.get("purchaser_nip") else "",
     })
     
     # Przygotuj dane do faktury
@@ -905,6 +933,24 @@ def _create_wfirma_invoice(
             "price": price_net,
             "vat": "23",
         }]
+
+    # Preview pozycji (max 5) - żeby było widać co idzie do wFirma
+    try:
+        positions_preview = []
+        for p in positions[:5]:
+            positions_preview.append({
+                "name": (p.get("name") or "")[:80],
+                "count": p.get("count"),
+                "price": p.get("price"),
+                "vat": p.get("vat"),
+            })
+        _log("DEBUG", "WFIRMA: Pozycje (preview)", {
+            "event_order_id": event_order_id,
+            "positions_count": len(positions),
+            "positions_preview": positions_preview,
+        })
+    except Exception:
+        pass
     
     # Data faktury
     today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -939,13 +985,18 @@ def _create_wfirma_invoice(
         "document_type": document_type,
         "positions_count": len(positions),
         "nip": purchaser_nip[:5] + "..." if purchaser_nip else None,
-        "send_email": send_email,
+        "send_email": send_email and bool(purchaser_email),
+        "email": purchaser_email,
+        "payment_due_days": 0 if payment_status == "paid" else 7,
+        "billing_zip": billing_zip,
+        "billing_city": billing_city,
     })
     
     # Wywołaj wewnętrzny endpoint przez HTTP
     # Używamy localhost bo endpoint wymaga autoryzacji i złożonej logiki (token OAuth, GUS, kontrahent)
     try:
         import os
+        import time
         
         # Określ URL endpointu - na Render będzie localhost:$PORT
         port = os.environ.get("PORT", "5000")
@@ -954,6 +1005,7 @@ def _create_wfirma_invoice(
         
         _log("DEBUG", "WFIRMA: Wywołuję endpoint", {"url": endpoint_url})
         
+        t0 = time.time()
         response = requests.post(
             endpoint_url,
             json=invoice_payload,
@@ -963,17 +1015,34 @@ def _create_wfirma_invoice(
             },
             timeout=60,  # Długi timeout bo GUS może być wolny
         )
+        dt_ms = int((time.time() - t0) * 1000)
         
-        result = response.json() if response.content else {}
+        try:
+            result = response.json() if response.content else {}
+        except Exception:
+            result = {"_raw": (response.text or "")[:1000]}
+
+        _log("INFO", "WFIRMA: Odpowiedź endpointu", {
+            "event_order_id": event_order_id,
+            "document_type": document_type,
+            "payment_status": payment_status,
+            "status_code": response.status_code,
+            "duration_ms": dt_ms,
+            "success": bool(result.get("success")) if isinstance(result, dict) else None,
+            "result_keys": list(result.keys()) if isinstance(result, dict) else None,
+        })
         
         if response.status_code == 200 and result.get("success"):
             invoice_id = result.get("invoice", {}).get("id")
             invoice_number = result.get("invoice", {}).get("fullnumber")
             
-            _log("INFO", "WFIRMA: Faktura utworzona pomyślnie", {
+            _log("INFO", "WFIRMA: SUCCESS dokument utworzony", {
                 "invoice_id": invoice_id,
                 "invoice_number": invoice_number,
                 "email_sent": result.get("email_sent", False),
+                "document_type": document_type,
+                "payment_status": payment_status,
+                "duration_ms": dt_ms,
             })
             
             # Zapisz do bazy
@@ -993,21 +1062,40 @@ def _create_wfirma_invoice(
             return True, result, None
         else:
             error_msg = result.get("error") or result.get("message") or f"HTTP {response.status_code}"
-            _log("ERROR", "WFIRMA: Błąd tworzenia faktury", {
+            _log("ERROR", "WFIRMA: ERROR tworzenia dokumentu", {
+                "event_order_id": event_order_id,
+                "document_type": document_type,
+                "payment_status": payment_status,
                 "status": response.status_code,
+                "duration_ms": dt_ms,
                 "error": error_msg,
                 "details": result.get("details", "")[:200] if result.get("details") else None,
+                "response_snippet": (response.text or "")[:500],
             })
             return False, None, error_msg
             
     except requests.exceptions.Timeout:
-        _log("ERROR", "WFIRMA: Timeout podczas tworzenia faktury")
+        _log("ERROR", "WFIRMA: Timeout podczas tworzenia dokumentu", {
+            "event_order_id": event_order_id,
+            "document_type": document_type,
+            "payment_status": payment_status,
+        })
         return False, None, "Timeout podczas komunikacji z wFirma"
     except requests.exceptions.ConnectionError as e:
-        _log("ERROR", "WFIRMA: Błąd połączenia", {"error": str(e)})
+        _log("ERROR", "WFIRMA: Błąd połączenia", {
+            "event_order_id": event_order_id,
+            "document_type": document_type,
+            "payment_status": payment_status,
+            "error": str(e),
+        })
         return False, None, f"Błąd połączenia: {str(e)}"
     except Exception as e:
-        _log("ERROR", "WFIRMA: Wyjątek podczas tworzenia faktury", {"error": str(e)})
+        _log("ERROR", "WFIRMA: Wyjątek podczas tworzenia dokumentu", {
+            "event_order_id": event_order_id,
+            "document_type": document_type,
+            "payment_status": payment_status,
+            "error": str(e),
+        })
         return False, None, str(e)
 
 
@@ -1019,6 +1107,7 @@ def _create_paid_invoice(
     """
     Tworzy opłaconą fakturę VAT po płatności Stripe.
     """
+    _log("INFO", "WFIRMA: Wywołanie _create_paid_invoice", {"event_order_id": order_data.get("event_order_id", ""), "event_name": event_name[:30] if event_name else None})
     return _create_wfirma_invoice(
         order_data=order_data,
         event_name=event_name,
@@ -1036,6 +1125,7 @@ def _create_proforma_invoice(
     """
     Tworzy fakturę proforma dla flow PROFORMA.
     """
+    _log("INFO", "WFIRMA: Wywołanie _create_proforma_invoice", {"event_order_id": order_data.get("event_order_id", ""), "event_name": event_name[:30] if event_name else None})
     return _create_wfirma_invoice(
         order_data=order_data,
         event_name=event_name,
@@ -1874,6 +1964,17 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             "rule_pattern": rule.get("payment_option_name_pattern") if rule else None,
             "total": order_data.get("total"),
             "payment_option_name": order_data.get("payment_option_name"),
+        })
+        # Dodatkowy log pod debug PROFORMA: pokaż „wejście” które decyduje
+        _log("INFO", "FLOW DECISION SUMMARY", {
+            "event_order_id": event_order_id,
+            "event_id": event_id,
+            "flow": flow,
+            "payment_option_name": order_data.get("payment_option_name"),
+            "payment_type": order_data.get("payment_type"),
+            "total": order_data.get("total"),
+            "rule_matched": bool(rule),
+            "rule_flow": rule.get("flow") if rule else None,
         })
 
         # 6. Wykonaj odpowiedni handler
