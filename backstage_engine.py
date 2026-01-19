@@ -995,8 +995,10 @@ def _save_participants_for_order(
             if participant_id:
                 stats["saved"] += 1
                 stats["registered"] += 1
-        elif len(individual_tickets) == 1 and purchaser_email:
-            # Tylko 1 bilet, brak attendees - purchaser jest uczestnikiem
+        elif purchaser_email and not attendees:
+            # Brak danych attendees - przypisz purchasera do WSZYSTKICH biletów
+            # (purchaser może być uczestnikiem wszystkich biletów, lub dane zostaną
+            # zaktualizowane później przez webhook "Attendee registered for event")
             participant_id = save_participant(
                 event_order_id=event_order_id,
                 ticket_id=ticket_id,
@@ -1009,34 +1011,15 @@ def _save_participants_for_order(
                 data={
                     "ticket_name": ticket.get("ticket_name", ""),
                     "price_gross": ticket.get("price_gross", 0),
-                    "source": "purchaser_single_ticket",
-                },
-            )
-            if participant_id:
-                stats["saved"] += 1
-                stats["registered"] += 1
-        elif i == 0 and purchaser_email and not attendees:
-            # Pierwszy bilet - przypisz purchasera jako pierwszego uczestnika
-            participant_id = save_participant(
-                event_order_id=event_order_id,
-                ticket_id=ticket_id,
-                ticket_class_id=ticket_class_id,
-                email=purchaser_email,
-                first_name=purchaser_first,
-                last_name=purchaser_last,
-                phone=purchaser_phone,
-                status="registered",
-                data={
-                    "ticket_name": ticket.get("ticket_name", ""),
-                    "price_gross": ticket.get("price_gross", 0),
-                    "source": "purchaser_first_ticket",
+                    "source": "purchaser_fallback",  # Może być zaktualizowane przez attendee webhook
+                    "ticket_index": i,
                 },
             )
             if participant_id:
                 stats["saved"] += 1
                 stats["registered"] += 1
         else:
-            # Brak danych - slot do wypełnienia
+            # Brak danych purchasera i attendees - slot do wypełnienia
             participant_id = save_participant(
                 event_order_id=event_order_id,
                 ticket_id=ticket_id,

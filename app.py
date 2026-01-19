@@ -1875,6 +1875,284 @@ def backstage_order():
         }), 500
 
 
+@app.route('/api/backstage/attendee', methods=['POST'])
+@require_api_key
+def backstage_attendee():
+    """
+    Endpoint do odbierania danych uczestnika z Zoho Backstage.
+    
+    Zoho Backstage wysyła webhook "Attendee registered for event" gdy uczestnik
+    wypełni swoje dane dla biletu.
+    
+    Body (JSON) - pola z Zoho Backstage:
+    {
+        "order_id": "24311000000805066",       // lub "Order ID"
+        "ticket_id": "243110000008050661",     // lub "Ticket ID"
+        "ticket_class": "24311000000547201",   // lub "Ticket class"
+        "attendee_id": "...",                  // lub "Attendee ID"
+        "email": "jan@example.com",            // lub "Email address"
+        "first_name": "Jan",                   // lub "First name" lub "Imię"
+        "last_name": "Kowalski",               // lub "Last name" lub "Nazwisko"
+        "phone": "+48123456789",               // lub "Phone number" lub "telefon uczestnika"
+        "event": "24311000000429149",          // ID wydarzenia
+        ...
+    }
+    
+    Response:
+    {
+        "status": "ok" | "error",
+        "order_id": "...",
+        "ticket_id": "...",
+        "participant_updated": true,
+        "email_sent": true | false,
+        "message": "..."
+    }
+    """
+    try:
+        payload = request.get_json(silent=True)
+        if not payload:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak JSON payload'
+            }), 400
+        
+        print(f"[ATTENDEE WEBHOOK] Otrzymano payload: {list(payload.keys())}")
+        
+        # Ekstrakcja danych z różnych możliwych nazw pól
+        order_id = (
+            payload.get("order_id") or 
+            payload.get("Order ID") or 
+            payload.get("orderId") or
+            payload.get("event_order_id") or
+            str(payload.get("Order_ID", ""))
+        )
+        
+        ticket_id = (
+            payload.get("ticket_id") or 
+            payload.get("Ticket ID") or 
+            payload.get("ticketId") or
+            str(payload.get("Ticket_ID", ""))
+        )
+        
+        ticket_class_id = (
+            payload.get("ticket_class") or 
+            payload.get("Ticket class") or 
+            payload.get("ticketClass") or
+            payload.get("ticket_class_id") or
+            str(payload.get("Ticket_class", ""))
+        )
+        
+        attendee_id = (
+            payload.get("attendee_id") or 
+            payload.get("Attendee ID") or 
+            payload.get("attendeeId") or
+            str(payload.get("Attendee_ID", ""))
+        )
+        
+        email = (
+            payload.get("email") or 
+            payload.get("Email") or 
+            payload.get("Email address") or
+            payload.get("email_address") or
+            ""
+        )
+        
+        first_name = (
+            payload.get("first_name") or 
+            payload.get("First name") or 
+            payload.get("firstName") or
+            payload.get("Imię") or
+            payload.get("imie") or
+            ""
+        )
+        
+        last_name = (
+            payload.get("last_name") or 
+            payload.get("Last name") or 
+            payload.get("lastName") or
+            payload.get("Nazwisko") or
+            payload.get("nazwisko") or
+            ""
+        )
+        
+        phone = (
+            payload.get("phone") or 
+            payload.get("Phone number") or 
+            payload.get("phoneNumber") or
+            payload.get("telefon uczestnika") or
+            payload.get("phone_number") or
+            ""
+        )
+        
+        event_id = (
+            payload.get("event") or 
+            payload.get("Event") or 
+            payload.get("event_id") or
+            payload.get("eventId") or
+            ""
+        )
+        
+        # Walidacja wymaganych pól
+        if not order_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak order_id w payload',
+                'received_keys': list(payload.keys())
+            }), 400
+        
+        if not ticket_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak ticket_id w payload',
+                'received_keys': list(payload.keys())
+            }), 400
+        
+        if not email:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak email w payload',
+                'received_keys': list(payload.keys())
+            }), 400
+        
+        print(f"[ATTENDEE WEBHOOK] order={order_id}, ticket={ticket_id}, email={email}, name={first_name} {last_name}")
+        
+        # Zapisz/zaktualizuj uczestnika w bazie
+        from pg_storage import (
+            update_participant_details, 
+            get_participant_by_ticket, 
+            save_participant,
+            get_order,
+        )
+        
+        # Sprawdź czy uczestnik już istnieje
+        existing = get_participant_by_ticket(order_id, ticket_id)
+        
+        extra_data = {
+            "attendee_id": attendee_id,
+            "event_id": event_id,
+            "source": "zoho_attendee_webhook",
+            "raw_payload_keys": list(payload.keys())[:20],
+        }
+        
+        if existing:
+            # Aktualizuj istniejącego
+            success = update_participant_details(
+                event_order_id=order_id,
+                ticket_id=ticket_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=phone,
+                status="registered",
+                extra_data=extra_data,
+            )
+            print(f"[ATTENDEE WEBHOOK] Zaktualizowano uczestnika: {success}")
+        else:
+            # Utwórz nowego
+            participant_id = save_participant(
+                event_order_id=order_id,
+                ticket_id=ticket_id,
+                ticket_class_id=ticket_class_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=phone,
+                status="registered",
+                data=extra_data,
+            )
+            success = participant_id is not None
+            print(f"[ATTENDEE WEBHOOK] Utworzono uczestnika: ID={participant_id}")
+        
+        # Sprawdź czy zamówienie jest już opłacone - jeśli tak, wyślij email od razu
+        email_sent = False
+        order = get_order(order_id)
+        
+        if order and order.get("status") == "paid":
+            print(f"[ATTENDEE WEBHOOK] Zamówienie opłacone - wysyłam email do uczestnika")
+            
+            try:
+                from backstage_engine import _send_email_via_make, _is_make_email_configured
+                from email_templates import render_participant_ticket_email
+                from pg_storage import get_event, get_ticket_classes, update_participant_status
+                
+                # Pobierz dane wydarzenia
+                event_config = {}
+                event_name = "Wydarzenie"
+                if event_id or order.get("event_id"):
+                    ev = get_event(event_id or order.get("event_id"))
+                    if ev:
+                        event_name = ev.get("event_name", "Wydarzenie")
+                        event_config = ev.get("data", {}) or {}
+                
+                # Pobierz nazwę biletu
+                ticket_name = "Bilet"
+                if ticket_class_id and (event_id or order.get("event_id")):
+                    tcs = get_ticket_classes(event_id or order.get("event_id"))
+                    for tc in tcs:
+                        if tc.get("ticket_class_id") == ticket_class_id:
+                            ticket_name = tc.get("ticket_name", "Bilet")
+                            break
+                
+                # Pobierz cenę biletu (z participant data lub order)
+                ticket_price = 0.0
+                if existing and existing.get("data"):
+                    ticket_price = existing.get("data", {}).get("price_gross", 0)
+                
+                # Renderuj i wyślij email
+                if _is_make_email_configured():
+                    body_html = render_participant_ticket_email(
+                        event_name=event_name,
+                        participant_first_name=first_name,
+                        participant_last_name=last_name,
+                        participant_email=email,
+                        ticket_name=ticket_name,
+                        ticket_id=ticket_id,
+                        ticket_price=float(ticket_price),
+                        event_config=event_config,
+                    )
+                    
+                    subject = f"Twój bilet – {event_name}"
+                    result = _send_email_via_make(
+                        to_email=email,
+                        subject=subject,
+                        body_html=body_html,
+                        event_order_id=order_id,
+                        template_type="participant_ticket",
+                    )
+                    
+                    if result.get("success"):
+                        email_sent = True
+                        # Zaktualizuj status na 'emailed'
+                        updated_participant = get_participant_by_ticket(order_id, ticket_id)
+                        if updated_participant:
+                            update_participant_status(updated_participant["id"], "emailed")
+                        print(f"[ATTENDEE WEBHOOK] Email wysłany do {email}")
+                    else:
+                        print(f"[ATTENDEE WEBHOOK] Błąd wysyłki emaila: {result.get('error')}")
+            except Exception as e:
+                print(f"[ATTENDEE WEBHOOK] Błąd przy wysyłce emaila: {e}")
+        else:
+            print(f"[ATTENDEE WEBHOOK] Zamówienie nie jest jeszcze opłacone - email zostanie wysłany po płatności")
+        
+        return jsonify({
+            'status': 'ok',
+            'order_id': order_id,
+            'ticket_id': ticket_id,
+            'attendee_id': attendee_id,
+            'participant_updated': success,
+            'email_sent': email_sent,
+            'order_status': order.get("status") if order else None,
+            'message': 'Dane uczestnika zapisane' + (' i email wysłany' if email_sent else ''),
+        }), 200
+        
+    except Exception as e:
+        print(f"[ATTENDEE WEBHOOK] Błąd: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 # ---------------------------------------------------------------------------
 # PARTICIPANTS - uczestnicy wydarzeń (przypisani do biletów)
 # ---------------------------------------------------------------------------
