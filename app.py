@@ -2128,6 +2128,106 @@ def mark_mail_task_sent(mail_id: int):
         }), 500
 
 
+# ---------------------------------------------------------------------------
+# EMAIL API - bezpośrednia wysyłka maili przez SMTP
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/email/status', methods=['GET'])
+def email_status():
+    """
+    Sprawdza status konfiguracji email SMTP.
+    Publiczny endpoint (bez auth) - pokazuje tylko czy skonfigurowane.
+    """
+    try:
+        from email_sender import get_email_status
+        return jsonify(get_email_status()), 200
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'configured': False,
+        }), 500
+
+
+@app.route('/api/email/test', methods=['POST'])
+@require_api_key
+def email_test():
+    """
+    Wysyła testowy email.
+    
+    Body (opcjonalne):
+    {
+        "to": "adres@email.pl"  // domyślnie wysyła do EMAIL_ADDRESS
+    }
+    """
+    try:
+        from email_sender import send_test_email
+        
+        data = request.get_json(force=True, silent=True) or {}
+        to_email = data.get("to")
+        
+        result = send_test_email(to_email)
+        
+        status_code = 200 if result.get("success") else 500
+        return jsonify(result), status_code
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/email/send', methods=['POST'])
+@require_api_key
+def email_send():
+    """
+    Wysyła email z podanymi parametrami.
+    
+    Body:
+    {
+        "to": "adres@email.pl",
+        "subject": "Temat",
+        "body_html": "<html>...</html>",
+        "body_text": "Opcjonalny tekst",  // opcjonalne
+        "reply_to": "reply@email.pl"  // opcjonalne
+    }
+    """
+    try:
+        from email_sender import send_email
+        
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'success': False, 'error': 'Brak body JSON'}), 400
+        
+        to_email = data.get("to")
+        subject = data.get("subject")
+        body_html = data.get("body_html")
+        
+        if not to_email or not subject or not body_html:
+            return jsonify({
+                'success': False,
+                'error': 'Wymagane pola: to, subject, body_html'
+            }), 400
+        
+        result = send_email(
+            to_email=to_email,
+            subject=subject,
+            body_html=body_html,
+            body_text=data.get("body_text"),
+            reply_to=data.get("reply_to"),
+        )
+        
+        status_code = 200 if result.get("success") else 500
+        return jsonify(result), status_code
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/auth')
 def auth():
     """
