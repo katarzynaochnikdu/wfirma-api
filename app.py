@@ -14,6 +14,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
+import threading
 
 app = Flask(__name__)
 
@@ -92,6 +93,16 @@ REGON_API_KEY_TOKEN = os.environ.get('REGON_API_KEY_TOKEN')
 # Powiadomienia o wygasającym refresh tokenie
 EMAIL_REFRESH_TOKEN_EXPIRE = os.environ.get('EMAIL_REFRESH_TOKEN_EXPIRE')  # Email do powiadomień
 WEBHOOK_TOKEN_EXPIRE_NOTIFY = os.environ.get('WEBHOOK_TOKEN_EXPIRE_NOTIFY')  # URL webhooka (np. Make.com)
+
+# Make.com email webhook (spójne z Backstage Engine)
+MAKE_WEBHOOK_SEND_EMAIL_REQUEST = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUEST", "")
+RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", "")
+
+# Token monitor: docelowy odbiorca
+WFIRMA_TOKEN_NOTIFY_EMAIL = os.environ.get("WFIRMA_TOKEN_NOTIFY_EMAIL", "adam.pragacz@medidesk.com")
+
+# Link do autoryzacji (MD)
+WFIRMA_AUTH_URL_MD = os.environ.get("WFIRMA_AUTH_URL_MD", "https://wfirma-api.onrender.com/auth?company=md")
 
 # SCOPES per firma - muszą odpowiadać konfiguracji w wFirma!
 SCOPES_MD = [
@@ -545,6 +556,277 @@ def send_token_expiry_notification(days_remaining, warning_message):
         return True
     
     return False
+
+
+# ---------------------------------------------------------------------------
+# WFIRMA TOKEN MONITOR (auto-email via Make.com)
+# ---------------------------------------------------------------------------
+
+WFIRMA_TOKEN_MONITOR_LOCK_ID = 83427519  # stały lock w Postgres (unikalny dla usługi)
+
+
+def _is_make_email_configured() -> bool:
+    return bool(MAKE_WEBHOOK_SEND_EMAIL_REQUEST and RENDER_EMAIL_KEY_SEND_REQUEST)
+
+
+def _send_email_via_make_token_monitor(to_email: str, subject: str, body_html: str, template_type: str = "wfirma_token_monitor") -> bool:
+    if not _is_make_email_configured():
+        print("[TOKEN MONITOR] Make email webhook nie skonfigurowany")
+        return False
+    try:
+        payload = {
+            "to": to_email,
+            "subject": subject,
+            "body_html": body_html,
+            "event_order_id": "TOKEN-MONITOR",
+            "template_type": template_type,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-make-apikey": RENDER_EMAIL_KEY_SEND_REQUEST,
+        }
+        resp = requests.post(MAKE_WEBHOOK_SEND_EMAIL_REQUEST, json=payload, headers=headers, timeout=20)
+        ok = resp.status_code in (200, 201, 202)
+        print(f"[TOKEN MONITOR] Make response {resp.status_code} | ok={ok} | {resp.text[:120] if resp.text else ''}")
+        return ok
+    except Exception as e:
+        print(f"[TOKEN MONITOR] Błąd wysyłki email przez Make: {e}")
+        return False
+
+
+def _format_dt(ts: float) -> str:
+    try:
+        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return "-"
+
+
+def _get_refresh_token_days_remaining(company: str = "md") -> tuple[float | None, float | None]:
+    """Zwraca (days_remaining, expires_at_ts) lub (None, None) jeśli brak danych."""
+    config = get_company_config(company)
+    prefix = config["prefix"]
+    refresh_expires = os.environ.get(f"{prefix}REFRESH_TOKEN_EXPIRES") or os.environ.get("WFIRMA_REFRESH_TOKEN_EXPIRES")
+    if not refresh_expires:
+        return None, None
+    try:
+        expires_at = float(refresh_expires)
+        now = time.time()
+        days_remaining = (expires_at - now) / (24 * 60 * 60)
+        return days_remaining, expires_at
+    except Exception:
+        return None, None
+
+
+def _should_send_token_email(now_ts: float, state: dict, days_remaining: float) -> tuple[bool, str]:
+    """
+    Zasady:
+    - od 20 dni do 4 dni: max 1 mail/dzień
+    - <=3 dni (w tym 0/expired): max 3 maile/dzień (co ~8h)
+    """
+    last_email_at = state.get("last_email_at")
+    last_email_ts = None
+    try:
+        if last_email_at:
+            # psycopg2 zwraca datetime; albo string; obsłuż oba
+            if isinstance(last_email_at, datetime.datetime):
+                last_email_ts = last_email_at.timestamp()
+            else:
+                # ISO-ish
+                last_email_ts = datetime.datetime.fromisoformat(str(last_email_at).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        last_email_ts = None
+
+    if days_remaining <= 3:
+        # 3 razy dziennie -> co 8h
+        if last_email_ts is None or (now_ts - last_email_ts) >= (8 * 60 * 60 - 60):
+            return True, "urgent_3x_daily"
+        return False, "throttled_urgent"
+
+    if days_remaining <= 20:
+        # raz dziennie
+        if last_email_ts is None or (now_ts - last_email_ts) >= (20 * 60 * 60):
+            return True, "daily"
+        return False, "throttled_daily"
+
+    return False, "outside_window"
+
+
+def _render_token_monitor_email(company: str, days_remaining: float | None, expires_at: float | None) -> tuple[str, str]:
+    service_url = os.environ.get('REDIRECT_URI', 'https://wfirma-api.onrender.com').replace('/callback', '')
+    auth_url = WFIRMA_AUTH_URL_MD if (company or "").lower().startswith("md") else f"{service_url}/auth?company={company}"
+    company_label = (company or "md").upper()
+
+    if days_remaining is None or expires_at is None:
+        subject = f"[wFirma] [{company_label}] Brak danych o wygaśnięciu refresh tokena"
+        headline = "Brak danych o terminie ważności refresh tokena"
+        badge = "INFO"
+        color = "#0d6efd"
+        details = "Nie znaleziono zmiennej REFRESH_TOKEN_EXPIRES w ENV. System nie wie kiedy token wygaśnie."
+    elif days_remaining <= 0:
+        subject = f"[wFirma] [{company_label}] REFRESH TOKEN WYGASŁ — wymagana autoryzacja"
+        headline = "Refresh token wygasł — wymagana autoryzacja"
+        badge = "PILNE"
+        color = "#dc3545"
+        details = f"Token wygasł. Bez ponownej autoryzacji faktury i kontrahenci w wFirma nie będą działać."
+    elif days_remaining <= 3:
+        subject = f"[wFirma] [{company_label}] PILNE — token wygasa za {days_remaining:.1f} dni"
+        headline = f"Refresh token wygasa za {days_remaining:.1f} dni"
+        badge = "PILNE"
+        color = "#dc3545"
+        details = "Zbliża się wygaśnięcie refresh tokena. Prosimy o reautoryzację."
+    else:
+        subject = f"[wFirma] [{company_label}] Token wygasa za {days_remaining:.1f} dni"
+        headline = f"Refresh token wygasa za {days_remaining:.1f} dni"
+        badge = "UWAGA"
+        color = "#fd7e14"
+        details = "Zaplanuj reautoryzację, aby uniknąć przerwy w wystawianiu faktur."
+
+    exp_txt = _format_dt(expires_at) if expires_at else "-"
+
+    body_html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; padding: 20px; background: #f6f8fb;">
+        <div style="max-width: 720px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+          <div style="padding: 16px 20px; background: {color}; color: #ffffff;">
+            <div style="font-size: 14px; opacity: 0.95;">wFirma Token Monitor</div>
+            <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{headline}</div>
+          </div>
+          <div style="padding: 18px 20px;">
+            <div style="display:inline-block; padding: 4px 10px; border-radius: 999px; background: {color}; color:#fff; font-size: 12px; font-weight: bold;">{badge}</div>
+            <p style="margin: 14px 0 0 0; color: #111827; line-height: 20px;">{details}</p>
+
+            <table style="margin-top: 16px; width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color:#6b7280; width: 220px;">Firma</td>
+                <td style="padding: 8px 0; color:#111827; font-weight: bold;">{company_label}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color:#6b7280;">Ważny do</td>
+                <td style="padding: 8px 0; color:#111827;">{exp_txt}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color:#6b7280;">Panel autoryzacji</td>
+                <td style="padding: 8px 0;"><a href="{auth_url}" style="color:{color}; text-decoration: underline;">{auth_url}</a></td>
+              </tr>
+            </table>
+
+            <div style="margin-top: 18px;">
+              <a href="{auth_url}" style="display:inline-block; padding: 12px 16px; background:{color}; color:#ffffff; border-radius: 8px; text-decoration:none; font-weight:bold;">
+                Odnów autoryzację wFirma
+              </a>
+            </div>
+
+            <p style="margin-top: 18px; color:#6b7280; font-size: 12px;">
+              Ten email jest wysyłany automatycznie. Jeśli autoryzacja została już wykonana, możesz go zignorować.
+            </p>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    return subject, body_html
+
+
+def run_wfirma_token_monitor_once(company: str = "md") -> dict:
+    """
+    Jedno uruchomienie monitoringu:
+    - oblicza days_remaining
+    - throttle wg zasad (20d -> 1/dzień, <=3d -> 3/dzień)
+    - wysyła email przez Make.com
+    """
+    now_ts = time.time()
+    try:
+        from pg_storage import (
+            try_advisory_lock,
+            advisory_unlock,
+            get_token_monitor_state,
+            upsert_token_monitor_state,
+        )
+    except Exception as e:
+        print(f"[TOKEN MONITOR] Brak pg_storage: {e}")
+        return {"ok": False, "error": "no_pg_storage"}
+
+    if not try_advisory_lock(WFIRMA_TOKEN_MONITOR_LOCK_ID):
+        return {"ok": True, "skipped": True, "reason": "lock_held"}
+
+    try:
+        state = get_token_monitor_state(company)
+        days_remaining, expires_at = _get_refresh_token_days_remaining(company)
+
+        upsert_token_monitor_state(
+            company=company,
+            last_check_at=datetime.datetime.utcnow().isoformat(),
+            last_days_remaining=float(days_remaining) if days_remaining is not None else None,
+            last_status="missing" if days_remaining is None else ("expired" if days_remaining <= 0 else ("warn" if days_remaining <= 20 else "ok")),
+            last_error=None,
+        )
+
+        # jeśli nie mamy danych - wyślij tylko informacyjnie raz na dobę
+        if days_remaining is None:
+            send, kind = _should_send_token_email(now_ts, state, 20)  # traktuj jak „daily window”
+            if not send:
+                return {"ok": True, "skipped": True, "reason": kind, "company": company}
+            subject, body_html = _render_token_monitor_email(company, None, None)
+        else:
+            send, kind = _should_send_token_email(now_ts, state, float(days_remaining))
+            if not send:
+                return {"ok": True, "skipped": True, "reason": kind, "company": company, "days_remaining": round(float(days_remaining), 2)}
+            subject, body_html = _render_token_monitor_email(company, float(days_remaining), expires_at)
+
+        ok = _send_email_via_make_token_monitor(WFIRMA_TOKEN_NOTIFY_EMAIL, subject, body_html)
+        if ok:
+            upsert_token_monitor_state(
+                company=company,
+                last_email_at=datetime.datetime.utcnow().isoformat(),
+                last_email_kind=kind,
+            )
+        return {"ok": ok, "company": company, "email_to": WFIRMA_TOKEN_NOTIFY_EMAIL, "kind": kind, "days_remaining": round(float(days_remaining), 2) if days_remaining is not None else None}
+    finally:
+        advisory_unlock(WFIRMA_TOKEN_MONITOR_LOCK_ID)
+
+
+def _wfirma_token_monitor_loop():
+    print("[TOKEN MONITOR] start loop (md)")
+    while True:
+        try:
+            # zawsze md (zgodnie z wymaganiem)
+            result = run_wfirma_token_monitor_once(company="md")
+            try:
+                print(f"[TOKEN MONITOR] run result: {result}")
+            except Exception:
+                pass
+
+            # Harmonogram: domyślnie 24h; w ostatnie 3 dni -> 8h
+            days_remaining, _expires_at = _get_refresh_token_days_remaining("md")
+            if days_remaining is not None and float(days_remaining) <= 3:
+                sleep_s = 8 * 60 * 60
+            else:
+                sleep_s = 24 * 60 * 60
+        except Exception as e:
+            print(f"[TOKEN MONITOR] loop error: {e}")
+            sleep_s = 6 * 60 * 60  # retry co 6h przy błędach
+
+        time.sleep(sleep_s)
+
+
+def start_wfirma_token_monitor():
+    # Uruchamiaj tylko jeśli jest Make webhook (inaczej bez sensu)
+    if not _is_make_email_configured():
+        print("[TOKEN MONITOR] disabled (Make webhook not configured)")
+        return
+    # Wymaganie: próbkowanie automatyczne — uruchamiamy w tle
+    t = threading.Thread(target=_wfirma_token_monitor_loop, name="wfirma-token-monitor", daemon=True)
+    t.start()
+    print("[TOKEN MONITOR] thread started")
+
+
+@app.route('/api/workflow/token-monitor/run', methods=['POST'])
+@require_api_key
+def token_monitor_run_endpoint():
+    """Manualny trigger monitoringu tokenów (MD)."""
+    res = run_wfirma_token_monitor_once(company="md")
+    return jsonify(res), 200
 
 def load_token(silent=False, company=None):
     """
@@ -1999,6 +2281,13 @@ def stripe_sandbox_webhook():
             'status': 'error',
             'error': str(e)
         }), 200
+
+
+# Start background monitors (after routes are defined)
+try:
+    start_wfirma_token_monitor()
+except Exception as e:
+    print(f"[TOKEN MONITOR] failed to start: {e}")
 
 
 # ---------------------------------------------------------------------------

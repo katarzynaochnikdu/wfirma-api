@@ -912,7 +912,20 @@ def _create_wfirma_invoice(
     purchaser_email = order_data.get("purchaser_email", "")
     total = order_data.get("total", 0)
     currency = order_data.get("currency", "PLN")
-    tickets = order_data.get("tickets", [])
+    raw_tickets = order_data.get("tickets", [])
+    
+    # Wzbogać bilety o nazwy z bazy danych (event_ticket_classes)
+    event_id = order_data.get("event_id", "")
+    if raw_tickets and event_id:
+        enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+        if unknown_ids:
+            _log("DEBUG", "WFIRMA: Nierozpoznane ticket_class_id", {
+                "event_order_id": event_order_id,
+                "unknown_ids": unknown_ids[:5],
+            })
+        tickets = enriched_tickets
+    else:
+        tickets = raw_tickets
     
     # Adres rozliczeniowy
     billing_address = order_data.get("billing_address", "-")

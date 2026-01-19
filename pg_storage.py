@@ -187,6 +187,19 @@ CREATE TABLE IF NOT EXISTS backstage_webhook_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_backstage_events_order_id ON backstage_webhook_events(event_order_id);
+
+-- ---------------------------------------------------------------------------
+-- TOKEN MONITOR (wFirma refresh token expiry notifications)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS token_monitor_state (
+  company TEXT PRIMARY KEY,
+  last_check_at TIMESTAMPTZ,
+  last_email_at TIMESTAMPTZ,
+  last_email_kind TEXT, -- daily / urgent / expired
+  last_days_remaining NUMERIC(10,3),
+  last_status TEXT, -- ok / warn / expired / missing
+  last_error TEXT
+);
 """
 
 
@@ -1112,6 +1125,111 @@ def list_pending_mail_tasks(limit: int = 50) -> List[Dict[str, Any]]:
             (int(limit),),
         )
         return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# TOKEN MONITOR STATE + ADVISORY LOCK
+# ---------------------------------------------------------------------------
+
+
+def try_advisory_lock(lock_id: int) -> bool:
+    """Próbuje przejąć globalny lock w Postgres (dla wielu workerów)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (int(lock_id),))
+        row = cur.fetchone()
+        return bool(row and row[0])
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def advisory_unlock(lock_id: int) -> None:
+    """Zwalnia globalny lock w Postgres."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_unlock(%s)", (int(lock_id),))
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_token_monitor_state(company: str) -> Dict[str, Any]:
+    """Pobiera stan token monitor dla firmy."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT company, last_check_at, last_email_at, last_email_kind,
+                   last_days_remaining, last_status, last_error
+            FROM token_monitor_state
+            WHERE company = %s
+            """,
+            (str(company),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else {"company": company}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def upsert_token_monitor_state(
+    company: str,
+    last_check_at: Optional[str] = None,
+    last_email_at: Optional[str] = None,
+    last_email_kind: Optional[str] = None,
+    last_days_remaining: Optional[float] = None,
+    last_status: Optional[str] = None,
+    last_error: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Upsert stanu token monitor (idempotentnie)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO token_monitor_state
+              (company, last_check_at, last_email_at, last_email_kind, last_days_remaining, last_status, last_error)
+            VALUES
+              (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (company) DO UPDATE SET
+              last_check_at = COALESCE(EXCLUDED.last_check_at, token_monitor_state.last_check_at),
+              last_email_at = COALESCE(EXCLUDED.last_email_at, token_monitor_state.last_email_at),
+              last_email_kind = COALESCE(EXCLUDED.last_email_kind, token_monitor_state.last_email_kind),
+              last_days_remaining = COALESCE(EXCLUDED.last_days_remaining, token_monitor_state.last_days_remaining),
+              last_status = COALESCE(EXCLUDED.last_status, token_monitor_state.last_status),
+              last_error = COALESCE(EXCLUDED.last_error, token_monitor_state.last_error)
+            """,
+            (
+                str(company),
+                last_check_at,
+                last_email_at,
+                last_email_kind,
+                last_days_remaining,
+                last_status,
+                last_error,
+            ),
+        )
+        return {"company": company, "ok": True}
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
