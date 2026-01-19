@@ -330,22 +330,47 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     if order:
         purchaser_name = f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip()
     
-    # Mail do kupującego: potwierdzenie płatności
+    # Dane do emaili
+    total_value = order.get("total", 0) if order else 0
+    currency_value = order.get("currency", "PLN") if order else "PLN"
+    internal_email = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    
+    # 1. Mail do kupującego: potwierdzenie płatności
+    purchaser_email_sent = False
+    purchaser_email_error = None
+    
     if purchaser_email:
+        purchaser_subject = f"Potwierdzenie płatności – {event_name}"
+        purchaser_body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #28a745;">✅ Dziękujemy za dokonanie płatności!</h2>
+            <p>Szanowny/a <strong>{purchaser_name}</strong>,</p>
+            <p>Potwierdzamy otrzymanie płatności za zamówienie.</p>
+            <hr>
+            <p><strong>Wydarzenie:</strong> {event_name}</p>
+            <p><strong>Numer zamówienia:</strong> {event_order_id}</p>
+            <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+            <hr>
+            <p>W przypadku pytań prosimy o kontakt.</p>
+            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie.</p>
+        </body>
+        </html>
+        """
+        
         mail_task = {
             "template": "payment_confirmation",
             "to": purchaser_email,
-            "subject": f"Potwierdzenie płatności – {event_name}",
+            "subject": purchaser_subject,
             "direction": "purchaser",
             "data": {
                 "event_order_id": event_order_id,
                 "event_name": event_name,
                 "purchaser_name": purchaser_name,
                 "purchaser_email": purchaser_email,
-                "total": order.get("total", 0) if order else 0,
-                "currency": order.get("currency", "PLN") if order else "PLN",
+                "total": total_value,
+                "currency": currency_value,
                 "payment_method": "Stripe",
-                **event_data,
             },
         }
         mail_tasks.append(mail_task)
@@ -356,38 +381,98 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             direction="purchaser",
             template_key="payment_confirmation",
             to_email=purchaser_email,
-            subject=mail_task["subject"],
+            subject=purchaser_subject,
             data=mail_task["data"],
         )
-    
-    # Mail wewnętrzny - użyj BACKSTAGE_TECHNICAL_INFO_EMAIL lub z event_data
-    internal_email = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
-    if internal_email:
-        total_value = order.get("total", 0) if order else 0
-        currency_value = order.get("currency", "PLN") if order else "PLN"
         
-        internal_subject = f"[PAID] Zamówienie opłacone – {event_name}"
-        internal_body_html = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2 style="color: #28a745;">✅ Płatność potwierdzona</h2>
-            <p><strong>Zamówienie:</strong> {event_order_id}</p>
-            <p><strong>Wydarzenie:</strong> {event_name}</p>
-            <hr>
-            <p><strong>Kupujący:</strong> {purchaser_name}</p>
-            <p><strong>Email:</strong> {purchaser_email}</p>
-            <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
-            <p><strong>Metoda płatności:</strong> Stripe</p>
-            <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
-            <p><strong>Payment Intent:</strong> {payment_intent_id}</p>
-            <hr>
-            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
-        </body>
-        </html>
-        """
+        # Wyślij email do kupującego przez Make
+        print(f"[STRIPE] Wysyłam potwierdzenie płatności do kupującego: {purchaser_email}")
+        result = _send_email_via_make_stripe(
+            to_email=purchaser_email,
+            subject=purchaser_subject,
+            body_html=purchaser_body_html,
+            event_order_id=event_order_id,
+            template_type="payment_confirmation",
+        )
+        
+        if result.get("success"):
+            purchaser_email_sent = True
+            print(f"[STRIPE] Email do kupującego wysłany pomyślnie!")
+        else:
+            purchaser_email_error = result.get("error", "Nieznany błąd")
+            print(f"[STRIPE] BŁĄD wysyłki emaila do kupującego: {purchaser_email_error}")
+    
+    # 2. Mail wewnętrzny - zależny od wyniku wysyłki do kupującego
+    if internal_email:
+        if purchaser_email_sent:
+            # SUKCES - klient poinformowany
+            internal_subject = f"[PAID OK] Płatność dokonana, klient poinformowany – {event_name}"
+            internal_body_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #28a745;">✅ Płatność dokonana - klient poinformowany</h2>
+                <p><strong>Zamówienie:</strong> {event_order_id}</p>
+                <p><strong>Wydarzenie:</strong> {event_name}</p>
+                <hr>
+                <p><strong>Kupujący:</strong> {purchaser_name}</p>
+                <p><strong>Email:</strong> {purchaser_email}</p>
+                <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+                <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
+                <hr>
+                <p style="color: #28a745;"><strong>✓ Email z potwierdzeniem płatności został wysłany do klienta.</strong></p>
+                <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+            </body>
+            </html>
+            """
+            template_key = "internal_order_paid_ok"
+        elif purchaser_email and not purchaser_email_sent:
+            # BŁĄD - płatność OK ale email nie wysłany
+            internal_subject = f"[PAID ERROR] Płatność OK, ALE nie wysłano emaila – {event_name}"
+            internal_body_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #dc3545;">⚠️ Płatność dokonana - BŁĄD wysyłki emaila</h2>
+                <p><strong>Zamówienie:</strong> {event_order_id}</p>
+                <p><strong>Wydarzenie:</strong> {event_name}</p>
+                <hr>
+                <p><strong>Kupujący:</strong> {purchaser_name}</p>
+                <p><strong>Email:</strong> {purchaser_email}</p>
+                <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+                <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
+                <hr>
+                <p style="color: #dc3545;"><strong>❌ NIE UDAŁO SIĘ wysłać emaila z potwierdzeniem do klienta!</strong></p>
+                <p><strong>Błąd:</strong> {purchaser_email_error}</p>
+                <p style="color: #dc3545;"><strong>WYMAGANA AKCJA:</strong> Skontaktuj się z klientem ręcznie!</p>
+                <hr>
+                <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+            </body>
+            </html>
+            """
+            template_key = "internal_order_paid_email_error"
+        else:
+            # Brak emaila kupującego
+            internal_subject = f"[PAID] Płatność dokonana (brak emaila klienta) – {event_name}"
+            internal_body_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #ffc107;">⚠️ Płatność dokonana - brak emaila klienta</h2>
+                <p><strong>Zamówienie:</strong> {event_order_id}</p>
+                <p><strong>Wydarzenie:</strong> {event_name}</p>
+                <hr>
+                <p><strong>Kupujący:</strong> {purchaser_name or "(brak danych)"}</p>
+                <p><strong>Email:</strong> (brak)</p>
+                <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+                <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
+                <hr>
+                <p style="color: #ffc107;"><strong>⚠️ Brak adresu email klienta - nie wysłano potwierdzenia.</strong></p>
+                <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+            </body>
+            </html>
+            """
+            template_key = "internal_order_paid_no_email"
         
         internal_task = {
-            "template": "internal_order_paid",
+            "template": template_key,
             "to": internal_email,
             "subject": internal_subject,
             "direction": "internal",
@@ -400,6 +485,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
                 "currency": currency_value,
                 "payment_method": "Stripe",
                 "checkout_session_id": checkout_session_id,
+                "purchaser_email_sent": purchaser_email_sent,
+                "purchaser_email_error": purchaser_email_error,
             },
         }
         mail_tasks.append(internal_task)
@@ -407,19 +494,19 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         save_mail_log(
             event_order_id=event_order_id,
             direction="internal",
-            template_key="internal_order_paid",
+            template_key=template_key,
             to_email=internal_email,
             subject=internal_subject,
             data=internal_task["data"],
         )
         
-        # Wysyłka emaila przez Make
+        # Wysyłka emaila wewnętrznego przez Make
         _send_email_via_make_stripe(
             to_email=internal_email,
             subject=internal_subject,
             body_html=internal_body_html,
             event_order_id=event_order_id,
-            template_type="internal_order_paid",
+            template_type=template_key,
         )
     
     return {
