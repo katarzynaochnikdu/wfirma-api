@@ -5,8 +5,14 @@ Odpowiada za routing płatności (FOC / PROFORMA / STRIPE) i generowanie mail_ta
 import hashlib
 import json
 import datetime
+import os
+import requests
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
+
+# Konfiguracja Make.com webhook do wysyłki email
+MAKE_WEBHOOK_SEND_EMAIL_REQUEST = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUEST", "")
+RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", "")
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +36,107 @@ def _log(level: str, message: str, data: Optional[Dict[str, Any]] = None) -> Non
         print(f"{prefix} {message} | {json.dumps(safe_data, ensure_ascii=False, default=str)}")
     else:
         print(f"{prefix} {message}")
+
+
+# ---------------------------------------------------------------------------
+# MAKE.COM EMAIL WEBHOOK
+# ---------------------------------------------------------------------------
+
+def _is_make_email_configured() -> bool:
+    """Sprawdza czy Make webhook do wysyłki email jest skonfigurowany."""
+    return bool(MAKE_WEBHOOK_SEND_EMAIL_REQUEST and RENDER_EMAIL_KEY_SEND_REQUEST)
+
+
+def _send_email_via_make(
+    to_email: str,
+    subject: str,
+    body_html: str,
+    event_order_id: str = "",
+    template_type: str = "",
+    stripe_url: str = "",
+    extra_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Wysyła email przez webhook Make.com.
+    
+    Args:
+        to_email: Adres odbiorcy
+        subject: Temat
+        body_html: Treść HTML
+        event_order_id: ID zamówienia
+        template_type: Typ szablonu (stripe_payment_link, etc.)
+        stripe_url: URL płatności Stripe (opcjonalnie)
+        extra_data: Dodatkowe dane do przekazania
+    
+    Returns:
+        Dict z status, error, etc.
+    """
+    if not _is_make_email_configured():
+        _log("ERROR", "Make webhook nie skonfigurowany (brak MAKE_WEBHOOK_SEND_EMAIL_REQUEST lub RENDER_EMAIL_KEY_SEND_REQUEST)")
+        return {
+            "success": False,
+            "error": "Make webhook nie skonfigurowany",
+        }
+    
+    _log("INFO", "Wysyłam email przez Make webhook", {"to": to_email, "subject": subject})
+    
+    try:
+        payload = {
+            "to": to_email,
+            "subject": subject,
+            "body_html": body_html,
+            "event_order_id": event_order_id,
+            "template_type": template_type,
+            "stripe_url": stripe_url,
+            **(extra_data or {}),
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "x-make-apikey": RENDER_EMAIL_KEY_SEND_REQUEST,
+        }
+        
+        _log("DEBUG", f"POST {MAKE_WEBHOOK_SEND_EMAIL_REQUEST[:50]}...")
+        
+        response = requests.post(
+            MAKE_WEBHOOK_SEND_EMAIL_REQUEST,
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        
+        _log("DEBUG", f"Make response: {response.status_code}", {"body": response.text[:200] if response.text else ""})
+        
+        if response.status_code in (200, 201, 202):
+            _log("INFO", "Email wysłany przez Make pomyślnie!", {"to": to_email})
+            return {
+                "success": True,
+                "message": f"Email wysłany przez Make do {to_email}",
+                "to": to_email,
+                "subject": subject,
+                "make_response": response.text[:500] if response.text else "",
+            }
+        else:
+            error_msg = f"Make webhook zwrócił {response.status_code}: {response.text[:200]}"
+            _log("ERROR", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+            }
+            
+    except requests.Timeout:
+        _log("ERROR", "Timeout przy wywołaniu Make webhook")
+        return {
+            "success": False,
+            "error": "Timeout przy wywołaniu Make webhook (30s)",
+        }
+    except Exception as e:
+        _log("ERROR", f"Błąd przy wywołaniu Make webhook: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
 
 from pg_storage import (
     get_event,
@@ -561,8 +668,9 @@ def _handle_stripe_flow(
     # 2. Wyślij email z linkiem do płatności
     email_sent = False
     email_error = None
+    email_method = None
     
-    if stripe_url and purchaser_email and is_email_configured():
+    if stripe_url and purchaser_email:
         _log("INFO", "STRIPE FLOW: Wysyłam email z linkiem płatności...")
         
         # Określ typ szablonu (personal / nip_valid / nip_invalid)
@@ -599,24 +707,49 @@ def _handle_stripe_flow(
         
         subject = f"Link do płatności – {event_name}"
         
-        result = send_email(
-            to_email=purchaser_email,
-            subject=subject,
-            body_html=body_html,
-        )
+        # Próbuj wysłać przez Make webhook (preferowane)
+        if _is_make_email_configured():
+            _log("INFO", "STRIPE FLOW: Używam Make webhook do wysyłki email")
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=subject,
+                body_html=body_html,
+                event_order_id=event_order_id,
+                template_type=template_type,
+                stripe_url=stripe_url,
+                extra_data={
+                    "event_name": event_name,
+                    "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                    "total": total,
+                    "currency": currency,
+                    "purchaser_nip": purchaser_nip,
+                },
+            )
+            email_method = "make_webhook"
+        # Fallback na SMTP jeśli Make nie skonfigurowany
+        elif is_email_configured():
+            _log("INFO", "STRIPE FLOW: Make nie skonfigurowany, używam SMTP")
+            result = send_email(
+                to_email=purchaser_email,
+                subject=subject,
+                body_html=body_html,
+            )
+            email_method = "smtp"
+        else:
+            _log("WARN", "STRIPE FLOW: Brak konfiguracji email (ani Make ani SMTP)")
+            result = {"success": False, "error": "Brak konfiguracji email"}
+            email_method = None
         
         if result.get("success"):
             email_sent = True
-            _log("INFO", "STRIPE FLOW: Email wysłany pomyślnie!", {"to": purchaser_email})
+            _log("INFO", f"STRIPE FLOW: Email wysłany pomyślnie przez {email_method}!", {"to": purchaser_email})
         else:
             email_error = result.get("error")
-            _log("ERROR", f"STRIPE FLOW: Błąd wysyłki email: {email_error}")
+            _log("ERROR", f"STRIPE FLOW: Błąd wysyłki email ({email_method}): {email_error}")
     elif not stripe_url:
         _log("WARN", "STRIPE FLOW: Brak URL Stripe - email nie wysłany")
     elif not purchaser_email:
         _log("WARN", "STRIPE FLOW: Brak email kupującego - email nie wysłany")
-    elif not is_email_configured():
-        _log("WARN", "STRIPE FLOW: Email nie skonfigurowany (brak EMAIL_ADDRESS/EMAIL_PASSWORD)")
 
     # Mail task do zapisania w bazie (dla historii)
     if purchaser_email:
