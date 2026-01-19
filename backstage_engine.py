@@ -489,26 +489,136 @@ def _handle_stripe_flow(
 ) -> Dict[str, Any]:
     """
     Obsługuje flow STRIPE.
+    - Tworzy sesję Stripe Checkout
+    - Wysyła email z linkiem do płatności
     - Ustawia status na 'pending_payment'
-    - Zwraca dane do utworzenia Stripe Checkout Session
-    - Generuje mail z linkiem do płatności
     """
+    from stripe_integration import create_checkout_session
+    from email_sender import send_email, is_email_configured
+    from email_templates import render_stripe_payment_email
+    
     event_order_id = order_data["event_order_id"]
     purchaser_email = order_data["purchaser_email"]
+    purchaser_first_name = order_data.get("purchaser_first_name", "")
+    purchaser_last_name = order_data.get("purchaser_last_name", "")
+    purchaser_phone = order_data.get("purchaser_phone", "")
+    purchaser_nip = order_data.get("purchaser_nip", "")
+    total = order_data.get("total", 0)
+    currency = order_data.get("currency", "PLN")
+    is_sandbox = order_data.get("sandbox", False)
+    
     event_name = (event_config.get("event_name") if event_config else "") or "Wydarzenie"
     event_data = (event_config.get("data") if event_config else {}) or {}
+
+    _log("INFO", "STRIPE FLOW: Rozpoczynam przetwarzanie", {
+        "event_order_id": event_order_id,
+        "total": total,
+        "sandbox": is_sandbox,
+    })
 
     # Aktualizuj status zamówienia
     update_order_status(event_order_id, "pending_payment")
 
     # URLs dla Stripe
-    success_url = event_data.get("url_success") or event_data.get("url_event") or ""
-    cancel_url = event_data.get("url_cancel") or event_data.get("url_event") or ""
+    success_url = event_data.get("url_success") or event_data.get("url_event") or "https://medidesk.com"
+    cancel_url = event_data.get("url_cancel") or event_data.get("url_event") or "https://medidesk.com"
 
     mail_tasks = []
+    stripe_url = None
+    stripe_session_id = None
+    stripe_error = None
 
-    # Mail do kupującego z linkiem do płatności
-    # Placeholder - Make doda stripe_url po utworzeniu sesji
+    # 1. Utwórz sesję Stripe Checkout
+    _log("INFO", "STRIPE FLOW: Tworzę sesję Stripe Checkout...", {"sandbox": is_sandbox})
+    
+    session_data, error = create_checkout_session(
+        event_order_id=event_order_id,
+        amount_cents=int(total * 100),
+        currency=currency.lower(),
+        customer_email=purchaser_email,
+        description=f"{event_name} - {event_order_id}",
+        success_url=success_url + (f"?order_id={event_order_id}" if "?" not in success_url else f"&order_id={event_order_id}"),
+        cancel_url=cancel_url + (f"?order_id={event_order_id}" if "?" not in cancel_url else f"&order_id={event_order_id}"),
+        metadata={
+            "event_order_id": event_order_id,
+            "event_id": order_data.get("event_id", ""),
+            "event_name": event_name,
+        },
+        sandbox=is_sandbox,
+    )
+    
+    if error:
+        _log("ERROR", f"STRIPE FLOW: Błąd tworzenia sesji: {error}")
+        stripe_error = error
+    elif session_data:
+        stripe_url = session_data.get("url")
+        stripe_session_id = session_data.get("checkout_session_id")
+        _log("INFO", "STRIPE FLOW: Sesja utworzona", {
+            "checkout_session_id": stripe_session_id,
+            "url": stripe_url[:50] + "..." if stripe_url else None,
+        })
+
+    # 2. Wyślij email z linkiem do płatności
+    email_sent = False
+    email_error = None
+    
+    if stripe_url and purchaser_email and is_email_configured():
+        _log("INFO", "STRIPE FLOW: Wysyłam email z linkiem płatności...")
+        
+        # Określ typ szablonu (personal / nip_valid / nip_invalid)
+        template_type = "personal"
+        gus_data = None
+        
+        if purchaser_nip:
+            # TODO: Można tu dodać weryfikację NIP przez GUS
+            # Na razie zakładamy że NIP jest poprawny jeśli podany
+            template_type = "nip_valid"
+            gus_data = {
+                "name": f"{purchaser_first_name} {purchaser_last_name}".strip() or "Firma",
+                "street": "",
+                "zip": "",
+                "city": "",
+                "regon": "",
+            }
+        
+        # Renderuj HTML
+        body_html = render_stripe_payment_email(
+            template_type=template_type,
+            event_name=event_name,
+            purchaser_first_name=purchaser_first_name,
+            purchaser_last_name=purchaser_last_name,
+            purchaser_email=purchaser_email,
+            purchaser_phone=purchaser_phone,
+            purchaser_nip=purchaser_nip,
+            total_gross=total,
+            stripe_payment_url=stripe_url,
+            event_config=event_data,
+            tickets=[],  # TODO: Ekstrakcja biletów z payload
+            gus_data=gus_data,
+        )
+        
+        subject = f"Link do płatności – {event_name}"
+        
+        result = send_email(
+            to_email=purchaser_email,
+            subject=subject,
+            body_html=body_html,
+        )
+        
+        if result.get("success"):
+            email_sent = True
+            _log("INFO", "STRIPE FLOW: Email wysłany pomyślnie!", {"to": purchaser_email})
+        else:
+            email_error = result.get("error")
+            _log("ERROR", f"STRIPE FLOW: Błąd wysyłki email: {email_error}")
+    elif not stripe_url:
+        _log("WARN", "STRIPE FLOW: Brak URL Stripe - email nie wysłany")
+    elif not purchaser_email:
+        _log("WARN", "STRIPE FLOW: Brak email kupującego - email nie wysłany")
+    elif not is_email_configured():
+        _log("WARN", "STRIPE FLOW: Email nie skonfigurowany (brak EMAIL_ADDRESS/EMAIL_PASSWORD)")
+
+    # Mail task do zapisania w bazie (dla historii)
     if purchaser_email:
         mail_tasks.append(_build_mail_task(
             template_key=TEMPLATE_STRIPE_PAYMENT_LINK,
@@ -517,13 +627,14 @@ def _handle_stripe_flow(
             data={
                 "event_order_id": event_order_id,
                 "event_name": event_name,
-                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
+                "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
                 "purchaser_email": purchaser_email,
-                "total": order_data.get("total", 0),
-                "currency": order_data.get("currency", "PLN"),
-                "purchaser_nip": order_data.get("purchaser_nip", ""),
-                # Placeholder - Make/Stripe doda:
-                # "stripe_url": "https://checkout.stripe.com/...",
+                "total": total,
+                "currency": currency,
+                "purchaser_nip": purchaser_nip,
+                "stripe_url": stripe_url or "",
+                "email_sent": email_sent,
+                "email_error": email_error,
                 **event_data,
             },
             direction="purchaser",
@@ -540,36 +651,26 @@ def _handle_stripe_flow(
                 "event_order_id": event_order_id,
                 "event_name": event_name,
                 "flow": FLOW_STRIPE,
-                "total": order_data.get("total", 0),
-                "currency": order_data.get("currency", "PLN"),
+                "total": total,
+                "currency": currency,
                 "purchaser_email": purchaser_email,
-                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
-                "purchaser_nip": order_data.get("purchaser_nip", ""),
+                "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                "purchaser_nip": purchaser_nip,
+                "stripe_url": stripe_url or "",
+                "stripe_session_id": stripe_session_id or "",
             },
             direction="internal",
         ))
 
     return {
         "flow": FLOW_STRIPE,
-        "status": "pending_stripe",
+        "status": "ok" if stripe_url else "stripe_error",
         "order_status": "pending_payment",
-        "stripe_action": {
-            "action": "create_checkout_session",
-            "checkout_data": {
-                "event_order_id": event_order_id,
-                "amount": int(order_data.get("total", 0) * 100),  # grosze/cents
-                "currency": order_data.get("currency", "PLN").lower(),
-                "customer_email": purchaser_email,
-                "description": f"{event_name} - {event_order_id}",
-                "success_url": success_url + (f"?order_id={event_order_id}" if success_url else ""),
-                "cancel_url": cancel_url + (f"?order_id={event_order_id}" if cancel_url else ""),
-                "metadata": {
-                    "event_order_id": event_order_id,
-                    "event_id": order_data.get("event_id", ""),
-                    "event_name": event_name,
-                },
-            },
-        },
+        "stripe_url": stripe_url,
+        "stripe_session_id": stripe_session_id,
+        "stripe_error": stripe_error,
+        "email_sent": email_sent,
+        "email_error": email_error,
         "mail_tasks": mail_tasks,
     }
 
