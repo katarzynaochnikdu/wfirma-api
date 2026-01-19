@@ -169,9 +169,11 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         raw.get("purchaser_nip")
         or raw.get("nip")
         or raw.get("NIP")
+        or raw.get("tax_registration_no")  # Backstage format
         or buyer_form.get("nip")
         or buyer_form.get("NIP")
         or buyer_form.get("purchaser_nip")
+        or buyer_form.get("tax_registration_no")  # Backstage format!
         or ""
     )
     # Szukaj NIP w custom fields jeśli nie znaleziono
