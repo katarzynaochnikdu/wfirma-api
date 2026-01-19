@@ -867,7 +867,7 @@ def _build_mail_task(
 
 # Konfiguracja wFirma
 WFIRMA_COMPANY = os.environ.get("WFIRMA_COMPANY", "md")  # md lub test
-WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "Eventy")
+WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "FV/EV")
 WFIRMA_API_KEY = os.environ.get("MAKE_RENDER_API_KEY", "")  # Ten sam klucz co dla innych API
 
 
@@ -992,47 +992,43 @@ def _create_wfirma_invoice(
         "billing_city": billing_city,
     })
     
-    # Wywołaj wewnętrzny endpoint przez HTTP
-    # Używamy localhost bo endpoint wymaga autoryzacji i złożonej logiki (token OAuth, GUS, kontrahent)
+    # Wywołaj workflow wFirma wewnętrznie (bez HTTP), żeby uniknąć deadlocków/timeoutów przy 1 workerze.
+    # Uwaga: to dalej przechodzi przez ten sam endpoint i logikę, ale bez sieci.
     try:
-        import os
         import time
-        
-        # Określ URL endpointu - na Render będzie localhost:$PORT
-        port = os.environ.get("PORT", "5000")
-        base_url = f"http://127.0.0.1:{port}"
-        endpoint_url = f"{base_url}/api/workflow/create-invoice-from-nip"
-        
-        _log("DEBUG", "WFIRMA: Wywołuję endpoint", {"url": endpoint_url})
-        
-        t0 = time.time()
-        response = requests.post(
-            endpoint_url,
-            json=invoice_payload,
-            headers={
-                'X-API-Key': WFIRMA_API_KEY,
-                'Content-Type': 'application/json',
-            },
-            timeout=60,  # Długi timeout bo GUS może być wolny
-        )
-        dt_ms = int((time.time() - t0) * 1000)
-        
-        try:
-            result = response.json() if response.content else {}
-        except Exception:
-            result = {"_raw": (response.text or "")[:1000]}
+        from app import app as flask_app
 
-        _log("INFO", "WFIRMA: Odpowiedź endpointu", {
+        _log("DEBUG", "WFIRMA: Wywołuję workflow lokalnie (test_client)", {"path": "/api/workflow/create-invoice-from-nip"})
+
+        t0 = time.time()
+        with flask_app.test_client() as client:
+            resp = client.post(
+                "/api/workflow/create-invoice-from-nip",
+                json=invoice_payload,
+                headers={"X-API-Key": WFIRMA_API_KEY},
+            )
+        dt_ms = int((time.time() - t0) * 1000)
+
+        status_code = getattr(resp, "status_code", None)
+        try:
+            result = resp.get_json(silent=True) or {}
+        except Exception:
+            try:
+                result = {"_raw": (resp.get_data(as_text=True) or "")[:1000]}
+            except Exception:
+                result = {}
+
+        _log("INFO", "WFIRMA: Odpowiedź workflow (local)", {
             "event_order_id": event_order_id,
             "document_type": document_type,
             "payment_status": payment_status,
-            "status_code": response.status_code,
+            "status_code": status_code,
             "duration_ms": dt_ms,
             "success": bool(result.get("success")) if isinstance(result, dict) else None,
             "result_keys": list(result.keys()) if isinstance(result, dict) else None,
         })
-        
-        if response.status_code == 200 and result.get("success"):
+
+        if status_code == 200 and result.get("success"):
             invoice_id = result.get("invoice", {}).get("id")
             invoice_number = result.get("invoice", {}).get("fullnumber")
             
@@ -1057,23 +1053,54 @@ def _create_wfirma_invoice(
                     raw=result,
                 )
             except Exception as db_err:
-                _log("WARNING", "WFIRMA: Nie udało się zapisać do bazy", {"error": str(db_err)})
+                err_txt = str(db_err)
+                # Jeśli to duplikat (unikalny indeks na normal invoice) – traktuj jako "już istnieje"
+                if (
+                    "uniq_wfirma_normal_per_order" in err_txt
+                    or "duplicate key value violates unique constraint" in err_txt
+                    or "UNIQUE constraint failed" in err_txt
+                ):
+                    existing_preview = None
+                    try:
+                        from pg_storage import get_wfirma_documents
+                        docs = get_wfirma_documents(event_order_id)
+                        if docs:
+                            d0 = docs[0]
+                            existing_preview = {
+                                "wfirma_number": d0.get("wfirma_number"),
+                                "wfirma_invoice_id": d0.get("wfirma_invoice_id"),
+                                "document_type": d0.get("document_type"),
+                                "status": d0.get("status"),
+                                "created_at": str(d0.get("created_at"))[:19] if d0.get("created_at") else None,
+                            }
+                    except Exception:
+                        pass
+
+                    _log("INFO", "WFIRMA: Dokument już zapisany w bazie (duplikat) – pomijam zapis", {
+                        "event_order_id": event_order_id,
+                        "document_type": document_type,
+                        "wfirma_invoice_id": str(invoice_id) if invoice_id else "",
+                        "wfirma_number": invoice_number or "",
+                        "existing_doc_preview": existing_preview,
+                    })
+                else:
+                    _log("WARNING", "WFIRMA: Nie udało się zapisać do bazy", {"error": err_txt})
             
             return True, result, None
         else:
-            error_msg = result.get("error") or result.get("message") or f"HTTP {response.status_code}"
+            error_msg = result.get("error") or result.get("message") or f"HTTP {status_code}"
             _log("ERROR", "WFIRMA: ERROR tworzenia dokumentu", {
                 "event_order_id": event_order_id,
                 "document_type": document_type,
                 "payment_status": payment_status,
-                "status": response.status_code,
+                "status": status_code,
                 "duration_ms": dt_ms,
                 "error": error_msg,
                 "details": result.get("details", "")[:200] if result.get("details") else None,
-                "response_snippet": (response.text or "")[:500],
+                "response_snippet": (result.get("_raw") or "")[:500] if isinstance(result, dict) else None,
             })
             # Jeśli 401 - token wygasł / brak autoryzacji: wyślij jednoznaczny alert
-            if response.status_code == 401:
+            if status_code == 401:
                 try:
                     _send_error_notification(
                         error_type="WFIRMA_AUTH_REQUIRED",
@@ -1086,7 +1113,7 @@ def _create_wfirma_invoice(
                         event_order_id=event_order_id,
                         event_id=order_data.get("event_id", ""),
                         extra_data={
-                            "status_code": response.status_code,
+                            "status_code": status_code,
                             "error": error_msg,
                             "document_type": document_type,
                             "payment_status": payment_status,

@@ -3016,8 +3016,9 @@ def workflow_create_invoice():
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
-    # Seria faktur - domyślna dla TEST i MD to "Eventy"
-    default_series = 'Eventy'  # Używana dla obu firm
+    # Seria faktur - dla wydarzeń: FV/EV/nr/miesiąc/rok
+    # W wFirma sama "seria" (series_name) musi istnieć i mieć ustawiony format numeracji.
+    default_series = 'FV/EV'  # Używana dla obu firm (MD/TEST)
     series_name = (body.get('series_name') or default_series).strip()
     
     # Status płatności faktury - dwa sposoby przekazania:
