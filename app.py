@@ -1959,7 +1959,9 @@ def backstage_attendee():
             str(payload.get("Attendee_ID", ""))
         )
         
+        # PRIORYTET: dane uczestnika z formularza Backstage (polskie nazwy)
         email = (
+            payload.get("email_uczestnika") or  # główne pole uczestnika
             payload.get("email") or 
             payload.get("Email") or 
             payload.get("Email address") or
@@ -1968,28 +1970,32 @@ def backstage_attendee():
         )
         
         first_name = (
+            payload.get("imie_uczestnika") or  # główne pole uczestnika
             payload.get("first_name") or 
             payload.get("First name") or 
             payload.get("firstName") or
+            payload.get("firstName_system_crm") or  # fallback z CRM
             payload.get("Imię") or
             payload.get("imie") or
             ""
         )
         
         last_name = (
+            payload.get("nazwisko_uczestnika") or  # główne pole uczestnika
             payload.get("last_name") or 
             payload.get("Last name") or 
             payload.get("lastName") or
+            payload.get("lastName_system_crm") or  # fallback z CRM
             payload.get("Nazwisko") or
             payload.get("nazwisko") or
             ""
         )
         
         phone = (
+            payload.get("telefon_uczestnika") or  # główne pole uczestnika
             payload.get("phone") or 
             payload.get("Phone number") or 
             payload.get("phoneNumber") or
-            payload.get("telefon uczestnika") or
             payload.get("phone_number") or
             ""
         )
@@ -2059,10 +2065,18 @@ def backstage_attendee():
         # Sprawdź czy uczestnik już istnieje
         existing = get_participant_by_ticket(order_id, ticket_id)
         
+        # Dodatkowe dane uczestnika (firma, stanowisko, identyfikator)
+        company = payload.get("company_system_crm") or payload.get("company") or ""
+        position = payload.get("stanowisko_system_crm") or payload.get("designation") or ""
+        badge_name = payload.get("nazwa_placowki_na_identyfikator") or ""
+        
         extra_data = {
             "attendee_id": attendee_id,
             "event_id": event_id,
             "source": "zoho_attendee_webhook",
+            "company": company,
+            "position": position,
+            "badge_name": badge_name,  # nazwa placówki na identyfikator
             "raw_payload_keys": list(payload.keys())[:20],
         }
         
@@ -2175,6 +2189,10 @@ def backstage_attendee():
                 'first_name': first_name,
                 'last_name': last_name,
                 'email': email,
+                'phone': phone,
+                'company': company,
+                'position': position,
+                'badge_name': badge_name,
             },
             'participant_updated': success,
             'email_sent': email_sent,
