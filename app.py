@@ -2332,8 +2332,8 @@ def email_confirm_sent():
         
         # Zaktualizuj mail_log w bazie
         try:
-            from pg_storage import get_db_connection
-            conn = get_db_connection()
+            from pg_storage import _with_conn, _put_conn
+            pool, conn = _with_conn()
             cur = conn.cursor()
             
             # Znajdź ostatni mail_log dla tego zamówienia i zaktualizuj status
@@ -2351,7 +2351,7 @@ def email_confirm_sent():
             rows_updated = cur.rowcount
             conn.commit()
             cur.close()
-            conn.close()
+            _put_conn(pool, conn)
             
             print(f"[EMAIL CALLBACK] Updated {rows_updated} mail_log rows for order {event_order_id}")
             
