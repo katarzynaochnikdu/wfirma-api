@@ -1756,6 +1756,12 @@ def stripe_webhook():
         
         event_type = event.get('type', '')
         event_data = event.get('data', {}).get('object', {})
+        try:
+            meta = event_data.get("metadata") or {}
+            order_id_dbg = meta.get("event_order_id") or event_data.get("client_reference_id") or ""
+            print(f"[STRIPE WEBHOOK] event_type={event_type}, order={order_id_dbg}")
+        except Exception:
+            pass
         
         # Przetwórz event
         result = process_webhook_event(event_type, event_data)
@@ -1776,7 +1782,16 @@ def stripe_webhook():
             pass
         
         # Stripe wymaga 200 OK nawet dla zignorowanych eventów
-        return jsonify(result), 200
+        try:
+            return jsonify(result), 200
+        except Exception as e:
+            # Ostatnia deska ratunku: wymuś serializację (np. Decimal)
+            print(f"[STRIPE WEBHOOK] jsonify error: {e}")
+            try:
+                safe = json.loads(json.dumps(result, default=str))
+                return jsonify(safe), 200
+            except Exception as e2:
+                return jsonify({'status': 'error', 'error': str(e2)}), 200
         
     except Exception as e:
         # Loguj błąd ale zwróć 200 żeby Stripe nie ponawiał
@@ -1939,6 +1954,12 @@ def stripe_sandbox_webhook():
         
         event_type = event.get('type', '')
         event_data = event.get('data', {}).get('object', {})
+        try:
+            meta = event_data.get("metadata") or {}
+            order_id_dbg = meta.get("event_order_id") or event_data.get("client_reference_id") or ""
+            print(f"[STRIPE SANDBOX WEBHOOK] event_type={event_type}, order={order_id_dbg}")
+        except Exception:
+            pass
         
         result = process_webhook_event(event_type, event_data)
         result['mode'] = 'sandbox'
@@ -1958,7 +1979,15 @@ def stripe_sandbox_webhook():
         except Exception:
             pass
         
-        return jsonify(result), 200
+        try:
+            return jsonify(result), 200
+        except Exception as e:
+            print(f"[STRIPE SANDBOX WEBHOOK] jsonify error: {e}")
+            try:
+                safe = json.loads(json.dumps(result, default=str))
+                return jsonify(safe), 200
+            except Exception as e2:
+                return jsonify({'status': 'error', 'error': str(e2)}), 200
         
     except Exception as e:
         print(f"[STRIPE SANDBOX WEBHOOK ERROR] {str(e)}")

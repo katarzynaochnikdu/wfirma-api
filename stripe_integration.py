@@ -290,6 +290,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     payment_intent_id = session_data.get("payment_intent")
     metadata = session_data.get("metadata") or {}
     event_order_id = metadata.get("event_order_id") or session_data.get("client_reference_id")
+
+    print(f"[STRIPE] handle_checkout_completed | session={checkout_session_id}, payment_intent={payment_intent_id}, order={event_order_id}")
     
     if not checkout_session_id:
         return {"status": "error", "error": "Brak checkout_session_id"}
@@ -314,6 +316,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Pobierz dane zamówienia i eventu do mail tasks
     order = get_order(event_order_id)
+    if not order:
+        print(f"[STRIPE] WARN: brak order w DB dla event_order_id={event_order_id}")
     event_config = None
     if order:
         ev = get_event(order.get("event_id", ""))
@@ -334,9 +338,19 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         purchaser_name = f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip()
     
     # Dane do emaili
-    total_value = order.get("total", 0) if order else 0
+    # total z DB bywa Decimal -> rzutuj na float, bo to wraca w JSON (webhook response)
+    total_raw = order.get("total", 0) if order else 0
+    try:
+        total_value = float(total_raw or 0)
+    except Exception:
+        total_value = 0.0
     currency_value = order.get("currency", "PLN") if order else "PLN"
     internal_email = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+
+    try:
+        print(f"[STRIPE] order summary | event_id={order.get('event_id') if order else None}, total={total_value} ({type(total_raw).__name__}=>float), currency={currency_value}, purchaser_email={purchaser_email}")
+    except Exception:
+        pass
     
     # Wyciągnij i wzbogać bilety do tabeli w emailu
     tickets_table_html = ""
@@ -420,6 +434,11 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             },
         }
         mail_tasks.append(mail_task)
+
+        try:
+            print(f"[STRIPE] mail_task purchaser queued | to={purchaser_email}, total={total_value}, tickets_table={'yes' if bool(tickets_table_html) else 'no'}")
+        except Exception:
+            pass
         
         # Zapisz do logu
         save_mail_log(
@@ -587,7 +606,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             "tickets": enriched_tickets,  # Użyj wzbogaconych biletów
         }
         
-        print(f"[STRIPE] Tworzę fakturę VAT dla zamówienia {event_order_id}...")
+        print(f"[STRIPE] Tworzę fakturę VAT (wFirma) | order={event_order_id}, send_email={bool(purchaser_email)}")
         
         success, invoice_result, error = _create_paid_invoice(
             order_data=order_data_for_invoice,
@@ -600,7 +619,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             invoice_id = invoice_result.get("invoice", {}).get("id")
             invoice_number = invoice_result.get("invoice", {}).get("fullnumber")
             invoice_email_sent = invoice_result.get("email_sent", False)
-            print(f"[STRIPE] Faktura utworzona: {invoice_number} (ID: {invoice_id})")
+            print(f"[STRIPE] Faktura utworzona: {invoice_number} (ID: {invoice_id}), email_sent={invoice_email_sent}")
         else:
             invoice_error = error
             print(f"[STRIPE] BŁĄD tworzenia faktury: {error}")
