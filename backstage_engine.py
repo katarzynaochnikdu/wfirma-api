@@ -444,6 +444,29 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or "PLN"
     )
 
+    # Billing address - dane rozliczeniowe
+    billing_address = raw.get("eventOrder_billingAddress") or payload.get("billing") or {}
+    billing_street = (
+        billing_address.get("streetAddress1") or 
+        billing_address.get("street") or 
+        billing_address.get("address") or
+        "-"
+    )
+    billing_zip = (
+        billing_address.get("zipcode") or 
+        billing_address.get("zip") or 
+        billing_address.get("postalCode") or
+        "00-000"
+    )
+    billing_city = (
+        billing_address.get("city") or 
+        billing_address.get("town") or
+        "-"
+    )
+
+    # Ekstrakcja biletów z payload
+    tickets = _extract_tickets_from_payload(payload)
+
     return {
         "event_order_id": str(event_order_id).strip(),
         "event_id": str(event_id).strip(),
@@ -452,13 +475,183 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         "purchaser_last_name": str(purchaser_last_name).strip(),
         "purchaser_phone": str(purchaser_phone).strip(),
         "purchaser_nip": str(purchaser_nip).strip(),
+        "billing_address": str(billing_street).strip(),
+        "billing_zip": str(billing_zip).strip(),
+        "billing_city": str(billing_city).strip(),
         "payment_option_name": str(payment_option_name).strip(),
         "payment_type": payment_type,
         "total": total,
         "promo_code": str(promo_code).strip(),
         "currency": str(currency).strip().upper() or "PLN",
         "sandbox": sandbox,
+        "tickets": tickets,
     }
+
+
+def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Ekstrahuje listę biletów z payloadu Backstage.
+    Zwraca listę słowników z name, quantity, unit_price, total_price, vat_rate.
+    """
+    raw = payload.get("raw") or payload
+    
+    # Próbuj różne źródła biletów
+    tickets_raw = (
+        payload.get("tickets") or 
+        raw.get("orderTickets") or 
+        raw.get("tickets") or 
+        []
+    )
+    
+    if not tickets_raw or not isinstance(tickets_raw, list):
+        return []
+    
+    tickets = []
+    for t in tickets_raw:
+        # Backstage format
+        ticket_class_id = t.get("ticketClass") or t.get("ticket_class_id") or ""
+        ticket_price = float(t.get("ticketPrice") or t.get("actualTicketPrice") or t.get("price") or 0)
+        total_price = float(t.get("totalPrice") or t.get("total_price") or ticket_price)
+        vat_amount = float(t.get("taxedPrice") or t.get("vat_amount") or 0)
+        
+        # Oblicz stawkę VAT (domyślnie 23%)
+        if ticket_price > 0 and vat_amount > 0:
+            vat_rate = round((vat_amount / ticket_price) * 100)
+        else:
+            vat_rate = 23
+        
+        # Pobierz nazwę biletu - najpierw z ticket class, potem domyślna
+        ticket_name = t.get("ticketName") or t.get("ticket_name") or f"Bilet ({ticket_class_id[:8]}...)" if ticket_class_id else "Bilet"
+        
+        tickets.append({
+            "ticket_class_id": str(ticket_class_id),
+            "name": ticket_name,
+            "quantity": 1,  # Każdy rekord to 1 bilet w Backstage
+            "unit_price_net": round(ticket_price / (1 + vat_rate/100), 2),
+            "unit_price_gross": ticket_price,
+            "total_gross": total_price,
+            "vat_rate": vat_rate,
+            "vat_amount": vat_amount,
+        })
+    
+    # Agreguj bilety o tym samym ticket_class_id
+    aggregated = {}
+    for t in tickets:
+        key = t["ticket_class_id"]
+        if key in aggregated:
+            aggregated[key]["quantity"] += 1
+            aggregated[key]["total_gross"] += t["total_gross"]
+            aggregated[key]["vat_amount"] += t["vat_amount"]
+        else:
+            aggregated[key] = t.copy()
+    
+    return list(aggregated.values())
+
+
+def _enrich_tickets_with_names(tickets: List[Dict[str, Any]], event_id: str) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Wzbogaca bilety o nazwy z bazy danych (event_ticket_classes).
+    
+    Args:
+        tickets: Lista biletów z _extract_tickets_from_payload
+        event_id: ID wydarzenia
+    
+    Returns:
+        (wzbogacone_bilety, lista_nieznanych_ticket_class_id)
+    """
+    if not tickets or not event_id:
+        return tickets, []
+    
+    # Pobierz mapowanie ticket_class_id -> ticket_name z bazy
+    try:
+        from pg_storage import get_ticket_classes
+        ticket_classes = get_ticket_classes(event_id)
+        
+        # Zbuduj słownik mapowania
+        name_map = {}
+        for tc in ticket_classes:
+            tc_id = tc.get("ticket_class_id", "")
+            tc_name = tc.get("ticket_name", "")
+            if tc_id and tc_name:
+                name_map[tc_id] = tc_name
+        
+        _log("DEBUG", "Mapowanie nazw biletów", {
+            "event_id": event_id,
+            "ticket_classes_count": len(ticket_classes),
+            "name_map_count": len(name_map),
+        })
+        
+    except Exception as e:
+        _log("WARNING", "Błąd pobierania ticket_classes z bazy", {"error": str(e)})
+        return tickets, []
+    
+    # Wzbogać bilety o nazwy
+    enriched = []
+    unknown_ids = []
+    
+    for t in tickets:
+        ticket_class_id = t.get("ticket_class_id", "")
+        enriched_ticket = t.copy()
+        
+        if ticket_class_id in name_map:
+            # Znaleziono w bazie - użyj nazwy z bazy
+            enriched_ticket["name"] = name_map[ticket_class_id]
+            enriched_ticket["unknown"] = False
+        else:
+            # Nie znaleziono - zachowaj oryginalną nazwę, oznacz jako nieznany
+            if ticket_class_id and ticket_class_id not in unknown_ids:
+                unknown_ids.append(ticket_class_id)
+            enriched_ticket["unknown"] = True
+            # Popraw nazwę jeśli to tylko ID
+            if enriched_ticket.get("name", "").startswith("Bilet ("):
+                enriched_ticket["name"] = f"Bilet (nierozpoznany: {ticket_class_id[:12]}...)"
+        
+        enriched.append(enriched_ticket)
+    
+    if unknown_ids:
+        _log("WARNING", "Nierozpoznane bilety", {
+            "event_id": event_id,
+            "unknown_count": len(unknown_ids),
+            "unknown_ids": unknown_ids[:5],  # Pierwsze 5
+        })
+    
+    return enriched, unknown_ids
+
+
+def _build_invoice_positions(tickets: List[Dict[str, Any]], event_name: str = "") -> List[Dict[str, Any]]:
+    """
+    Buduje pozycje faktury z listy biletów.
+    Format zgodny z wFirma API.
+    """
+    if not tickets:
+        # Jeśli brak biletów, użyj jednej pozycji z nazwą wydarzenia
+        return [{
+            "name": event_name or "Udział w wydarzeniu",
+            "unit": "szt.",
+            "count": 1,
+            "price": 0,  # Zostanie uzupełnione z total
+            "vat": "23",
+        }]
+    
+    positions = []
+    for t in tickets:
+        name = t.get("name") or "Bilet"
+        if event_name:
+            name = f"{name} - {event_name}"
+        
+        vat_rate = t.get("vat_rate", 23)
+        # wFirma akceptuje stawki jako string: "23", "8", "5", "0", "zw", "np"
+        vat_str = str(vat_rate) if vat_rate in (23, 8, 5, 0) else "23"
+        
+        positions.append({
+            "name": name,
+            "unit": "szt.",
+            "count": t.get("quantity", 1),
+            "price": t.get("unit_price_net", 0),  # Cena netto jednostkowa
+            "vat": vat_str,
+        })
+    
+    return positions
 
 
 def _get_event_config(event_id: str) -> Optional[Dict[str, Any]]:
@@ -518,6 +711,211 @@ def _build_mail_task(
         "direction": direction,
         "data": data,
     }
+
+
+# ---------------------------------------------------------------------------
+# WFIRMA INVOICE CREATION
+# ---------------------------------------------------------------------------
+
+# Konfiguracja wFirma
+WFIRMA_COMPANY = os.environ.get("WFIRMA_COMPANY", "md")  # md lub test
+WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "Eventy")
+WFIRMA_API_KEY = os.environ.get("MAKE_RENDER_API_KEY", "")  # Ten sam klucz co dla innych API
+
+
+def _create_wfirma_invoice(
+    order_data: Dict[str, Any],
+    event_name: str,
+    document_type: str = "normal",  # "normal" (VAT) lub "proforma"
+    payment_status: str = "paid",   # "paid" lub "unpaid"
+    send_email: bool = True,
+) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Tworzy fakturę w wFirma przez wewnętrzne wywołanie API.
+    
+    Args:
+        order_data: Dane zamówienia z _extract_order_data
+        event_name: Nazwa wydarzenia
+        document_type: "normal" (faktura VAT) lub "proforma"
+        payment_status: "paid" (opłacona) lub "unpaid" (nieopłacona)
+        send_email: Czy wysłać fakturę emailem
+    
+    Returns:
+        (success, invoice_data, error_message)
+    """
+    event_order_id = order_data.get("event_order_id", "")
+    
+    _log("INFO", f"WFIRMA: Tworzę fakturę {document_type}", {
+        "event_order_id": event_order_id,
+        "payment_status": payment_status,
+        "event_name": event_name[:30] if event_name else None,
+    })
+    
+    # Przygotuj dane do faktury
+    purchaser_name = f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip()
+    purchaser_nip = order_data.get("purchaser_nip", "")
+    purchaser_email = order_data.get("purchaser_email", "")
+    total = order_data.get("total", 0)
+    currency = order_data.get("currency", "PLN")
+    tickets = order_data.get("tickets", [])
+    
+    # Adres rozliczeniowy
+    billing_address = order_data.get("billing_address", "-")
+    billing_zip = order_data.get("billing_zip", "00-000")
+    billing_city = order_data.get("billing_city", "-")
+    
+    # Buduj pozycje faktury
+    positions = _build_invoice_positions(tickets, event_name)
+    
+    # Jeśli brak pozycji lub cena = 0, użyj total z zamówienia
+    if not positions or (len(positions) == 1 and positions[0].get("price", 0) == 0):
+        # Oblicz cenę netto z brutto (VAT 23%)
+        price_net = round(total / 1.23, 2)
+        positions = [{
+            "name": f"Udział w wydarzeniu: {event_name}" if event_name else "Udział w wydarzeniu",
+            "unit": "szt.",
+            "count": 1,
+            "price": price_net,
+            "vat": "23",
+        }]
+    
+    # Data faktury
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    # Payload do workflow endpoint
+    invoice_payload = {
+        "company": WFIRMA_COMPANY,
+        "series_name": WFIRMA_SERIES_NAME,
+        "payment_status": payment_status,
+        "payment_due_days": 0 if payment_status == "paid" else 7,
+        "description": event_name,
+        "nip": purchaser_nip,
+        "purchaser_name": purchaser_name or "Uczestnik",
+        "purchaser_address": billing_address,
+        "purchaser_zip": billing_zip,
+        "purchaser_city": billing_city,
+        "document_type": document_type,
+        "invoice": {
+            "issue_date": today,
+            "sale_date": today,
+            "payment_due_days": 0 if payment_status == "paid" else 7,
+            "payment_method": "transfer",
+            "place": "Warszawa",
+            "currency": currency,
+            "positions": positions,
+        },
+        "send_email": send_email and bool(purchaser_email),
+        "email": purchaser_email,
+    }
+    
+    _log("DEBUG", "WFIRMA: Payload faktury", {
+        "document_type": document_type,
+        "positions_count": len(positions),
+        "nip": purchaser_nip[:5] + "..." if purchaser_nip else None,
+        "send_email": send_email,
+    })
+    
+    # Wywołaj wewnętrzny endpoint przez HTTP
+    # Używamy localhost bo endpoint wymaga autoryzacji i złożonej logiki (token OAuth, GUS, kontrahent)
+    try:
+        import os
+        
+        # Określ URL endpointu - na Render będzie localhost:$PORT
+        port = os.environ.get("PORT", "5000")
+        base_url = f"http://127.0.0.1:{port}"
+        endpoint_url = f"{base_url}/api/workflow/create-invoice-from-nip"
+        
+        _log("DEBUG", "WFIRMA: Wywołuję endpoint", {"url": endpoint_url})
+        
+        response = requests.post(
+            endpoint_url,
+            json=invoice_payload,
+            headers={
+                'X-API-Key': WFIRMA_API_KEY,
+                'Content-Type': 'application/json',
+            },
+            timeout=60,  # Długi timeout bo GUS może być wolny
+        )
+        
+        result = response.json() if response.content else {}
+        
+        if response.status_code == 200 and result.get("success"):
+            invoice_id = result.get("invoice", {}).get("id")
+            invoice_number = result.get("invoice", {}).get("fullnumber")
+            
+            _log("INFO", "WFIRMA: Faktura utworzona pomyślnie", {
+                "invoice_id": invoice_id,
+                "invoice_number": invoice_number,
+                "email_sent": result.get("email_sent", False),
+            })
+            
+            # Zapisz do bazy
+            try:
+                from pg_storage import save_wfirma_document
+                save_wfirma_document(
+                    event_order_id=event_order_id,
+                    wfirma_invoice_id=str(invoice_id) if invoice_id else "",
+                    wfirma_number=invoice_number or "",
+                    document_type=document_type,
+                    email_to=purchaser_email,
+                    raw=result,
+                )
+            except Exception as db_err:
+                _log("WARNING", "WFIRMA: Nie udało się zapisać do bazy", {"error": str(db_err)})
+            
+            return True, result, None
+        else:
+            error_msg = result.get("error") or result.get("message") or f"HTTP {response.status_code}"
+            _log("ERROR", "WFIRMA: Błąd tworzenia faktury", {
+                "status": response.status_code,
+                "error": error_msg,
+                "details": result.get("details", "")[:200] if result.get("details") else None,
+            })
+            return False, None, error_msg
+            
+    except requests.exceptions.Timeout:
+        _log("ERROR", "WFIRMA: Timeout podczas tworzenia faktury")
+        return False, None, "Timeout podczas komunikacji z wFirma"
+    except requests.exceptions.ConnectionError as e:
+        _log("ERROR", "WFIRMA: Błąd połączenia", {"error": str(e)})
+        return False, None, f"Błąd połączenia: {str(e)}"
+    except Exception as e:
+        _log("ERROR", "WFIRMA: Wyjątek podczas tworzenia faktury", {"error": str(e)})
+        return False, None, str(e)
+
+
+def _create_paid_invoice(
+    order_data: Dict[str, Any],
+    event_name: str,
+    send_email: bool = True,
+) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Tworzy opłaconą fakturę VAT po płatności Stripe.
+    """
+    return _create_wfirma_invoice(
+        order_data=order_data,
+        event_name=event_name,
+        document_type="normal",
+        payment_status="paid",
+        send_email=send_email,
+    )
+
+
+def _create_proforma_invoice(
+    order_data: Dict[str, Any],
+    event_name: str,
+    send_email: bool = True,
+) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Tworzy fakturę proforma dla flow PROFORMA.
+    """
+    return _create_wfirma_invoice(
+        order_data=order_data,
+        event_name=event_name,
+        document_type="proforma",
+        payment_status="unpaid",
+        send_email=send_email,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -593,54 +991,74 @@ def _handle_proforma_flow(
 ) -> Dict[str, Any]:
     """
     Obsługuje flow PROFORMA.
+    - Tworzy fakturę proforma w wFirma
+    - Wysyła proformę emailem do kupującego (przez wFirma)
     - Ustawia status na 'pending_payment'
-    - Zwraca dane do wystawienia proformy w wFirma (Make wywołuje osobno)
-    - Generuje mail z proformą (po wystawieniu przez Make/wFirma)
     """
     event_order_id = order_data["event_order_id"]
     purchaser_email = order_data["purchaser_email"]
     event_name = (event_config.get("event_name") if event_config else "") or "Wydarzenie"
     event_data = (event_config.get("data") if event_config else {}) or {}
 
+    _log("INFO", "PROFORMA FLOW: Rozpoczynam tworzenie proformy", {
+        "event_order_id": event_order_id,
+        "event_name": event_name,
+        "total": order_data.get("total", 0),
+    })
+
     # Aktualizuj status zamówienia
     update_order_status(event_order_id, "pending_payment")
 
-    # Konfiguracja wFirma z reguły
-    wfirma_config = {
-        "company": (rule.get("wfirma_company") if rule else None) or "md",
-        "document_type": (rule.get("wfirma_document_type") if rule else None) or "proforma",
-        "series_name": (rule.get("wfirma_series_name") if rule else None),
-        "payment_due_days": (rule.get("wfirma_payment_due_days") if rule else None) or 14,
-    }
-
     mail_tasks = []
+    proforma_result = None
+    proforma_error = None
 
-    # Mail do kupującego będzie wysłany PO wystawieniu proformy
-    # Na razie zwracamy placeholder - Make wywoła endpoint wFirma i doda PDF
-    if purchaser_email:
-        mail_tasks.append(_build_mail_task(
-            template_key=TEMPLATE_PROFORMA_SENT,
-            to_email=purchaser_email,
-            subject=f"Faktura pro-forma – {event_name}",
-            data={
-                "event_order_id": event_order_id,
-                "event_name": event_name,
-                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
-                "purchaser_email": purchaser_email,
-                "total": order_data.get("total", 0),
-                "currency": order_data.get("currency", "PLN"),
-                "purchaser_nip": order_data.get("purchaser_nip", ""),
-                # Placeholder - Make doda po wystawieniu proformy:
-                # "proforma_number": "...",
-                # "proforma_pdf_url": "...",
-                **event_data,
-            },
-            direction="purchaser",
-        ))
+    # Utwórz proformę w wFirma
+    try:
+        success, proforma_result, proforma_error = _create_proforma_invoice(
+            order_data=order_data,
+            event_name=event_name,
+            send_email=bool(purchaser_email),  # wFirma wyśle email z proformą
+        )
+        
+        if success and proforma_result:
+            _log("INFO", "PROFORMA FLOW: Proforma utworzona pomyślnie", {
+                "invoice_id": proforma_result.get("invoice", {}).get("id"),
+                "invoice_number": proforma_result.get("invoice", {}).get("fullnumber"),
+                "email_sent": proforma_result.get("email_sent", False),
+            })
+        else:
+            _log("ERROR", "PROFORMA FLOW: Błąd tworzenia proformy", {"error": proforma_error})
+            
+            # Wyślij powiadomienie o błędzie
+            _send_error_notification(
+                error_type="PROFORMA_CREATE_ERROR",
+                error_message=f"Nie udało się utworzyć faktury proforma.\n\nBłąd: {proforma_error}",
+                event_order_id=event_order_id,
+                event_name=event_name,
+                extra_context={
+                    "purchaser": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
+                    "email": purchaser_email,
+                    "total": f"{order_data.get('total', 0)} {order_data.get('currency', 'PLN')}",
+                    "nip": order_data.get("purchaser_nip", ""),
+                }
+            )
+            
+    except Exception as e:
+        proforma_error = str(e)
+        _log("ERROR", "PROFORMA FLOW: Wyjątek podczas tworzenia proformy", {"error": proforma_error})
 
-    # Mail wewnętrzny
-    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    # Mail wewnętrzny o nowym zamówieniu
+    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_TECHNICAL_INFO_EMAIL
     if internal_email:
+        proforma_info = ""
+        if proforma_result:
+            proforma_info = f"\n\nProforma: {proforma_result.get('invoice', {}).get('fullnumber', 'N/A')}"
+            if proforma_result.get("email_sent"):
+                proforma_info += " (wysłana do klienta)"
+        elif proforma_error:
+            proforma_info = f"\n\n⚠️ Błąd proformy: {proforma_error}"
+        
         mail_tasks.append(_build_mail_task(
             template_key=TEMPLATE_INTERNAL_ORDER_RECEIVED,
             to_email=internal_email,
@@ -654,28 +1072,21 @@ def _handle_proforma_flow(
                 "purchaser_email": purchaser_email,
                 "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
                 "purchaser_nip": order_data.get("purchaser_nip", ""),
+                "proforma_info": proforma_info,
+                "proforma_number": proforma_result.get("invoice", {}).get("fullnumber") if proforma_result else None,
             },
             direction="internal",
         ))
 
     return {
         "flow": FLOW_PROFORMA,
-        "status": "pending_wfirma",
+        "status": "ok" if proforma_result else "error",
         "order_status": "pending_payment",
-        "wfirma_action": {
-            "action": "create_proforma",
-            "config": wfirma_config,
-            "invoice_data": {
-                "purchaser_email": purchaser_email,
-                "purchaser_first_name": order_data.get("purchaser_first_name", ""),
-                "purchaser_last_name": order_data.get("purchaser_last_name", ""),
-                "purchaser_nip": order_data.get("purchaser_nip", ""),
-                "total": order_data.get("total", 0),
-                "currency": order_data.get("currency", "PLN"),
-                "event_name": event_name,
-                "event_order_id": event_order_id,
-            },
-        },
+        "proforma_created": bool(proforma_result),
+        "proforma_invoice_id": proforma_result.get("invoice", {}).get("id") if proforma_result else None,
+        "proforma_number": proforma_result.get("invoice", {}).get("fullnumber") if proforma_result else None,
+        "proforma_email_sent": proforma_result.get("email_sent", False) if proforma_result else False,
+        "proforma_error": proforma_error,
         "mail_tasks": mail_tasks,
     }
 
@@ -778,21 +1189,166 @@ def _handle_stripe_flow(
     if stripe_url and purchaser_email:
         _log("INFO", "STRIPE FLOW: Wysyłam email z linkiem płatności...")
         
+        # Wzbogać bilety o nazwy z bazy
+        raw_tickets = order_data.get("tickets", [])
+        event_id = order_data.get("event_id", "")
+        enriched_tickets, unknown_ticket_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+        
+        _log("DEBUG", "STRIPE FLOW: Bilety do emaila", {
+            "raw_count": len(raw_tickets),
+            "enriched_count": len(enriched_tickets),
+            "unknown_count": len(unknown_ticket_ids),
+        })
+        
+        # Powiadomienie o nierozpoznanych biletach
+        if unknown_ticket_ids:
+            _send_error_notification(
+                error_type="UNKNOWN_TICKET_CLASS",
+                error_message=f"Wykryto bilety o nieznanych ticket_class_id.\n\nNieznane ID ({len(unknown_ticket_ids)}):\n" + "\n".join(f"- {tid}" for tid in unknown_ticket_ids[:10]),
+                event_order_id=event_order_id,
+                event_name=event_name,
+                extra_context={
+                    "event_id": event_id,
+                    "unknown_ticket_ids": unknown_ticket_ids,
+                    "purchaser": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                    "email": purchaser_email,
+                    "total": f"{total} {currency}",
+                    "uwaga": "Bilety z nieznanymi ID zostały oznaczone jako 'nierozpoznany' w emailu do klienta. Sprawdź konfigurację event_ticket_classes w admin panelu.",
+                }
+            )
+        
         # Określ typ szablonu (personal / nip_valid / nip_invalid)
         template_type = "personal"
         gus_data = None
         
         if purchaser_nip:
-            # TODO: Można tu dodać weryfikację NIP przez GUS
-            # Na razie zakładamy że NIP jest poprawny jeśli podany
-            template_type = "nip_valid"
-            gus_data = {
-                "name": f"{purchaser_first_name} {purchaser_last_name}".strip() or "Firma",
-                "street": "",
-                "zip": "",
-                "city": "",
-                "regon": "",
-            }
+            # Weryfikacja NIP przez GUS
+            _log("INFO", "STRIPE FLOW: Weryfikuję NIP przez GUS...", {"nip": purchaser_nip})
+            
+            try:
+                # Import wewnątrz funkcji aby uniknąć circular import
+                from app import gus_lookup_nip
+                
+                # Wyczyść NIP (tylko cyfry)
+                clean_nip = ''.join(c for c in purchaser_nip if c.isdigit())
+                
+                if len(clean_nip) == 10:
+                    gus_records, gus_error = gus_lookup_nip(clean_nip)
+                    
+                    if gus_error:
+                        # Błąd GUS (timeout, niedostępny) - użyj szablonu nip_invalid z ostrzeżeniem
+                        _log("WARNING", "STRIPE FLOW: Błąd GUS, używam nip_invalid", {"error": gus_error})
+                        template_type = "nip_invalid"
+                        gus_data = None
+                        
+                        # Powiadomienie wewnętrzne o błędzie GUS
+                        _send_error_notification(
+                            error_type="GUS_ERROR",
+                            error_message=f"Błąd komunikacji z GUS podczas weryfikacji NIP.\n\nBłąd: {gus_error}",
+                            event_order_id=event_order_id,
+                            event_name=event_name,
+                            extra_context={
+                                "nip": purchaser_nip,
+                                "purchaser": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                                "email": purchaser_email,
+                                "total": f"{total} {currency}",
+                                "uwaga": "Klient otrzymał email z informacją o błędnym NIP. Może zapłacić (faktura na osobę fizyczną) lub zarejestrować się ponownie.",
+                            }
+                        )
+                    elif gus_records and len(gus_records) > 0:
+                        # NIP znaleziony - pobierz dane firmy
+                        rec = gus_records[0]
+                        
+                        # Zbuduj adres ulicy
+                        street_parts = []
+                        if rec.get('ulica'):
+                            street_parts.append(rec['ulica'])
+                        if rec.get('nrNieruchomosci'):
+                            street_parts.append(rec['nrNieruchomosci'])
+                        if rec.get('nrLokalu'):
+                            street_parts.append(f"/{rec['nrLokalu']}")
+                        street = ' '.join(street_parts).replace(' /', '/')
+                        
+                        template_type = "nip_valid"
+                        gus_data = {
+                            "name": rec.get('nazwa') or "Firma",
+                            "street": street,
+                            "zip": rec.get('kodPocztowy') or "",
+                            "city": rec.get('miejscowosc') or "",
+                            "regon": rec.get('regon') or "",
+                        }
+                        _log("INFO", "STRIPE FLOW: NIP poprawny, dane z GUS", {
+                            "nazwa": gus_data["name"][:50] if gus_data["name"] else None,
+                            "regon": gus_data["regon"],
+                        })
+                    else:
+                        # NIP nie znaleziony w GUS - niepoprawny
+                        _log("WARNING", "STRIPE FLOW: NIP nie znaleziony w GUS", {"nip": purchaser_nip})
+                        template_type = "nip_invalid"
+                        gus_data = None
+                        
+                        # Powiadomienie wewnętrzne o niepoprawnym NIP
+                        _send_error_notification(
+                            error_type="GUS_NIP_INVALID",
+                            error_message=f"Klient podał NIP, który nie istnieje w rejestrze GUS.\n\nNIP: {purchaser_nip}",
+                            event_order_id=event_order_id,
+                            event_name=event_name,
+                            extra_context={
+                                "nip": purchaser_nip,
+                                "purchaser": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                                "email": purchaser_email,
+                                "total": f"{total} {currency}",
+                                "uwaga": "Klient otrzymał email z informacją o błędnym NIP. Może zapłacić (faktura na osobę fizyczną) lub zarejestrować się ponownie z poprawnym NIP.",
+                            }
+                        )
+                else:
+                    # NIP ma niepoprawną długość
+                    _log("WARNING", "STRIPE FLOW: NIP ma niepoprawną długość", {
+                        "nip": purchaser_nip, 
+                        "clean_length": len(clean_nip)
+                    })
+                    template_type = "nip_invalid"
+                    gus_data = None
+                    
+                    # Powiadomienie wewnętrzne o NIP z błędną długością
+                    _send_error_notification(
+                        error_type="GUS_NIP_WRONG_FORMAT",
+                        error_message=f"Klient podał NIP o niepoprawnej długości ({len(clean_nip)} cyfr zamiast 10).\n\nPodany NIP: {purchaser_nip}",
+                        event_order_id=event_order_id,
+                        event_name=event_name,
+                        extra_context={
+                            "nip_podany": purchaser_nip,
+                            "nip_oczyszczony": clean_nip,
+                            "liczba_cyfr": len(clean_nip),
+                            "purchaser": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                            "email": purchaser_email,
+                            "total": f"{total} {currency}",
+                            "uwaga": "Klient otrzymał email z informacją o błędnym NIP. Może zapłacić (faktura na osobę fizyczną) lub zarejestrować się ponownie.",
+                        }
+                    )
+                    
+            except Exception as e:
+                # Wyjątek podczas weryfikacji GUS - fallback do nip_invalid
+                _log("ERROR", "STRIPE FLOW: Wyjątek podczas weryfikacji GUS", {"error": str(e)})
+                template_type = "nip_invalid"
+                gus_data = None
+                
+                # Powiadomienie wewnętrzne o wyjątku GUS
+                import traceback
+                tb = traceback.format_exc()
+                _send_error_notification(
+                    error_type="GUS_EXCEPTION",
+                    error_message=f"Wyjątek podczas weryfikacji NIP w GUS.\n\nBłąd: {str(e)}\n\nTraceback:\n{tb[:500]}",
+                    event_order_id=event_order_id,
+                    event_name=event_name,
+                    extra_context={
+                        "nip": purchaser_nip,
+                        "purchaser": f"{purchaser_first_name} {purchaser_last_name}".strip(),
+                        "email": purchaser_email,
+                        "total": f"{total} {currency}",
+                        "uwaga": "Klient otrzymał email z informacją o błędnym NIP (fallback). Może zapłacić (faktura na osobę fizyczną) lub zarejestrować się ponownie.",
+                    }
+                )
         
         # Renderuj HTML
         body_html = render_stripe_payment_email(
@@ -806,7 +1362,7 @@ def _handle_stripe_flow(
             total_gross=total,
             stripe_payment_url=stripe_url,
             event_config=event_data,
-            tickets=[],  # TODO: Ekstrakcja biletów z payload
+            tickets=enriched_tickets,
             gus_data=gus_data,
         )
         

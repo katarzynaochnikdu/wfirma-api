@@ -335,6 +335,49 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     currency_value = order.get("currency", "PLN") if order else "PLN"
     internal_email = BACKSTAGE_TECHNICAL_INFO_EMAIL or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
     
+    # Wyciągnij i wzbogać bilety do tabeli w emailu
+    tickets_table_html = ""
+    enriched_tickets = []
+    try:
+        from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+        from email_templates import generate_tickets_table_rows, format_currency
+        
+        raw_payload = order.get("raw", {}) if order else {}
+        raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+        event_id_for_tickets = order.get("event_id", "") if order else ""
+        
+        if raw_tickets:
+            enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id_for_tickets)
+            
+            # Przygotuj bilety do tabeli (format: name, quantity, price)
+            tickets_for_table = []
+            for t in enriched_tickets:
+                tickets_for_table.append({
+                    "name": t.get("name", "Bilet"),
+                    "quantity": t.get("quantity", 1),
+                    "price": t.get("unit_price_gross", 0),
+                })
+            
+            # Generuj wiersze tabeli
+            tickets_rows = generate_tickets_table_rows(tickets_for_table)
+            
+            if tickets_rows:
+                tickets_table_html = f'''
+                <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; margin: 16px 0; border: 1px solid #DEE2E6;">
+                    <tr>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: #28a745;">Szczegóły zamówienia</td>
+                    </tr>
+                    {tickets_rows}
+                    <tr>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #28a745; color: #ffffff;">Razem zapłacono</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #28a745; color: #ffffff; text-align: right;">{format_currency(total_value)}</td>
+                    </tr>
+                </table>
+                '''
+                print(f"[STRIPE] Wygenerowano tabelę biletów ({len(enriched_tickets)} pozycji)")
+    except Exception as e:
+        print(f"[STRIPE] Błąd generowania tabeli biletów: {e}")
+    
     # 1. Mail do kupującego: potwierdzenie płatności
     purchaser_email_sent = False
     purchaser_email_error = None
@@ -344,13 +387,13 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         purchaser_body_html = f"""
         <html>
         <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2 style="color: #28a745;">✅ Dziękujemy za dokonanie płatności!</h2>
+            <h2 style="color: #28a745;">Dziękujemy za dokonanie płatności!</h2>
             <p>Szanowny/a <strong>{purchaser_name}</strong>,</p>
             <p>Potwierdzamy otrzymanie płatności za zamówienie.</p>
             <hr>
             <p><strong>Wydarzenie:</strong> {event_name}</p>
             <p><strong>Numer zamówienia:</strong> {event_order_id}</p>
-            <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+            {tickets_table_html}
             <hr>
             <p>W przypadku pytań prosimy o kontakt.</p>
             <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie.</p>
@@ -509,6 +552,90 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             template_type=template_key,
         )
     
+    # 3. Utwórz fakturę VAT w wFirma
+    invoice_created = False
+    invoice_id = None
+    invoice_number = None
+    invoice_email_sent = False
+    invoice_error = None
+    
+    try:
+        from backstage_engine import _create_paid_invoice
+        
+        # Przygotuj dane zamówienia dla faktury
+        # Użyj już wyciągniętych biletów (enriched_tickets) jeśli dostępne
+        raw_payload = order.get("raw", {}) if order else {}
+        
+        # Wyciągnij dane rozliczeniowe
+        billing_address = raw_payload.get("eventOrder_billingAddress", {}) if raw_payload else {}
+        
+        order_data_for_invoice = {
+            "event_order_id": event_order_id,
+            "event_id": order.get("event_id", "") if order else "",
+            "purchaser_email": purchaser_email,
+            "purchaser_first_name": order.get("purchaser_first_name", "") if order else "",
+            "purchaser_last_name": order.get("purchaser_last_name", "") if order else "",
+            "purchaser_nip": order.get("purchaser_nip", "") if order else "",
+            "billing_address": billing_address.get("streetAddress1") or billing_address.get("street") or "-",
+            "billing_zip": billing_address.get("zipcode") or billing_address.get("zip") or "00-000",
+            "billing_city": billing_address.get("city") or "-",
+            "total": total_value,
+            "currency": currency_value,
+            "tickets": enriched_tickets,  # Użyj wzbogaconych biletów
+        }
+        
+        print(f"[STRIPE] Tworzę fakturę VAT dla zamówienia {event_order_id}...")
+        
+        success, invoice_result, error = _create_paid_invoice(
+            order_data=order_data_for_invoice,
+            event_name=event_name,
+            send_email=bool(purchaser_email),  # wFirma wyśle fakturę emailem
+        )
+        
+        if success and invoice_result:
+            invoice_created = True
+            invoice_id = invoice_result.get("invoice", {}).get("id")
+            invoice_number = invoice_result.get("invoice", {}).get("fullnumber")
+            invoice_email_sent = invoice_result.get("email_sent", False)
+            print(f"[STRIPE] Faktura utworzona: {invoice_number} (ID: {invoice_id})")
+        else:
+            invoice_error = error
+            print(f"[STRIPE] BŁĄD tworzenia faktury: {error}")
+            
+            # Wyślij powiadomienie wewnętrzne o błędzie faktury
+            if internal_email:
+                error_subject = f"[INVOICE ERROR] Błąd faktury – {event_name}"
+                error_body_html = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2 style="color: #dc3545;">❌ Błąd tworzenia faktury</h2>
+                    <p><strong>Zamówienie:</strong> {event_order_id}</p>
+                    <p><strong>Wydarzenie:</strong> {event_name}</p>
+                    <hr>
+                    <p><strong>Kupujący:</strong> {purchaser_name}</p>
+                    <p><strong>Email:</strong> {purchaser_email}</p>
+                    <p><strong>NIP:</strong> {order_data_for_invoice.get('purchaser_nip') or '(brak)'}</p>
+                    <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+                    <hr>
+                    <p style="color: #dc3545;"><strong>Błąd:</strong> {error}</p>
+                    <p><strong>WYMAGANA AKCJA:</strong> Utwórz fakturę ręcznie w wFirma!</p>
+                    <hr>
+                    <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+                </body>
+                </html>
+                """
+                _send_email_via_make_stripe(
+                    to_email=internal_email,
+                    subject=error_subject,
+                    body_html=error_body_html,
+                    event_order_id=event_order_id,
+                    template_type="internal_invoice_error",
+                )
+                
+    except Exception as e:
+        invoice_error = str(e)
+        print(f"[STRIPE] WYJĄTEK podczas tworzenia faktury: {e}")
+    
     return {
         "status": "ok",
         "order_id": event_order_id,
@@ -516,19 +643,11 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         "checkout_session_id": checkout_session_id,
         "payment_intent_id": payment_intent_id,
         "mail_tasks": mail_tasks,
-        "wfirma_action": {
-            "action": "create_paid_invoice",
-            "invoice_data": {
-                "event_order_id": event_order_id,
-                "purchaser_email": purchaser_email,
-                "purchaser_first_name": order.get("purchaser_first_name", "") if order else "",
-                "purchaser_last_name": order.get("purchaser_last_name", "") if order else "",
-                "purchaser_nip": order.get("purchaser_nip", "") if order else "",
-                "total": order.get("total", 0) if order else 0,
-                "currency": order.get("currency", "PLN") if order else "PLN",
-                "event_name": event_name,
-            },
-        },
+        "invoice_created": invoice_created,
+        "invoice_id": invoice_id,
+        "invoice_number": invoice_number,
+        "invoice_email_sent": invoice_email_sent,
+        "invoice_error": invoice_error,
     }
 
 

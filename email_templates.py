@@ -18,21 +18,52 @@ def calculate_vat(gross: float, vat_rate: float = 0.23) -> Dict[str, float]:
 
 
 def generate_tickets_table_rows(tickets: List[Dict[str, Any]], color_gradient_1: str = "#2563eb") -> str:
-    """Generuje wiersze tabeli z biletami."""
+    """
+    Generuje wiersze tabeli z biletami w stylu profesjonalnym.
+    
+    Zawiera:
+    - Nagłówek kolumn (Nazwa / Ilość / Cena jedn.)
+    - Alternujące tła wierszy (parzyste: szare, nieparzyste: białe)
+    - Neutralna kolorystyka Bootstrap-inspired
+    """
     if not tickets:
         return ""
     
+    # Kolory neutralne (Bootstrap gray scale)
+    COLOR_HEADER_BG = "#F1F3F5"      # gray-200 - tło nagłówka kolumn
+    COLOR_HEADER_TEXT = "#495057"    # gray-700 - tekst nagłówka
+    COLOR_HEADER_BORDER = "#DEE2E6"  # gray-400 - obramowanie nagłówka
+    COLOR_ROW_ODD_BG = "#FFFFFF"     # biały - wiersze nieparzyste
+    COLOR_ROW_EVEN_BG = "#F8F9FA"    # gray-100 - wiersze parzyste
+    COLOR_ROW_TEXT = "#212529"       # dark - tekst wierszy
+    COLOR_ROW_BORDER = "#E9ECEF"     # gray-300 - obramowanie wierszy
+    
     rows = []
-    for ticket in tickets:
+    
+    # Nagłówek kolumn
+    rows.append(f'''
+                      <tr>
+                        <td style="font-size: 13px; font-weight: bold; padding: 8px 6px; background-color: {COLOR_HEADER_BG}; color: {COLOR_HEADER_TEXT}; border-bottom: 1px solid {COLOR_HEADER_BORDER};">Nazwa</td>
+                        <td style="font-size: 13px; font-weight: bold; padding: 8px 6px; background-color: {COLOR_HEADER_BG}; color: {COLOR_HEADER_TEXT}; border-bottom: 1px solid {COLOR_HEADER_BORDER}; text-align: center; width: 60px;">Ilość</td>
+                        <td style="font-size: 13px; font-weight: bold; padding: 8px 6px; background-color: {COLOR_HEADER_BG}; color: {COLOR_HEADER_TEXT}; border-bottom: 1px solid {COLOR_HEADER_BORDER}; text-align: right; width: 100px;">Cena jedn.</td>
+                      </tr>''')
+    
+    # Wiersze biletów z alternującym tłem
+    for idx, ticket in enumerate(tickets):
         name = ticket.get("name", "Bilet")
         qty = ticket.get("quantity", 1)
         price = ticket.get("price", 0)
+        
+        # Alternujące tło: idx=0 (nieparzyste w widoku) = białe, idx=1 (parzyste w widoku) = szare
+        bg_color = COLOR_ROW_ODD_BG if idx % 2 == 0 else COLOR_ROW_EVEN_BG
+        
         rows.append(f'''
                       <tr>
-                        <td style="font-size: 14px; padding: 4px 6px; border-top: 1px solid #E0E0E0;">{name}</td>
-                        <td style="font-size: 14px; padding: 4px 6px; border-top: 1px solid #E0E0E0; text-align: center;">{qty}</td>
-                        <td style="font-size: 14px; padding: 4px 6px; border-top: 1px solid #E0E0E0; text-align: right;">{format_currency(price)}</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: {bg_color}; color: {COLOR_ROW_TEXT}; border-bottom: 1px solid {COLOR_ROW_BORDER};">{name}</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: {bg_color}; color: {COLOR_ROW_TEXT}; border-bottom: 1px solid {COLOR_ROW_BORDER}; text-align: center;">{qty}</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: {bg_color}; color: {COLOR_ROW_TEXT}; border-bottom: 1px solid {COLOR_ROW_BORDER}; text-align: right;">{format_currency(price)}</td>
                       </tr>''')
+    
     return "".join(rows)
 
 
@@ -147,22 +178,22 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
                 <!-- SZCZEGÓŁY ZAMÓWIENIA -->
                 <tr>
                   <td style="padding: 0 24px 8px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 8px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
                       </tr>
                       {tickets_rows}
                       <tr>
-                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {color_gradient_2};">Kwota netto</td>
-                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {color_gradient_2}; text-align: right;">{total_net_formatted}</td>
+                        <td colspan="2" style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; border-top: 2px solid {color_gradient_2};">Kwota netto</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; border-top: 2px solid {color_gradient_2}; text-align: right;">{total_net_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA;">VAT (23%)</td>
-                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; text-align: right;">{total_vat_formatted}</td>
+                        <td colspan="2" style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057;">VAT (23%)</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {color_gradient_2}; color: #ffffff; border-top: 1px solid {color_gradient_2};">Razem do zapłaty</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {color_gradient_2}; color: #ffffff; border-top: 1px solid {color_gradient_2}; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -171,12 +202,12 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
                 <!-- DANE ROZLICZENIOWE -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 8px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
                       </tr>
                       <tr class="two-column">
-                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 100%;">
+                        <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 100%;">
                           <p style="margin-bottom: 2px; font-weight: bold;">{purchaser_full_name}</p>
                           <p style="margin-bottom: 2px;">{purchaser_email}</p>
                           <p>{purchaser_phone}</p>
@@ -300,22 +331,22 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- SZCZEGÓŁY ZAMÓWIENIA -->
                 <tr>
                   <td style="padding: 0 24px 8px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 8px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
                       </tr>
                       {tickets_rows}
                       <tr>
-                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {color_gradient_2};">Kwota netto</td>
-                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {color_gradient_2}; text-align: right;">{total_net_formatted}</td>
+                        <td colspan="2" style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; border-top: 2px solid {color_gradient_2};">Kwota netto</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; border-top: 2px solid {color_gradient_2}; text-align: right;">{total_net_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA;">VAT (23%)</td>
-                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; text-align: right;">{total_vat_formatted}</td>
+                        <td colspan="2" style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057;">VAT (23%)</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -324,17 +355,17 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- DANE ROZLICZENIOWE -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="2" style="font-size: 16px; font-weight: bold; padding: 8px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
                       </tr>
                       <tr class="two-column">
-                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                        <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 50%;">
                           <p style="margin-bottom: 2px; font-weight: bold;">{purchaser_full_name}</p>
                           <p style="margin-bottom: 2px;">{purchaser_email}</p>
                           <p>{purchaser_phone}</p>
                         </td>
-                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                        <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 50%;">
                           <p style="margin-bottom: 2px; font-weight: bold;">{gus_company_name}</p>
                           <p style="margin-bottom: 2px;">{gus_address}</p>
                           <p>NIP: {purchaser_nip}</p>
@@ -471,22 +502,22 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- SZCZEGÓŁY ZAMÓWIENIA -->
                 <tr>
                   <td style="padding: 0 24px 8px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 8px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
                       </tr>
                       {tickets_rows}
                       <tr>
-                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {color_gradient_2};">Kwota netto</td>
-                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; border-top: 2px solid {color_gradient_2}; text-align: right;">{total_net_formatted}</td>
+                        <td colspan="2" style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; border-top: 2px solid {color_gradient_2};">Kwota netto</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; border-top: 2px solid {color_gradient_2}; text-align: right;">{total_net_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA;">VAT (23%)</td>
-                        <td style="font-size: 14px; padding: 4px 6px; background-color: #F8F9FA; text-align: right;">{total_vat_formatted}</td>
+                        <td colspan="2" style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057;">VAT (23%)</td>
+                        <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -495,17 +526,17 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- DANE ROZLICZENIOWE -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #D0D9DF;">
+                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="2" style="font-size: 16px; font-weight: bold; padding: 8px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
                       </tr>
                       <tr class="two-column">
-                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                        <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 50%;">
                           <p style="margin-bottom: 2px; font-weight: bold;">{purchaser_full_name}</p>
                           <p style="margin-bottom: 2px;">{purchaser_email}</p>
                           <p>{purchaser_phone}</p>
                         </td>
-                        <td style="font-size: 14px; padding: 4px 6px; vertical-align: top; width: 50%;">
+                        <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 50%;">
                           <p>NIP: {purchaser_nip}</p>
                         </td>
                       </tr>
