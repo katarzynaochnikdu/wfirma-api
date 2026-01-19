@@ -28,10 +28,15 @@ from pg_storage import (
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
+# Produkcja
 STRIPE_API_KEY = os.environ.get("STRIPE_RENDER_API_KEY")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")  # Do weryfikacji podpisu webhooka
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 
-# Inicjalizacja Stripe
+# Sandbox (testowy)
+STRIPE_SANDBOX_API_KEY = os.environ.get("STRIPE_RENDER_API_KEY_SANDBOX")
+STRIPE_SANDBOX_WEBHOOK_SECRET = os.environ.get("STRIPE_SANDBOX_WEBHOOK_SECRET")
+
+# Inicjalizacja Stripe (domyślnie produkcja)
 if stripe and STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
 
@@ -41,18 +46,33 @@ if stripe and STRIPE_API_KEY:
 # ---------------------------------------------------------------------------
 
 
-def is_stripe_configured() -> bool:
+def _get_api_key(sandbox: bool = False) -> Optional[str]:
+    """Zwraca odpowiedni klucz API (sandbox lub produkcja)."""
+    return STRIPE_SANDBOX_API_KEY if sandbox else STRIPE_API_KEY
+
+
+def _get_webhook_secret(sandbox: bool = False) -> Optional[str]:
+    """Zwraca odpowiedni sekret webhooka (sandbox lub produkcja)."""
+    return STRIPE_SANDBOX_WEBHOOK_SECRET if sandbox else STRIPE_WEBHOOK_SECRET
+
+
+def is_stripe_configured(sandbox: bool = False) -> bool:
     """Sprawdza czy Stripe jest poprawnie skonfigurowany."""
-    return bool(stripe and STRIPE_API_KEY)
+    api_key = _get_api_key(sandbox)
+    return bool(stripe and api_key)
 
 
-def _get_stripe_status() -> Dict[str, Any]:
+def _get_stripe_status(sandbox: bool = False) -> Dict[str, Any]:
     """Zwraca status konfiguracji Stripe."""
+    api_key = _get_api_key(sandbox)
+    webhook_secret = _get_webhook_secret(sandbox)
+    mode = "sandbox" if sandbox else "live"
     return {
+        "mode": mode,
         "stripe_library_available": stripe is not None,
-        "stripe_api_key_present": bool(STRIPE_API_KEY),
-        "stripe_webhook_secret_present": bool(STRIPE_WEBHOOK_SECRET),
-        "configured": is_stripe_configured(),
+        "stripe_api_key_present": bool(api_key),
+        "stripe_webhook_secret_present": bool(webhook_secret),
+        "configured": is_stripe_configured(sandbox),
     }
 
 
@@ -70,6 +90,7 @@ def create_checkout_session(
     success_url: str = "",
     cancel_url: str = "",
     metadata: Optional[Dict[str, str]] = None,
+    sandbox: bool = False,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Tworzy Stripe Checkout Session.
@@ -78,6 +99,7 @@ def create_checkout_session(
         event_order_id: ID zamówienia z Backstage
         amount_cents: Kwota w groszach/centach
         currency: Waluta (domyślnie PLN)
+        sandbox: Użyj klucza testowego (STRIPE_RENDER_API_KEY_SANDBOX)
         customer_email: Email klienta (opcjonalnie)
         description: Opis płatności
         success_url: URL przekierowania po udanej płatności
@@ -87,16 +109,23 @@ def create_checkout_session(
     Returns:
         (session_data, error) - session_data zawiera checkout_session_id, url
     """
-    if not is_stripe_configured():
-        return None, "Stripe nie jest skonfigurowany (brak STRIPE_RENDER_API_KEY)"
+    if not is_stripe_configured(sandbox):
+        mode = "sandbox" if sandbox else "produkcyjny"
+        key_name = "STRIPE_RENDER_API_KEY_SANDBOX" if sandbox else "STRIPE_RENDER_API_KEY"
+        return None, f"Stripe ({mode}) nie jest skonfigurowany (brak {key_name})"
     
     if amount_cents <= 0:
         return None, "Kwota musi być większa od 0"
     
     try:
+        # Ustaw klucz API dla tego requestu
+        api_key = _get_api_key(sandbox)
+        stripe.api_key = api_key
+        
         # Przygotuj metadata
         meta = metadata or {}
         meta["event_order_id"] = event_order_id
+        meta["stripe_mode"] = "sandbox" if sandbox else "live"
         
         # Przygotuj line_items
         line_items = [{
@@ -158,24 +187,26 @@ def create_checkout_session(
 # ---------------------------------------------------------------------------
 
 
-def verify_webhook_signature(payload: bytes, signature: str) -> Tuple[bool, Optional[str]]:
+def verify_webhook_signature(payload: bytes, signature: str, sandbox: bool = False) -> Tuple[bool, Optional[str]]:
     """
     Weryfikuje podpis webhooka Stripe.
     
     Args:
         payload: Raw body requestu
         signature: Header Stripe-Signature
+        sandbox: Czy używać sekretu sandbox
     
     Returns:
         (is_valid, error_message)
     """
-    if not STRIPE_WEBHOOK_SECRET:
+    webhook_secret = _get_webhook_secret(sandbox)
+    if not webhook_secret:
         # Jeśli brak sekretu - przepuść bez weryfikacji (dev mode)
         return True, None
     
     try:
         stripe.Webhook.construct_event(
-            payload, signature, STRIPE_WEBHOOK_SECRET
+            payload, signature, webhook_secret
         )
         return True, None
     except stripe.error.SignatureVerificationError as e:

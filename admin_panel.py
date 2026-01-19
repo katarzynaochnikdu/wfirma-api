@@ -130,6 +130,68 @@ def _detect_delimiter(sample: str) -> str:
     return ","
 
 
+def _is_pivot_format(headers: List[str]) -> bool:
+    """
+    Wykrywa czy CSV jest w formacie pivot (klucze w pierwszej kolumnie).
+    Format pivot: pierwsza kolumna to nazwy pól (np. "eventName", "eventId"),
+                  kolejne kolumny to "Rekord 1", "Rekord 2", etc.
+    Format klasyczny: nagłówki to nazwy pól (eventName,eventId,...)
+    """
+    if not headers or len(headers) < 2:
+        return False
+    
+    # Jeśli pierwsza kolumna to coś typu "key", "pole", "field" - to pivot
+    first = headers[0].lower().strip()
+    if first in ("key", "pole", "field", "klucz", ""):
+        return True
+    
+    # Jeśli druga kolumna zawiera "rekord", "record", lub jest numerem - to pivot
+    second = headers[1].lower().strip()
+    if "rekord" in second or "record" in second or second.isdigit():
+        return True
+    
+    # Jeśli pierwsza kolumna to znana nazwa pola (eventName, eventId) - to klasyczny
+    known_fields = {"eventname", "eventid", "event_id", "event_name", "id", "name"}
+    if first in known_fields:
+        return False
+    
+    # Domyślnie: jeśli dużo kolumn (>10) - prawdopodobnie klasyczny
+    return len(headers) < 10
+
+
+def _parse_classic_csv(content: bytes) -> List[Dict[str, str]]:
+    """
+    Parser dla klasycznego formatu CSV:
+      - pierwszy wiersz to nagłówki: eventName,eventId,md_email_kontakt,...
+      - kolejne wiersze to dane: Archiwum Amoz,24311000000429100,...
+    Zwraca listę rekordów (dict header->value).
+    """
+    text = content.decode("utf-8-sig", errors="replace")
+    first_line = (text.splitlines() or [""])[0]
+    delim = _detect_delimiter(first_line)
+    reader = csv.reader(io.StringIO(text), delimiter=delim)
+    rows = list(reader)
+    if not rows or len(rows) < 2:
+        return []
+
+    headers = [h.strip() for h in rows[0]]
+    records: List[Dict[str, str]] = []
+
+    for r in rows[1:]:
+        if not r or not any(cell.strip() for cell in r):
+            continue
+        rec: Dict[str, str] = {}
+        for i, h in enumerate(headers):
+            if not h:
+                continue
+            val = r[i] if i < len(r) else ""
+            rec[h] = (val or "").strip()
+        if any(v for v in rec.values()):
+            records.append(rec)
+
+    return records
+
+
 def _parse_pivot_csv(content: bytes) -> List[Dict[str, str]]:
     """
     Parser dla formatu 'pivot' jak Twoje CSV z Make:
@@ -162,6 +224,25 @@ def _parse_pivot_csv(content: bytes) -> List[Dict[str, str]]:
     # usuń rekordy całkiem puste
     records = [rec for rec in records if any(v for v in rec.values())]
     return records
+
+
+def _parse_events_csv(content: bytes) -> Tuple[List[Dict[str, str]], str]:
+    """
+    Automatycznie wykrywa format CSV (pivot vs klasyczny) i parsuje.
+    Zwraca (lista_rekordów, wykryty_format).
+    """
+    text = content.decode("utf-8-sig", errors="replace")
+    first_line = (text.splitlines() or [""])[0]
+    delim = _detect_delimiter(first_line)
+    
+    # Parsuj nagłówki
+    reader = csv.reader(io.StringIO(first_line), delimiter=delim)
+    headers = list(reader)[0] if first_line else []
+    
+    if _is_pivot_format(headers):
+        return _parse_pivot_csv(content), "pivot"
+    else:
+        return _parse_classic_csv(content), "classic"
 
 
 def _parse_bilety_csv(content: bytes) -> List[Dict[str, str]]:
@@ -257,13 +338,19 @@ def import_page():
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
     </div>
     <div class="card">
-      <div style="font-weight:700; margin-bottom:10px;">Import konfiguracji z CSV (Make)</div>
+      <div style="font-weight:700; margin-bottom:10px;">Import konfiguracji z CSV</div>
       <div class="muted">
         Wgraj <code>Wydarzenia.csv</code> i <code>Bilety.csv</code>. Import zrobi:
         <ul>
           <li>upsert eventów (po <code>eventId</code>)</li>
           <li>replace klas biletów dla eventów z pliku</li>
         </ul>
+        <div class="ok" style="margin:10px 0;">
+          <b>Obsługiwane formaty CSV:</b><br/>
+          • <b>Klasyczny</b> – nagłówki w pierwszym wierszu (np. <code>eventName,eventId,...</code>)<br/>
+          • <b>Pivot</b> – klucze w pierwszej kolumnie (np. <code>key;Rekord 1;Rekord 2</code>)<br/>
+          Format jest wykrywany automatycznie.
+        </div>
         <div class="warn">
           <b>Uwaga:</b> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
           Dzięki temu archiwalne eventy z <code>Bilety.csv</code> nie wywalą importu (FK w bazie).
@@ -301,7 +388,8 @@ def import_run():
         body = f"<div class='error'>Brak pliku Wydarzenia.csv</div><p><a class='btn' href='{url_for('admin_bp.import_page', token=token)}'>Wróć</a></p>"
         return _page("Błąd importu", body), 400
 
-    wydarzenia_records = _parse_pivot_csv(wydarzenia_file.read())
+    # Automatyczne wykrywanie formatu CSV (pivot vs klasyczny)
+    wydarzenia_records, detected_format = _parse_events_csv(wydarzenia_file.read())
     bilety_records: List[Dict[str, str]] = []
     if bilety_file and bilety_file.filename:
         bilety_records = _parse_bilety_csv(bilety_file.read())
@@ -368,11 +456,14 @@ def import_run():
             + "</div>"
         )
 
+    format_label = "klasyczny (nagłówki w pierwszym wierszu)" if detected_format == "classic" else "pivot (klucze w pierwszej kolumnie)"
+    
     body = f"""
     <div class="ok"><b>Import zakończony.</b></div>
     <div style="height:10px;"></div>
     <div class="card">
       <div class="kv">
+        <div class="muted">Wykryty format CSV</div><div><code>{detected_format}</code> – {format_label}</div>
         <div class="muted">Zaimportowane eventy</div><div><b>{imported_events}</b></div>
         <div class="muted">Zaimportowane klasy biletów</div><div><b>{imported_ticket_classes}</b></div>
       </div>

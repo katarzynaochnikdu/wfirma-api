@@ -1773,6 +1773,172 @@ def stripe_webhook():
 
 
 # ---------------------------------------------------------------------------
+# STRIPE SANDBOX (testowe endpointy)
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/stripe/sandbox/status', methods=['GET'])
+@require_api_key
+def stripe_sandbox_status():
+    """
+    Diagnostyka Stripe SANDBOX - sprawdza czy klucz testowy jest skonfigurowany.
+    """
+    try:
+        from stripe_integration import _get_stripe_status
+        return jsonify(_get_stripe_status(sandbox=True))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stripe/sandbox/create-session', methods=['POST'])
+@require_api_key
+def stripe_sandbox_create_session():
+    """
+    Tworzy Stripe Checkout Session w trybie SANDBOX (testowym).
+    
+    Używa STRIPE_RENDER_API_KEY_SANDBOX zamiast produkcyjnego klucza.
+    Idealne do testowania bez prawdziwych płatności.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Body (JSON):
+    {
+        "event_order_id": "...",
+        "amount": 299.00,
+        "currency": "PLN",
+        "customer_email": "...",
+        "description": "...",
+        "success_url": "https://...",
+        "cancel_url": "https://..."
+    }
+    
+    Response:
+    {
+        "status": "ok",
+        "mode": "sandbox",
+        "checkout_session_id": "cs_test_...",
+        "url": "https://checkout.stripe.com/c/pay/cs_test_..."
+    }
+    """
+    try:
+        from stripe_integration import create_checkout_session, is_stripe_configured
+        
+        if not is_stripe_configured(sandbox=True):
+            return jsonify({
+                'status': 'error',
+                'error': 'Stripe sandbox nie jest skonfigurowany (brak STRIPE_RENDER_API_KEY_SANDBOX)'
+            }), 500
+        
+        body = request.get_json(silent=True) or {}
+        
+        event_order_id = (body.get('event_order_id') or '').strip()
+        if not event_order_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Wymagany parametr: event_order_id'
+            }), 400
+        
+        # Kwota - przyjmujemy w PLN, przeliczamy na grosze
+        amount = body.get('amount', 0)
+        try:
+            amount_cents = int(float(amount) * 100)
+        except (ValueError, TypeError):
+            return jsonify({
+                'status': 'error',
+                'error': 'Nieprawidłowa kwota (amount)'
+            }), 400
+        
+        if amount_cents <= 0:
+            return jsonify({
+                'status': 'error',
+                'error': 'Kwota musi być większa od 0'
+            }), 400
+        
+        currency = (body.get('currency') or 'PLN').upper()
+        customer_email = (body.get('customer_email') or '').strip() or None
+        description = (body.get('description') or '').strip() or None
+        success_url = (body.get('success_url') or '').strip()
+        cancel_url = (body.get('cancel_url') or '').strip()
+        metadata = body.get('metadata') or {}
+        
+        result, error = create_checkout_session(
+            event_order_id=event_order_id,
+            amount_cents=amount_cents,
+            currency=currency.lower(),
+            customer_email=customer_email,
+            description=description,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata,
+            sandbox=True,  # <-- SANDBOX MODE
+        )
+        
+        if error:
+            return jsonify({
+                'status': 'error',
+                'error': error
+            }), 400
+        
+        return jsonify({
+            'status': 'ok',
+            'mode': 'sandbox',
+            **result
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/stripe/sandbox/webhook', methods=['POST'])
+def stripe_sandbox_webhook():
+    """
+    Webhook Stripe SANDBOX - odbiera testowe eventy o płatnościach.
+    
+    Używa STRIPE_SANDBOX_WEBHOOK_SECRET do weryfikacji podpisu.
+    """
+    try:
+        from stripe_integration import verify_webhook_signature, process_webhook_event
+        
+        payload = request.get_data()
+        signature = request.headers.get('Stripe-Signature', '')
+        
+        # Weryfikuj podpis (sandbox)
+        is_valid, error = verify_webhook_signature(payload, signature, sandbox=True)
+        if not is_valid:
+            return jsonify({
+                'status': 'error',
+                'error': error or 'Invalid signature'
+            }), 400
+        
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid JSON payload'
+            }), 400
+        
+        event_type = event.get('type', '')
+        event_data = event.get('data', {}).get('object', {})
+        
+        result = process_webhook_event(event_type, event_data)
+        result['mode'] = 'sandbox'
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        print(f"[STRIPE SANDBOX WEBHOOK ERROR] {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 200
+
+
+# ---------------------------------------------------------------------------
 # MAIL TASKS API (dla Make.com)
 # ---------------------------------------------------------------------------
 
