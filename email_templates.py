@@ -1274,7 +1274,7 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                     <table cellpadding="0" cellspacing="0" style="width: 100%;">
                       <tr>
                         <td style="background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); padding: 16px 20px; border-radius: 8px;">
-                          <h1 style="margin: 0; font-size: 24px; color: #ffffff; font-weight: bold;">🎫 Twój bilet jest gotowy!</h1>
+                          <h1 style="margin: 0; font-size: 24px; color: #ffffff; font-weight: bold;">✅ Twoje miejsce na {event_name} jest potwierdzone!</h1>
                         </td>
                       </tr>
                     </table>
@@ -1342,21 +1342,6 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                 <!-- EVENT DETAILS -->
                 {event_datetime_section}
                 {event_location_section}
-
-                <!-- INFO BOX -->
-                <tr>
-                  <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #FFF8E1; border: 1px solid #FFE082; border-radius: 8px;">
-                      <tr>
-                        <td style="padding: 12px 16px;">
-                          <p style="margin: 0; font-size: 14px; color: #F57C00;">
-                            💡 <strong>Pamiętaj:</strong> Zachowaj ten email – może być potrzebny do weryfikacji przy wejściu na wydarzenie.
-                          </p>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
 
                 <!-- FOOTER -->
                 <tr>

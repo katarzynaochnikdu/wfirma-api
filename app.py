@@ -2022,7 +2022,29 @@ def backstage_attendee():
             get_participant_by_ticket, 
             save_participant,
             get_order,
+            get_participants_for_order,
         )
+        
+        # WALIDACJA: Sprawdź czy zamówienie istnieje
+        order = get_order(order_id)
+        if not order:
+            print(f"[ATTENDEE WEBHOOK] BŁĄD: Zamówienie {order_id} nie istnieje w bazie!")
+            return jsonify({
+                'status': 'error',
+                'error': f'Zamówienie {order_id} nie istnieje',
+                'order_id': order_id,
+                'ticket_id': ticket_id,
+                'hint': 'Upewnij się, że webhook zamówienia został przetworzony przed webhookiem uczestnika'
+            }), 404
+        
+        # WALIDACJA: Sprawdź czy bilet należy do tego zamówienia
+        existing_participants = get_participants_for_order(order_id)
+        valid_ticket_ids = [p.get("ticket_id") for p in existing_participants]
+        
+        if valid_ticket_ids and ticket_id not in valid_ticket_ids:
+            print(f"[ATTENDEE WEBHOOK] OSTRZEŻENIE: Bilet {ticket_id} nie jest zarejestrowany dla zamówienia {order_id}")
+            print(f"[ATTENDEE WEBHOOK] Znane bilety dla tego zamówienia: {valid_ticket_ids[:5]}")
+            # Nie blokujemy - może to być nowy bilet, który jeszcze nie był w order webhook
         
         # Sprawdź czy uczestnik już istnieje
         existing = get_participant_by_ticket(order_id, ticket_id)
@@ -2065,9 +2087,9 @@ def backstage_attendee():
         
         # Sprawdź czy zamówienie jest już opłacone - jeśli tak, wyślij email od razu
         email_sent = False
-        order = get_order(order_id)
+        # order już pobrane wyżej przy walidacji
         
-        if order and order.get("status") == "paid":
+        if order.get("status") == "paid":
             print(f"[ATTENDEE WEBHOOK] Zamówienie opłacone - wysyłam email do uczestnika")
             
             try:
