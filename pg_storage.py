@@ -1374,7 +1374,7 @@ def save_participant(
     - emailed: wysłano email do uczestnika
     - cancelled: anulowany
     """
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -1404,12 +1404,12 @@ def save_participant(
         print(f"[DB] save_participant error: {e}")
         return None
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
 def get_participants_for_order(event_order_id: str) -> List[Dict[str, Any]]:
     """Pobiera wszystkich uczestników dla zamówienia."""
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -1427,12 +1427,12 @@ def get_participants_for_order(event_order_id: str) -> List[Dict[str, Any]]:
         print(f"[DB] get_participants_for_order error: {e}")
         return []
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
 def get_participant_by_ticket(event_order_id: str, ticket_id: str) -> Optional[Dict[str, Any]]:
     """Pobiera uczestnika przypisanego do konkretnego biletu."""
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -1451,12 +1451,12 @@ def get_participant_by_ticket(event_order_id: str, ticket_id: str) -> Optional[D
         print(f"[DB] get_participant_by_ticket error: {e}")
         return None
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
 def update_participant_status(participant_id: int, status: str) -> bool:
     """Aktualizuje status uczestnika."""
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -1470,7 +1470,7 @@ def update_participant_status(participant_id: int, status: str) -> bool:
         print(f"[DB] update_participant_status error: {e}")
         return False
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
 def update_participant_details(
@@ -1487,7 +1487,7 @@ def update_participant_details(
     Aktualizuje dane uczestnika przypisanego do biletu.
     Używane gdy uczestnik wypełnia swoje dane przez link.
     """
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         
@@ -1516,12 +1516,12 @@ def update_participant_details(
         print(f"[DB] update_participant_details error: {e}")
         return False
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
 def get_pending_participants(event_order_id: str) -> List[Dict[str, Any]]:
     """Pobiera uczestników ze statusem 'pending' (do wypełnienia)."""
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -1539,12 +1539,12 @@ def get_pending_participants(event_order_id: str) -> List[Dict[str, Any]]:
         print(f"[DB] get_pending_participants error: {e}")
         return []
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
 def count_participants_by_status(event_order_id: str) -> Dict[str, int]:
     """Zlicza uczestników wg statusu dla zamówienia."""
-    conn = _with_conn()
+    pool, conn = _with_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -1559,6 +1559,6 @@ def count_participants_by_status(event_order_id: str) -> Dict[str, int]:
         print(f"[DB] count_participants_by_status error: {e}")
         return {}
     finally:
-        _put_conn(conn)
+        _put_conn(pool, conn)
 
 
