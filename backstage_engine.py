@@ -69,52 +69,76 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         or ""
     )
 
-    # event_id
+    # event_id - Backstage używa "events" lub "eventOrder_eventId"
     event_id = (
         raw.get("event_id")
         or raw.get("eventId")
+        or raw.get("events")  # Backstage format
+        or raw.get("eventOrder_eventId")  # Backstage format
         or raw.get("event", {}).get("id")
         or payload.get("event_id")
+        or payload.get("events")
         or ""
     )
 
-    # purchaser info
+    # Pobierz dane z buyer_details (Backstage format)
+    buyer_details = raw.get("buyer_details") or []
+    buyer_form = {}
+    if buyer_details and isinstance(buyer_details, list) and len(buyer_details) > 0:
+        buyer_form = buyer_details[0].get("formEntries") or {}
+
+    # purchaser info - próbuj z różnych źródeł
     purchaser_email = (
-        raw.get("purchaser_email")
+        payload.get("purchaser_email")  # Top level w webhook
+        or raw.get("purchaser_email")
         or raw.get("purchaserEmail")
-        or payload.get("purchaser_email")
+        or buyer_form.get("purchaser_email")
+        or raw.get("eventOrder_orderBy")  # Backstage: email zamawiającego
         or ""
     )
     purchaser_first_name = (
         raw.get("purchaser_first_name")
         or raw.get("purchaserFirstName")
+        or buyer_form.get("purchaser_first_name")
         or payload.get("purchaser_first_name")
         or ""
     )
     purchaser_last_name = (
         raw.get("purchaser_last_name")
         or raw.get("purchaserLastName")
+        or buyer_form.get("purchaser_last_name")
         or payload.get("purchaser_last_name")
         or ""
     )
     purchaser_phone = (
         raw.get("purchaser_phone")
         or raw.get("purchaserPhone")
+        or buyer_form.get("purchaser_mobile_no")  # Backstage format
+        or buyer_form.get("purchaser_phone")
         or payload.get("purchaser_phone")
         or ""
     )
 
-    # NIP - może być w custom fields
+    # NIP - może być w custom fields lub buyer_form
     purchaser_nip = (
         raw.get("purchaser_nip")
         or raw.get("nip")
         or raw.get("NIP")
+        or buyer_form.get("nip")
+        or buyer_form.get("NIP")
+        or buyer_form.get("purchaser_nip")
         or ""
     )
     # Szukaj NIP w custom fields jeśli nie znaleziono
     custom_fields = raw.get("custom_fields") or raw.get("customFields") or {}
     if not purchaser_nip and isinstance(custom_fields, dict):
         for k, v in custom_fields.items():
+            if "nip" in k.lower() and v:
+                purchaser_nip = str(v).strip()
+                break
+    # Szukaj też w buyer_form
+    if not purchaser_nip and isinstance(buyer_form, dict):
+        for k, v in buyer_form.items():
             if "nip" in k.lower() and v:
                 purchaser_nip = str(v).strip()
                 break
@@ -133,9 +157,11 @@ def _extract_order_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     payment_type = int(payment_type_raw) if payment_type_raw is not None else None
 
-    # total / kwota
+    # total / kwota - może być na top level lub w raw
     total_raw = (
-        raw.get("total")
+        payload.get("total")  # Top level w webhook
+        or raw.get("total")
+        or raw.get("orderCost_grandTotal")  # Backstage format
         or raw.get("eventOrder_total")
         or raw.get("order_total")
         or 0
