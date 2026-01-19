@@ -2228,6 +2228,76 @@ def email_send():
         }), 500
 
 
+@app.route('/api/email/stripe-test', methods=['POST'])
+@require_api_key
+def email_stripe_test():
+    """
+    Wysyła testowy email z linkiem do płatności Stripe.
+    
+    Body:
+    {
+        "to": "adres@email.pl",
+        "template_type": "personal" | "nip_valid" | "nip_invalid",
+        "event_name": "Nazwa eventu",
+        "purchaser_first_name": "Imię",
+        "purchaser_last_name": "Nazwisko",
+        "total_gross": 1234.56,
+        "stripe_payment_url": "https://checkout.stripe.com/...",
+        "purchaser_nip": "1234567890",  // opcjonalne
+        "gus_data": {...}  // opcjonalne, dla nip_valid
+    }
+    """
+    try:
+        from email_sender import send_email
+        from email_templates import render_stripe_payment_email
+        
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'success': False, 'error': 'Brak body JSON'}), 400
+        
+        to_email = data.get("to")
+        template_type = data.get("template_type", "personal")
+        event_name = data.get("event_name", "Testowe Wydarzenie")
+        
+        if not to_email:
+            return jsonify({'success': False, 'error': 'Wymagane pole: to'}), 400
+        
+        # Renderuj HTML
+        body_html = render_stripe_payment_email(
+            template_type=template_type,
+            event_name=event_name,
+            purchaser_first_name=data.get("purchaser_first_name", "Test"),
+            purchaser_last_name=data.get("purchaser_last_name", "User"),
+            purchaser_email=to_email,
+            purchaser_phone=data.get("purchaser_phone", "+48 000 000 000"),
+            purchaser_nip=data.get("purchaser_nip"),
+            total_gross=float(data.get("total_gross", 123.00)),
+            stripe_payment_url=data.get("stripe_payment_url", "https://example.com/test-payment"),
+            event_config=data.get("event_config"),
+            tickets=data.get("tickets", [{"name": "Bilet testowy", "quantity": 1, "price": 100.0}]),
+            gus_data=data.get("gus_data"),
+        )
+        
+        subject = f"Link do płatności – {event_name}"
+        
+        result = send_email(
+            to_email=to_email,
+            subject=subject,
+            body_html=body_html,
+        )
+        
+        status_code = 200 if result.get("success") else 500
+        return jsonify(result), status_code
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
 @app.route('/auth')
 def auth():
     """
