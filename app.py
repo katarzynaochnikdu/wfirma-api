@@ -1506,6 +1506,20 @@ def index():
         'note': 'Parametr "company" określa zestaw danych wFirma: "md" (Medidesk) lub "test" (testowe)'
     })
 
+
+@app.route('/api/db/status', methods=['GET'])
+@require_api_key
+def db_status():
+    """
+    Diagnostyka Render Postgres.
+    Wymaga X-API-Key (MAKE_RENDER_API_KEY) – ten sam mechanizm co reszta API.
+    """
+    try:
+        from pg_storage import get_db_status
+        return jsonify(get_db_status())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 @app.route('/auth')
 def auth():
     """
