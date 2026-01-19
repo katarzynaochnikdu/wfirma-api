@@ -1916,7 +1916,17 @@ def backstage_attendee():
                 'error': 'Brak JSON payload'
             }), 400
         
-        print(f"[ATTENDEE WEBHOOK] Otrzymano payload: {list(payload.keys())}")
+        # Logowanie pełnego payloadu (bez wrażliwych danych)
+        import json
+        print(f"[ATTENDEE WEBHOOK] Otrzymano payload keys: {list(payload.keys())}")
+        try:
+            # Pokaż pełny payload w logach
+            payload_safe = {k: v for k, v in payload.items()}
+            print(f"[ATTENDEE WEBHOOK] [RAW_PAYLOAD] <<<")
+            print(json.dumps(payload_safe, indent=2, ensure_ascii=False, default=str))
+            print(f"[ATTENDEE WEBHOOK] [RAW_PAYLOAD] >>>")
+        except Exception as log_err:
+            print(f"[ATTENDEE WEBHOOK] Nie można zserializować payloadu: {log_err}")
         
         # Ekstrakcja danych z różnych możliwych nazw pól
         order_id = (
@@ -2161,6 +2171,11 @@ def backstage_attendee():
             'order_id': order_id,
             'ticket_id': ticket_id,
             'attendee_id': attendee_id,
+            'participant': {
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': email,
+            },
             'participant_updated': success,
             'email_sent': email_sent,
             'order_status': order.get("status") if order else None,
