@@ -637,7 +637,10 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             }
 
         # 2. Sprawdź idempotencję (deduplikacja)
-        _log("INFO", "Krok 2: Sprawdzanie idempotencji...")
+        # W SANDBOX MODE - pozwól na ponowne przetworzenie!
+        is_sandbox = order_data.get("sandbox", False)
+        _log("INFO", "Krok 2: Sprawdzanie idempotencji...", {"sandbox": is_sandbox})
+        
         dedupe_key = _generate_dedupe_key(event_order_id, event_id)
         _log("DEBUG", "Wygenerowany dedupe_key", {"dedupe_key": dedupe_key})
         
@@ -649,17 +652,21 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         if not is_new:
-            # Webhook już był przetworzony
-            _log("WARN", "Webhook już był przetworzony (duplikat)", {"event_order_id": event_order_id})
-            existing_order = get_order(event_order_id)
-            return {
-                "status": "duplicate",
-                "order_id": event_order_id,
-                "message": "Webhook już został przetworzony",
-                "existing_status": existing_order.get("status") if existing_order else None,
-            }
+            if is_sandbox:
+                # SANDBOX: pozwól na ponowne przetworzenie
+                _log("INFO", "SANDBOX MODE: Pozwalam na ponowne przetworzenie duplikatu", {"event_order_id": event_order_id})
+            else:
+                # PRODUKCJA: blokuj duplikaty
+                _log("WARN", "Webhook już był przetworzony (duplikat)", {"event_order_id": event_order_id})
+                existing_order = get_order(event_order_id)
+                return {
+                    "status": "duplicate",
+                    "order_id": event_order_id,
+                    "message": "Webhook już został przetworzony",
+                    "existing_status": existing_order.get("status") if existing_order else None,
+                }
         
-        _log("INFO", "Webhook zapisany do bazy (nowy)")
+        _log("INFO", "Webhook zapisany do bazy" + (" (sandbox reprocess)" if not is_new and is_sandbox else " (nowy)"))
 
         # 3. Pobierz konfigurację eventu
         _log("INFO", "Krok 3: Pobieranie konfiguracji eventu...", {"event_id": event_id})
