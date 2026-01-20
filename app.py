@@ -418,6 +418,69 @@ def update_render_env_var(key, value):
         # #endregion
         return False
 
+
+def _send_new_refresh_token_email(company: str, refresh_token: str, refresh_expires_at: int, prefix: str):
+    """
+    Wysyła email z nowymi wartościami refresh tokena po wygenerowaniu.
+    Email zawiera dokładne wartości zmiennych ENV do ręcznego ustawienia na Render.
+    """
+    try:
+        if not _is_make_email_configured():
+            print(f"[TOKEN EMAIL] Make webhook nie skonfigurowany - pomijam wysyłkę")
+            return
+        
+        to_email = "adminzoho@medidesk.com"
+        expires_date = datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M:%S')
+        
+        subject = f"[wFirma {company.upper()}] Nowy Refresh Token - ustaw w Render ENV"
+        
+        body_html = f"""
+<h2>Nowy Refresh Token wFirma - {company.upper()}</h2>
+<p>Wygenerowano nowy refresh token. <strong>Ustaw poniższe wartości w Render ENV</strong>, aby token przetrwał restart serwisu.</p>
+
+<h3>Zmienne do ustawienia:</h3>
+<table border="1" cellpadding="10" style="border-collapse: collapse;">
+<tr>
+<td><strong>{prefix}REFRESH_TOKEN</strong></td>
+<td style="font-family: monospace; word-break: break-all;">{refresh_token}</td>
+</tr>
+<tr>
+<td><strong>{prefix}REFRESH_TOKEN_EXPIRES</strong></td>
+<td style="font-family: monospace;">{refresh_expires_at}</td>
+</tr>
+</table>
+
+<h3>Dodatkowe info:</h3>
+<ul>
+<li><strong>Firma:</strong> {company.upper()}</li>
+<li><strong>Data wygaśnięcia:</strong> {expires_date}</li>
+<li><strong>Ważny przez:</strong> ~30 dni</li>
+</ul>
+
+<p style="color: #666; font-size: 12px;">
+Wiadomość wygenerowana automatycznie po autoryzacji OAuth2 wFirma.
+</p>
+"""
+        
+        payload = {
+            "to": to_email,
+            "subject": subject,
+            "body_html": body_html,
+            "event_order_id": f"TOKEN-{company.upper()}",
+            "template_type": "wfirma_new_token",
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-make-apikey": RENDER_EMAIL_KEY_SEND_REQUEST,
+        }
+        resp = requests.post(MAKE_WEBHOOK_SEND_EMAIL_REQUEST, json=payload, headers=headers, timeout=20)
+        ok = resp.status_code in (200, 201, 202)
+        print(f"[TOKEN EMAIL] Wysłano email z refresh tokenem do {to_email} | status={resp.status_code} ok={ok}")
+        
+    except Exception as e:
+        print(f"[TOKEN EMAIL] Błąd wysyłki: {e}")
+
+
 def save_token(access_token, expires_in, refresh_token=None, company=None):
     """
     Zapisz token do ENV (główne źródło) i pliku (backup).
@@ -474,7 +537,16 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
     if refresh_token:  # Nowy refresh token = nowe 30 dni
         refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)  # 30 dni od teraz
         update_render_env_var(f"{prefix}REFRESH_TOKEN_EXPIRES", str(refresh_expires_at))
-        print(f"[LOG] [{config['company'].upper()}] Nowy refresh_token ważny do: {datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')}")
+        expires_date_str = datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')
+        print(f"[LOG] [{config['company'].upper()}] Nowy refresh_token ważny do: {expires_date_str}")
+        
+        # 4. Wyślij email z nowymi wartościami tokenów
+        _send_new_refresh_token_email(
+            company=config['company'],
+            refresh_token=refresh_token,
+            refresh_expires_at=refresh_expires_at,
+            prefix=prefix
+        )
 
 def refresh_access_token(forced_refresh_token=None, company=None):
     """
