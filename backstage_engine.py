@@ -1761,6 +1761,17 @@ def _handle_proforma_flow(
     mail_tasks = []
     proforma_result = None
     proforma_error = None
+    reservation_email_sent = False
+
+    # Wzbogać bilety o nazwy z bazy (dla maila rezerwacyjnego)
+    event_id = order_data.get("event_id", "")
+    raw_tickets = order_data.get("tickets", [])
+    if raw_tickets and event_id:
+        enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+        if unknown_ids:
+            _log("DEBUG", "PROFORMA FLOW: Nierozpoznane ticket_class_id", {"unknown_ids": unknown_ids[:5]})
+    else:
+        enriched_tickets = raw_tickets
 
     # Utwórz proformę w wFirma
     try:
@@ -1796,6 +1807,84 @@ def _handle_proforma_flow(
     except Exception as e:
         proforma_error = str(e)
         _log("ERROR", "PROFORMA FLOW: Wyjątek podczas tworzenia proformy", {"error": proforma_error})
+
+    # Mail do kupującego (BACKSTAGE): rezerwacja + informacja o pro-formie (wysyłka przez Make)
+    if purchaser_email and _is_make_email_configured():
+        try:
+            from email_templates import render_proforma_reservation_email
+
+            proforma_number = None
+            if proforma_result:
+                proforma_number = proforma_result.get("invoice", {}).get("fullnumber")
+
+            subject = f"Rezerwacja miejsca – {event_name} (pro-forma w 24h)"
+            body_html = render_proforma_reservation_email(
+                event_name=event_name,
+                purchaser_first_name=order_data.get("purchaser_first_name", ""),
+                purchaser_last_name=order_data.get("purchaser_last_name", ""),
+                purchaser_email=purchaser_email,
+                purchaser_phone=order_data.get("purchaser_phone", ""),
+                event_config=event_data,
+                tickets=enriched_tickets,
+                proforma_number=proforma_number,
+            )
+
+            _log("INFO", "PROFORMA FLOW: Wysyłam email rezerwacyjny przez Make", {
+                "to": purchaser_email,
+                "subject": subject,
+                "has_proforma_number": bool(proforma_number),
+            })
+
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=subject,
+                body_html=body_html,
+                event_order_id=event_order_id,
+                template_type="proforma_reservation",
+            )
+
+            if result.get("success"):
+                reservation_email_sent = True
+                _log("INFO", "PROFORMA FLOW: Email rezerwacyjny wysłany pomyślnie", {"to": purchaser_email})
+            else:
+                _log("WARNING", "PROFORMA FLOW: Błąd wysyłki emaila rezerwacyjnego", {"error": result.get("error")})
+                _send_error_notification(
+                    error_type="PROFORMA_RESERVATION_EMAIL_ERROR",
+                    error_message=f"Nie udało się wysłać maila rezerwacyjnego (PROFORMA).\n\nBłąd: {result.get('error')}",
+                    event_order_id=event_order_id,
+                    event_id=event_id,
+                    extra_data={
+                        "purchaser_email": purchaser_email,
+                        "event_name": event_name,
+                    },
+                )
+        except Exception as e:
+            _log("ERROR", "PROFORMA FLOW: Wyjątek przy wysyłce emaila rezerwacyjnego", {"error": str(e)})
+            _send_error_notification(
+                error_type="PROFORMA_RESERVATION_EMAIL_EXCEPTION",
+                error_message=f"Wyjątek przy wysyłce maila rezerwacyjnego (PROFORMA).\n\nBłąd: {str(e)}",
+                event_order_id=event_order_id,
+                event_id=event_id,
+            )
+
+    # Mail task do logu (nawet jeśli wysłany bezpośrednio)
+    if purchaser_email:
+        mail_tasks.append(_build_mail_task(
+            template_key=TEMPLATE_PROFORMA_SENT,
+            to_email=purchaser_email,
+            subject=f"Rezerwacja miejsca – {event_name} (pro-forma w 24h)",
+            data={
+                "event_order_id": event_order_id,
+                "event_name": event_name,
+                "flow": FLOW_PROFORMA,
+                "purchaser_email": purchaser_email,
+                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
+                "reservation_email_sent_via_make": reservation_email_sent,
+                "proforma_number": proforma_result.get("invoice", {}).get("fullnumber") if proforma_result else None,
+                **event_data,
+            },
+            direction="purchaser",
+        ))
 
     # Mail wewnętrzny o nowym zamówieniu (info, nie error)
     internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL

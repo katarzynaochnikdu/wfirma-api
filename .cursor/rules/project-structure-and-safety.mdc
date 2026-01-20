@@ -1,0 +1,83 @@
+---
+alwaysApply: true
+---
+
+## Cel tych reguł
+
+Ten repozytorium zawiera **3 logicznie oddzielne systemy**, które czasem się integrują, ale **mogą działać niezależnie**. Model ma zawsze:
+- rozpoznać, **którego systemu dotyczy** prośba
+- nie mieszać pojęć/zmiennych/alertów między systemami
+- wykonywać zmiany **małymi krokami** i **bez ryzyka utraty ENV**
+
+## Systemy w repo (granice odpowiedzialności)
+
+### A) BACKSTAGE (eventy, płatności, komunikacja)
+- **Źródła danych**: Zoho Backstage webhooki (zamówienia, uczestnicy)
+- **Płatności**: Stripe (Checkout + webhooki)
+- **Komunikacja**: wysyłka emaili przez Make.com (webhook)
+- **Baza**: Postgres (orders, participants, mail_log itd.)
+- **Czego nie mieszać**: GUS/REGON i wFirma to integracje, ale nie “rdzeń” Backstage.
+
+**Powiadomienia BACKSTAGE (ważne rozróżnienie):**
+- `BACKSTAGE_TECHNICAL_INFO_EMAIL` = tylko **błędy/awarie** Backstage/Stripe/Make (np. email error, payment failed/expired, nieznany event, itp.)
+- `BACKSTAGE_EVENT_INFO_EMAIL` = tylko **informacyjne** zdarzenia Backstage (np. nowe zamówienie, płatność OK)
+
+### B) GUS/REGON (lookup firmy po NIP)
+- **Cel**: pobiera dane firmy z BIR/GUS (SOAP) po NIP, waliduje NIP, zwraca dane do integracji
+- **Może działać niezależnie** (zewnętrzne podmioty mogą używać tylko /api/gus/*)
+- **Czego nie mieszać**: “alert techniczny Backstage” nie dotyczy GUS/REGON.
+
+### C) wFirma (faktury + OAuth2)
+- **Cel**: OAuth2, kontrahenci, faktury (FV/proforma), PDF, mail wFirma (jeśli używane)
+- **Może działać niezależnie** (zewnętrzne podmioty mogą używać tylko wFirma API / workflow)
+- **Czego nie mieszać**: alerty Backstage ≠ alerty tokena wFirma.
+
+**Alerty wFirma:**
+- `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL` = email do alertów o wygasającym tokenie/refresh wFirma
+
+## Mapowanie ENV (nie mieszać nazw / znaczeń)
+
+### Wspólne
+- `DATABASE_URL` (Postgres) — wykorzystywane przez Backstage (i potencjalnie inne moduły, jeśli korzystają z DB).
+
+### BACKSTAGE / Stripe / Make
+- `STRIPE_RENDER_API_KEY`, `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_RENDER_API_KEY_SANDBOX`, `STRIPE_SANDBOX_WEBHOOK_SECRET` (jeśli testy)
+- `MAKE_WEBHOOK_SEND_EMAIL_REQUEST`
+- `RENDER_EMAIL_KEY_SEND_REQUEST`
+- `MAKE_RENDER_API_KEY` (autoryzacja webhooków / API key)
+- `BACKSTAGE_TECHNICAL_INFO_EMAIL`
+- `BACKSTAGE_EVENT_INFO_EMAIL`
+
+### GUS/REGON
+- `GUS_API_KEY` (lub fallback `BIR1_medidesk`)
+- `GUS_USE_TEST` (prod: `false`)
+- `REGON_API_KEY_TOKEN` (autoryzacja wywołań /api/gus/*)
+
+### wFirma
+- OAuth2: `WFIRMA_MD_CLIENT_ID`, `WFIRMA_MD_CLIENT_SECRET`, `WFIRMA_MD_REFRESH_TOKEN`, itd. (lub fallback `CLIENT_ID`, `CLIENT_SECRET`)
+- Alert: `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL`
+
+## Zasady bezpieczeństwa (krytyczne)
+
+### 1) Nie dotykaj Render ENV bez wyraźnej prośby
+- Model **nie ma** samodzielnie proponować/uruchamiać mechanizmów “automatycznej aktualizacji ENV na Render”.
+- Każda zmiana w kodzie, która może modyfikować ENV na Render (np. przez Render API) wymaga:
+  - wyraźnego polecenia użytkownika
+  - minimalnego zakresu zmian
+  - jasnego opisu ryzyka
+
+### 2) Małe zmiany, jeden temat na commit/deploy
+- Unikaj “przy okazji” refaktorów i porządków.
+- Nie zmieniaj nazw zmiennych ENV, jeśli nie ma takiej potrzeby.
+
+### 3) Nazewnictwo i intencje
+- Jeśli użytkownik mówi “internal maile o płatności” — doprecyzuj czy chodzi o:
+  - Backstage info (`BACKSTAGE_EVENT_INFO_EMAIL`)
+  - Backstage error (`BACKSTAGE_TECHNICAL_INFO_EMAIL`)
+  - wFirma token alert (`WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL`)
+
+### 4) Integracje są opcjonalne
+- Backstage może działać bez GUS/wFirma (z ograniczeniami).
+- GUS/REGON i wFirma mogą działać jako niezależne API dla zewnętrznych podmiotów — projektuj zmiany tak, aby nie “przywiązywać” ich do Backstage.
+
