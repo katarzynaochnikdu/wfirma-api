@@ -384,6 +384,10 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
         refresh_token: Refresh token (opcjonalny - jeśli nowy)
         company: Firma/zestaw danych ('md' lub 'test')
     """
+    # #region agent log
+    import traceback as _tb; _caller = ''.join(_tb.format_stack()[-4:-1])[:200]
+    print(f"[DEBUG H2,H5] save_token CALLED | company={company} | has_refresh_token_param={bool(refresh_token)} | refresh_first6={refresh_token[:6] if refresh_token else None} | expires_in={expires_in} | caller={_caller}")
+    # #endregion
     config = get_company_config(company)
     prefix = config['prefix']
     company_name = config['company']
@@ -463,6 +467,10 @@ def refresh_access_token(forced_refresh_token=None, company=None):
         forced_refresh_token: Wymuszony refresh token
         company: Firma/zestaw danych ('md' lub 'test')
     """
+    # #region agent log
+    import traceback as _tb; _caller = ''.join(_tb.format_stack()[-5:-1])[:500]
+    print(f"[DEBUG H1,H2] refresh_access_token CALLED | company={company} | forced_refresh_token_provided={bool(forced_refresh_token)} | caller_stack={_caller[:200]}")
+    # #endregion
     config = get_company_config(company)
     prefix = config['prefix']
     
@@ -558,9 +566,15 @@ def refresh_access_token(forced_refresh_token=None, company=None):
             print(f"[LOG] [{config['company'].upper()}] Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
             
             if new_access:
-                # WAŻNE: Zapisujemy nowe tokeny NATYCHMIAST (przed jakimkolwiek returnem)
-                save_token(new_access, expires_in, new_refresh, company=company)
-                print(f"[LOG] [{config['company'].upper()}] Token odświeżony pomyślnie i zapisany do ENV")
+                # #region agent log
+                print(f"[DEBUG H2] wFirma returned tokens | has_new_access={bool(new_access)} | has_new_refresh={bool(new_refresh)} | new_refresh_first6={new_refresh[:6] if new_refresh else None} | expires_in={expires_in}")
+                # #endregion
+                # WAŻNE: Zapisujemy TYLKO access_token - NIE podmieniamy refresh_token automatycznie!
+                # Refresh token może być zmieniony TYLKO przez ręczną autoryzację /auth
+                if new_refresh:
+                    print(f"[LOG] [{config['company'].upper()}] wFirma zwróciła nowy refresh_token - IGNORUJĘ (nie podmieniamy automatycznie)")
+                save_token(new_access, expires_in, None, company=company)  # None = zachowaj stary refresh_token
+                print(f"[LOG] [{config['company'].upper()}] Access token odświeżony pomyślnie (refresh_token bez zmian)")
                 return new_access
             else:
                 print(f"[LOG] [{config['company'].upper()}] Brak access_token w odpowiedzi: {new_tokens}")
@@ -1000,8 +1014,14 @@ def run_wfirma_token_monitor_once(company: str = "md") -> dict:
 
 def _wfirma_token_monitor_loop():
     print("[TOKEN MONITOR] start loop (md)")
+    # #region agent log
+    print("[DEBUG H3] TOKEN MONITOR LOOP STARTED")
+    # #endregion
     while True:
         try:
+            # #region agent log
+            print("[DEBUG H3] TOKEN MONITOR running iteration")
+            # #endregion
             # zawsze md (zgodnie z wymaganiem)
             result = run_wfirma_token_monitor_once(company="md")
             try:
@@ -1161,6 +1181,10 @@ def load_token(silent=False, company=None):
         silent: Czy ukrywać logi
         company: Firma/zestaw danych ('md' lub 'test'). Jeśli None - używa domyślnego.
     """
+    # #region agent log
+    import traceback as _tb; _caller = ''.join(_tb.format_stack()[-4:-1])[:200]
+    print(f"[DEBUG H1] load_token CALLED | company={company} | silent={silent} | caller={_caller}")
+    # #endregion
     config = get_company_config(company)
     prefix = config['prefix']
     
