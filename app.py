@@ -375,66 +375,78 @@ Wiadomość wygenerowana automatycznie po autoryzacji OAuth2 wFirma.
 
 def save_token(access_token, expires_in, refresh_token=None, company=None):
     """
-    Zapisz token do ENV (główne źródło) i pliku (backup).
-    ENV jest JEDYNYM trwałym storage po redeployu!
+    Zapisz token do POSTGRES (główne źródło) + pamięć procesu.
+    Postgres jest trwały - przetrwa restart/deploy.
     
     Args:
         access_token: Token dostępu
         expires_in: Czas ważności w sekundach
-        refresh_token: Refresh token (opcjonalny)
+        refresh_token: Refresh token (opcjonalny - jeśli nowy)
         company: Firma/zestaw danych ('md' lub 'test')
     """
     config = get_company_config(company)
     prefix = config['prefix']
+    company_name = config['company']
     
-    expires_at = int(time.time() + expires_in - 60)  # 60 sek margines, jako int
+    expires_at = int(time.time() + expires_in - 60)  # 60 sek margines
     
     # Pobierz istniejący refresh_token jeśli nowy nie podany
     final_refresh_token = refresh_token
+    refresh_expires_at = None
+    
     if not final_refresh_token:
-        # Priorytet: plik > ENV (tylko dla domyślnej firmy)
-        if company is None and os.path.exists(TOKEN_FILE):
-            try:
-                with open(TOKEN_FILE, 'r') as f:
-                    old_data = json.load(f)
-                    final_refresh_token = old_data.get('refresh_token')
-            except:
-                pass
+        # Priorytet: Postgres > ENV
+        try:
+            from pg_storage import get_wfirma_token
+            pg_token = get_wfirma_token(company_name)
+            if pg_token and pg_token.get('refresh_token'):
+                final_refresh_token = pg_token['refresh_token']
+                refresh_expires_at = pg_token.get('refresh_token_expires_at')
+                print(f"[LOG] [{company_name.upper()}] Użyto refresh_token z Postgres")
+        except Exception as e:
+            print(f"[LOG] [{company_name.upper()}] Błąd odczytu z Postgres: {e}")
+        
         if not final_refresh_token:
             final_refresh_token = config['refresh_token']
     
-    print(f"[LOG] [{config['company'].upper()}] save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
+    # Jeśli to NOWY refresh_token, ustaw nową datę ważności (30 dni)
+    if refresh_token:
+        refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)
     
-    # 1. Zapisz do PLIKU (lokalny cache - tylko dla domyślnej firmy, backward compatibility)
-    if company is None:
-        token_data = {
-            'access_token': access_token,
-            'expires_at': expires_at,
-            'refresh_token': final_refresh_token
-        }
-        try:
-            with open(TOKEN_FILE, 'w') as f:
-                json.dump(token_data, f)
-            print(f"[LOG] Token zapisany do pliku")
-        except Exception as e:
-            print(f"[ERROR] Nie można zapisać tokenu do pliku: {e}")
+    print(f"[LOG] [{company_name.upper()}] save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
     
-    # 2. Zapisz do ENV (trwałe po redeployu) - z odpowiednim prefixem dla firmy!
+    # 1. GŁÓWNE: Zapisz do POSTGRES (trwałe!)
+    try:
+        from pg_storage import save_wfirma_token
+        pg_result = save_wfirma_token(
+            company=company_name,
+            access_token=access_token,
+            access_token_expires_at=expires_at,
+            refresh_token=final_refresh_token,
+            refresh_token_expires_at=refresh_expires_at,
+        )
+        if pg_result.get('ok'):
+            print(f"[LOG] [{company_name.upper()}] ✓ Token zapisany do POSTGRES (updated_at={pg_result.get('updated_at')})")
+        else:
+            print(f"[ERROR] [{company_name.upper()}] Błąd zapisu do Postgres: {pg_result.get('error')}")
+    except Exception as e:
+        print(f"[ERROR] [{company_name.upper()}] Wyjątek przy zapisie do Postgres: {e}")
+    
+    # 2. Aktualizuj pamięć procesu (os.environ) - dla bieżącej sesji
+    os.environ[f"{prefix}ACCESS_TOKEN"] = access_token
+    os.environ[f"{prefix}TOKEN_EXPIRES"] = str(expires_at)
     if final_refresh_token:
-        update_render_env_var(f"{prefix}REFRESH_TOKEN", final_refresh_token)
-    update_render_env_var(f"{prefix}ACCESS_TOKEN", access_token)
-    update_render_env_var(f"{prefix}TOKEN_EXPIRES", str(expires_at))
+        os.environ[f"{prefix}REFRESH_TOKEN"] = final_refresh_token
+    if refresh_expires_at:
+        os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(refresh_expires_at)
     
-    # 3. Jeśli to NOWY refresh_token (z /auth), zapisz też jego termin ważności (30 dni)
-    if refresh_token:  # Nowy refresh token = nowe 30 dni
-        refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)  # 30 dni od teraz
-        update_render_env_var(f"{prefix}REFRESH_TOKEN_EXPIRES", str(refresh_expires_at))
+    # 3. Jeśli nowy refresh_token - wyślij email jako backup
+    if refresh_token:
         expires_date_str = datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')
-        print(f"[LOG] [{config['company'].upper()}] Nowy refresh_token ważny do: {expires_date_str}")
+        print(f"[LOG] [{company_name.upper()}] Nowy refresh_token ważny do: {expires_date_str}")
         
-        # 4. Wyślij email z nowymi wartościami tokenów
         _send_new_refresh_token_email(
-            company=config['company'],
+            company=company_name,
             refresh_token=refresh_token,
             refresh_expires_at=refresh_expires_at,
             prefix=prefix

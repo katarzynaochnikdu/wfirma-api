@@ -200,6 +200,19 @@ CREATE TABLE IF NOT EXISTS token_monitor_state (
   last_status TEXT, -- ok / warn / expired / missing
   last_error TEXT
 );
+
+-- ---------------------------------------------------------------------------
+-- WFIRMA TOKENS (bezpieczne przechowywanie tokenów OAuth2)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS wfirma_tokens (
+  company TEXT PRIMARY KEY,
+  access_token TEXT NOT NULL,
+  access_token_expires_at BIGINT NOT NULL,        -- Unix timestamp
+  refresh_token TEXT NOT NULL,
+  refresh_token_expires_at BIGINT,                 -- Unix timestamp (30 dni od utworzenia)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),   -- Kiedy pierwszy raz zapisano
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()    -- Kiedy ostatnio zaktualizowano
+);
 """
 
 
@@ -1261,6 +1274,99 @@ def upsert_token_monitor_state(
             ),
         )
         return {"company": company, "ok": True}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# WFIRMA TOKENS (bezpieczne przechowywanie tokenów OAuth2 w Postgres)
+# ---------------------------------------------------------------------------
+
+
+def save_wfirma_token(
+    company: str,
+    access_token: str,
+    access_token_expires_at: int,
+    refresh_token: str,
+    refresh_token_expires_at: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Zapisuje tokeny wFirma do Postgres (upsert).
+    Zwraca dict z info o zapisie i timestampami.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            INSERT INTO wfirma_tokens
+              (company, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, created_at, updated_at)
+            VALUES
+              (%s, %s, %s, %s, %s, NOW(), NOW())
+            ON CONFLICT (company) DO UPDATE SET
+              access_token = EXCLUDED.access_token,
+              access_token_expires_at = EXCLUDED.access_token_expires_at,
+              refresh_token = EXCLUDED.refresh_token,
+              refresh_token_expires_at = COALESCE(EXCLUDED.refresh_token_expires_at, wfirma_tokens.refresh_token_expires_at),
+              updated_at = NOW()
+            RETURNING company, access_token_expires_at, refresh_token_expires_at, created_at, updated_at
+            """,
+            (
+                str(company),
+                str(access_token),
+                int(access_token_expires_at),
+                str(refresh_token),
+                int(refresh_token_expires_at) if refresh_token_expires_at else None,
+            ),
+        )
+        row = cur.fetchone()
+        result = dict(row) if row else {}
+        result["ok"] = True
+        print(f"[PG] save_wfirma_token: {company} | access_expires={access_token_expires_at} | refresh_expires={refresh_token_expires_at}")
+        return result
+    except Exception as e:
+        print(f"[PG] save_wfirma_token ERROR: {e}")
+        return {"ok": False, "error": str(e)}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_wfirma_token(company: str) -> Optional[Dict[str, Any]]:
+    """
+    Pobiera tokeny wFirma z Postgres.
+    Zwraca dict z access_token, refresh_token, expires i timestampami lub None.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT company, access_token, access_token_expires_at, 
+                   refresh_token, refresh_token_expires_at,
+                   created_at, updated_at
+            FROM wfirma_tokens
+            WHERE company = %s
+            """,
+            (str(company),),
+        )
+        row = cur.fetchone()
+        if row:
+            result = dict(row)
+            print(f"[PG] get_wfirma_token: {company} | found, updated_at={result.get('updated_at')}")
+            return result
+        print(f"[PG] get_wfirma_token: {company} | not found")
+        return None
+    except Exception as e:
+        print(f"[PG] get_wfirma_token ERROR: {e}")
+        return None
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)

@@ -13,6 +13,11 @@ env/
 .env
 wfirma_token.json
 *.key
+*.env
+*.env.*
+.env.merged
+*.env.merged
+merge_report*.json
 *.pem
 Oauth20.txt
 
