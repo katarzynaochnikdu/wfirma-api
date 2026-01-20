@@ -30,7 +30,9 @@ except Exception as e:
 # UWAGA: Teraz obsługujemy dwa zestawy danych: WFIRMA_MD_* i WFIRMA_TEST_*
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
-REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/callback')
+# DEPRECATED: REDIRECT_URI globalny - użyj WFIRMA_<COMPANY>_REDIRECT_URI per firma
+# Pozostawiono tylko dla kompatybilności wstecznej (nie jest używany w OAuth)
+REDIRECT_URI = os.environ.get('REDIRECT_URI', '')
 TOKEN_FILE = "wfirma_token.json"
 
 # Obsługiwane firmy/zestawy danych
@@ -44,9 +46,11 @@ DEFAULT_COMPANY = 'md'  # Domyślna firma jeśli nie podano
 def get_company_config(company: str = None) -> dict:
     """
     Pobierz konfigurację dla danej firmy (md, test, md_test).
-    Zwraca dict z client_id, client_secret, access_token, refresh_token, token_expires.
+    Zwraca dict z client_id, client_secret, access_token, refresh_token, token_expires, redirect_uri.
     
     md_test używa danych MD (te same tokeny co produkcja) ale z ostrzeżeniem testowym.
+    
+    WAŻNE: redirect_uri jest pobierane WYŁĄCZNIE z WFIRMA_<COMPANY>_REDIRECT_URI (bez fallbacków).
     """
     company = (company or DEFAULT_COMPANY).lower().strip()
     if company not in SUPPORTED_COMPANIES:
@@ -58,6 +62,9 @@ def get_company_config(company: str = None) -> dict:
     else:
         prefix = f"WFIRMA_{company.upper()}_"
     
+    # redirect_uri: wyłącznie z WFIRMA_<COMPANY>_REDIRECT_URI (BEZ fallbacków!)
+    redirect_uri = os.environ.get(f'{prefix}REDIRECT_URI')
+    
     return {
         'company': company,
         'prefix': prefix,
@@ -66,6 +73,7 @@ def get_company_config(company: str = None) -> dict:
         'access_token': os.environ.get(f'{prefix}ACCESS_TOKEN'),
         'refresh_token': os.environ.get(f'{prefix}REFRESH_TOKEN'),
         'token_expires': os.environ.get(f'{prefix}TOKEN_EXPIRES'),
+        'redirect_uri': redirect_uri,  # None jeśli nie ustawiono - wymaga 500 w /auth i /callback
     }
 
 # Konfiguracja Render API (do trwałego zapisu tokenów)
@@ -607,15 +615,26 @@ def send_token_expiry_notification(days_remaining, warning_message):
         print("[LOG] Brak konfiguracji powiadomień (EMAIL_REFRESH_TOKEN_EXPIRE lub WEBHOOK_TOKEN_EXPIRE_NOTIFY)")
         return False
     
+    # Pobierz service_url z per-firma redirect_uri (domyślnie MD)
+    md_redirect = get_company_config('md').get('redirect_uri')
+    if md_redirect:
+        service_url = md_redirect.replace('/callback', '').rstrip('/')
+    else:
+        service_url = None  # Brak konfiguracji - pole będzie puste
+    
     notification_data = {
         "type": "refresh_token_expiry_warning",
         "days_remaining": round(days_remaining, 1) if days_remaining else 0,
         "warning": warning_message,
         "email": email,
-        "service_url": os.environ.get('REDIRECT_URI', 'https://wfirma-api.onrender.com').replace('/callback', ''),
+        "service_url": service_url,
         "action_required": "Przejdź na /auth aby odnowić token",
-        "timestamp": datetime.datetime.now().isoformat()
+        "timestamp": datetime.datetime.now().isoformat(),
     }
+    
+    # Dodaj ostrzeżenie o braku konfiguracji redirect_uri
+    if not service_url:
+        notification_data["config_error"] = "Brak WFIRMA_MD_REDIRECT_URI w ENV"
     
     # Opcja 1: Webhook (Make.com)
     if webhook_url:
@@ -735,9 +754,19 @@ def _should_send_token_email(now_ts: float, state: dict, days_remaining: float) 
 
 
 def _render_token_monitor_email(company: str, days_remaining: float | None, expires_at: float | None) -> tuple[str, str]:
-    service_url = os.environ.get('REDIRECT_URI', 'https://wfirma-api.onrender.com').replace('/callback', '')
-    auth_url = WFIRMA_AUTH_URL_MD if (company or "").lower().startswith("md") else f"{service_url}/auth?company={company}"
+    # Pobierz redirect_uri per firma (bez fallbacków!)
+    config = get_company_config(company)
+    redirect_uri = config.get('redirect_uri')
     company_label = (company or "md").upper()
+    
+    # Buduj auth_url z per-firma redirect_uri
+    if redirect_uri:
+        service_url = redirect_uri.replace('/callback', '').rstrip('/')
+        auth_url = f"{service_url}/auth?company={company}"
+    else:
+        # Brak konfiguracji - użyj placeholdera i pokaż błąd w mailu
+        service_url = None
+        auth_url = f"[BRAK KONFIGURACJI - ustaw {config['prefix']}REDIRECT_URI]"
 
     if days_remaining is None or expires_at is None:
         subject = f"[wFirma] [{company_label}] Brak danych o wygaśnięciu refresh tokena"
@@ -765,6 +794,20 @@ def _render_token_monitor_email(company: str, days_remaining: float | None, expi
         details = "Zaplanuj reautoryzację, aby uniknąć przerwy w wystawianiu faktur."
 
     exp_txt = _format_dt(expires_at) if expires_at else "-"
+    
+    # Warunkowa sekcja z linkiem do autoryzacji
+    if service_url:
+        auth_link_row = f'<td style="padding: 8px 0;"><a href="{auth_url}" style="color:{color}; text-decoration: underline;">{auth_url}</a></td>'
+        auth_button = f'''<div style="margin-top: 18px;">
+              <a href="{auth_url}" style="display:inline-block; padding: 12px 16px; background:{color}; color:#ffffff; border-radius: 8px; text-decoration:none; font-weight:bold;">
+                Odnów autoryzację wFirma
+              </a>
+            </div>'''
+    else:
+        auth_link_row = f'<td style="padding: 8px 0; color:#dc3545; font-weight:bold;">BŁĄD KONFIGURACJI: Brak {config["prefix"]}REDIRECT_URI w ENV</td>'
+        auth_button = f'''<div style="margin-top: 18px; padding: 12px 16px; background:#dc3545; color:#ffffff; border-radius: 8px; font-weight:bold;">
+              Skontaktuj się z administratorem - brak konfiguracji {config["prefix"]}REDIRECT_URI
+            </div>'''
 
     body_html = f"""
     <html>
@@ -789,15 +832,11 @@ def _render_token_monitor_email(company: str, days_remaining: float | None, expi
               </tr>
               <tr>
                 <td style="padding: 8px 0; color:#6b7280;">Panel autoryzacji</td>
-                <td style="padding: 8px 0;"><a href="{auth_url}" style="color:{color}; text-decoration: underline;">{auth_url}</a></td>
+                {auth_link_row}
               </tr>
             </table>
 
-            <div style="margin-top: 18px;">
-              <a href="{auth_url}" style="display:inline-block; padding: 12px 16px; background:{color}; color:#ffffff; border-radius: 8px; text-decoration:none; font-weight:bold;">
-                Odnów autoryzację wFirma
-              </a>
-            </div>
+            {auth_button}
 
             <p style="margin-top: 18px; color:#6b7280; font-size: 12px;">
               Ten email jest wysyłany automatycznie. Jeśli autoryzacja została już wykonana, możesz go zignorować.
@@ -3292,11 +3331,20 @@ def auth():
     
     config = get_company_config(company)
     client_id = config['client_id']
+    redirect_uri = config['redirect_uri']
     
     if not client_id:
         return jsonify({
             'error': f'CLIENT_ID nie jest ustawiony dla firmy {company.upper()}',
             'expected_env': f'{config["prefix"]}CLIENT_ID'
+        }), 500
+    
+    # WYMAGANE: redirect_uri musi być ustawiony per firma (bez fallbacków!)
+    if not redirect_uri:
+        return jsonify({
+            'error': f'REDIRECT_URI nie jest ustawiony dla firmy {company.upper()}',
+            'expected_env': f'{config["prefix"]}REDIRECT_URI',
+            'hint': f'Ustaw zmienną {config["prefix"]}REDIRECT_URI w ENV (np. https://your-app.onrender.com/callback)'
         }), 500
     
     # Pobierz SCOPES dla danej firmy
@@ -3310,13 +3358,13 @@ def auth():
         f"response_type=code&"
         f"client_id={client_id}&"
         f"scope={quote(scope_str)}&"
-        f"redirect_uri={quote(REDIRECT_URI, safe='')}&"
+        f"redirect_uri={quote(redirect_uri, safe='')}&"
         f"state={company}"  # state jest zwracany bez zmian w callbacku
     )
     
     print(f"[AUTH] Rozpoczynam autoryzację dla firmy: {company.upper()}")
     print(f"[AUTH] Client ID: {client_id[:10]}...")
-    print(f"[AUTH] Redirect URI: {REDIRECT_URI}")
+    print(f"[AUTH] Redirect URI: {redirect_uri}")
     print(f"[AUTH] State (company): {company}")
     print(f"[AUTH] Scopes count: {len(scopes)}")
     
@@ -3338,6 +3386,7 @@ def callback():
         company = DEFAULT_COMPANY
     
     config = get_company_config(company)
+    redirect_uri = config['redirect_uri']
     
     print(f"[CALLBACK] Otrzymano callback, state={state}, company={company.upper()}")
     
@@ -3351,6 +3400,14 @@ def callback():
     if not code:
         return jsonify({'error': 'Brak kodu autoryzacyjnego', 'company': company}), 400
     
+    # WYMAGANE: redirect_uri musi być ustawiony per firma (bez fallbacków!)
+    if not redirect_uri:
+        return jsonify({
+            'error': f'REDIRECT_URI nie jest ustawiony dla firmy {company.upper()}',
+            'expected_env': f'{config["prefix"]}REDIRECT_URI',
+            'hint': f'Ustaw zmienną {config["prefix"]}REDIRECT_URI w ENV (np. https://your-app.onrender.com/callback)'
+        }), 500
+    
     # WAŻNE: redirect_uri musi być DOKŁADNIE taki jak w /auth (bez query params!)
     # Wymień kod na token używając credentials dla danej firmy
     token_url = "https://api2.wfirma.pl/oauth2/token?oauth_version=2"
@@ -3359,12 +3416,12 @@ def callback():
         'code': code,
         'client_id': config['client_id'],
         'client_secret': config['client_secret'],
-        'redirect_uri': REDIRECT_URI  # Musi być identyczny jak zarejestrowany!
+        'redirect_uri': redirect_uri  # Musi być identyczny jak zarejestrowany w wFirma!
     }
     
     print(f"[CALLBACK] [{company.upper()}] Wymiana kodu na token...")
     print(f"[CALLBACK] [{company.upper()}] Client ID: {config['client_id'][:10] if config['client_id'] else 'BRAK'}...")
-    print(f"[CALLBACK] [{company.upper()}] Redirect URI: {REDIRECT_URI}")
+    print(f"[CALLBACK] [{company.upper()}] Redirect URI: {redirect_uri}")
     
     try:
         response = requests.post(token_url, data=data)
@@ -4289,8 +4346,9 @@ def workflow_create_invoice():
         response['pdf_size_bytes'] = len(pdf_content) if pdf_content else 0
     
     # Dodaj URL do pobrania PDF (dla opcjonalnego użycia)
+    # Zawsze używamy request.url_root (jesteśmy w kontekście requestu)
     if invoice_id:
-        base_url = request.url_root.rstrip('/') if hasattr(request, 'url_root') else REDIRECT_URI.replace('/callback', '')
+        base_url = request.url_root.rstrip('/')
         response['pdf_url'] = f"{base_url}/api/invoice/{invoice_id}/pdf"
     
     # Dodaj ostrzeżenie o refresh tokenie jeśli niedługo wygasa

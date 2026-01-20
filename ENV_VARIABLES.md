@@ -30,16 +30,27 @@
 
 ## 🏢 wFirma (faktury) - prefiks WFIRMA_MD_
 
-| Zmienna | Opis |
-|---------|------|
-| `WFIRMA_MD_CLIENT_ID` | OAuth2 Client ID dla wFirma (lub `CLIENT_ID` jako fallback) |
-| `WFIRMA_MD_CLIENT_SECRET` | OAuth2 Client Secret (lub `CLIENT_SECRET` jako fallback) |
-| `WFIRMA_MD_ACCESS_TOKEN` | Token dostępu (auto-odświeżany) |
-| `WFIRMA_MD_REFRESH_TOKEN` | Token odświeżania (ważny ~360 dni) |
-| `WFIRMA_MD_TOKEN_EXPIRES` | Timestamp wygaśnięcia access token |
-| `WFIRMA_MD_REFRESH_TOKEN_EXPIRES` | Timestamp wygaśnięcia refresh token |
+| Zmienna | Opis | Wymagane |
+|---------|------|----------|
+| `WFIRMA_MD_CLIENT_ID` | OAuth2 Client ID dla wFirma (lub `CLIENT_ID` jako fallback) | ✅ |
+| `WFIRMA_MD_CLIENT_SECRET` | OAuth2 Client Secret (lub `CLIENT_SECRET` jako fallback) | ✅ |
+| `WFIRMA_MD_REDIRECT_URI` | **URL callback OAuth** (np. `https://your-app.onrender.com/callback`) | ✅ **WYMAGANE** |
+| `WFIRMA_MD_ACCESS_TOKEN` | Token dostępu (auto-odświeżany) | auto |
+| `WFIRMA_MD_REFRESH_TOKEN` | Token odświeżania (ważny ~30 dni) | auto |
+| `WFIRMA_MD_TOKEN_EXPIRES` | Timestamp wygaśnięcia access token | auto |
+| `WFIRMA_MD_REFRESH_TOKEN_EXPIRES` | Timestamp wygaśnięcia refresh token | auto |
 
 **Alternatywnie (fallback):** `CLIENT_ID`, `CLIENT_SECRET` - używane gdy brak WFIRMA_MD_*
+
+### wFirma TEST (opcjonalne - prefiks WFIRMA_TEST_)
+
+| Zmienna | Opis | Wymagane |
+|---------|------|----------|
+| `WFIRMA_TEST_CLIENT_ID` | OAuth2 Client ID dla konta testowego | jeśli używasz test |
+| `WFIRMA_TEST_CLIENT_SECRET` | OAuth2 Client Secret | jeśli używasz test |
+| `WFIRMA_TEST_REDIRECT_URI` | **URL callback OAuth** dla konta testowego | jeśli używasz test |
+
+**WAŻNE:** `WFIRMA_<COMPANY>_REDIRECT_URI` jest **wymagane** dla autoryzacji OAuth. Bez tej zmiennej `/auth` i `/callback` zwrócą błąd 500.
 
 ### Dodatkowe wFirma
 | Zmienna | Opis | Domyślnie |
@@ -88,7 +99,7 @@
 
 | Zmienna | Opis |
 |---------|------|
-| `REDIRECT_URI` | URL callback OAuth | `https://wfirma-api.onrender.com/callback` |
+| ~~`REDIRECT_URI`~~ | ⚠️ **DEPRECATED** - użyj `WFIRMA_<COMPANY>_REDIRECT_URI` per firma |
 | `GITHUB_STOPKA_TOKEN` | Token GitHub (stopka) |
 | `HTML_GENERATOR_API_KEY_TOKEN` | Token HTML generator |
 | `REGON_API_KEY_TOKEN` | Alternatywny klucz REGON |
@@ -112,11 +123,12 @@ MAKE_RENDER_API_KEY=twoj-klucz-api
 # GUS
 GUS_API_KEY=twoj-klucz-gus
 
-# wFirma (po autoryzacji /auth?company=md)
-WFIRMA_MD_CLIENT_ID=...      # lub CLIENT_ID
-WFIRMA_MD_CLIENT_SECRET=...  # lub CLIENT_SECRET
-WFIRMA_MD_ACCESS_TOKEN=auto  # wypełni się po /auth
-WFIRMA_MD_REFRESH_TOKEN=auto # wypełni się po /auth
+# wFirma (wymagane przed autoryzacją /auth?company=md)
+WFIRMA_MD_CLIENT_ID=...                              # lub CLIENT_ID
+WFIRMA_MD_CLIENT_SECRET=...                          # lub CLIENT_SECRET
+WFIRMA_MD_REDIRECT_URI=https://your-app.onrender.com/callback  # WYMAGANE! Musi zgadzać się z konfiguracją w wFirma
+WFIRMA_MD_ACCESS_TOKEN=auto                          # wypełni się po /auth
+WFIRMA_MD_REFRESH_TOKEN=auto                         # wypełni się po /auth
 
 # Powiadomienia
 BACKSTAGE_TECHNICAL_INFO_EMAIL=adminzoho@medidesk.com  # błędy
@@ -125,4 +137,4 @@ BACKSTAGE_EVENT_INFO_EMAIL=eventy@medidesk.com        # zamówienia/płatności
 
 ---
 
-*Ostatnia aktualizacja: 19 stycznia 2026*
+*Ostatnia aktualizacja: 20 stycznia 2026*
