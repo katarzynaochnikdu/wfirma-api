@@ -620,7 +620,35 @@ def refresh_access_token(forced_refresh_token=None, company=None):
             }) + "\n")
     except Exception:
         pass
-    print(f"[DEBUG H1] refresh token source selected | company={company} | refresh_source={refresh_source}")
+    # Bezpieczny fingerprint tokena (bez ujawniania fragmentów)
+    _rt_len = len(refresh_token) if isinstance(refresh_token, str) else None
+    _rt_fingerprint = None
+    try:
+        import hashlib as _hh
+        if isinstance(refresh_token, str):
+            _rt_fingerprint = _hh.sha256(refresh_token.encode("utf-8")).hexdigest()[:8]
+    except Exception:
+        _rt_fingerprint = None
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "app.py:refresh_access_token:REFRESH_FINGERPRINT",
+                "message": "refresh token fingerprint",
+                "data": {
+                    "company": company,
+                    "refresh_source": refresh_source,
+                    "refresh_len": _rt_len,
+                    "refresh_fingerprint": _rt_fingerprint,
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H1] refresh token source selected | company={company} | refresh_source={refresh_source} | refresh_len={_rt_len} | refresh_fingerprint={_rt_fingerprint}")
     # #endregion
         
     print(f"[LOG] [{config['company'].upper()}] Próba odświeżenia tokenu...")
