@@ -386,7 +386,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
     """
     # #region agent log
     try:
-        import json as _j, time as _t
+        import json as _j, time as _t, inspect as _ins
         with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
             _f.write(_j.dumps({
                 "sessionId": "debug-session",
@@ -398,6 +398,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
                     "company": company,
                     "has_refresh_token_param": bool(refresh_token),
                     "expires_in": expires_in,
+                    "caller_func": _ins.stack()[1].function if _ins.stack() else None,
                 },
                 "timestamp": int(_t.time() * 1000),
             }) + "\n")
@@ -3662,6 +3663,28 @@ def auth():
     """
     # Pobierz company z query string
     company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    # #region agent log
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H3",
+                "location": "app.py:auth:ENTRY",
+                "message": "auth endpoint called",
+                "data": {
+                    "company": company,
+                    "method": request.method,
+                    "has_referer": bool(request.headers.get("Referer")),
+                    "has_user_agent": bool(request.headers.get("User-Agent")),
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H3] auth endpoint called | company={company} | method={request.method}")
+    # #endregion
     if company not in SUPPORTED_COMPANIES:
         return jsonify({
             'error': f'Nieobsługiwana firma: {company}',
@@ -3724,6 +3747,28 @@ def callback():
     
     if company not in SUPPORTED_COMPANIES:
         company = DEFAULT_COMPANY
+    # #region agent log
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H3",
+                "location": "app.py:callback:ENTRY",
+                "message": "callback endpoint called",
+                "data": {
+                    "company": company,
+                    "state_present": bool(state),
+                    "has_code": bool(code),
+                    "has_error": bool(error),
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H3] callback endpoint called | company={company} | has_code={bool(code)} | has_error={bool(error)}")
+    # #endregion
     
     config = get_company_config(company)
     redirect_uri = config['redirect_uri']
