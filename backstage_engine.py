@@ -2438,15 +2438,14 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     _log("INFO", "========== NOWY WEBHOOK BACKSTAGE ==========")
     _log("DEBUG", "Otrzymano payload", {"payload_keys": list(payload.keys()) if isinstance(payload, dict) else "not_dict"})
-    
-    # Loguj pełny payload (do debugowania)
+
+    # Bezpieczeństwo: NIE loguj pełnego payloadu (PII). Zostaw fingerprint do korelacji.
     try:
-        payload_str = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-        print(f"[BACKSTAGE] [RAW_PAYLOAD] >>>")
-        print(payload_str)
-        print(f"[BACKSTAGE] [RAW_PAYLOAD] <<<")
+        payload_str_compact = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
+        payload_hash = hashlib.sha256(payload_str_compact.encode("utf-8")).hexdigest()[:16]
+        _log("DEBUG", "Payload fingerprint", {"sha256_16": payload_hash, "bytes": len(payload_str_compact)})
     except Exception as e:
-        _log("WARN", f"Nie udało się zserializować payload: {e}")
+        _log("WARN", f"Nie udało się zrobić fingerprint payload: {e}")
     
     try:
         # 1. Wyciągnij dane zamówienia
@@ -2455,10 +2454,17 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
         event_order_id = order_data["event_order_id"]
         event_id = order_data["event_id"]
         
+        # Minimalne maskowanie PII w logach
+        purchaser_email = (order_data.get("purchaser_email") or "").strip()
+        masked_email = purchaser_email
+        if "@" in purchaser_email and len(purchaser_email) > 3:
+            local, _, domain = purchaser_email.partition("@")
+            masked_email = (local[:2] + "***@" + domain) if domain else (purchaser_email[:2] + "***")
+
         _log("INFO", "Wyekstrahowane dane", {
             "event_order_id": event_order_id,
             "event_id": event_id,
-            "purchaser_email": order_data.get("purchaser_email"),
+            "purchaser_email": masked_email,
             "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
             "total": order_data.get("total"),
             "currency": order_data.get("currency"),
@@ -2516,15 +2522,22 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
                 # SANDBOX: pozwól na ponowne przetworzenie
                 _log("INFO", "SANDBOX MODE: Pozwalam na ponowne przetworzenie duplikatu", {"event_order_id": event_order_id})
             else:
-                # PRODUKCJA: blokuj duplikaty
-                _log("WARN", "Webhook już był przetworzony (duplikat)", {"event_order_id": event_order_id})
-                existing_order = get_order(event_order_id)
-                return {
-                    "status": "duplicate",
-                    "order_id": event_order_id,
-                    "message": "Webhook już został przetworzony",
-                    "existing_status": existing_order.get("status") if existing_order else None,
-                }
+                # PRODUKCJA: blokuj duplikaty TYLKO gdy poprzednie przetwarzanie się udało.
+                # Jeśli poprzednio było failed/received, pozwól na retry (np. po deployu / braku ENV).
+                existing_processed_status = (webhook_record or {}).get("processed_status")
+                if existing_processed_status == "processed":
+                    _log("WARN", "Webhook już był przetworzony (duplikat)", {"event_order_id": event_order_id})
+                    existing_order = get_order(event_order_id)
+                    return {
+                        "status": "duplicate",
+                        "order_id": event_order_id,
+                        "message": "Webhook już został przetworzony",
+                        "existing_status": existing_order.get("status") if existing_order else None,
+                    }
+                _log("WARNING", "Webhook duplikat, ale poprzednio nie był 'processed' — retry", {
+                    "event_order_id": event_order_id,
+                    "previous_processed_status": existing_processed_status,
+                })
         
         _log("INFO", "Webhook zapisany do bazy" + (" (sandbox reprocess)" if not is_new and is_sandbox else " (nowy)"))
 

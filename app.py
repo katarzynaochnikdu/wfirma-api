@@ -159,10 +159,14 @@ def require_api_key(f):
     """Decorator wymagający API Key w headerze X-API-Key (ochrona przed nieuprawnionymi wywołaniami)"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Jeśli MAKE_RENDER_API_KEY nie jest ustawiony w ENV - pomijamy weryfikację (dev mode)
+        # BEZPIECZEŃSTWO: jeśli klucz nie jest ustawiony, NIE przepuszczaj requestów (fail-closed).
+        # To chroni system, gdy ENV "zniknie" przy deployu.
         if not MAKE_RENDER_API_KEY:
-            print("[WARNING] MAKE_RENDER_API_KEY nie jest ustawiony - brak ochrony API!")
-            return f(*args, **kwargs)
+            print("[SECURITY] Brak MAKE_RENDER_API_KEY w ENV - blokuję endpoint wymagający X-API-Key")
+            return jsonify({
+                'error': 'Server misconfigured',
+                'message': 'Brak MAKE_RENDER_API_KEY w konfiguracji serwera'
+            }), 503
         
         # Sprawdź header X-API-Key
         provided_key = request.headers.get('X-API-Key', '').strip()
@@ -181,6 +185,116 @@ def require_api_key(f):
         
         return f(*args, **kwargs)
     return decorated_function
+
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """
+    Publiczny status serwisu (bez sekretów).
+    Cel: szybka diagnostyka po deployu, gdy ENV bywa usuwane/niepełne.
+    """
+    def _present(name: str) -> bool:
+        return bool((os.environ.get(name) or "").strip())
+
+    critical = [
+        # Autoryzacja internal API / webhooków (Zoho/Make)
+        "MAKE_RENDER_API_KEY",
+        # Stripe webhook signature verification
+        "STRIPE_WEBHOOK_SECRET",
+        # DB (Backstage core)
+        "DATABASE_URL",
+    ]
+    backstage_optional = [
+        "MAKE_WEBHOOK_SEND_EMAIL_REQUEST",
+        "BACKSTAGE_TECHNICAL_INFO_EMAIL",
+        "BACKSTAGE_EVENT_INFO_EMAIL",
+        "STRIPE_RENDER_API_KEY",
+    ]
+
+    missing_critical = [k for k in critical if not _present(k)]
+    missing_optional = [k for k in backstage_optional if not _present(k)]
+
+    ok = len(missing_critical) == 0
+    mode = "ok" if ok else "degraded"
+
+    # Jeśli wykryto krytyczne braki, wyślij alert (z throttlingiem, bo endpoint jest publiczny).
+    if not ok:
+        try:
+            _maybe_send_critical_env_alert(missing_critical, missing_optional)
+        except Exception as e:
+            print(f"[HEALTH] Alert send error: {e}")
+
+    return jsonify({
+        "ok": ok,
+        "mode": mode,
+        "missing_critical_env": missing_critical,
+        "missing_optional_env": missing_optional,
+    }), (200 if ok else 503)
+
+
+# Throttling alertów health (ochrona przed spamem, bo /api/health jest publiczne).
+_HEALTH_ALERT_LAST_SENT_AT: float = 0.0
+_HEALTH_ALERT_THROTTLE_SECONDS: int = 6 * 60 * 60  # 6h
+
+
+def _make_email_configured() -> bool:
+    # Dla alertów /api/health używamy samego URL webhooka (bez dodatkowego klucza),
+    # bo `RENDER_EMAIL_KEY_SEND_REQUEST` jest u Ciebie zarezerwowany pod token-expiry.
+    return bool((MAKE_WEBHOOK_SEND_EMAIL_REQUEST or "").strip())
+
+
+def _maybe_send_critical_env_alert(missing_critical: list, missing_optional: list) -> None:
+    global _HEALTH_ALERT_LAST_SENT_AT
+    import time as _time
+
+    now = _time.time()
+    if _HEALTH_ALERT_LAST_SENT_AT and (now - _HEALTH_ALERT_LAST_SENT_AT) < _HEALTH_ALERT_THROTTLE_SECONDS:
+        return
+
+    # Jeśli nie mamy jak wysłać maila (Make webhook), tylko loguj.
+    if not _make_email_configured():
+        print(f"[HEALTH] Missing critical env={missing_critical} (no Make email configured)")
+        return
+
+    to_email = "adminzoho@medidesk.com"
+    # Użytkownik chciał czytelny temat z wykrzyknikami.
+    subject = f"!!! KRYTYCZNE BRAKI ENV !!! ({', '.join(missing_critical)})"
+
+    ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    body_html = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; padding: 16px;">
+      <h2 style="color:#dc2626;">!!! KRYTYCZNE BRAKI ENV !!!</h2>
+      <p><strong>Czas:</strong> {ts}</p>
+      <p><strong>Missing critical:</strong> {', '.join(missing_critical) if missing_critical else '(none)'}</p>
+      <p><strong>Missing optional:</strong> {', '.join(missing_optional) if missing_optional else '(none)'}</p>
+      <hr>
+      <p style="color:#6b7280; font-size:12px;">
+        To jest automatyczny alert z <code>/api/health</code>. Nie zawiera wartości sekretów – tylko nazwy brakujących zmiennych.
+      </p>
+    </body>
+    </html>
+    """
+
+    # Wyślij przez Make.com (spójny format jak inne emaile w systemie)
+    try:
+        payload = {
+            "to": to_email,
+            "subject": subject,
+            "body_html": body_html,
+            "event_order_id": "HEALTH",
+            "template_type": "critical_env_missing",
+        }
+        headers = {
+            "Content-Type": "application/json",
+        }
+        resp = requests.post(MAKE_WEBHOOK_SEND_EMAIL_REQUEST, json=payload, headers=headers, timeout=15)
+        ok_send = resp.status_code in (200, 201, 202)
+        print(f"[HEALTH] Alert email sent={ok_send} status={resp.status_code}")
+        if ok_send:
+            _HEALTH_ALERT_LAST_SENT_AT = now
+    except Exception as e:
+        print(f"[HEALTH] Alert exception: {e}")
 
 
 # ==================== FUNKCJE POMOCNICZE ====================
@@ -2009,17 +2123,12 @@ def backstage_attendee():
                 'error': 'Brak JSON payload'
             }), 400
         
-        # Logowanie pełnego payloadu (bez wrażliwych danych)
-        import json
-        print(f"[ATTENDEE WEBHOOK] Otrzymano payload keys: {list(payload.keys())}")
+        # Bezpieczeństwo: NIE loguj pełnego payloadu (PII). Zostaw tylko metadane.
         try:
-            # Pokaż pełny payload w logach
-            payload_safe = {k: v for k, v in payload.items()}
-            print(f"[ATTENDEE WEBHOOK] [RAW_PAYLOAD] <<<")
-            print(json.dumps(payload_safe, indent=2, ensure_ascii=False, default=str))
-            print(f"[ATTENDEE WEBHOOK] [RAW_PAYLOAD] >>>")
-        except Exception as log_err:
-            print(f"[ATTENDEE WEBHOOK] Nie można zserializować payloadu: {log_err}")
+            keys = list(payload.keys())
+        except Exception:
+            keys = []
+        print(f"[ATTENDEE WEBHOOK] Otrzymano payload keys: {keys}")
         
         # Ekstrakcja danych z różnych możliwych nazw pól
         order_id = (
@@ -2587,13 +2696,16 @@ def stripe_webhook():
         payload = request.get_data()
         signature = request.headers.get('Stripe-Signature', '')
         
-        # Weryfikuj podpis
+        # Weryfikuj podpis (lub wykryj brak konfiguracji)
         is_valid, error = verify_webhook_signature(payload, signature)
         if not is_valid:
+            status_code = 400
+            if error and ("missing" in error.lower() or "not configured" in error.lower() or "secret" in error.lower()):
+                status_code = 503
             return jsonify({
                 'status': 'error',
                 'error': error or 'Invalid signature'
-            }), 400
+            }), status_code
         
         # Parsuj JSON
         try:
@@ -2644,12 +2756,12 @@ def stripe_webhook():
                 return jsonify({'status': 'error', 'error': str(e2)}), 200
         
     except Exception as e:
-        # Loguj błąd ale zwróć 200 żeby Stripe nie ponawiał
+        # Bezpieczeństwo/niezawodność: zwróć 500, żeby Stripe mógł ponowić event przy awariach.
         print(f"[STRIPE WEBHOOK ERROR] {str(e)}")
         return jsonify({
             'status': 'error',
             'error': str(e)
-        }), 200
+        }), 500
 
 
 # ---------------------------------------------------------------------------
@@ -2789,10 +2901,13 @@ def stripe_sandbox_webhook():
         # Weryfikuj podpis (sandbox)
         is_valid, error = verify_webhook_signature(payload, signature, sandbox=True)
         if not is_valid:
+            status_code = 400
+            if error and ("missing" in error.lower() or "not configured" in error.lower() or "secret" in error.lower()):
+                status_code = 503
             return jsonify({
                 'status': 'error',
                 'error': error or 'Invalid signature'
-            }), 400
+            }), status_code
         
         try:
             event = json.loads(payload)
@@ -2842,13 +2957,11 @@ def stripe_sandbox_webhook():
                 return jsonify(safe), 200
             except Exception as e2:
                 return jsonify({'status': 'error', 'error': str(e2)}), 200
-        
+
     except Exception as e:
+        # Niezawodność: 500 -> Stripe może ponowić event (także w sandbox).
         print(f"[STRIPE SANDBOX WEBHOOK ERROR] {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 200
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 # Start background monitors (after routes are defined)

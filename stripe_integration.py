@@ -262,10 +262,13 @@ def verify_webhook_signature(payload: bytes, signature: str, sandbox: bool = Fal
     Returns:
         (is_valid, error_message)
     """
+    # Bezpieczeństwo: fail-closed na brak konfiguracji.
+    if stripe is None:
+        return False, "Stripe library not available (missing dependency)"
+
     webhook_secret = _get_webhook_secret(sandbox)
     if not webhook_secret:
-        # Jeśli brak sekretu - przepuść bez weryfikacji (dev mode)
-        return True, None
+        return False, "Missing Stripe webhook secret (server misconfigured)"
     
     try:
         stripe.Webhook.construct_event(
@@ -700,7 +703,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             print(f"[STRIPE] BŁĄD tworzenia faktury: {error}")
             
             # Wyślij powiadomienie wewnętrzne o błędzie faktury
-            if internal_email:
+            # internal_email_target jest wyliczony wyżej (event/technical zależnie od przebiegu)
+            if internal_email_target:
                 error_subject = f"[INVOICE ERROR] Błąd faktury – {event_name}"
                 error_body_html = f"""
                 <html>
@@ -722,7 +726,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
                 </html>
                 """
                 _send_email_via_make_stripe(
-                    to_email=internal_email,
+                    to_email=internal_email_target,
                     subject=error_subject,
                     body_html=error_body_html,
                     event_order_id=event_order_id,
