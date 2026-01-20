@@ -1322,9 +1322,9 @@ def _build_invoice_positions(tickets: List[Dict[str, Any]], event_name: str = ""
         return [{
             "name": event_name or "Udział w wydarzeniu",
             "unit": "szt.",
-            "count": 1,
-            "price": 0,  # Zostanie uzupełnione z total
-            "vat": "23",
+            "quantity": 1,
+            "unit_price_net": 0,  # Zostanie uzupełnione z total
+            "vat_rate": "23",
         }]
     
     positions = []
@@ -1340,9 +1340,9 @@ def _build_invoice_positions(tickets: List[Dict[str, Any]], event_name: str = ""
         positions.append({
             "name": name,
             "unit": "szt.",
-            "count": t.get("quantity", 1),
-            "price": t.get("unit_price_net", 0),  # Cena netto jednostkowa
-            "vat": vat_str,
+            "quantity": t.get("quantity", 1),
+            "unit_price_net": t.get("unit_price_net", 0),  # Cena netto jednostkowa
+            "vat_rate": vat_str,
         })
     
     return positions
@@ -1434,7 +1434,7 @@ def _build_mail_task(
 
 # Konfiguracja wFirma
 WFIRMA_COMPANY = os.environ.get("WFIRMA_COMPANY", "md")  # md lub test
-WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "FV/EV")
+WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "Eventy")
 WFIRMA_API_KEY = os.environ.get("MAKE_RENDER_API_KEY", "")  # Ten sam klucz co dla innych API
 
 
@@ -1503,15 +1503,15 @@ def _create_wfirma_invoice(
     positions = _build_invoice_positions(tickets, event_name)
     
     # Jeśli brak pozycji lub cena = 0, użyj total z zamówienia
-    if not positions or (len(positions) == 1 and positions[0].get("price", 0) == 0):
+    if not positions or (len(positions) == 1 and positions[0].get("unit_price_net", 0) == 0):
         # Oblicz cenę netto z brutto (VAT 23%)
         price_net = round(total / 1.23, 2)
         positions = [{
             "name": f"Udział w wydarzeniu: {event_name}" if event_name else "Udział w wydarzeniu",
             "unit": "szt.",
-            "count": 1,
-            "price": price_net,
-            "vat": "23",
+            "quantity": 1,
+            "unit_price_net": price_net,
+            "vat_rate": "23",
         }]
 
     # Preview pozycji (max 5) - żeby było widać co idzie do wFirma
@@ -1520,9 +1520,9 @@ def _create_wfirma_invoice(
         for p in positions[:5]:
             positions_preview.append({
                 "name": (p.get("name") or "")[:80],
-                "count": p.get("count"),
-                "price": p.get("price"),
-                "vat": p.get("vat"),
+                "quantity": p.get("quantity"),
+                "unit_price_net": p.get("unit_price_net"),
+                "vat_rate": p.get("vat_rate"),
             })
         _log("DEBUG", "WFIRMA: Pozycje (preview)", {
             "event_order_id": event_order_id,
