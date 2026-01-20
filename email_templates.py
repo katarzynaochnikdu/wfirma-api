@@ -106,7 +106,7 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
 </head>
 <body>
   <div style="display: none; max-height: 0; overflow: hidden;">
-    Potwierdź rezerwację na {event_name} – zapłać {total_gross_formatted}
+    Dokończ rejestrację na {event_name} – opłać {total_gross_formatted}
   </div>
 
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
@@ -144,7 +144,7 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
-                          <p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby potwierdzić rezerwację miejsca, wymagane jest dokonanie płatności.</p>
+                          <p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p>
                         </td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
@@ -275,7 +275,7 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
 </head>
 <body>
   <div style="display: none; max-height: 0; overflow: hidden;">
-    Potwierdź rezerwację na {event_name} – zapłać {total_gross_formatted}
+    Dokończ rejestrację na {event_name} – opłać {total_gross_formatted}
   </div>
 
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
@@ -304,7 +304,7 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
-                        <td><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby potwierdzić rezerwację miejsca, wymagane jest dokonanie płatności.</p></td>
+                        <td><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p></td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       {event_datetime_section}
@@ -446,7 +446,7 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
 </head>
 <body>
   <div style="display: none; max-height: 0; overflow: hidden;">
-    Potwierdź rezerwację na {event_name} – zapłać {total_gross_formatted}
+    Dokończ rejestrację na {event_name} – opłać {total_gross_formatted}
   </div>
 
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
@@ -475,7 +475,7 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
-                        <td><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby potwierdzić rezerwację miejsca, wymagane jest dokonanie płatności.</p></td>
+                        <td><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p></td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       {event_datetime_section}
@@ -775,14 +775,14 @@ def render_stripe_payment_email(
 
 
 # ---------------------------------------------------------------------------
-# SZABLON: FOC (Free of Charge) - Potwierdzenie rejestracji (100% rabat)
+# SZABLON: FOC (Free of Charge) - Potwierdzenie rezerwacji (100% rabat = opłacone)
 # ---------------------------------------------------------------------------
 
 TEMPLATE_FOC_CONFIRMATION = '''<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
-  <title>Potwierdzenie rejestracji – {event_name}</title>
+  <title>Potwierdzenie rezerwacji – {event_name}</title>
   <style type="text/css">
     p, h1, h2, h3, h4, h5, h6, ul {{margin: 0;}}
     @media screen and (max-width: 620px) {{
@@ -795,7 +795,7 @@ TEMPLATE_FOC_CONFIRMATION = '''<!doctype html>
 </head>
 <body>
   <div style="display: none; max-height: 0; overflow: hidden;">
-    Twoja rejestracja na {event_name} została potwierdzona!
+    Twoja rezerwacja na {event_name} została potwierdzona!
   </div>
 
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
@@ -833,13 +833,13 @@ TEMPLATE_FOC_CONFIRMATION = '''<!doctype html>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
-                          <p>Dziękujemy za rejestrację na <strong>{event_name}</strong>!</p>
+                          <p>Dziękujemy za rezerwację miejsca na <strong>{event_name}</strong>!</p>
                         </td>
                       </tr>
                       <tr><td style="height: 12px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
-                          <p style="font-size: 16px; color: #2E7D32; font-weight: bold;">✅ Twoja rejestracja została potwierdzona.</p>
+                          <p style="font-size: 16px; color: #2E7D32; font-weight: bold;">✅ Twoja rezerwacja została potwierdzona.</p>
                         </td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
@@ -860,7 +860,7 @@ TEMPLATE_FOC_CONFIRMATION = '''<!doctype html>
                   <td style="padding: 0 24px 8px 24px;">
                     <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły rejestracji</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły rezerwacji</td>
                       </tr>
                       {tickets_rows}
                       <tr>
@@ -923,7 +923,7 @@ def render_foc_confirmation_email(
     tickets: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
-    Renderuje email z potwierdzeniem rejestracji FOC (Free of Charge).
+    Renderuje email z potwierdzeniem rezerwacji FOC (Free of Charge = opłacone od razu).
     
     Args:
         event_name: Nazwa eventu
@@ -984,14 +984,14 @@ def render_foc_confirmation_email(
 
 
 # ---------------------------------------------------------------------------
-# SZABLON: PROFORMA - rezerwacja miejsca + informacja o pro-formie (mail z Backstage)
+# SZABLON: PROFORMA - potwierdzenie rejestracji + informacja o pro-formie (mail z Backstage)
 # ---------------------------------------------------------------------------
 
 TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
-  <title>Rezerwacja miejsca – {event_name}</title>
+  <title>Potwierdzenie rejestracji – {event_name}</title>
   <style type="text/css">
     p, h1, h2, h3, h4, h5, h6, ul {{margin: 0;}}
     @media screen and (max-width: 620px) {{
@@ -1004,7 +1004,7 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
 </head>
 <body>
   <div style="display: none; max-height: 0; overflow: hidden;">
-    Twoje miejsce na {event_name} jest zarezerwowane. Pro-forma zostanie wysłana mailem.
+    Twoja rejestracja na {event_name} jest potwierdzona. Pro-forma zostanie wysłana mailem.
   </div>
 
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #E3E3E3; background-color: transparent;" dir="ltr">
@@ -1042,19 +1042,20 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
-                          <p>Potwierdzamy rezerwację miejsca na <strong>{event_name}</strong>.</p>
+                          <p>Potwierdzamy rejestrację na <strong>{event_name}</strong>.</p>
                         </td>
                       </tr>
                       <tr><td style="height: 12px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
-                          <p style="font-size: 16px; color: #1F2937; font-weight: bold;">✅ Twoje miejsce jest zarezerwowane.</p>
+                          <p style="font-size: 16px; color: #1F2937; font-weight: bold;">✅ Twoja rejestracja jest potwierdzona.</p>
                         </td>
                       </tr>
                       <tr><td style="height: 16px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
                           <p><strong>Pro-forma</strong>{proforma_number_inline} zostanie wysłana na ten adres email z systemu wFirma.</p>
+                          <p style="margin-top: 8px; font-size: 14px; color: #6B7280;">Po opłaceniu pro-formy Twoje miejsce zostanie zarezerwowane.</p>
                         </td>
                       </tr>
                       <tr><td style="height: 16px;"></td></tr>
@@ -1092,7 +1093,7 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                   <td style="padding: 0 24px 8px 24px;">
                     <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły rezerwacji</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły rejestracji</td>
                       </tr>
                       {tickets_rows}
                       <tr>
@@ -1156,7 +1157,7 @@ def render_proforma_reservation_email(
     proforma_number: Optional[str] = None,
 ) -> str:
     """
-    Email BACKSTAGE dla flow PROFORMA: rezerwacja miejsca + informacja o pro-formie z wFirma.
+    Email BACKSTAGE dla flow PROFORMA: potwierdzenie rejestracji + informacja o pro-formie z wFirma.
     """
     event_config = event_config or get_default_event_config()
     tickets = tickets or []
