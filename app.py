@@ -385,8 +385,25 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
         company: Firma/zestaw danych ('md' lub 'test')
     """
     # #region agent log
-    import traceback as _tb; _caller = ''.join(_tb.format_stack()[-4:-1])[:200]
-    print(f"[DEBUG H2,H5] save_token CALLED | company={company} | has_refresh_token_param={bool(refresh_token)} | refresh_first6={refresh_token[:6] if refresh_token else None} | expires_in={expires_in} | caller={_caller}")
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H2,H5",
+                "location": "app.py:save_token:ENTRY",
+                "message": "save_token CALLED",
+                "data": {
+                    "company": company,
+                    "has_refresh_token_param": bool(refresh_token),
+                    "expires_in": expires_in,
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H2,H5] save_token CALLED | company={company} | has_refresh_token_param={bool(refresh_token)} | expires_in={expires_in}")
     # #endregion
     config = get_company_config(company)
     prefix = config['prefix']
@@ -467,12 +484,29 @@ def refresh_access_token(forced_refresh_token=None, company=None):
         forced_refresh_token: Wymuszony refresh token
         company: Firma/zestaw danych ('md' lub 'test')
     """
-    # #region agent log
-    import traceback as _tb; _caller = ''.join(_tb.format_stack()[-5:-1])[:500]
-    print(f"[DEBUG H1,H2] refresh_access_token CALLED | company={company} | forced_refresh_token_provided={bool(forced_refresh_token)} | caller_stack={_caller[:200]}")
-    # #endregion
     config = get_company_config(company)
     prefix = config['prefix']
+    # #region agent log
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H1,H2",
+                "location": "app.py:refresh_access_token:ENTRY",
+                "message": "refresh_access_token CALLED",
+                "data": {
+                    "company": company,
+                    "forced_refresh_token_provided": bool(forced_refresh_token),
+                    "env_refresh_present": bool(config.get("refresh_token")),
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H1,H2] refresh_access_token CALLED | company={company} | forced_refresh_token_provided={bool(forced_refresh_token)} | env_refresh_present={bool(config.get('refresh_token'))}")
+    # #endregion
     
     # BLOKADA: Sprawdź czy ktoś inny właśnie odświeża token
     # Jeśli ostatni refresh był < 30 sekund temu, poczekaj i sprawdź czy token jest już ważny
@@ -526,21 +560,67 @@ def refresh_access_token(forced_refresh_token=None, company=None):
     update_render_env_var(last_refresh_key, str(current_time))
     
     refresh_token = forced_refresh_token
+    refresh_source = "forced" if forced_refresh_token else None
     if not refresh_token and company is None and os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'r') as f:
                 data = json.load(f)
                 refresh_token = data.get('refresh_token')
+                if refresh_token:
+                    refresh_source = "file"
         except:
             pass
             
     # Fallback: sprawdź zmienną środowiskową dla danej firmy
     if not refresh_token:
         refresh_token = config['refresh_token']
+        if refresh_token:
+            refresh_source = "env"
         
     if not refresh_token:
         print(f"[LOG] [{config['company'].upper()}] Brak refresh tokena, nie można odświeżyć sesji")
+        # #region agent log
+        try:
+            import json as _j, time as _t
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_j.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H1",
+                    "location": "app.py:refresh_access_token:NO_REFRESH",
+                    "message": "no refresh token available",
+                    "data": {
+                        "company": company,
+                        "refresh_source": refresh_source,
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        print(f"[DEBUG H1] no refresh token available | company={company} | refresh_source={refresh_source}")
+        # #endregion
         return None
+
+    # #region agent log
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "app.py:refresh_access_token:REFRESH_SOURCE",
+                "message": "refresh token source selected",
+                "data": {
+                    "company": company,
+                    "refresh_source": refresh_source,
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H1] refresh token source selected | company={company} | refresh_source={refresh_source}")
+    # #endregion
         
     print(f"[LOG] [{config['company'].upper()}] Próba odświeżenia tokenu...")
     token_url = "https://api2.wfirma.pl/oauth2/token"
@@ -555,6 +635,39 @@ def refresh_access_token(forced_refresh_token=None, company=None):
         print(f"[LOG] [{config['company'].upper()}] Refresh payload keys: {list(payload.keys())}")
         response = requests.post(token_url, data=payload)
         print(f"[LOG] [{config['company'].upper()}] Refresh response status: {response.status_code}")
+        # #region agent log
+        _has_access = False
+        _has_refresh = False
+        _error_key = None
+        try:
+            import json as _j, time as _t
+            try:
+                _resp_json = response.json()
+            except Exception:
+                _resp_json = {}
+            _has_access = bool(_resp_json.get("access_token")) if response.status_code == 200 else False
+            _has_refresh = bool(_resp_json.get("refresh_token")) if response.status_code == 200 else False
+            _error_key = _resp_json.get("error") if response.status_code != 200 else None
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_j.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H2",
+                    "location": "app.py:refresh_access_token:RESPONSE",
+                    "message": "refresh token response",
+                    "data": {
+                        "company": company,
+                        "status_code": response.status_code,
+                        "has_access_token": _has_access,
+                        "has_refresh_token": _has_refresh,
+                        "error_key": _error_key,
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        print(f"[DEBUG H2] refresh response | status={response.status_code} | has_access_token={_has_access} | has_refresh_token={_has_refresh} | error_key={_error_key}")
+        # #endregion
         
         if response.status_code == 200:
             new_tokens = response.json()
@@ -567,7 +680,7 @@ def refresh_access_token(forced_refresh_token=None, company=None):
             
             if new_access:
                 # #region agent log
-                print(f"[DEBUG H2] wFirma returned tokens | has_new_access={bool(new_access)} | has_new_refresh={bool(new_refresh)} | new_refresh_first6={new_refresh[:6] if new_refresh else None} | expires_in={expires_in}")
+                print(f"[DEBUG H2] wFirma returned tokens | has_new_access={bool(new_access)} | has_new_refresh={bool(new_refresh)} | expires_in={expires_in}")
                 # #endregion
                 # WAŻNE: Zapisujemy TYLKO access_token - NIE podmieniamy refresh_token automatycznie!
                 # Refresh token może być zmieniony TYLKO przez ręczną autoryzację /auth
@@ -1182,8 +1295,24 @@ def load_token(silent=False, company=None):
         company: Firma/zestaw danych ('md' lub 'test'). Jeśli None - używa domyślnego.
     """
     # #region agent log
-    import traceback as _tb; _caller = ''.join(_tb.format_stack()[-4:-1])[:200]
-    print(f"[DEBUG H1] load_token CALLED | company={company} | silent={silent} | caller={_caller}")
+    try:
+        import json as _j, time as _t
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_j.dumps({
+                "sessionId": "debug-session",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "app.py:load_token:ENTRY",
+                "message": "load_token CALLED",
+                "data": {
+                    "company": company,
+                    "silent": silent,
+                },
+                "timestamp": int(_t.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    print(f"[DEBUG H1] load_token CALLED | company={company} | silent={silent}")
     # #endregion
     config = get_company_config(company)
     prefix = config['prefix']
@@ -3649,6 +3778,26 @@ def callback():
         access_token = token_data['access_token']
         refresh_token = token_data.get('refresh_token')
         
+        # #region agent log
+        try:
+            import json as _j, time as _t
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_j.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H3",
+                    "location": "app.py:callback:SAVE_REFRESH",
+                    "message": "callback saving refresh token (manual auth flow)",
+                    "data": {
+                        "company": company,
+                        "has_refresh_token": bool(refresh_token),
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        print(f"[DEBUG H3] callback saving refresh token (manual auth flow) | company={company} | has_refresh_token={bool(refresh_token)}")
+        # #endregion
         # Zapisz token dla danej firmy (wraz z refresh_token)
         save_token(access_token, expires_in, refresh_token, company=company)
         
