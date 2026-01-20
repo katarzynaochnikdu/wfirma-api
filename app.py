@@ -3737,6 +3737,44 @@ def auth():
             'expected_env': f'{config["prefix"]}REDIRECT_URI',
             'hint': f'Ustaw zmienną {config["prefix"]}REDIRECT_URI w ENV (np. https://your-app.onrender.com/callback)'
         }), 500
+
+    # Wygeneruj i zapisz state dla ręcznego /auth -> /callback
+    try:
+        import secrets as _secrets
+        from pg_storage import save_oauth_state
+        oauth_state = _secrets.token_urlsafe(16)
+        save_res = save_oauth_state(oauth_state, company)
+        if not save_res.get("ok"):
+            return jsonify({
+                'error': 'Nie udało się zapisać state OAuth',
+                'message': save_res.get("error") or "unknown",
+                'company': company
+            }), 500
+        # #region agent log
+        try:
+            import json as _j, time as _t
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_j.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H3",
+                    "location": "app.py:auth:STATE_SAVED",
+                    "message": "oauth state saved",
+                    "data": {
+                        "company": company,
+                        "state_len": len(oauth_state),
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion
+    except Exception as e:
+        return jsonify({
+            'error': 'Nie udało się wygenerować state OAuth',
+            'message': str(e),
+            'company': company
+        }), 500
     
     # Pobierz SCOPES dla danej firmy
     scopes = get_scopes_for_company(company)
@@ -3750,7 +3788,7 @@ def auth():
         f"client_id={client_id}&"
         f"scope={quote(scope_str)}&"
         f"redirect_uri={quote(redirect_uri, safe='')}&"
-        f"state={company}"  # state jest zwracany bez zmian w callbacku
+        f"state={oauth_state}"  # state jest zwracany bez zmian w callbacku
     )
     
     print(f"[AUTH] Rozpoczynam autoryzację dla firmy: {company.upper()}")
@@ -3769,12 +3807,52 @@ def callback():
     """
     code = request.args.get('code')
     error = request.args.get('error')
-    # WAŻNE: company jest przekazywane przez parametr 'state' (nie query param!)
+    # WAŻNE: company jest pobierane z zapisanej mapy state (nie z query param!)
     state = request.args.get('state', '')
-    company = (state or DEFAULT_COMPANY).lower().strip()
-    
+    company = None
+    state_ok = False
+    try:
+        from pg_storage import consume_oauth_state
+        res = consume_oauth_state(state, max_age_seconds=900)
+        state_ok = bool(res.get("ok"))
+        if state_ok:
+            company = (res.get("company") or "").lower().strip()
+    except Exception as e:
+        return jsonify({
+            'error': 'Błąd weryfikacji state OAuth',
+            'message': str(e),
+        }), 500
+
+    if not state_ok or not company:
+        # #region agent log
+        try:
+            import json as _j, time as _t
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_j.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H3",
+                    "location": "app.py:callback:STATE_INVALID",
+                    "message": "oauth state invalid or expired",
+                    "data": {
+                        "state_present": bool(state),
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        return jsonify({
+            'error': 'Nieprawidłowy lub wygasły state OAuth',
+            'message': 'Rozpocznij autoryzację od /auth',
+        }), 403
+
     if company not in SUPPORTED_COMPANIES:
-        company = DEFAULT_COMPANY
+        return jsonify({
+            'error': f'Nieobsługiwana firma: {company}',
+            'supported': SUPPORTED_COMPANIES,
+            'usage': '/auth?company=md lub /auth?company=test'
+        }), 400
     # #region agent log
     try:
         import json as _j, time as _t
@@ -3801,7 +3879,12 @@ def callback():
     config = get_company_config(company)
     redirect_uri = config['redirect_uri']
     
-    print(f"[CALLBACK] Otrzymano callback, state={state}, company={company.upper()}")
+    try:
+        import hashlib as _hh
+        _state_fp = _hh.sha256(state.encode("utf-8")).hexdigest()[:8] if state else None
+    except Exception:
+        _state_fp = None
+    print(f"[CALLBACK] Otrzymano callback, state_fp={_state_fp}, company={company.upper()}")
     
     if error:
         return jsonify({

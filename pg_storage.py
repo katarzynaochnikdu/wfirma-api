@@ -217,6 +217,17 @@ CREATE TABLE IF NOT EXISTS wfirma_tokens (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),   -- Kiedy pierwszy raz zapisano
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()    -- Kiedy ostatnio zaktualizowano
 );
+-- ---------------------------------------------------------------------------
+-- OAUTH STATE (dla ręcznego /auth -> /callback)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  company TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_states_company ON oauth_states(company);
 """
 
 
@@ -1334,6 +1345,73 @@ def save_wfirma_token(
         return result
     except Exception as e:
         print(f"[PG] save_wfirma_token ERROR: {e}")
+        return {"ok": False, "error": str(e)}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def save_oauth_state(state: str, company: str) -> Dict[str, Any]:
+    """Zapisz stan OAuth (state) dla ręcznego /auth -> /callback."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO oauth_states (state, company, created_at, used_at)
+            VALUES (%s, %s, NOW(), NULL)
+            ON CONFLICT (state) DO UPDATE SET
+              company = EXCLUDED.company,
+              created_at = NOW(),
+              used_at = NULL
+            """,
+            (str(state), str(company)),
+        )
+        return {"ok": True}
+    except Exception as e:
+        print(f"[PG] save_oauth_state ERROR: {e}")
+        return {"ok": False, "error": str(e)}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def consume_oauth_state(state: str, max_age_seconds: int = 900) -> Dict[str, Any]:
+    """
+    Pobierz i oznacz jako użyty state OAuth.
+    Zwraca {"ok": True, "company": "..."} lub {"ok": False, "error": "..."}.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT company
+            FROM oauth_states
+            WHERE state = %s
+              AND used_at IS NULL
+              AND created_at >= NOW() - (%s * INTERVAL '1 second')
+            """,
+            (str(state), int(max_age_seconds)),
+        )
+        row = cur.fetchone()
+        if not row:
+            return {"ok": False, "error": "state_not_found_or_expired"}
+
+        company = row[0]
+        cur.execute(
+            "UPDATE oauth_states SET used_at = NOW() WHERE state = %s",
+            (str(state),),
+        )
+        return {"ok": True, "company": company}
+    except Exception as e:
+        print(f"[PG] consume_oauth_state ERROR: {e}")
         return {"ok": False, "error": str(e)}
     finally:
         if pool is not None and conn is not None:
