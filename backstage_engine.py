@@ -275,6 +275,24 @@ def send_participant_ticket_emails(
     from email_templates import render_participant_ticket_email
     
     stats = {"sent": 0, "failed": 0, "skipped": 0, "details": []}
+
+    # Guard: wysyłka biletów dopiero gdy mamy komplet attendee-webhooków per ticket_id
+    complete_info = is_attendee_webhooks_complete(event_order_id)
+    if not complete_info.get("complete"):
+        _log("INFO", "Nie wysyłam maili do uczestników - brak kompletu attendee-webhooków", {
+            "event_order_id": event_order_id,
+            "expected": complete_info.get("expected", 0),
+            "received": complete_info.get("received", 0),
+        })
+        stats["skipped"] = 0
+        stats["details"].append({
+            "status": "skipped_all",
+            "reason": "attendee_webhooks_incomplete",
+            "expected": complete_info.get("expected", 0),
+            "received": complete_info.get("received", 0),
+            "missing_ticket_ids": complete_info.get("missing_ticket_ids", [])[:10],
+        })
+        return stats
     
     # Pobierz uczestników
     participants = get_participants_for_order(event_order_id)
@@ -428,6 +446,186 @@ from pg_storage import (
 FLOW_FOC = "FOC"          # Free of Charge (total=0, tylko mail)
 FLOW_PROFORMA = "PROFORMA"  # Proforma wFirma + czekamy na przelew
 FLOW_STRIPE = "STRIPE"      # Stripe checkout session
+
+
+def attendee_webhooks_status(event_order_id: str) -> Dict[str, Any]:
+    """
+    Kompletność danych wg Twojej definicji:
+    - dla każdego biletu (ticket_id) musi przyjść unikalny webhook /api/backstage/attendee
+    - nie weryfikujemy zawartości, tylko obecność webhooka per ticket_id
+    """
+    from pg_storage import get_participants_for_order
+
+    participants = get_participants_for_order(event_order_id)
+    expected_ticket_ids = []
+    received_ticket_ids = []
+
+    for p in participants:
+        tid = (p.get("ticket_id") or "").strip()
+        if not tid:
+            continue
+        expected_ticket_ids.append(tid)
+        data = p.get("data") or {}
+        try:
+            if data.get("attendee_webhook_received") is True:
+                received_ticket_ids.append(tid)
+        except Exception:
+            pass
+
+    expected_set = list(dict.fromkeys(expected_ticket_ids))
+    received_set = set(received_ticket_ids)
+    missing = [tid for tid in expected_set if tid not in received_set]
+
+    return {
+        "expected": len(expected_set),
+        "received": len(received_set),
+        "missing_ticket_ids": missing,
+        "complete": (len(expected_set) > 0 and len(missing) == 0),
+    }
+
+
+def is_attendee_webhooks_complete(event_order_id: str) -> Dict[str, Any]:
+    """Alias pomocniczy."""
+    return attendee_webhooks_status(event_order_id)
+
+
+def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, Any]:
+    """
+    Wywoływane po każdym attendee-webhooku (oraz po paid), żeby sprawdzić kompletność
+    i dopiero wtedy wysłać maile, które mają czekać na komplet:
+    - FOC purchaser confirmation (po kompletności)
+    - PROFORMA purchaser reservation (po kompletności)
+    - participant ticket emails (tylko jeśli order.status == paid)
+    """
+    from pg_storage import get_order, get_event, mail_log_exists, save_mail_log
+    from email_templates import render_foc_confirmation_email, render_proforma_reservation_email
+
+    order = get_order(event_order_id)
+    if not order:
+        return {"ok": False, "error": "order_not_found"}
+
+    status = (order.get("status") or "").strip().lower()
+    purchaser_email = (order.get("purchaser_email") or "").strip()
+    total = order.get("total", 0) or 0
+    payment_option_name = (order.get("payment_option_name") or "")
+    payment_option_lower = payment_option_name.lower()
+
+    # event config (kolory/banery)
+    event_name = "Wydarzenie"
+    event_data = {}
+    try:
+        ev = get_event(order.get("event_id", ""))
+        if ev:
+            event_name = ev.get("event_name", event_name)
+            event_data = ev.get("data") or {}
+    except Exception:
+        pass
+
+    # Przygotuj bilety do emaili z RAW payloadu (spójnie z innymi flow)
+    raw_payload = order.get("raw") or {}
+    tickets_for_email = []
+    try:
+        if isinstance(raw_payload, dict):
+            raw_tickets = _extract_tickets_from_payload(raw_payload)
+            if raw_tickets:
+                tickets_for_email, _unknown = _enrich_tickets_with_names(raw_tickets, order.get("event_id", "") or "")
+            else:
+                tickets_for_email = []
+    except Exception:
+        tickets_for_email = []
+
+    comp = attendee_webhooks_status(event_order_id)
+    if not comp.get("complete"):
+        return {"ok": True, "complete": False, **comp}
+
+    sent = {"purchaser": False, "participants": {"sent": 0, "failed": 0, "skipped": 0}}
+
+    # Flow inference (bez trzymania osobnej kolumny flow)
+    flow = None
+    try:
+        total_f = float(total or 0)
+    except Exception:
+        total_f = 0.0
+    if total_f == 0:
+        flow = FLOW_FOC
+    elif ("pro-forma" in payment_option_lower) or ("proforma" in payment_option_lower) or ("pro forma" in payment_option_lower):
+        flow = FLOW_PROFORMA
+    else:
+        flow = FLOW_STRIPE
+
+    # Purchaser mail (FOC/PROFORMA) dopiero po komplecie
+    if purchaser_email:
+        if flow == FLOW_FOC:
+            # dedupe: jeśli już kiedykolwiek logowaliśmy ten template jako purchaser, nie ponawiaj
+            if not mail_log_exists(event_order_id, TEMPLATE_REGISTRATION_CONFIRMATION, direction="purchaser"):
+                subject = f"Potwierdzenie rejestracji – {event_name}"
+                body_html = render_foc_confirmation_email(
+                    event_name=event_name,
+                    purchaser_first_name=order.get("purchaser_first_name", "") or "",
+                    purchaser_last_name=order.get("purchaser_last_name", "") or "",
+                    purchaser_email=purchaser_email,
+                    purchaser_phone=order.get("purchaser_phone", "") or "",
+                    event_config=event_data,
+                    tickets=tickets_for_email,
+                )
+                res = _send_email_via_make(
+                    to_email=purchaser_email,
+                    subject=subject,
+                    body_html=body_html,
+                    event_order_id=event_order_id,
+                    template_type="foc_confirmation",
+                )
+                save_mail_log(
+                    event_order_id=event_order_id,
+                    direction="purchaser",
+                    template_key=TEMPLATE_REGISTRATION_CONFIRMATION,
+                    to_email=purchaser_email,
+                    subject=subject,
+                    data={"event_name": event_name, "flow": FLOW_FOC, "sent_via_make": bool(res.get("success"))},
+                )
+                sent["purchaser"] = bool(res.get("success"))
+        elif flow == FLOW_PROFORMA:
+            if not mail_log_exists(event_order_id, TEMPLATE_PROFORMA_SENT, direction="purchaser"):
+                subject = f"Rezerwacja miejsca – {event_name} (pro-forma w 24h)"
+                body_html = render_proforma_reservation_email(
+                    event_name=event_name,
+                    purchaser_first_name=order.get("purchaser_first_name", "") or "",
+                    purchaser_last_name=order.get("purchaser_last_name", "") or "",
+                    purchaser_email=purchaser_email,
+                    purchaser_phone=order.get("purchaser_phone", "") or "",
+                    event_config=event_data,
+                    tickets=tickets_for_email,
+                    proforma_number=None,
+                )
+                res = _send_email_via_make(
+                    to_email=purchaser_email,
+                    subject=subject,
+                    body_html=body_html,
+                    event_order_id=event_order_id,
+                    template_type="proforma_reservation",
+                )
+                save_mail_log(
+                    event_order_id=event_order_id,
+                    direction="purchaser",
+                    template_key=TEMPLATE_PROFORMA_SENT,
+                    to_email=purchaser_email,
+                    subject=subject,
+                    data={"event_name": event_name, "flow": FLOW_PROFORMA, "sent_via_make": bool(res.get("success"))},
+                )
+                sent["purchaser"] = bool(res.get("success"))
+
+    # Participant mail: tylko po paid i komplecie
+    if status == "paid":
+        try:
+            sent["participants"] = send_participant_ticket_emails(
+                event_order_id=event_order_id,
+                event_name=event_name,
+                event_config=event_data,
+            )
+        except Exception as e:
+            _log("ERROR", f"Błąd wysyłki maili do uczestników po kompletności: {e}", {"event_order_id": event_order_id})
+
+    return {"ok": True, "complete": True, "flow": flow, "sent": sent, **comp}
 
 
 # ---------------------------------------------------------------------------
@@ -1601,7 +1799,7 @@ def _handle_foc_flow(
     update_order_status(event_order_id, "paid")
 
     mail_tasks = []
-    email_sent = False
+    email_sent = False  # zostanie wysłany dopiero po komplecie attendee-webhooków
 
     # Wzbogać bilety o nazwy z bazy
     raw_tickets = order_data.get("tickets", [])
@@ -1612,76 +1810,10 @@ def _handle_foc_flow(
     else:
         enriched_tickets = raw_tickets
 
-    # Mail do kupującego: potwierdzenie rejestracji (wysyłka przez Make)
-    if purchaser_email and _is_make_email_configured():
-        try:
-            from email_templates import render_foc_confirmation_email
-            
-            subject = f"Potwierdzenie rejestracji – {event_name}"
-            body_html = render_foc_confirmation_email(
-                event_name=event_name,
-                purchaser_first_name=purchaser_first_name,
-                purchaser_last_name=purchaser_last_name,
-                purchaser_email=purchaser_email,
-                purchaser_phone=purchaser_phone,
-                event_config=event_data,
-                tickets=enriched_tickets,
-            )
-            
-            _log("INFO", "FOC FLOW: Wysyłam email potwierdzenia przez Make", {
-                "to": purchaser_email,
-                "subject": subject,
-            })
-            
-            result = _send_email_via_make(
-                to_email=purchaser_email,
-                subject=subject,
-                body_html=body_html,
-                event_order_id=event_order_id,
-                template_type="foc_confirmation",
-            )
-            
-            if result.get("success"):
-                _log("INFO", "FOC FLOW: Email wysłany pomyślnie!", {"to": purchaser_email})
-                email_sent = True
-            else:
-                _log("WARNING", "FOC FLOW: Błąd wysyłki emaila", {"error": result.get("error")})
-                # Wyślij powiadomienie wewnętrzne o błędzie
-                _send_error_notification(
-                    error_type="FOC_EMAIL_ERROR",
-                    error_message=f"Nie udało się wysłać potwierdzenia rejestracji FOC.\n\nBłąd: {result.get('error')}",
-                    event_order_id=event_order_id,
-                    event_id=event_id,
-                    extra_data={
-                        "purchaser_email": purchaser_email,
-                        "event_name": event_name,
-                    },
-                )
-        except Exception as e:
-            _log("ERROR", "FOC FLOW: Wyjątek przy wysyłce emaila", {"error": str(e)})
-            _send_error_notification(
-                error_type="FOC_EMAIL_EXCEPTION",
-                error_message=f"Wyjątek przy wysyłce potwierdzenia FOC.\n\nBłąd: {str(e)}",
-                event_order_id=event_order_id,
-                event_id=event_id,
-            )
-
-    # Mail task do logu (nawet jeśli wysłany bezpośrednio)
-    if purchaser_email:
-        mail_tasks.append(_build_mail_task(
-            template_key=TEMPLATE_REGISTRATION_CONFIRMATION,
-            to_email=purchaser_email,
-            subject=f"Potwierdzenie rejestracji – {event_name}",
-            data={
-                "event_order_id": event_order_id,
-                "event_name": event_name,
-                "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
-                "purchaser_email": purchaser_email,
-                "email_sent_via_make": email_sent,
-                **event_data,
-            },
-            direction="purchaser",
-        ))
+    _log("INFO", "FOC FLOW: Czekam na komplet attendee-webhooków przed wysyłką maili", {
+        "event_order_id": event_order_id,
+        "purchaser_email_present": bool(purchaser_email),
+    })
 
     # Mail wewnętrzny: powiadomienie o zamówieniu (info, nie error)
     internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL
@@ -1701,26 +1833,12 @@ def _handle_foc_flow(
             direction="internal",
         ))
 
-    # Wyślij indywidualne emaile do WSZYSTKICH uczestników (każdy swój bilet)
     participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0}
-    try:
-        participant_email_stats = send_participant_ticket_emails(
-            event_order_id=event_order_id,
-            event_name=event_name,
-            event_config=event_data,
-        )
-        _log("INFO", "FOC FLOW: Emaile do uczestników wysłane", {
-            "sent": participant_email_stats.get("sent", 0),
-            "failed": participant_email_stats.get("failed", 0),
-            "skipped": participant_email_stats.get("skipped", 0),
-        })
-    except Exception as e:
-        _log("ERROR", f"FOC FLOW: Błąd wysyłki emaili do uczestników: {e}")
 
     _log("INFO", "FOC FLOW: Zakończono", {
         "event_order_id": event_order_id,
         "email_sent": email_sent,
-        "participant_emails_sent": participant_email_stats.get("sent", 0),
+        "participant_emails_sent": 0,
         "mail_tasks_count": len(mail_tasks),
     })
 
@@ -1808,83 +1926,11 @@ def _handle_proforma_flow(
         proforma_error = str(e)
         _log("ERROR", "PROFORMA FLOW: Wyjątek podczas tworzenia proformy", {"error": proforma_error})
 
-    # Mail do kupującego (BACKSTAGE): rezerwacja + informacja o pro-formie (wysyłka przez Make)
-    if purchaser_email and _is_make_email_configured():
-        try:
-            from email_templates import render_proforma_reservation_email
-
-            proforma_number = None
-            if proforma_result:
-                proforma_number = proforma_result.get("invoice", {}).get("fullnumber")
-
-            subject = f"Rezerwacja miejsca – {event_name} (pro-forma w 24h)"
-            body_html = render_proforma_reservation_email(
-                event_name=event_name,
-                purchaser_first_name=order_data.get("purchaser_first_name", ""),
-                purchaser_last_name=order_data.get("purchaser_last_name", ""),
-                purchaser_email=purchaser_email,
-                purchaser_phone=order_data.get("purchaser_phone", ""),
-                event_config=event_data,
-                tickets=enriched_tickets,
-                proforma_number=proforma_number,
-            )
-
-            _log("INFO", "PROFORMA FLOW: Wysyłam email rezerwacyjny przez Make", {
-                "to": purchaser_email,
-                "subject": subject,
-                "has_proforma_number": bool(proforma_number),
-            })
-
-            result = _send_email_via_make(
-                to_email=purchaser_email,
-                subject=subject,
-                body_html=body_html,
-                event_order_id=event_order_id,
-                template_type="proforma_reservation",
-            )
-
-            if result.get("success"):
-                reservation_email_sent = True
-                _log("INFO", "PROFORMA FLOW: Email rezerwacyjny wysłany pomyślnie", {"to": purchaser_email})
-            else:
-                _log("WARNING", "PROFORMA FLOW: Błąd wysyłki emaila rezerwacyjnego", {"error": result.get("error")})
-                _send_error_notification(
-                    error_type="PROFORMA_RESERVATION_EMAIL_ERROR",
-                    error_message=f"Nie udało się wysłać maila rezerwacyjnego (PROFORMA).\n\nBłąd: {result.get('error')}",
-                    event_order_id=event_order_id,
-                    event_id=event_id,
-                    extra_data={
-                        "purchaser_email": purchaser_email,
-                        "event_name": event_name,
-                    },
-                )
-        except Exception as e:
-            _log("ERROR", "PROFORMA FLOW: Wyjątek przy wysyłce emaila rezerwacyjnego", {"error": str(e)})
-            _send_error_notification(
-                error_type="PROFORMA_RESERVATION_EMAIL_EXCEPTION",
-                error_message=f"Wyjątek przy wysyłce maila rezerwacyjnego (PROFORMA).\n\nBłąd: {str(e)}",
-                event_order_id=event_order_id,
-                event_id=event_id,
-            )
-
-    # Mail task do logu (nawet jeśli wysłany bezpośrednio)
-    if purchaser_email:
-        mail_tasks.append(_build_mail_task(
-            template_key=TEMPLATE_PROFORMA_SENT,
-            to_email=purchaser_email,
-            subject=f"Rezerwacja miejsca – {event_name} (pro-forma w 24h)",
-            data={
-                "event_order_id": event_order_id,
-                "event_name": event_name,
-                "flow": FLOW_PROFORMA,
-                "purchaser_email": purchaser_email,
-                "purchaser_name": f"{order_data.get('purchaser_first_name', '')} {order_data.get('purchaser_last_name', '')}".strip(),
-                "reservation_email_sent_via_make": reservation_email_sent,
-                "proforma_number": proforma_result.get("invoice", {}).get("fullnumber") if proforma_result else None,
-                **event_data,
-            },
-            direction="purchaser",
-        ))
+    _log("INFO", "PROFORMA FLOW: Czekam na komplet attendee-webhooków przed wysyłką maila rezerwacyjnego", {
+        "event_order_id": event_order_id,
+        "purchaser_email_present": bool(purchaser_email),
+        "proforma_created": bool(proforma_result),
+    })
 
     # Mail wewnętrzny o nowym zamówieniu (info, nie error)
     internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL

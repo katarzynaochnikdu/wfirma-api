@@ -741,13 +741,20 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0}
     try:
         from backstage_engine import send_participant_ticket_emails
+        from backstage_engine import attendee_webhooks_status
+
+        comp = attendee_webhooks_status(event_order_id)
+        if not comp.get("complete"):
+            print(f"[STRIPE] Pomijam emaile do uczestników - brak kompletu attendee-webhooków | expected={comp.get('expected')}, received={comp.get('received')}")
+            participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0, "details": [{"status": "skipped_all", "reason": "attendee_webhooks_incomplete", **comp}]}
+        else:
         
-        participant_email_stats = send_participant_ticket_emails(
-            event_order_id=event_order_id,
-            event_name=event_name,
-            event_config=event_data,
-        )
-        print(f"[STRIPE] Emaile do uczestników: sent={participant_email_stats.get('sent', 0)}, failed={participant_email_stats.get('failed', 0)}, skipped={participant_email_stats.get('skipped', 0)}")
+            participant_email_stats = send_participant_ticket_emails(
+                event_order_id=event_order_id,
+                event_name=event_name,
+                event_config=event_data,
+            )
+            print(f"[STRIPE] Emaile do uczestników: sent={participant_email_stats.get('sent', 0)}, failed={participant_email_stats.get('failed', 0)}, skipped={participant_email_stats.get('skipped', 0)}")
     except Exception as e:
         print(f"[STRIPE] Błąd wysyłki emaili do uczestników: {e}")
     

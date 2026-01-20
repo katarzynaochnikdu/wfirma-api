@@ -736,6 +736,37 @@ def list_orders(
             _put_conn(pool, conn)
 
 
+def list_orders_older_than_minutes(
+    min_age_minutes: int,
+    limit: int = 200,
+) -> List[Dict[str, Any]]:
+    """
+    Zwraca zamówienia starsze niż min_age_minutes (po created_at).
+    Używane przez monitory (np. kompletność attendee-webhooków).
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT event_order_id, event_id, purchaser_email, total, currency, status, payment_option_name,
+                   created_at, updated_at
+            FROM orders
+            WHERE created_at <= (NOW() - (%s || ' minutes')::interval)
+            ORDER BY created_at ASC
+            LIMIT %s
+            """,
+            (int(min_age_minutes), int(limit)),
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 def upsert_order(
     event_order_id: str,
     event_id: str,
@@ -1280,6 +1311,47 @@ def get_mail_task(mail_id: int) -> Optional[Dict[str, Any]]:
         )
         row = cur.fetchone()
         return dict(row) if row else None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def mail_log_exists(event_order_id: str, template_key: str, direction: Optional[str] = None) -> bool:
+    """
+    Sprawdza czy istnieje wpis mail_log dla danego zamówienia i template_key.
+    Używane do deduplikacji (żeby nie wysyłać kilka razy tego samego maila).
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        if direction:
+            cur.execute(
+                """
+                SELECT 1
+                FROM mail_log
+                WHERE event_order_id = %s AND template_key = %s AND direction = %s
+                LIMIT 1
+                """,
+                (str(event_order_id), str(template_key), str(direction)),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT 1
+                FROM mail_log
+                WHERE event_order_id = %s AND template_key = %s
+                LIMIT 1
+                """,
+                (str(event_order_id), str(template_key)),
+            )
+        row = cur.fetchone()
+        return bool(row)
+    except Exception as e:
+        print(f"[DB] mail_log_exists error: {e}")
+        return False
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)

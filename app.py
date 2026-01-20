@@ -1057,6 +1057,118 @@ def start_wfirma_token_monitor():
     print("[TOKEN MONITOR] thread started")
 
 
+# ---------------------------------------------------------------------------
+# BACKSTAGE: monitor kompletności attendee-webhooków (internal info po 10 min)
+# ---------------------------------------------------------------------------
+
+BACKSTAGE_ATTENDEE_INCOMPLETE_TEMPLATE = "internal_attendee_incomplete_10m"
+BACKSTAGE_ATTENDEE_INCOMPLETE_LOCK_ID = 8842001  # stały lock dla wielu workerów
+
+
+def _backstage_attendee_incomplete_monitor_loop():
+    import time
+    while True:
+        try:
+            # lock globalny, żeby tylko 1 worker robił skan
+            from pg_storage import try_advisory_lock, advisory_unlock
+            if not try_advisory_lock(BACKSTAGE_ATTENDEE_INCOMPLETE_LOCK_ID):
+                time.sleep(60)
+                continue
+
+            try:
+                from pg_storage import list_orders_older_than_minutes, mail_log_exists, get_event
+                from backstage_engine import attendee_webhooks_status
+                from backstage_engine import _send_email_via_make
+
+                candidates = list_orders_older_than_minutes(10, limit=200)
+                for o in candidates:
+                    order_id = o.get("event_order_id")
+                    if not order_id:
+                        continue
+
+                    # sprawdź kompletność
+                    comp = attendee_webhooks_status(order_id)
+                    if comp.get("expected", 0) <= 0:
+                        continue
+                    if comp.get("complete"):
+                        continue
+
+                    # dedupe: wyślij tylko raz na zamówienie
+                    if mail_log_exists(order_id, BACKSTAGE_ATTENDEE_INCOMPLETE_TEMPLATE, direction="internal"):
+                        continue
+
+                    # event i adresat
+                    event_name = "Wydarzenie"
+                    event_data = {}
+                    try:
+                        ev = get_event(o.get("event_id", ""))
+                        if ev:
+                            event_name = ev.get("event_name") or event_name
+                            event_data = ev.get("data") or {}
+                    except Exception:
+                        pass
+
+                    internal_to = (
+                        event_data.get("md_email_techniczny")
+                        or event_data.get("md_email_kontakt")
+                        or os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL", "")
+                    )
+                    if not internal_to:
+                        continue
+
+                    subject = f"[ATTENDEE] Brak kompletu po 10 min – {event_name}"
+                    missing = comp.get("missing_ticket_ids") or []
+                    body_html = f"""
+                    <html>
+                      <body style="font-family: Arial, sans-serif; padding: 16px;">
+                        <h2>Brak kompletu attendee-webhooków po 10 minutach</h2>
+                        <p><strong>Wydarzenie:</strong> {event_name}</p>
+                        <p><strong>Zamówienie:</strong> {order_id}</p>
+                        <p><strong>Oczekiwane bilety:</strong> {comp.get('expected')}</p>
+                        <p><strong>Otrzymane webhooki:</strong> {comp.get('received')}</p>
+                        <p><strong>Brakujące ticket_id:</strong></p>
+                        <pre style="background:#f6f8fb; padding:12px; border:1px solid #e5e7eb; border-radius:8px; white-space:pre-wrap;">{chr(10).join(missing[:50])}</pre>
+                        <p style="color:#6b7280; font-size:12px;">To jest mail informacyjny (nie wysyłamy jeszcze maili do klienta/uczestników).</p>
+                      </body>
+                    </html>
+                    """
+
+                    # zapis do mail_log + wysyłka
+                    from pg_storage import save_mail_log
+                    save_mail_log(
+                        event_order_id=order_id,
+                        direction="internal",
+                        template_key=BACKSTAGE_ATTENDEE_INCOMPLETE_TEMPLATE,
+                        to_email=internal_to,
+                        subject=subject,
+                        data={"event_name": event_name, "expected": comp.get("expected"), "received": comp.get("received"), "missing_count": len(missing)},
+                    )
+                    _send_email_via_make(
+                        to_email=internal_to,
+                        subject=subject,
+                        body_html=body_html,
+                        event_order_id=order_id,
+                        template_type=BACKSTAGE_ATTENDEE_INCOMPLETE_TEMPLATE,
+                    )
+
+            finally:
+                advisory_unlock(BACKSTAGE_ATTENDEE_INCOMPLETE_LOCK_ID)
+
+        except Exception as e:
+            print(f"[BACKSTAGE MONITOR] loop error: {e}")
+
+        time.sleep(60)
+
+
+def start_backstage_attendee_incomplete_monitor():
+    # Uruchamiaj tylko jeśli jest Make webhook (inaczej nie wyśle maila)
+    if not _is_make_email_configured():
+        print("[BACKSTAGE MONITOR] disabled (Make webhook not configured)")
+        return
+    t = threading.Thread(target=_backstage_attendee_incomplete_monitor_loop, name="backstage-attendee-monitor", daemon=True)
+    t.start()
+    print("[BACKSTAGE MONITOR] thread started")
+
 @app.route('/api/workflow/token-monitor/run', methods=['POST'])
 @require_api_key
 def token_monitor_run_endpoint():
@@ -2225,14 +2337,9 @@ def backstage_attendee():
                 'received_keys': list(payload.keys())
             }), 400
         
-        if not email:
-            return jsonify({
-                'status': 'error',
-                'error': 'Brak email w payload',
-                'received_keys': list(payload.keys())
-            }), 400
-        
-        print(f"[ATTENDEE WEBHOOK] order={order_id}, ticket={ticket_id}, email={email}, name={first_name} {last_name}")
+        # UWAGA: zgodnie z ustaleniami, webhook attendee liczy się do "kompletności"
+        # po ticket_id — nie wymagamy emaila (nie weryfikujemy wnętrza).
+        print(f"[ATTENDEE WEBHOOK] order={order_id}, ticket={ticket_id}, email_present={bool(email)}, name={first_name} {last_name}")
         
         # Zapisz/zaktualizuj uczestnika w bazie
         from pg_storage import (
@@ -2272,10 +2379,13 @@ def backstage_attendee():
         position = payload.get("stanowisko_system_crm") or payload.get("designation") or ""
         badge_name = payload.get("nazwa_placowki_na_identyfikator") or ""
         
+        import time
         extra_data = {
             "attendee_id": attendee_id,
             "event_id": event_id,
             "source": "zoho_attendee_webhook",
+            "attendee_webhook_received": True,
+            "attendee_webhook_received_at": int(time.time()),
             "company": company,
             "position": position,
             "badge_name": badge_name,  # nazwa placówki na identyfikator
@@ -2284,13 +2394,17 @@ def backstage_attendee():
         
         if existing:
             # Aktualizuj istniejącego
+            effective_email = email or (existing.get("email") if isinstance(existing, dict) else "") or ""
+            effective_first_name = first_name or (existing.get("first_name") if isinstance(existing, dict) else "") or ""
+            effective_last_name = last_name or (existing.get("last_name") if isinstance(existing, dict) else "") or ""
+            effective_phone = phone or (existing.get("phone") if isinstance(existing, dict) else "") or ""
             success = update_participant_details(
                 event_order_id=order_id,
                 ticket_id=ticket_id,
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                phone=phone,
+                email=effective_email,
+                first_name=effective_first_name,
+                last_name=effective_last_name,
+                phone=effective_phone,
                 status="registered",
                 extra_data=extra_data,
             )
@@ -2301,7 +2415,7 @@ def backstage_attendee():
                 event_order_id=order_id,
                 ticket_id=ticket_id,
                 ticket_class_id=ticket_class_id,
-                email=email,
+                email=email or "",
                 first_name=first_name,
                 last_name=last_name,
                 phone=phone,
@@ -2310,77 +2424,25 @@ def backstage_attendee():
             )
             success = participant_id is not None
             print(f"[ATTENDEE WEBHOOK] Utworzono uczestnika: ID={participant_id}")
+
+        # Po każdym webhooku attendee sprawdź kompletność i ewentualnie wyślij maile (gated)
+        send_result = None
+        try:
+            from backstage_engine import maybe_send_backstage_emails_when_complete
+            send_result = maybe_send_backstage_emails_when_complete(order_id)
+            print(f"[ATTENDEE WEBHOOK] maybe_send_backstage_emails_when_complete | complete={bool((send_result or {}).get('complete'))}")
+        except Exception as e:
+            print(f"[ATTENDEE WEBHOOK] Błąd triggera wysyłek po kompletności: {e}")
         
-        # Sprawdź czy zamówienie jest już opłacone - jeśli tak, wyślij email od razu
         email_sent = False
-        # order już pobrane wyżej przy walidacji
-        
-        if order.get("status") == "paid":
-            print(f"[ATTENDEE WEBHOOK] Zamówienie opłacone - wysyłam email do uczestnika")
-            
-            try:
-                from backstage_engine import _send_email_via_make, _is_make_email_configured
-                from email_templates import render_participant_ticket_email
-                from pg_storage import get_event, get_ticket_classes, update_participant_status
-                
-                # Pobierz dane wydarzenia
-                event_config = {}
-                event_name = "Wydarzenie"
-                if event_id or order.get("event_id"):
-                    ev = get_event(event_id or order.get("event_id"))
-                    if ev:
-                        event_name = ev.get("event_name", "Wydarzenie")
-                        event_config = ev.get("data", {}) or {}
-                
-                # Pobierz nazwę biletu
-                ticket_name = "Bilet"
-                if ticket_class_id and (event_id or order.get("event_id")):
-                    tcs = get_ticket_classes(event_id or order.get("event_id"))
-                    for tc in tcs:
-                        if tc.get("ticket_class_id") == ticket_class_id:
-                            ticket_name = tc.get("ticket_name", "Bilet")
-                            break
-                
-                # Pobierz cenę biletu (z participant data lub order)
-                ticket_price = 0.0
-                if existing and existing.get("data"):
-                    ticket_price = existing.get("data", {}).get("price_gross", 0)
-                
-                # Renderuj i wyślij email
-                if _is_make_email_configured():
-                    body_html = render_participant_ticket_email(
-                        event_name=event_name,
-                        participant_first_name=first_name,
-                        participant_last_name=last_name,
-                        participant_email=email,
-                        ticket_name=ticket_name,
-                        ticket_id=ticket_id,
-                        ticket_price=float(ticket_price),
-                        event_config=event_config,
-                    )
-                    
-                    subject = f"Twój bilet – {event_name}"
-                    result = _send_email_via_make(
-                        to_email=email,
-                        subject=subject,
-                        body_html=body_html,
-                        event_order_id=order_id,
-                        template_type="participant_ticket",
-                    )
-                    
-                    if result.get("success"):
-                        email_sent = True
-                        # Zaktualizuj status na 'emailed'
-                        updated_participant = get_participant_by_ticket(order_id, ticket_id)
-                        if updated_participant:
-                            update_participant_status(updated_participant["id"], "emailed")
-                        print(f"[ATTENDEE WEBHOOK] Email wysłany do {email}")
-                    else:
-                        print(f"[ATTENDEE WEBHOOK] Błąd wysyłki emaila: {result.get('error')}")
-            except Exception as e:
-                print(f"[ATTENDEE WEBHOOK] Błąd przy wysyłce emaila: {e}")
-        else:
-            print(f"[ATTENDEE WEBHOOK] Zamówienie nie jest jeszcze opłacone - email zostanie wysłany po płatności")
+        try:
+            # informacyjnie: czy cokolwiek wysłano (purchaser lub participant)
+            if send_result and send_result.get("sent"):
+                purchaser_sent = bool((send_result.get("sent") or {}).get("purchaser"))
+                participants_sent = int(((send_result.get("sent") or {}).get("participants") or {}).get("sent", 0))
+                email_sent = purchaser_sent or (participants_sent > 0)
+        except Exception:
+            pass
         
         return jsonify({
             'status': 'ok',
@@ -2969,6 +3031,11 @@ try:
     start_wfirma_token_monitor()
 except Exception as e:
     print(f"[TOKEN MONITOR] failed to start: {e}")
+
+try:
+    start_backstage_attendee_incomplete_monitor()
+except Exception as e:
+    print(f"[BACKSTAGE MONITOR] failed to start: {e}")
 
 
 # ---------------------------------------------------------------------------
