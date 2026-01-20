@@ -158,6 +158,10 @@ CREATE INDEX IF NOT EXISTS idx_wfirma_docs_order_id ON wfirma_documents(event_or
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_wfirma_normal_per_order
 ON wfirma_documents(event_order_id)
 WHERE document_type = 'normal';
+-- Twarda ochrona przed podwójną proformą dla tego samego zamówienia
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_wfirma_proforma_per_order
+ON wfirma_documents(event_order_id)
+WHERE document_type = 'proforma';
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id BIGSERIAL PRIMARY KEY,

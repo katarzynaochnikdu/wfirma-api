@@ -1873,6 +1873,33 @@ def _handle_proforma_flow(
         "total": order_data.get("total", 0),
     })
 
+    # ZABEZPIECZENIE: Sprawdź czy proforma już istnieje dla tego zamówienia
+    try:
+        from pg_storage import get_wfirma_documents
+        existing_docs = get_wfirma_documents(event_order_id)
+        existing_proforma = next((d for d in existing_docs if d.get("document_type") == "proforma"), None)
+        if existing_proforma:
+            _log("WARN", "PROFORMA FLOW: Proforma już istnieje - pomijam tworzenie duplikatu", {
+                "event_order_id": event_order_id,
+                "existing_proforma_id": existing_proforma.get("wfirma_invoice_id"),
+                "existing_proforma_number": existing_proforma.get("wfirma_number"),
+            })
+            # Zwróć informację o istniejącej proformie zamiast tworzyć duplikat
+            return {
+                "flow": FLOW_PROFORMA,
+                "status": "already_exists",
+                "order_status": "pending_payment",
+                "mail_tasks": [],
+                "wfirma_action": {
+                    "type": "proforma_already_exists",
+                    "invoice_id": existing_proforma.get("wfirma_invoice_id"),
+                    "invoice_number": existing_proforma.get("wfirma_number"),
+                },
+                "message": f"Proforma już istnieje: {existing_proforma.get('wfirma_number')}",
+            }
+    except Exception as check_err:
+        _log("WARNING", "PROFORMA FLOW: Błąd sprawdzania istniejącej proformy - kontynuuję", {"error": str(check_err)})
+
     # Aktualizuj status zamówienia
     update_order_status(event_order_id, "pending_payment")
 
