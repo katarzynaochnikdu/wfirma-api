@@ -1314,6 +1314,37 @@ def wfirma_add_contractor(token: str, contractor_payload: dict, company_id: str 
         return None, resp
 
 
+def _extract_contractor_id(contractor: dict | None) -> int | None:
+    """
+    Wyciąga ID kontrahenta z różnych możliwych kształtów odpowiedzi wFirma.
+    wFirma API czasem zwraca ID pod różnymi kluczami lub zagnieżdżone.
+    """
+    if not contractor or not isinstance(contractor, dict):
+        return None
+    
+    # Próbuj różnych kluczy/ścieżek
+    for key in ('id', 'contractor_id', 'Id', 'ID'):
+        val = contractor.get(key)
+        if val is not None:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                pass
+    
+    # Może być zagnieżdżone jako contractor.contractor.id
+    nested = contractor.get('contractor')
+    if nested and isinstance(nested, dict):
+        for key in ('id', 'contractor_id', 'Id', 'ID'):
+            val = nested.get(key)
+            if val is not None:
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    pass
+    
+    return None
+
+
 # ==================== POMOCNICZE: PRODUKTY (GOODS) ====================
 
 
@@ -3880,9 +3911,8 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
                 return None, 'Niepoprawny payment_due_days lub issue_date'
 
     # Używamy contractor_id (int) zamiast zagnieżdżonego obiektu
-    try:
-        contractor_id_int = int(contractor.get('id'))
-    except (ValueError, TypeError):
+    contractor_id_int = _extract_contractor_id(contractor)
+    if not contractor_id_int:
         return None, "Brak poprawnego ID kontrahenta"
 
     payload = {
@@ -4133,7 +4163,7 @@ def workflow_create_invoice():
     if nip_valid:
         # NIP poprawny - szukamy w wFirma
         contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
-        contractor_id = contractor.get('id') if contractor else None
+        contractor_id = _extract_contractor_id(contractor)
         
         try:
             print("[WFIRMA DEBUG] find_contractor_by_nip contractor_id:", contractor_id)
@@ -4232,8 +4262,18 @@ def workflow_create_invoice():
             }), status or 502
 
         contractor = new_contractor
-        contractor_id = contractor.get('id')
+        contractor_id = _extract_contractor_id(contractor)
         contractor_created = True
+        
+        # FALLBACK: jeśli add nie zwrócił ID, spróbuj re-find po NIP
+        if not contractor_id and clean_nip:
+            print(f"[WORKFLOW] add_contractor nie zwrócił ID, próbuję re-find po NIP {clean_nip}")
+            refind_contractor, _ = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
+            if refind_contractor:
+                contractor_id = _extract_contractor_id(refind_contractor)
+                if contractor_id:
+                    contractor = refind_contractor
+                    print(f"[WORKFLOW] re-find po NIP znalazł kontrahenta ID={contractor_id}")
     
     # 3) Jeśli NIP niepoprawny - użyj danych purchaser (osoba fizyczna)
     elif not contractor_id and not nip_valid and purchaser_name:
@@ -4277,7 +4317,7 @@ def workflow_create_invoice():
             }), status or 502
 
         contractor = new_contractor
-        contractor_id = contractor.get('id')
+        contractor_id = _extract_contractor_id(contractor)
         contractor_created = True
 
     if not contractor_id:
