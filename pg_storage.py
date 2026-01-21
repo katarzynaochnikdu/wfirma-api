@@ -348,6 +348,11 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb")
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
 
+        # 1c) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
+        cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
+        cur.execute("UPDATE admin_users SET allowed_pages = '[]'::jsonb WHERE allowed_pages IS NULL")
+        cur.execute("UPDATE admin_users SET must_change_password = FALSE WHERE must_change_password IS NULL")
+
         # 2) Wersja migracji
         cur.execute("SELECT 1 FROM schema_migrations WHERE version=%s", (SCHEMA_VERSION,))
         exists = cur.fetchone() is not None

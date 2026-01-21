@@ -99,7 +99,8 @@ def _user_has_permission(user: Optional[Dict[str, Any]], permission_key: str) ->
     # Legacy token lub brak usera -> pełny dostęp
     if not user:
         return True
-    role = (user.get("role") or "user").strip().lower()
+    role_raw = (user.get("role") or "").strip().lower()
+    role = role_raw or "admin"
     if role == "admin":
         return True
     allowed = _normalize_allowed_pages(user.get("allowed_pages"))
@@ -274,7 +275,7 @@ def launch():
     
     .launch-card {{
       width: 100%;
-      max-width: 400px;
+      max-width: 520px;
       background: #fff;
       border-radius: 16px;
       box-shadow: 0 10px 40px rgba(0, 101, 215, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
@@ -284,7 +285,7 @@ def launch():
     
     .launch-header {{
       background: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%);
-      padding: 32px 24px;
+      padding: 36px 28px;
     }}
     
     .launch-header svg {{
@@ -299,7 +300,7 @@ def launch():
     }}
     
     .launch-body {{
-      padding: 40px 32px;
+      padding: 36px 32px 40px;
     }}
     
     .launch-icon {{
@@ -320,14 +321,14 @@ def launch():
     }}
     
     .launch-title {{
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 600;
       color: #1e293b;
       margin-bottom: 12px;
     }}
     
     .launch-desc {{
-      font-size: 14px;
+      font-size: 15px;
       color: #64748b;
       line-height: 1.6;
       margin-bottom: 28px;
@@ -404,35 +405,19 @@ def launch():
 
     /* In iframe we keep content at the top to avoid clipping */
     body.in-iframe {{
-      align-items: flex-start;
-      justify-content: flex-start;
-      padding-top: 12px;
+      align-items: center;
+      justify-content: center;
+      padding-top: 20px;
+      padding-bottom: 20px;
     }}
 
-    body.in-iframe .launch-card {{
-      margin-top: 8px;
-    }}
-
-    /* Compact layout in Zoho webtab iframe */
+    /* Subtle compact tweaks for iframe without squeezing */
     body.in-iframe .launch-header {{
-      padding: 16px 20px;
+      padding: 28px 24px;
     }}
 
     body.in-iframe .launch-body {{
-      padding: 20px 20px 24px;
-    }}
-
-    body.in-iframe .launch-icon {{
-      display: none;
-    }}
-
-    body.in-iframe .launch-desc {{
-      margin-bottom: 16px;
-    }}
-
-    body.in-iframe .launch-btn {{
-      padding: 14px 18px;
-      font-size: 15px;
+      padding: 28px 24px 32px;
     }}
   </style>
 </head>
@@ -3339,6 +3324,31 @@ def order_detail(order_id: str):
         gap: 12px;
         justify-content: center;
       }}
+      .mark-paid-modal .btn {
+        position: relative;
+      }
+      .mark-paid-modal .btn[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255,255,255,0.6);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        vertical-align: middle;
+      }
+      .btn-spinner.dark {
+        border: 2px solid rgba(2,6,23,0.2);
+        border-top-color: #0f172a;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
     </style>
 
     <div class="order-breadcrumb">
@@ -3413,14 +3423,42 @@ def order_detail(order_id: str):
                 <span style="font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
               </p>
               <div class="modal-actions">
-                <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
+                <form id="markPaidForm" method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
                   <input type="hidden" name="token" value="{token}" />
-                  <button class="btn btnPrimary" type="submit" style="min-width:120px;">Tak, oznacz</button>
+                  <button id="markPaidSubmit" class="btn btnPrimary" type="submit" style="min-width:160px;">
+                    <span class="btn-label">Tak, oznacz</span>
+                    <span class="btn-spinner" style="display:none;"></span>
+                  </button>
                 </form>
-                <button class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:120px;">Anuluj</button>
+                <button id="markPaidCancel" class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:120px;">
+                  Anuluj
+                </button>
+              </div>
+              <div id="markPaidHint" class="muted" style="margin-top:14px; font-size:12px; display:none;">
+                Przetwarzanie… poczekaj chwilę
               </div>
             </div>
           </div>
+          <script>
+            (function() {{
+              var form = document.getElementById('markPaidForm');
+              if (!form) return;
+              form.addEventListener('submit', function() {{
+                var submitBtn = document.getElementById('markPaidSubmit');
+                var cancelBtn = document.getElementById('markPaidCancel');
+                var hint = document.getElementById('markPaidHint');
+                if (submitBtn) {{
+                  submitBtn.disabled = true;
+                  var label = submitBtn.querySelector('.btn-label');
+                  var spinner = submitBtn.querySelector('.btn-spinner');
+                  if (label) label.textContent = 'Oznaczam...';
+                  if (spinner) spinner.style.display = 'inline-block';
+                }}
+                if (cancelBtn) cancelBtn.disabled = true;
+                if (hint) hint.style.display = 'block';
+              }});
+            }})();
+          </script>
           ''' if status == "pending_payment" else ''}
         </div>
       </div>
