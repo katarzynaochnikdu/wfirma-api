@@ -136,6 +136,208 @@ def _get_client_ip() -> str:
 
 
 # ---------------------------------------------------------------------------
+# IFRAME LAUNCHER (for Zoho CRM integration)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/launch", methods=["GET"])
+def launch():
+    """
+    Strona nakładki dla iframe (np. Zoho CRM).
+    
+    Ze względu na ograniczenia cookies (SameSite) sesje nie działają w iframe.
+    Ta strona wyświetla przycisk otwierający panel admin w nowej karcie.
+    """
+    # Build the login URL (absolute)
+    login_url = url_for("admin_bp.login", _external=True)
+    
+    # Full standalone HTML (no BASE_HTML to avoid any session issues)
+    html = f"""
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Medidesk Admin</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      padding: 20px;
+    }}
+    
+    .launch-card {{
+      width: 100%;
+      max-width: 400px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 101, 215, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+      text-align: center;
+    }}
+    
+    .launch-header {{
+      background: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%);
+      padding: 32px 24px;
+    }}
+    
+    .launch-header svg {{
+      height: 36px;
+      margin-bottom: 8px;
+    }}
+    
+    .launch-header p {{
+      color: rgba(255,255,255,0.9);
+      font-size: 14px;
+      font-weight: 500;
+    }}
+    
+    .launch-body {{
+      padding: 40px 32px;
+    }}
+    
+    .launch-icon {{
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    
+    .launch-icon svg {{
+      width: 32px;
+      height: 32px;
+      color: #0065D7;
+    }}
+    
+    .launch-title {{
+      font-size: 20px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 12px;
+    }}
+    
+    .launch-desc {{
+      font-size: 14px;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }}
+    
+    .launch-btn {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px 24px;
+      background: #0065D7;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }}
+    
+    .launch-btn:hover {{
+      background: #0052b3;
+      transform: translateY(-1px);
+    }}
+    
+    .launch-btn:active {{
+      transform: translateY(0);
+    }}
+    
+    .launch-btn svg {{
+      width: 20px;
+      height: 20px;
+    }}
+    
+    .launch-hint {{
+      margin-top: 20px;
+      font-size: 12px;
+      color: #94a3b8;
+    }}
+    
+    /* Iframe detection message */
+    .iframe-notice {{
+      display: none;
+      background: #fef3c7;
+      color: #92400e;
+      padding: 12px 16px;
+      font-size: 13px;
+      border-bottom: 1px solid #fcd34d;
+    }}
+    
+    body.in-iframe .iframe-notice {{
+      display: block;
+    }}
+  </style>
+</head>
+<body>
+  <div class="launch-card">
+    <div class="iframe-notice">
+      Panel wymaga otwarcia w osobnej karcie przeglądarki
+    </div>
+    
+    <div class="launch-header">
+      <svg viewBox="0 0 145 29" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#fff" d="M33.85 27.74c2-.0 4.1-.8 5.16-1.68.58-.46.86-.98.86-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.62-3.85h10.03c.97 0 1.8-.67 1.85-1.65 0-4.4-3.59-8.1-7.69-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.48-13.6c1.88 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM56.49 4.81c-1.06 0-1.82.8-1.82 1.87v5.99c-1.07-.98-2.8-1.9-4.9-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.82 1.83 1.07 0 1.83-.8 1.83-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.64 0-4.44-2.2-4.44-5.1 0-2.91 1.8-5.14 4.44-5.14 2.68 0 4.47 2.23 4.47 5.14 0 2.9-1.79 5.1-4.47 5.1zM65.07 12.94c0-1.07-.76-1.86-1.82-1.86-1.07 0-1.83.79-1.83 1.86v12.63c0 1.07.76 1.86 1.83 1.86 1.06 0 1.82-.79 1.82-1.86V12.94zm-1.73-4.44c1.06 0 1.92-.86 1.92-1.93 0-1.07-.86-1.93-1.92-1.93-1.06 0-1.92.86-1.92 1.93 0 1.07.86 1.93 1.92 1.93zM81.33 4.81c-1.07 0-1.83.8-1.83 1.87v5.99c-1.06-.98-2.79-1.9-4.89-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.83 1.83 1.06 0 1.82-.8 1.82-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.65 0-4.44-2.2-4.44-5.1 0-2.91 1.79-5.14 4.44-5.14 2.67 0 4.47 2.23 4.47 5.14 0 2.9-1.8 5.1-4.47 5.1zM93.97 27.74c2.01 0 4.1-.8 5.17-1.68.58-.46.85-.98.85-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.61-3.85h10.03c.97 0 1.79-.67 1.85-1.65 0-4.4-3.59-8.1-7.7-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.49-13.6c1.89 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM102.51 24.9c1.58 2.14 4.17 2.84 6.57 2.84 2.83 0 5.99-1.74 5.99-4.89 0-3.58-2.89-4.43-5.35-5.1-1.79-.49-3.34-.89-3.34-2.3 0-1.53 1.4-1.68 2.31-1.68 1.49 0 2.68.58 3.37 1.47.52.49 1.46.58 2.07.09.85-.7.64-1.65.18-2.26-1.28-1.62-3.68-2.29-5.54-2.29-2.98 0-5.9 1.8-5.9 4.83 0 3.61 3.07 4.44 5.59 5.14 1.8.49 3.31.95 3.31 2.26 0 1.59-1.49 1.77-2.37 1.8-1.95 0-3.13-.67-4.29-1.86-.7-.7-1.46-.7-2.1-.31-1.03.67-.91 1.68-.5 2.26zM119.6 27.43c1.06 0 1.82-.79 1.82-1.86v-3.21l1.49-1.38 5.47 5.81c.37.4.85.61 1.34.61.82 0 1.85-.73 1.85-1.8 0-.46-.18-.95-.58-1.38l-5.32-5.81 4.59-4.25c.49-.43.73-.92.73-1.38 0-.73-.79-1.71-1.73-1.71-.46 0-.94.18-1.34.58l-6.5 6.33V6.68c0-1.07-.76-1.87-1.82-1.87-1.07 0-1.83.8-1.83 1.87v18.89c0 1.07.76 1.86 1.83 1.86zM1.76 10.94c.77 0 1.43.5 1.67 1.2.95-.69 2.08-1.09 3.39-1.09 2.27 0 4.01.76 5.16 2.18 1.15-1.37 2.81-2.18 4.92-2.18 4.26 0 6.66 2.69 6.79 7.36v7.44c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-7.36c-.09-2.76-1.03-3.82-3.21-3.84-2.18 0-3.14 1.27-3.28 3.84v7.36c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-6.71c-.01-.07-.01-.14 0-.22v-.42c-.1-2.76-1.04-3.82-3.21-3.84-2.26 0-3.2 1.35-3.29 4.09v7.1c0 .98-.79 1.77-1.76 1.77C.79 27.59 0 26.8 0 25.82V12.71c0-.98.79-1.77 1.76-1.77zM142.59 0c1.3-.01 2.12 1.42 1.45 2.52l-4.64 7.72c-.47.79-1.5 1.04-2.28.57-.79-.47-1.05-1.5-.57-2.28l3.1-5.16-6.18.07c-.89.01-1.62-.68-1.69-1.55l-.0-.1c-.01-.92.73-1.67 1.65-1.68l9.16-.1z"/>
+      </svg>
+      <p>Panel Administracyjny</p>
+    </div>
+    
+    <div class="launch-body">
+      <div class="launch-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+      </div>
+      
+      <h1 class="launch-title">Otwórz Panel Admin</h1>
+      
+      <p class="launch-desc">
+        Panel administracyjny wymaga otwarcia w osobnej karcie przeglądarki, 
+        aby zapewnić pełną funkcjonalność i bezpieczeństwo sesji.
+      </p>
+      
+      <a href="{login_url}" target="_blank" rel="noopener" class="launch-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+        Otwórz w nowej karcie
+      </a>
+      
+      <p class="launch-hint">
+        Kliknij przycisk powyżej, aby otworzyć panel w nowym oknie
+      </p>
+    </div>
+  </div>
+  
+  <script>
+    // Detect if page is in iframe
+    if (window.self !== window.top) {{
+      document.body.classList.add('in-iframe');
+    }}
+  </script>
+</body>
+</html>
+"""
+    return html
+
+
+# ---------------------------------------------------------------------------
 # LOGIN / LOGOUT ROUTES
 # ---------------------------------------------------------------------------
 
@@ -1481,19 +1683,27 @@ def events_list():
         status = e.get('status') or ''
         status_class = "active" if status.lower() in ("active", "aktywne") else "draft" if status.lower() in ("draft", "szkic") else "ended"
         
-        # Get banner from event data
+        # Get banner and color from event data
         event_data = e.get('data') or {}
         banner_url = event_data.get('event_mail_link_top_banner') or event_data.get('event_mail_link_bottom_banner') or ''
+        event_color = event_data.get('color_gradient_1') or ''
+        
+        # Border style based on event color
+        border_style = f"border-color: {event_color};" if event_color else ""
         
         # Banner HTML - show image or gradient placeholder
         if banner_url:
             banner_html = f'<div class="event-card-banner"><img src="{banner_url}" alt="" loading="lazy" /></div>'
         else:
-            banner_html = '<div class="event-card-banner event-card-banner-placeholder"></div>'
+            # Use event color for placeholder gradient if available
+            if event_color:
+                banner_html = f'<div class="event-card-banner event-card-banner-placeholder" style="background: linear-gradient(135deg, {event_color}22 0%, {event_color}11 100%);"></div>'
+            else:
+                banner_html = '<div class="event-card-banner event-card-banner-placeholder"></div>'
         
         rows.append(
             f"""
-            <div class="event-card" data-status="{status_class}">
+            <div class="event-card" data-status="{status_class}" style="{border_style}">
               {banner_html}
               <div class="event-card-content">
                 <div class="event-card-header">
@@ -1529,29 +1739,35 @@ def events_list():
       }}
       .event-card {{
         background: #fff;
-        border: 1px solid var(--md-border);
+        border: 3px solid var(--md-border);
         border-radius: 12px;
         overflow: hidden;
         transition: box-shadow 0.2s ease, transform 0.2s ease;
       }}
       .event-card:hover {{
-        box-shadow: 0 4px 12px rgba(0, 101, 215, 0.1);
+        box-shadow: 0 4px 12px rgba(0, 101, 215, 0.15);
         transform: translateY(-2px);
       }}
       .event-card-banner {{
         width: 100%;
-        height: 100px;
+        height: 120px;
         overflow: hidden;
         background: #f8fafc;
         position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }}
       .event-card-banner img {{
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         object-position: center;
+        background: #fff;
       }}
       .event-card-banner-placeholder {{
+        width: 100%;
+        height: 100%;
         background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
       }}
       .event-card[data-status="active"] .event-card-banner-placeholder {{
@@ -1563,58 +1779,43 @@ def events_list():
       .event-card[data-status="ended"] .event-card-banner-placeholder {{
         background: linear-gradient(135deg, rgba(148, 163, 184, 0.2) 0%, rgba(100, 116, 139, 0.1) 100%);
       }}
-      /* Status indicator bar at bottom of banner */
-      .event-card-banner::after {{
-        content: '';
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: var(--md-border);
-      }}
-      .event-card[data-status="active"] .event-card-banner::after {{
-        background: linear-gradient(90deg, #00E09F, #00A1D7);
-      }}
-      .event-card[data-status="draft"] .event-card-banner::after {{
-        background: #fcd34d;
-      }}
-      .event-card[data-status="ended"] .event-card-banner::after {{
-        background: #94a3b8;
-      }}
       .event-card-content {{
-        padding: 20px;
+        padding: 16px;
       }}
       .event-card-header {{
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        gap: 16px;
-        margin-bottom: 16px;
+        gap: 12px;
+        margin-bottom: 12px;
       }}
       .event-card-title {{
         font-weight: 600;
-        font-size: 16px;
+        font-size: 15px;
         color: var(--md-text);
         margin-bottom: 4px;
+        line-height: 1.3;
       }}
       .event-card-id {{
-        font-size: 12px;
+        font-size: 11px;
         color: var(--md-text-muted);
       }}
       .event-card-id code {{
-        font-size: 11px;
+        font-size: 10px;
         background: #f1f5f9;
-        padding: 2px 6px;
+        padding: 2px 5px;
         border-radius: 4px;
       }}
       .event-card-actions {{
         display: flex;
+        flex-direction: column;
         gap: 8px;
       }}
       .event-card-actions .btn {{
-        padding: 8px 14px;
+        padding: 10px 16px;
         font-size: 13px;
+        text-align: center;
+        width: 100%;
       }}
       .empty-state {{
         text-align: center;
@@ -2416,18 +2617,28 @@ def orders_list():
         except Exception:
             pass
 
-        # Forma płatności (ściśle, bez heurystyk po nazwie)
+        # Forma płatności
+        payment_option_name = (o.get("payment_option_name") or "").lower()
+        
         if float(total or 0) == 0:
             payment_form = "FOC"
         elif has_proforma:
             payment_form = "Pro forma"
         else:
+            # Sprawdź payment_rules
             flow = _flow_from_rules(str(event_id), payment_type if isinstance(payment_type, int) else payment_type)
             if flow == "STRIPE":
                 payment_form = "Online (Stripe)"
             elif flow == "PROFORMA":
                 payment_form = "Pro forma"
             elif flow == "FOC":
+                payment_form = "FOC"
+            # Fallback: sprawdź payment_option_name z zamówienia
+            elif "pro-forma" in payment_option_name or "proforma" in payment_option_name or "pro forma" in payment_option_name:
+                payment_form = "Pro forma"
+            elif "online" in payment_option_name or "stripe" in payment_option_name or "kart" in payment_option_name:
+                payment_form = "Online (Stripe)"
+            elif "free" in payment_option_name or "bezpłatn" in payment_option_name or "foc" in payment_option_name:
                 payment_form = "FOC"
             else:
                 payment_form = "—"
