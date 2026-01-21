@@ -81,3 +81,7 @@ Ten repozytorium zawiera **3 logicznie oddzielne systemy**, które czasem się i
 - Backstage może działać bez GUS/wFirma (z ograniczeniami).
 - GUS/REGON i wFirma mogą działać jako niezależne API dla zewnętrznych podmiotów — projektuj zmiany tak, aby nie “przywiązywać” ich do Backstage.
 
+### 5) Nie wolno dotykać ustawień logowania i dostępu do wFirma
+- dotytczy to REFRESH TOKENU - w szczególności - to jest świety zasób
+- jak również access tokena - sposobu generowania i okoliczności
+- nie wolno wykonac mechanizmu fallback automatycznie odświeżającego REFRESH TOKEN!!!
