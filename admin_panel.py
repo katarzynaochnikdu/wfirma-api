@@ -1880,63 +1880,270 @@ def order_detail(order_id: str):
 
 @admin_bp.route("/orders/<order_id>/mark-paid", methods=["POST"])
 def order_mark_paid(order_id: str):
-    """Oznacza zamówienie jako opłacone (dla proform)."""
+    """
+    Oznacza zamówienie jako opłacone (dla proform).
+    
+    Flow:
+    1. Sprawdza czy faktura końcowa (normal) już istnieje
+    2. Pobiera konfigurację z payment_rules eventu
+    3. Generuje fakturę końcową przez wFirma
+    4. Wysyła emaile (potwierdzenie + wewnętrzny)
+    5. Zmienia status na 'paid'
+    """
     token = _require_admin_token()
 
     order = get_order(order_id)
     if not order:
         abort(404, description="Nie znaleziono zamówienia")
 
-    # Aktualizuj status
-    update_order_status(order_id, "paid")
-
     # Pobierz dane eventu
     event_id = order.get("event_id", "")
     ev = get_event(event_id) if event_id else None
     event_name = ev.get("event_name", "") if ev else ""
-    event_data = ev.get("data", {}) if ev else {}
+    event_data = (ev.get("data") if ev else {}) or {}
 
-    # Zapisz mail task do logu (Make może go pobrać)
+    # Dane kupującego
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_first_name = order.get("purchaser_first_name", "") or ""
+    purchaser_last_name = order.get("purchaser_last_name", "") or ""
+    purchaser_name = f"{purchaser_first_name} {purchaser_last_name}".strip()
+    purchaser_nip = order.get("purchaser_nip", "") or ""
+    
+    # Kwota
+    total_raw = order.get("total", 0)
+    try:
+        total_value = float(total_raw or 0)
+    except Exception:
+        total_value = 0.0
+    currency_value = order.get("currency", "PLN") or "PLN"
+
+    # 1. Sprawdź czy faktura końcowa (normal) już istnieje
+    existing_docs = get_wfirma_documents(order_id)
+    has_final_invoice = any((d or {}).get("document_type") == "normal" for d in (existing_docs or []))
+    
+    if has_final_invoice:
+        # Faktura już istnieje - tylko zmień status
+        print(f"[ADMIN MARK-PAID] Faktura końcowa już istnieje dla {order_id}, tylko zmieniam status")
+        update_order_status(order_id, "paid")
+        return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+    # 2. Pobierz konfigurację z payment_rules (opcjonalne - dla przyszłego użycia)
+    payment_option_name = order.get("payment_option_name", "")
+    payment_type = order.get("payment_type")
+    rule = match_payment_rule(event_id, payment_option_name, payment_type) if event_id else None
+    # rule może zawierać: wfirma_company, wfirma_series_name, wfirma_document_type, itp.
+    # Na razie używamy domyślnych wartości z backstage_engine
+    
+    print(f"[ADMIN MARK-PAID] Tworzę fakturę końcową dla {order_id} | event={event_name[:30] if event_name else 'N/A'}, rule={rule.get('id') if rule else 'default'}")
+
+    # 3. Przygotuj dane do faktury
+    raw_payload = order.get("raw", {}) or {}
+    
+    # Wyciągnij dane rozliczeniowe
+    billing_address_data = raw_payload.get("eventOrder_billingAddress", {}) or {}
+    billing_address = billing_address_data.get("streetAddress1") or billing_address_data.get("street") or "-"
+    billing_zip = billing_address_data.get("zipcode") or billing_address_data.get("zip") or "00-000"
+    billing_city = billing_address_data.get("city") or "-"
+    
+    # Wyciągnij i wzbogać bilety
+    enriched_tickets = []
+    try:
+        from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+        
+        raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+        if raw_tickets and event_id:
+            enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+            print(f"[ADMIN MARK-PAID] Wygenerowano {len(enriched_tickets)} pozycji biletów")
+    except Exception as e:
+        print(f"[ADMIN MARK-PAID] Błąd pobierania biletów: {e}")
+    
+    order_data_for_invoice = {
+        "event_order_id": order_id,
+        "event_id": event_id,
+        "purchaser_email": purchaser_email,
+        "purchaser_first_name": purchaser_first_name,
+        "purchaser_last_name": purchaser_last_name,
+        "purchaser_nip": purchaser_nip,
+        "billing_address": billing_address,
+        "billing_zip": billing_zip,
+        "billing_city": billing_city,
+        "total": total_value,
+        "currency": currency_value,
+        "tickets": enriched_tickets,
+    }
+
+    # 4. Generuj fakturę końcową
+    invoice_created = False
+    invoice_id = None
+    invoice_number = None
+    invoice_email_sent = False
+    invoice_error = None
+    
+    try:
+        from backstage_engine import _create_paid_invoice
+        
+        success, invoice_result, error = _create_paid_invoice(
+            order_data=order_data_for_invoice,
+            event_name=event_name,
+            send_email=bool(purchaser_email),  # wFirma wyśle fakturę emailem
+        )
+        
+        if success and invoice_result:
+            invoice_created = True
+            invoice_id = invoice_result.get("invoice", {}).get("id")
+            invoice_number = invoice_result.get("invoice", {}).get("fullnumber")
+            invoice_email_sent = invoice_result.get("email_sent", False)
+            print(f"[ADMIN MARK-PAID] Faktura utworzona: {invoice_number} (ID: {invoice_id}), email_sent={invoice_email_sent}")
+        else:
+            invoice_error = error
+            print(f"[ADMIN MARK-PAID] BŁĄD tworzenia faktury: {error}")
+    except Exception as e:
+        invoice_error = str(e)
+        print(f"[ADMIN MARK-PAID] WYJĄTEK podczas tworzenia faktury: {e}")
+
+    # 5. Aktualizuj status zamówienia
+    update_order_status(order_id, "paid")
+
+    # 6. Wyślij email z potwierdzeniem rezerwacji do kupującego
     from pg_storage import save_mail_log
-
-    purchaser_email = order.get("purchaser_email", "")
+    
+    purchaser_email_sent = False
+    purchaser_email_error = None
+    
     if purchaser_email:
-        save_mail_log(
-            event_order_id=order_id,
-            direction="purchaser",
-            template_key="payment_confirmation",
-            to_email=purchaser_email,
-            subject=f"Potwierdzenie płatności – {event_name}",
-            data={
-                "event_order_id": order_id,
-                "event_name": event_name,
-                "purchaser_name": f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip(),
-                "purchaser_email": purchaser_email,
-                "total": order.get("total", 0),
-                "currency": order.get("currency", "PLN"),
-                "payment_method": "Przelew (proforma)",
-                **event_data,
-            },
-        )
+        try:
+            from email_templates import render_payment_confirmation_email
+            from backstage_engine import _send_email_via_make
+            
+            purchaser_subject = f"Płatność potwierdzona! Twoja rezerwacja na {event_name}"
+            
+            purchaser_body_html = render_payment_confirmation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name or "Uczestnik",
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                purchaser_phone=order.get("purchaser_phone", ""),
+                total_gross=total_value,
+                event_config=event_data,
+                tickets=enriched_tickets,
+            )
+            
+            # Zapisz do logu
+            save_mail_log(
+                event_order_id=order_id,
+                direction="purchaser",
+                template_key="payment_confirmation",
+                to_email=purchaser_email,
+                subject=purchaser_subject,
+                data={
+                    "event_order_id": order_id,
+                    "event_name": event_name,
+                    "purchaser_name": purchaser_name,
+                    "total": total_value,
+                    "currency": currency_value,
+                    "payment_method": "Przelew (proforma)",
+                },
+            )
+            
+            # Wyślij email
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=purchaser_subject,
+                body_html=purchaser_body_html,
+                event_order_id=order_id,
+                template_type="payment_confirmation",
+            )
+            
+            if result.get("success"):
+                purchaser_email_sent = True
+                print(f"[ADMIN MARK-PAID] Email potwierdzenia wysłany do {purchaser_email}")
+            else:
+                purchaser_email_error = result.get("error", "Nieznany błąd")
+                print(f"[ADMIN MARK-PAID] BŁĄD wysyłki emaila: {purchaser_email_error}")
+        except Exception as e:
+            purchaser_email_error = str(e)
+            print(f"[ADMIN MARK-PAID] WYJĄTEK wysyłki emaila: {e}")
 
-    # Mail wewnętrzny
-    internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    # 7. Email wewnętrzny
+    import os
+    internal_email = os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL") or event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt")
+    
     if internal_email:
-        save_mail_log(
-            event_order_id=order_id,
-            direction="internal",
-            template_key="internal_order_paid",
-            to_email=internal_email,
-            subject=f"[PAID] Zamówienie opłacone – {event_name}",
-            data={
-                "event_order_id": order_id,
-                "event_name": event_name,
-                "purchaser_email": purchaser_email,
-                "total": order.get("total", 0),
-                "currency": order.get("currency", "PLN"),
-                "payment_method": "Przelew (proforma)",
-            },
-        )
+        try:
+            from backstage_engine import _send_email_via_make
+            
+            # Określ treść emaila w zależności od wyniku
+            if invoice_created and purchaser_email_sent:
+                internal_subject = f"[PAID OK] Zamówienie opłacone (admin) – {event_name}"
+                status_html = '<p style="color: #28a745;"><strong>✓ Faktura utworzona, email wysłany</strong></p>'
+            elif invoice_created:
+                internal_subject = f"[PAID] Zamówienie opłacone, faktura OK – {event_name}"
+                status_html = f'<p style="color: #ffc107;"><strong>✓ Faktura utworzona</strong></p><p style="color: #dc3545;">⚠️ Email nie wysłany: {purchaser_email_error or "brak adresu"}</p>'
+            else:
+                internal_subject = f"[PAID ERROR] Zamówienie opłacone, BŁĄD faktury – {event_name}"
+                status_html = f'<p style="color: #dc3545;"><strong>❌ Błąd faktury: {invoice_error}</strong></p><p><strong>WYMAGANA AKCJA:</strong> Utwórz fakturę ręcznie w wFirma!</p>'
+            
+            internal_body_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2>Zamówienie oznaczone jako opłacone (panel admin)</h2>
+                <p><strong>Zamówienie:</strong> {order_id}</p>
+                <p><strong>Wydarzenie:</strong> {event_name}</p>
+                <hr>
+                <p><strong>Kupujący:</strong> {purchaser_name}</p>
+                <p><strong>Email:</strong> {purchaser_email or "(brak)"}</p>
+                <p><strong>NIP:</strong> {purchaser_nip or "(brak)"}</p>
+                <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
+                <hr>
+                {status_html}
+                {f'<p><strong>Nr faktury:</strong> {invoice_number}</p>' if invoice_number else ''}
+                <hr>
+                <p style="color: #666; font-size: 12px;">Akcja wykonana przez panel admin.</p>
+            </body>
+            </html>
+            """
+            
+            save_mail_log(
+                event_order_id=order_id,
+                direction="internal",
+                template_key="internal_order_marked_paid",
+                to_email=internal_email,
+                subject=internal_subject,
+                data={
+                    "event_order_id": order_id,
+                    "event_name": event_name,
+                    "invoice_created": invoice_created,
+                    "invoice_number": invoice_number,
+                    "invoice_error": invoice_error,
+                },
+            )
+            
+            _send_email_via_make(
+                to_email=internal_email,
+                subject=internal_subject,
+                body_html=internal_body_html,
+                event_order_id=order_id,
+                template_type="internal_order_marked_paid",
+            )
+        except Exception as e:
+            print(f"[ADMIN MARK-PAID] Błąd wysyłki emaila wewnętrznego: {e}")
+
+    # 8. Wyślij emaile do uczestników (jeśli są kompletne)
+    try:
+        from backstage_engine import send_participant_ticket_emails, attendee_webhooks_status
+        
+        comp = attendee_webhooks_status(order_id)
+        if comp.get("complete"):
+            stats = send_participant_ticket_emails(
+                event_order_id=order_id,
+                event_name=event_name,
+                event_config=event_data,
+            )
+            print(f"[ADMIN MARK-PAID] Emaile do uczestników: sent={stats.get('sent', 0)}, failed={stats.get('failed', 0)}")
+        else:
+            print(f"[ADMIN MARK-PAID] Pomijam emaile do uczestników - brak kompletu webhooków")
+    except Exception as e:
+        print(f"[ADMIN MARK-PAID] Błąd wysyłki emaili do uczestników: {e}")
 
     return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
 
