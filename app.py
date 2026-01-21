@@ -2548,11 +2548,10 @@ def backstage_attendee():
         
         email_sent = False
         try:
-            # informacyjnie: czy cokolwiek wysłano (purchaser lub participant)
+            # Informacyjnie: tylko email do uczestnika (nie purchaser)
             if send_result and send_result.get("sent"):
-                purchaser_sent = bool((send_result.get("sent") or {}).get("purchaser"))
                 participants_sent = int(((send_result.get("sent") or {}).get("participants") or {}).get("sent", 0))
-                email_sent = purchaser_sent or (participants_sent > 0)
+                email_sent = participants_sent > 0
         except Exception:
             pass
         

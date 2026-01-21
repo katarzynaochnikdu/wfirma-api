@@ -293,6 +293,25 @@ def send_participant_ticket_emails(
             "missing_ticket_ids": complete_info.get("missing_ticket_ids", [])[:10],
         })
         return stats
+
+    # Guard: uczestnik dostaje email dopiero po opłaceniu zamówienia
+    try:
+        order = get_order(event_order_id)
+    except Exception:
+        order = None
+    order_status = (order or {}).get("status", "") if isinstance(order, dict) else ""
+    if (order_status or "").strip().lower() != "paid":
+        _log("INFO", "Nie wysyłam maili do uczestników - zamówienie nieopłacone", {
+            "event_order_id": event_order_id,
+            "status": order_status,
+        })
+        stats["skipped"] = 0
+        stats["details"].append({
+            "status": "skipped_all",
+            "reason": "order_not_paid",
+            "order_status": order_status,
+        })
+        return stats
     
     # Pobierz uczestników
     participants = get_participants_for_order(event_order_id)
