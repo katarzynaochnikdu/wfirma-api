@@ -1481,10 +1481,20 @@ def events_list():
         status = e.get('status') or ''
         status_class = "active" if status.lower() in ("active", "aktywne") else "draft" if status.lower() in ("draft", "szkic") else "ended"
         
+        # Get banner from event data
+        event_data = e.get('data') or {}
+        banner_url = event_data.get('event_mail_link_top_banner') or event_data.get('event_mail_link_bottom_banner') or ''
+        
+        # Banner HTML - show image or gradient placeholder
+        if banner_url:
+            banner_html = f'<div class="event-card-banner"><img src="{banner_url}" alt="" loading="lazy" /></div>'
+        else:
+            banner_html = '<div class="event-card-banner event-card-banner-placeholder"></div>'
+        
         rows.append(
             f"""
             <div class="event-card" data-status="{status_class}">
-              <div class="event-card-accent"></div>
+              {banner_html}
               <div class="event-card-content">
                 <div class="event-card-header">
                   <div class="event-card-info">
@@ -1528,17 +1538,48 @@ def events_list():
         box-shadow: 0 4px 12px rgba(0, 101, 215, 0.1);
         transform: translateY(-2px);
       }}
-      .event-card-accent {{
-        height: 4px;
+      .event-card-banner {{
+        width: 100%;
+        height: 100px;
+        overflow: hidden;
+        background: #f8fafc;
+        position: relative;
+      }}
+      .event-card-banner img {{
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+      }}
+      .event-card-banner-placeholder {{
+        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+      }}
+      .event-card[data-status="active"] .event-card-banner-placeholder {{
+        background: linear-gradient(135deg, rgba(0, 224, 159, 0.15) 0%, rgba(0, 161, 215, 0.15) 100%);
+      }}
+      .event-card[data-status="draft"] .event-card-banner-placeholder {{
+        background: linear-gradient(135deg, rgba(252, 211, 77, 0.2) 0%, rgba(251, 191, 36, 0.1) 100%);
+      }}
+      .event-card[data-status="ended"] .event-card-banner-placeholder {{
+        background: linear-gradient(135deg, rgba(148, 163, 184, 0.2) 0%, rgba(100, 116, 139, 0.1) 100%);
+      }}
+      /* Status indicator bar at bottom of banner */
+      .event-card-banner::after {{
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
         background: var(--md-border);
       }}
-      .event-card[data-status="active"] .event-card-accent {{
+      .event-card[data-status="active"] .event-card-banner::after {{
         background: linear-gradient(90deg, #00E09F, #00A1D7);
       }}
-      .event-card[data-status="draft"] .event-card-accent {{
+      .event-card[data-status="draft"] .event-card-banner::after {{
         background: #fcd34d;
       }}
-      .event-card[data-status="ended"] .event-card-accent {{
+      .event-card[data-status="ended"] .event-card-banner::after {{
         background: #94a3b8;
       }}
       .event-card-content {{
