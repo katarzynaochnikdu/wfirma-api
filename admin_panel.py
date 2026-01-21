@@ -217,21 +217,138 @@ def login():
                         data={"failed_count": failed_count},
                     )
     
-    # Formularz logowania
+    # Formularz logowania - stylizowany z kolorami Medidesk
     body = f"""
-    <div style="max-width:400px; margin:60px auto;">
-      <div class="card">
-        <h2 style="margin-bottom:20px;">Panel Admin - Logowanie</h2>
-        {f'<div style="background:#fff5f5; color:#c53030; padding:12px; border-radius:8px; margin-bottom:16px;">{error}</div>' if error else ''}
-        <form method="post" action="{url_for('admin_bp.login')}">
-          <div class="muted">Email</div>
-          <input type="email" name="email" required autofocus style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+    <style>
+      .login-wrapper {{
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        padding: 20px;
+      }}
+      .login-card {{
+        width: 100%;
+        max-width: 420px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 101, 215, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+      }}
+      .login-header {{
+        background: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%);
+        padding: 32px 32px 28px;
+        text-align: center;
+      }}
+      .login-header svg {{
+        height: 32px;
+        margin-bottom: 8px;
+      }}
+      .login-header h1 {{
+        margin: 0;
+        font-size: 14px;
+        font-weight: 500;
+        color: rgba(255,255,255,0.9);
+        letter-spacing: 0.5px;
+      }}
+      .login-body {{
+        padding: 32px;
+      }}
+      .login-title {{
+        font-size: 22px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0 0 24px 0;
+        text-align: center;
+      }}
+      .login-field {{
+        margin-bottom: 20px;
+      }}
+      .login-field label {{
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: #64748b;
+        margin-bottom: 6px;
+      }}
+      .login-field input {{
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 15px;
+        transition: all 0.15s ease;
+      }}
+      .login-field input:focus {{
+        outline: none;
+        border-color: #0065D7;
+        box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
+      }}
+      .login-btn {{
+        width: 100%;
+        padding: 14px 20px;
+        background: #0065D7;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }}
+      .login-btn:hover {{
+        background: #0052b3;
+      }}
+      .login-error {{
+        background: #fee2e2;
+        color: #991b1b;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 14px;
+      }}
+      .login-footer {{
+        text-align: center;
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #94a3b8;
+      }}
+    </style>
+    
+    <div class="login-wrapper">
+      <div class="login-card">
+        <div class="login-header">
+          <svg viewBox="0 0 145 29" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#fff" d="M33.85 27.74c2-.0 4.1-.8 5.16-1.68.58-.46.86-.98.86-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.62-3.85h10.03c.97 0 1.8-.67 1.85-1.65 0-4.4-3.59-8.1-7.69-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.48-13.6c1.88 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM56.49 4.81c-1.06 0-1.82.8-1.82 1.87v5.99c-1.07-.98-2.8-1.9-4.9-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.82 1.83 1.07 0 1.83-.8 1.83-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.64 0-4.44-2.2-4.44-5.1 0-2.91 1.8-5.14 4.44-5.14 2.68 0 4.47 2.23 4.47 5.14 0 2.9-1.79 5.1-4.47 5.1zM65.07 12.94c0-1.07-.76-1.86-1.82-1.86-1.07 0-1.83.79-1.83 1.86v12.63c0 1.07.76 1.86 1.83 1.86 1.06 0 1.82-.79 1.82-1.86V12.94zm-1.73-4.44c1.06 0 1.92-.86 1.92-1.93 0-1.07-.86-1.93-1.92-1.93-1.06 0-1.92.86-1.92 1.93 0 1.07.86 1.93 1.92 1.93zM81.33 4.81c-1.07 0-1.83.8-1.83 1.87v5.99c-1.06-.98-2.79-1.9-4.89-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.83 1.83 1.06 0 1.82-.8 1.82-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.65 0-4.44-2.2-4.44-5.1 0-2.91 1.79-5.14 4.44-5.14 2.67 0 4.47 2.23 4.47 5.14 0 2.9-1.8 5.1-4.47 5.1zM93.97 27.74c2.01 0 4.1-.8 5.17-1.68.58-.46.85-.98.85-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.61-3.85h10.03c.97 0 1.79-.67 1.85-1.65 0-4.4-3.59-8.1-7.7-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.49-13.6c1.89 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM102.51 24.9c1.58 2.14 4.17 2.84 6.57 2.84 2.83 0 5.99-1.74 5.99-4.89 0-3.58-2.89-4.43-5.35-5.1-1.79-.49-3.34-.89-3.34-2.3 0-1.53 1.4-1.68 2.31-1.68 1.49 0 2.68.58 3.37 1.47.52.49 1.46.58 2.07.09.85-.7.64-1.65.18-2.26-1.28-1.62-3.68-2.29-5.54-2.29-2.98 0-5.9 1.8-5.9 4.83 0 3.61 3.07 4.44 5.59 5.14 1.8.49 3.31.95 3.31 2.26 0 1.59-1.49 1.77-2.37 1.8-1.95 0-3.13-.67-4.29-1.86-.7-.7-1.46-.7-2.1-.31-1.03.67-.91 1.68-.5 2.26zM119.6 27.43c1.06 0 1.82-.79 1.82-1.86v-3.21l1.49-1.38 5.47 5.81c.37.4.85.61 1.34.61.82 0 1.85-.73 1.85-1.8 0-.46-.18-.95-.58-1.38l-5.32-5.81 4.59-4.25c.49-.43.73-.92.73-1.38 0-.73-.79-1.71-1.73-1.71-.46 0-.94.18-1.34.58l-6.5 6.33V6.68c0-1.07-.76-1.87-1.82-1.87-1.07 0-1.83.8-1.83 1.87v18.89c0 1.07.76 1.86 1.83 1.86zM1.76 10.94c.77 0 1.43.5 1.67 1.2.95-.69 2.08-1.09 3.39-1.09 2.27 0 4.01.76 5.16 2.18 1.15-1.37 2.81-2.18 4.92-2.18 4.26 0 6.66 2.69 6.79 7.36v7.44c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-7.36c-.09-2.76-1.03-3.82-3.21-3.84-2.18 0-3.14 1.27-3.28 3.84v7.36c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-6.71c-.01-.07-.01-.14 0-.22v-.42c-.1-2.76-1.04-3.82-3.21-3.84-2.26 0-3.2 1.35-3.29 4.09v7.1c0 .98-.79 1.77-1.76 1.77C.79 27.59 0 26.8 0 25.82V12.71c0-.98.79-1.77 1.76-1.77zM142.59 0c1.3-.01 2.12 1.42 1.45 2.52l-4.64 7.72c-.47.79-1.5 1.04-2.28.57-.79-.47-1.05-1.5-.57-2.28l3.1-5.16-6.18.07c-.89.01-1.62-.68-1.69-1.55l-.0-.1c-.01-.92.73-1.67 1.65-1.68l9.16-.1z"/>
+          </svg>
+          <h1>Panel Administracyjny</h1>
+        </div>
+        <div class="login-body">
+          <h2 class="login-title">Zaloguj się</h2>
           
-          <div class="muted">Hasło</div>
-          <input type="password" name="password" required style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
+          {f'<div class="login-error">{error}</div>' if error else ''}
           
-          <button class="btn btnPrimary" type="submit" style="width:100%;">Zaloguj się</button>
-        </form>
+          <form method="post" action="{url_for('admin_bp.login')}">
+            <div class="login-field">
+              <label for="email">Adres email</label>
+              <input type="email" id="email" name="email" required autofocus placeholder="twoj@email.com" />
+            </div>
+            
+            <div class="login-field">
+              <label for="password">Hasło</label>
+              <input type="password" id="password" name="password" required placeholder="Wprowadź hasło" />
+            </div>
+            
+            <button type="submit" class="login-btn">Zaloguj się</button>
+          </form>
+          
+          <div class="login-footer">
+            Medidesk Admin Panel
+          </div>
+        </div>
       </div>
     </div>
     """
@@ -305,18 +422,44 @@ def bootstrap():
     # Jeśli nie podano tokenu, pokaż formularz z pytaniem o token
     if not provided_token:
         body = """
-        <div style="max-width:400px; margin:60px auto;">
-          <div class="card">
-            <h2 style="margin-bottom:20px;">Bootstrap - Tworzenie pierwszego admina</h2>
-            <div class="muted" style="margin-bottom:16px;">
-              Podaj token bootstrap (ADMIN_BOOTSTRAP_TOKEN z Render ENV).
+        <style>
+          .login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); padding: 20px; }
+          .login-card { width: 100%; max-width: 420px; background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0, 101, 215, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05); overflow: hidden; }
+          .login-header { background: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%); padding: 32px 32px 28px; text-align: center; }
+          .login-header svg { height: 32px; margin-bottom: 8px; }
+          .login-header h1 { margin: 0; font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.9); letter-spacing: 0.5px; }
+          .login-body { padding: 32px; }
+          .login-title { font-size: 20px; font-weight: 600; color: #1e293b; margin: 0 0 8px 0; text-align: center; }
+          .login-subtitle { font-size: 13px; color: #64748b; text-align: center; margin-bottom: 24px; }
+          .login-field { margin-bottom: 20px; }
+          .login-field label { display: block; font-size: 13px; font-weight: 500; color: #64748b; margin-bottom: 6px; }
+          .login-field input { width: 100%; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 15px; transition: all 0.15s ease; }
+          .login-field input:focus { outline: none; border-color: #0065D7; box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1); }
+          .login-btn { width: 100%; padding: 14px 20px; background: #0065D7; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s ease; }
+          .login-btn:hover { background: #0052b3; }
+        </style>
+        
+        <div class="login-wrapper">
+          <div class="login-card">
+            <div class="login-header">
+              <svg viewBox="0 0 145 29" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#fff" d="M33.85 27.74c2-.0 4.1-.8 5.16-1.68.58-.46.86-.98.86-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.62-3.85h10.03c.97 0 1.8-.67 1.85-1.65 0-4.4-3.59-8.1-7.69-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.48-13.6c1.88 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM56.49 4.81c-1.06 0-1.82.8-1.82 1.87v5.99c-1.07-.98-2.8-1.9-4.9-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.82 1.83 1.07 0 1.83-.8 1.83-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.64 0-4.44-2.2-4.44-5.1 0-2.91 1.8-5.14 4.44-5.14 2.68 0 4.47 2.23 4.47 5.14 0 2.9-1.79 5.1-4.47 5.1zM65.07 12.94c0-1.07-.76-1.86-1.82-1.86-1.07 0-1.83.79-1.83 1.86v12.63c0 1.07.76 1.86 1.83 1.86 1.06 0 1.82-.79 1.82-1.86V12.94zm-1.73-4.44c1.06 0 1.92-.86 1.92-1.93 0-1.07-.86-1.93-1.92-1.93-1.06 0-1.92.86-1.92 1.93 0 1.07.86 1.93 1.92 1.93zM81.33 4.81c-1.07 0-1.83.8-1.83 1.87v5.99c-1.06-.98-2.79-1.9-4.89-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.83 1.83 1.06 0 1.82-.8 1.82-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.65 0-4.44-2.2-4.44-5.1 0-2.91 1.79-5.14 4.44-5.14 2.67 0 4.47 2.23 4.47 5.14 0 2.9-1.8 5.1-4.47 5.1zM93.97 27.74c2.01 0 4.1-.8 5.17-1.68.58-.46.85-.98.85-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.61-3.85h10.03c.97 0 1.79-.67 1.85-1.65 0-4.4-3.59-8.1-7.7-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.49-13.6c1.89 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM102.51 24.9c1.58 2.14 4.17 2.84 6.57 2.84 2.83 0 5.99-1.74 5.99-4.89 0-3.58-2.89-4.43-5.35-5.1-1.79-.49-3.34-.89-3.34-2.3 0-1.53 1.4-1.68 2.31-1.68 1.49 0 2.68.58 3.37 1.47.52.49 1.46.58 2.07.09.85-.7.64-1.65.18-2.26-1.28-1.62-3.68-2.29-5.54-2.29-2.98 0-5.9 1.8-5.9 4.83 0 3.61 3.07 4.44 5.59 5.14 1.8.49 3.31.95 3.31 2.26 0 1.59-1.49 1.77-2.37 1.8-1.95 0-3.13-.67-4.29-1.86-.7-.7-1.46-.7-2.1-.31-1.03.67-.91 1.68-.5 2.26zM119.6 27.43c1.06 0 1.82-.79 1.82-1.86v-3.21l1.49-1.38 5.47 5.81c.37.4.85.61 1.34.61.82 0 1.85-.73 1.85-1.8 0-.46-.18-.95-.58-1.38l-5.32-5.81 4.59-4.25c.49-.43.73-.92.73-1.38 0-.73-.79-1.71-1.73-1.71-.46 0-.94.18-1.34.58l-6.5 6.33V6.68c0-1.07-.76-1.87-1.82-1.87-1.07 0-1.83.8-1.83 1.87v18.89c0 1.07.76 1.86 1.83 1.86zM1.76 10.94c.77 0 1.43.5 1.67 1.2.95-.69 2.08-1.09 3.39-1.09 2.27 0 4.01.76 5.16 2.18 1.15-1.37 2.81-2.18 4.92-2.18 4.26 0 6.66 2.69 6.79 7.36v7.44c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-7.36c-.09-2.76-1.03-3.82-3.21-3.84-2.18 0-3.14 1.27-3.28 3.84v7.36c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-6.71c-.01-.07-.01-.14 0-.22v-.42c-.1-2.76-1.04-3.82-3.21-3.84-2.26 0-3.2 1.35-3.29 4.09v7.1c0 .98-.79 1.77-1.76 1.77C.79 27.59 0 26.8 0 25.82V12.71c0-.98.79-1.77 1.76-1.77zM142.59 0c1.3-.01 2.12 1.42 1.45 2.52l-4.64 7.72c-.47.79-1.5 1.04-2.28.57-.79-.47-1.05-1.5-.57-2.28l3.1-5.16-6.18.07c-.89.01-1.62-.68-1.69-1.55l-.0-.1c-.01-.92.73-1.67 1.65-1.68l9.16-.1z"/>
+              </svg>
+              <h1>Panel Administracyjny</h1>
             </div>
-            <form method="get" action="">
-              <div class="muted">Token bootstrap</div>
-              <input type="password" name="token" required autofocus 
-                     style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
-              <button class="btn btnPrimary" type="submit" style="width:100%;">Dalej</button>
-            </form>
+            <div class="login-body">
+              <h2 class="login-title">Bootstrap</h2>
+              <p class="login-subtitle">Podaj token bootstrap (ADMIN_BOOTSTRAP_TOKEN z Render ENV).</p>
+              
+              <form method="get" action="">
+                <div class="login-field">
+                  <label for="token">Token bootstrap</label>
+                  <input type="password" id="token" name="token" required autofocus placeholder="Wprowadź token" />
+                </div>
+                
+                <button type="submit" class="login-btn">Dalej</button>
+              </form>
+            </div>
           </div>
         </div>
         """
@@ -370,38 +513,69 @@ def bootstrap():
             else:
                 error = "Błąd podczas tworzenia konta (może już istnieje taki email?)"
     
-    # Formularz tworzenia konta
+    # Formularz tworzenia konta - stylizowany jak login
     body = f"""
-    <div style="max-width:400px; margin:60px auto;">
-      <div class="card">
-        <h2 style="margin-bottom:20px;">Utwórz pierwsze konto admina</h2>
-        
-        {f'<div class="ok" style="margin-bottom:16px;">{success}<br/><a href="/admin/login">Przejdź do logowania</a></div>' if success else ''}
-        {f'<div class="error" style="margin-bottom:16px;">{error}</div>' if error else ''}
-        
-        {'' if success else f'''
-        <form method="post" action="{url_for('admin_bp.bootstrap', token=provided_token)}">
-          <input type="hidden" name="bootstrap_token" value="{provided_token}" />
-          
-          <div class="muted">Email</div>
-          <input type="email" name="email" required autofocus 
-                 style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
-          
-          <div class="muted">Hasło (min. 8 znaków)</div>
-          <input type="password" name="password" required minlength="8"
-                 style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
-          
-          <div class="muted">Powtórz hasło</div>
-          <input type="password" name="password2" required minlength="8"
-                 style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
-          
-          <button class="btn btnPrimary" type="submit" style="width:100%;">Utwórz konto</button>
-        </form>
-        
-        <div class="muted" style="margin-top:16px; font-size:11px;">
-          Po utworzeniu konta usuń ADMIN_BOOTSTRAP_TOKEN z Render ENV.
+    <style>
+      .login-wrapper {{ min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); padding: 20px; }}
+      .login-card {{ width: 100%; max-width: 420px; background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0, 101, 215, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05); overflow: hidden; }}
+      .login-header {{ background: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%); padding: 32px 32px 28px; text-align: center; }}
+      .login-header svg {{ height: 32px; margin-bottom: 8px; }}
+      .login-header h1 {{ margin: 0; font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.9); letter-spacing: 0.5px; }}
+      .login-body {{ padding: 32px; }}
+      .login-title {{ font-size: 20px; font-weight: 600; color: #1e293b; margin: 0 0 24px 0; text-align: center; }}
+      .login-field {{ margin-bottom: 20px; }}
+      .login-field label {{ display: block; font-size: 13px; font-weight: 500; color: #64748b; margin-bottom: 6px; }}
+      .login-field input {{ width: 100%; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 15px; transition: all 0.15s ease; }}
+      .login-field input:focus {{ outline: none; border-color: #0065D7; box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1); }}
+      .login-btn {{ width: 100%; padding: 14px 20px; background: #0065D7; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s ease; }}
+      .login-btn:hover {{ background: #0052b3; }}
+      .login-success {{ background: #d1fae5; color: #065f46; padding: 16px; border-radius: 8px; margin-bottom: 20px; text-align: center; }}
+      .login-success a {{ color: #0065D7; font-weight: 600; }}
+      .login-error {{ background: #fee2e2; color: #991b1b; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }}
+      .login-hint {{ text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8; }}
+    </style>
+    
+    <div class="login-wrapper">
+      <div class="login-card">
+        <div class="login-header">
+          <svg viewBox="0 0 145 29" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#fff" d="M33.85 27.74c2-.0 4.1-.8 5.16-1.68.58-.46.86-.98.86-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.62-3.85h10.03c.97 0 1.8-.67 1.85-1.65 0-4.4-3.59-8.1-7.69-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.48-13.6c1.88 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM56.49 4.81c-1.06 0-1.82.8-1.82 1.87v5.99c-1.07-.98-2.8-1.9-4.9-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.82 1.83 1.07 0 1.83-.8 1.83-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.64 0-4.44-2.2-4.44-5.1 0-2.91 1.8-5.14 4.44-5.14 2.68 0 4.47 2.23 4.47 5.14 0 2.9-1.79 5.1-4.47 5.1zM65.07 12.94c0-1.07-.76-1.86-1.82-1.86-1.07 0-1.83.79-1.83 1.86v12.63c0 1.07.76 1.86 1.83 1.86 1.06 0 1.82-.79 1.82-1.86V12.94zm-1.73-4.44c1.06 0 1.92-.86 1.92-1.93 0-1.07-.86-1.93-1.92-1.93-1.06 0-1.92.86-1.92 1.93 0 1.07.86 1.93 1.92 1.93zM81.33 4.81c-1.07 0-1.83.8-1.83 1.87v5.99c-1.06-.98-2.79-1.9-4.89-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.83 1.83 1.06 0 1.82-.8 1.82-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.65 0-4.44-2.2-4.44-5.1 0-2.91 1.79-5.14 4.44-5.14 2.67 0 4.47 2.23 4.47 5.14 0 2.9-1.8 5.1-4.47 5.1zM93.97 27.74c2.01 0 4.1-.8 5.17-1.68.58-.46.85-.98.85-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.61-3.85h10.03c.97 0 1.79-.67 1.85-1.65 0-4.4-3.59-8.1-7.7-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.49-13.6c1.89 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM102.51 24.9c1.58 2.14 4.17 2.84 6.57 2.84 2.83 0 5.99-1.74 5.99-4.89 0-3.58-2.89-4.43-5.35-5.1-1.79-.49-3.34-.89-3.34-2.3 0-1.53 1.4-1.68 2.31-1.68 1.49 0 2.68.58 3.37 1.47.52.49 1.46.58 2.07.09.85-.7.64-1.65.18-2.26-1.28-1.62-3.68-2.29-5.54-2.29-2.98 0-5.9 1.8-5.9 4.83 0 3.61 3.07 4.44 5.59 5.14 1.8.49 3.31.95 3.31 2.26 0 1.59-1.49 1.77-2.37 1.8-1.95 0-3.13-.67-4.29-1.86-.7-.7-1.46-.7-2.1-.31-1.03.67-.91 1.68-.5 2.26zM119.6 27.43c1.06 0 1.82-.79 1.82-1.86v-3.21l1.49-1.38 5.47 5.81c.37.4.85.61 1.34.61.82 0 1.85-.73 1.85-1.8 0-.46-.18-.95-.58-1.38l-5.32-5.81 4.59-4.25c.49-.43.73-.92.73-1.38 0-.73-.79-1.71-1.73-1.71-.46 0-.94.18-1.34.58l-6.5 6.33V6.68c0-1.07-.76-1.87-1.82-1.87-1.07 0-1.83.8-1.83 1.87v18.89c0 1.07.76 1.86 1.83 1.86zM1.76 10.94c.77 0 1.43.5 1.67 1.2.95-.69 2.08-1.09 3.39-1.09 2.27 0 4.01.76 5.16 2.18 1.15-1.37 2.81-2.18 4.92-2.18 4.26 0 6.66 2.69 6.79 7.36v7.44c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-7.36c-.09-2.76-1.03-3.82-3.21-3.84-2.18 0-3.14 1.27-3.28 3.84v7.36c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-6.71c-.01-.07-.01-.14 0-.22v-.42c-.1-2.76-1.04-3.82-3.21-3.84-2.26 0-3.2 1.35-3.29 4.09v7.1c0 .98-.79 1.77-1.76 1.77C.79 27.59 0 26.8 0 25.82V12.71c0-.98.79-1.77 1.76-1.77zM142.59 0c1.3-.01 2.12 1.42 1.45 2.52l-4.64 7.72c-.47.79-1.5 1.04-2.28.57-.79-.47-1.05-1.5-.57-2.28l3.1-5.16-6.18.07c-.89.01-1.62-.68-1.69-1.55l-.0-.1c-.01-.92.73-1.67 1.65-1.68l9.16-.1z"/>
+          </svg>
+          <h1>Panel Administracyjny</h1>
         </div>
-        '''}
+        <div class="login-body">
+          <h2 class="login-title">Utwórz pierwsze konto admina</h2>
+          
+          {f'<div class="login-success">{success}<br/><a href="/admin/login">Przejdź do logowania</a></div>' if success else ''}
+          {f'<div class="login-error">{error}</div>' if error else ''}
+          
+          {'' if success else f'''
+          <form method="post" action="{url_for('admin_bp.bootstrap', token=provided_token)}">
+            <input type="hidden" name="bootstrap_token" value="{provided_token}" />
+            
+            <div class="login-field">
+              <label for="email">Adres email</label>
+              <input type="email" id="email" name="email" required autofocus placeholder="twoj@email.com" />
+            </div>
+            
+            <div class="login-field">
+              <label for="password">Hasło (min. 8 znaków)</label>
+              <input type="password" id="password" name="password" required minlength="8" placeholder="Wprowadź hasło" />
+            </div>
+            
+            <div class="login-field">
+              <label for="password2">Powtórz hasło</label>
+              <input type="password" id="password2" name="password2" required minlength="8" placeholder="Powtórz hasło" />
+            </div>
+            
+            <button type="submit" class="login-btn">Utwórz konto</button>
+          </form>
+          
+          <div class="login-hint">
+            Po utworzeniu konta usuń ADMIN_BOOTSTRAP_TOKEN z Render ENV.
+          </div>
+          '''}
+        </div>
       </div>
     </div>
     """
@@ -666,56 +840,350 @@ BASE_HTML = """
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ title }}</title>
+  <title>{{ title }} | Medidesk Admin</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
-    a { color: #0b57d0; text-decoration: none; }
+    /* ========== MEDIDESK COLORS ========== */
+    :root {
+      --md-primary: #0065D7;
+      --md-secondary: #00A1D7;
+      --md-accent: #00E09F;
+      --md-gradient: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%);
+      --md-bg: #f8fafc;
+      --md-card-bg: #ffffff;
+      --md-border: #e2e8f0;
+      --md-text: #1e293b;
+      --md-text-muted: #64748b;
+    }
+    
+    /* ========== BASE STYLES ========== */
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      margin: 0; 
+      padding: 0;
+      color: var(--md-text); 
+      background: var(--md-bg);
+      min-height: 100vh;
+    }
+    
+    /* ========== LINKS ========== */
+    a { color: var(--md-primary); text-decoration: none; }
     a:hover { text-decoration: underline; }
+    
+    /* ========== LAYOUT ========== */
     .row { display: flex; gap: 16px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; background: #fff; }
-    .muted { color: #666; font-size: 12px; }
-    .pill { display:inline-block; padding: 2px 10px; border-radius: 999px; background: #f3f4f6; font-size: 12px; }
-    input[type=text], textarea { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    textarea { min-height: 260px; }
-    .btn { display:inline-block; padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: #f8f9fa; color: #111; cursor: pointer; }
-    .btnPrimary { border-color: #0b57d0; background: #0b57d0; color: #fff; }
-    .btnDanger { border-color: #b42318; background: #b42318; color: #fff; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .kv { display: grid; grid-template-columns: 220px 1fr; gap: 8px 14px; font-size: 14px; }
-    .kv > div { padding: 6px 0; border-bottom: 1px dashed #eee; }
-    code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
-    .banner { width: 100%; max-width: 900px; border: 1px solid #eee; border-radius: 10px; overflow: hidden; }
-    img { max-width: 100%; height: auto; display: block; }
-    .warn { background: #fff8e1; border: 1px solid #ffe082; padding: 10px 12px; border-radius: 8px; }
-    .error { background: #fff5f5; border: 1px solid #fecaca; padding: 10px 12px; border-radius: 8px; }
-    .ok { background: #ecfdf3; border: 1px solid #bbf7d0; padding: 10px 12px; border-radius: 8px; }
+    .content-wrapper { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+    
+    /* ========== NAVIGATION ========== */
+    .topbar {
+      background: var(--md-card-bg);
+      border-bottom: 1px solid var(--md-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-gradient {
+      height: 4px;
+      background: var(--md-gradient);
+    }
+    .topbar-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 32px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--md-primary);
+    }
+    .topbar-brand svg { height: 28px; width: auto; }
+    .topbar-nav {
+      display: flex;
+      gap: 4px;
+    }
+    .topbar-nav a {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--md-text-muted);
+      transition: all 0.15s ease;
+    }
+    .topbar-nav a:hover {
+      background: #f1f5f9;
+      color: var(--md-primary);
+      text-decoration: none;
+    }
+    .topbar-nav a.active {
+      background: #e0f2fe;
+      color: var(--md-primary);
+    }
+    .topbar-user {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--md-text-muted);
+    }
+    .topbar-user .btn { padding: 6px 14px; font-size: 13px; }
+    
+    /* ========== PAGE HEADER ========== */
+    .page-header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--md-border);
+    }
+    .page-header h1 {
+      margin: 0 0 4px 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--md-text);
+    }
+    .page-header .subtitle {
+      color: var(--md-text-muted);
+      font-size: 14px;
+    }
+    
+    /* ========== CARDS ========== */
+    .card { 
+      border: 1px solid var(--md-border); 
+      border-radius: 10px; 
+      padding: 20px; 
+      background: var(--md-card-bg);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .card-header {
+      font-weight: 600;
+      font-size: 15px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--md-border);
+      color: var(--md-text);
+    }
+    
+    /* ========== SECTION ========== */
+    .section {
+      margin-bottom: 24px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--md-text-muted);
+      margin-bottom: 12px;
+    }
+    
+    /* ========== TYPOGRAPHY ========== */
+    .muted { color: var(--md-text-muted); font-size: 13px; }
+    code { 
+      background: #f1f5f9; 
+      padding: 2px 8px; 
+      border-radius: 6px; 
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    
+    /* ========== BADGES / PILLS ========== */
+    .pill { 
+      display: inline-block; 
+      padding: 4px 12px; 
+      border-radius: 999px; 
+      font-size: 12px;
+      font-weight: 500;
+      background: #e0f2fe;
+      color: var(--md-primary);
+    }
+    .pill-success { background: #d1fae5; color: #059669; }
+    .pill-warning { background: #fef3c7; color: #d97706; }
+    .pill-error { background: #fee2e2; color: #dc2626; }
+    .pill-neutral { background: #f1f5f9; color: #64748b; }
+    
+    /* ========== BUTTONS ========== */
+    .btn { 
+      display: inline-block; 
+      padding: 10px 18px; 
+      border-radius: 8px; 
+      border: 1px solid var(--md-border); 
+      background: var(--md-card-bg); 
+      color: var(--md-text); 
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:hover { 
+      background: #f8fafc; 
+      border-color: #cbd5e1;
+      text-decoration: none;
+    }
+    .btnPrimary { 
+      border-color: var(--md-primary); 
+      background: var(--md-primary); 
+      color: #fff; 
+    }
+    .btnPrimary:hover { 
+      background: #0052b3;
+      border-color: #0052b3;
+    }
+    .btnDanger { 
+      border-color: #dc2626; 
+      background: #dc2626; 
+      color: #fff; 
+    }
+    .btnDanger:hover {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+    .btnSecondary {
+      border-color: var(--md-secondary);
+      background: var(--md-secondary);
+      color: #fff;
+    }
+    
+    /* ========== FORMS ========== */
+    input[type=text], input[type=email], input[type=password], textarea, select { 
+      width: 100%; 
+      padding: 10px 14px; 
+      border-radius: 8px; 
+      border: 1px solid var(--md-border);
+      font-family: inherit;
+      font-size: 14px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    input[type=text]:focus, input[type=email]:focus, input[type=password]:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--md-primary);
+      box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
+    }
+    textarea { min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .formGrid { display: grid; grid-template-columns: 280px 1fr; gap: 10px 14px; align-items: start; }
-    .formLabel { font-size: 13px; color: #111; padding-top: 10px; }
-    .formHint { font-size: 12px; color: #666; margin-top: 4px; }
-    .swatch { width: 28px; height: 18px; border: 1px solid #ddd; border-radius: 5px; display: inline-block; vertical-align: middle; margin-left: 10px; }
-    details { border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; background: #fafafa; }
-    summary { cursor: pointer; font-weight: 700; }
+    .formLabel { font-size: 13px; color: var(--md-text); padding-top: 10px; font-weight: 500; }
+    .formHint { font-size: 12px; color: var(--md-text-muted); margin-top: 4px; }
+    
+    /* ========== TABLES ========== */
+    table { width: 100%; border-collapse: collapse; }
+    th { 
+      text-align: left; 
+      padding: 12px 16px; 
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--md-text-muted);
+      border-bottom: 2px solid var(--md-border);
+    }
+    td { 
+      padding: 12px 16px; 
+      border-bottom: 1px solid var(--md-border);
+      font-size: 14px;
+    }
+    tr:hover { background: #f8fafc; }
+    
+    /* ========== KEY-VALUE GRID ========== */
+    .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; font-size: 14px; }
+    .kv > div { padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .kv > div:nth-child(odd) { color: var(--md-text-muted); font-weight: 500; }
+    
+    /* ========== ALERTS ========== */
+    .warn { 
+      background: #fef3c7; 
+      border: 1px solid #fcd34d; 
+      padding: 14px 16px; 
+      border-radius: 8px;
+      color: #92400e;
+    }
+    .error { 
+      background: #fee2e2; 
+      border: 1px solid #fca5a5; 
+      padding: 14px 16px; 
+      border-radius: 8px;
+      color: #991b1b;
+    }
+    .ok { 
+      background: #d1fae5; 
+      border: 1px solid #6ee7b7; 
+      padding: 14px 16px; 
+      border-radius: 8px;
+      color: #065f46;
+    }
+    .info {
+      background: #e0f2fe;
+      border: 1px solid #7dd3fc;
+      padding: 14px 16px;
+      border-radius: 8px;
+      color: #075985;
+    }
+    
+    /* ========== MISC ========== */
+    .banner { width: 100%; max-width: 900px; border: 1px solid var(--md-border); border-radius: 10px; overflow: hidden; }
+    img { max-width: 100%; height: auto; display: block; }
+    .swatch { width: 28px; height: 18px; border: 1px solid var(--md-border); border-radius: 5px; display: inline-block; vertical-align: middle; margin-left: 10px; }
+    details { border: 1px solid var(--md-border); border-radius: 8px; padding: 12px 16px; background: #fafafa; }
+    summary { cursor: pointer; font-weight: 600; color: var(--md-text); }
+    hr { border: none; border-top: 1px solid var(--md-border); margin: 20px 0; }
+    
+    /* ========== MEDIDESK LOGO SVG ========== */
+    .md-logo {
+      display: inline-block;
+      height: 24px;
+    }
   </style>
 </head>
 <body>
   {% if show_nav %}
-  <div class="row" style="justify-content: space-between; align-items: baseline;">
-    <div>
-      <h2 style="margin:0;">{{ title }}</h2>
-      <div class="muted">Panel admin (Postgres) – {{ auth_info }}</div>
-    </div>
-    <div>
-      {% if user_email %}
-      <span class="muted">{{ user_email }}</span>
-      <a href="{{ logout_url }}" class="btn" style="margin-left:10px; padding:6px 12px;">Wyloguj</a>
-      {% else %}
-      <span class="muted">token: <code>***</code></span>
-      {% endif %}
+  <!-- Top Navigation Bar -->
+  <div class="topbar">
+    <div class="topbar-gradient"></div>
+    <div class="topbar-content">
+      <div class="topbar-brand">
+        <svg class="md-logo" viewBox="0 0 145 29" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="mdGrad" x1="-4.73%" y1="50%" x2="100%" y2="50%">
+              <stop offset="0%" stop-color="#00E09F"/>
+              <stop offset="49.55%" stop-color="#00A1D7"/>
+              <stop offset="100%" stop-color="#0065D7"/>
+            </linearGradient>
+          </defs>
+          <path fill="url(#mdGrad)" d="M33.85 27.74c2-.0 4.1-.8 5.16-1.68.58-.46.86-.98.86-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.62-3.85h10.03c.97 0 1.8-.67 1.85-1.65 0-4.4-3.59-8.1-7.69-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.48-13.6c1.88 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM56.49 4.81c-1.06 0-1.82.8-1.82 1.87v5.99c-1.07-.98-2.8-1.9-4.9-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.82 1.83 1.07 0 1.83-.8 1.83-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.64 0-4.44-2.2-4.44-5.1 0-2.91 1.8-5.14 4.44-5.14 2.68 0 4.47 2.23 4.47 5.14 0 2.9-1.79 5.1-4.47 5.1zM65.07 12.94c0-1.07-.76-1.86-1.82-1.86-1.07 0-1.83.79-1.83 1.86v12.63c0 1.07.76 1.86 1.83 1.86 1.06 0 1.82-.79 1.82-1.86V12.94zm-1.73-4.44c1.06 0 1.92-.86 1.92-1.93 0-1.07-.86-1.93-1.92-1.93-1.06 0-1.92.86-1.92 1.93 0 1.07.86 1.93 1.92 1.93zM81.33 4.81c-1.07 0-1.83.8-1.83 1.87v5.99c-1.06-.98-2.79-1.9-4.89-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.83 1.83 1.06 0 1.82-.8 1.82-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.65 0-4.44-2.2-4.44-5.1 0-2.91 1.79-5.14 4.44-5.14 2.67 0 4.47 2.23 4.47 5.14 0 2.9-1.8 5.1-4.47 5.1zM93.97 27.74c2.01 0 4.1-.8 5.17-1.68.58-.46.85-.98.85-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.61-3.85h10.03c.97 0 1.79-.67 1.85-1.65 0-4.4-3.59-8.1-7.7-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.49-13.6c1.89 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM102.51 24.9c1.58 2.14 4.17 2.84 6.57 2.84 2.83 0 5.99-1.74 5.99-4.89 0-3.58-2.89-4.43-5.35-5.1-1.79-.49-3.34-.89-3.34-2.3 0-1.53 1.4-1.68 2.31-1.68 1.49 0 2.68.58 3.37 1.47.52.49 1.46.58 2.07.09.85-.7.64-1.65.18-2.26-1.28-1.62-3.68-2.29-5.54-2.29-2.98 0-5.9 1.8-5.9 4.83 0 3.61 3.07 4.44 5.59 5.14 1.8.49 3.31.95 3.31 2.26 0 1.59-1.49 1.77-2.37 1.8-1.95 0-3.13-.67-4.29-1.86-.7-.7-1.46-.7-2.1-.31-1.03.67-.91 1.68-.5 2.26zM119.6 27.43c1.06 0 1.82-.79 1.82-1.86v-3.21l1.49-1.38 5.47 5.81c.37.4.85.61 1.34.61.82 0 1.85-.73 1.85-1.8 0-.46-.18-.95-.58-1.38l-5.32-5.81 4.59-4.25c.49-.43.73-.92.73-1.38 0-.73-.79-1.71-1.73-1.71-.46 0-.94.18-1.34.58l-6.5 6.33V6.68c0-1.07-.76-1.87-1.82-1.87-1.07 0-1.83.8-1.83 1.87v18.89c0 1.07.76 1.86 1.83 1.86zM1.76 10.94c.77 0 1.43.5 1.67 1.2.95-.69 2.08-1.09 3.39-1.09 2.27 0 4.01.76 5.16 2.18 1.15-1.37 2.81-2.18 4.92-2.18 4.26 0 6.66 2.69 6.79 7.36v7.44c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-7.36c-.09-2.76-1.03-3.82-3.21-3.84-2.18 0-3.14 1.27-3.28 3.84v7.36c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-6.71c-.01-.07-.01-.14 0-.22v-.42c-.1-2.76-1.04-3.82-3.21-3.84-2.26 0-3.2 1.35-3.29 4.09v7.1c0 .98-.79 1.77-1.76 1.77C.79 27.59 0 26.8 0 25.82V12.71c0-.98.79-1.77 1.76-1.77zM142.59 0c1.3-.01 2.12 1.42 1.45 2.52l-4.64 7.72c-.47.79-1.5 1.04-2.28.57-.79-.47-1.05-1.5-.57-2.28l3.1-5.16-6.18.07c-.89.01-1.62-.68-1.69-1.55l-.0-.1c-.01-.92.73-1.67 1.65-1.68l9.16-.1z"/>
+        </svg>
+        <span>Admin</span>
+      </div>
+      <nav class="topbar-nav">
+        <a href="{{ events_url }}">Wydarzenia</a>
+        <a href="{{ orders_url }}">Zamówienia</a>
+        <a href="{{ users_url }}">Konta admin</a>
+      </nav>
+      <div class="topbar-user">
+        {% if user_email %}
+        <span>{{ user_email }}</span>
+        <a href="{{ logout_url }}" class="btn">Wyloguj</a>
+        {% else %}
+        <span>token: <code>***</code></span>
+        {% endif %}
+      </div>
     </div>
   </div>
-  <hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />
-  {% endif %}
+  
+  <!-- Main Content -->
+  <div class="content-wrapper">
+    <div class="page-header">
+      <h1>{{ title }}</h1>
+    </div>
+    {{ body|safe }}
+  </div>
+  {% else %}
+  <!-- No nav (login page etc.) -->
   {{ body|safe }}
+  {% endif %}
 </body>
 </html>
 """
@@ -725,7 +1193,9 @@ def _page(title: str, body: str, show_nav: bool = True) -> str:
     """Renderuje stronę panelu admin."""
     user = _get_current_admin_user()
     user_email = user.get("email") if user else None
-    auth_info = f"zalogowany jako {user_email}" if user_email else "zabezpieczony tokenem"
+    
+    # Get token for legacy URL generation
+    token = _get_admin_token_for_legacy()
     
     return render_template_string(
         BASE_HTML,
@@ -733,8 +1203,10 @@ def _page(title: str, body: str, show_nav: bool = True) -> str:
         body=body,
         show_nav=show_nav,
         user_email=user_email,
-        auth_info=auth_info,
         logout_url=url_for("admin_bp.logout") if user else None,
+        events_url=url_for("admin_bp.events_list", token=token) if token else url_for("admin_bp.events_list"),
+        orders_url=url_for("admin_bp.orders_list", token=token) if token else url_for("admin_bp.orders_list"),
+        users_url=url_for("admin_bp.users_list", token=token) if token else url_for("admin_bp.users_list"),
     )
 
 
@@ -748,40 +1220,138 @@ def admin_root():
 def import_page():
     token = _require_admin_token()
     body = f"""
-    <div style="margin-bottom:12px;">
+    <style>
+      .import-card {{
+        max-width: 700px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .import-card-header {{
+        padding: 20px 24px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--md-border);
+      }}
+      .import-card-header h3 {{
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+      }}
+      .import-card-body {{
+        padding: 24px;
+      }}
+      .import-info {{
+        font-size: 14px;
+        color: var(--md-text);
+        line-height: 1.6;
+      }}
+      .import-info ul {{
+        margin: 12px 0;
+        padding-left: 20px;
+      }}
+      .import-info li {{
+        margin-bottom: 6px;
+      }}
+      .import-form {{
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid var(--md-border);
+      }}
+      .file-group {{
+        margin-bottom: 20px;
+      }}
+      .file-group label {{
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--md-text);
+        margin-bottom: 8px;
+      }}
+      .file-group input[type="file"] {{
+        width: 100%;
+        padding: 12px;
+        border: 2px dashed var(--md-border);
+        border-radius: 8px;
+        background: #f8fafc;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }}
+      .file-group input[type="file"]:hover {{
+        border-color: var(--md-primary);
+        background: #f1f5f9;
+      }}
+      .confirm-group {{
+        margin: 24px 0;
+        padding: 16px;
+        background: #fef3c7;
+        border-radius: 8px;
+      }}
+      .confirm-group label {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        color: #92400e;
+        cursor: pointer;
+      }}
+      .confirm-group input[type="checkbox"] {{
+        width: 18px;
+        height: 18px;
+      }}
+    </style>
+
+    <div style="margin-bottom:20px;">
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
     </div>
-    <div class="card">
-      <div style="font-weight:700; margin-bottom:10px;">Import konfiguracji z CSV</div>
-      <div class="muted">
-        Wgraj <code>Wydarzenia.csv</code> i <code>Bilety.csv</code>. Import zrobi:
-        <ul>
-          <li>upsert eventów (po <code>eventId</code>)</li>
-          <li>replace klas biletów dla eventów z pliku</li>
-        </ul>
-        <div class="ok" style="margin:10px 0;">
-          <b>Obsługiwane formaty CSV:</b><br/>
-          • <b>Klasyczny</b> – nagłówki w pierwszym wierszu (np. <code>eventName,eventId,...</code>)<br/>
-          • <b>Pivot</b> – klucze w pierwszej kolumnie (np. <code>key;Rekord 1;Rekord 2</code>)<br/>
-          Format jest wykrywany automatycznie.
-        </div>
-        <div class="warn">
-          <b>Uwaga:</b> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
-          Dzięki temu archiwalne eventy z <code>Bilety.csv</code> nie wywalą importu (FK w bazie).
-        </div>
+    
+    <div class="import-card">
+      <div class="import-card-header">
+        <h3>Import konfiguracji z CSV</h3>
       </div>
-      <form method="post" action="{url_for('admin_bp.import_run')}" enctype="multipart/form-data" style="margin-top:12px;">
-        <input type="hidden" name="token" value="{token}" />
-        <div class="muted">Wydarzenia.csv</div>
-        <input type="file" name="wydarzenia" accept=".csv" />
-        <div style="height:10px;"></div>
-        <div class="muted">Bilety.csv</div>
-        <input type="file" name="bilety" accept=".csv" />
-        <div style="height:14px;"></div>
-        <label class="muted"><input type="checkbox" name="confirm" value="yes" /> Potwierdzam import (nadpisze klasy biletów dla eventów z pliku)</label>
-        <div style="height:14px;"></div>
-        <button class="btn btnPrimary" type="submit">Importuj</button>
-      </form>
+      <div class="import-card-body">
+        <div class="import-info">
+          <p>Wgraj pliki <code>Wydarzenia.csv</code> i <code>Bilety.csv</code>. Import wykona:</p>
+          <ul>
+            <li>Upsert eventów (po <code>eventId</code>)</li>
+            <li>Nadpisanie klas biletów dla eventów z pliku</li>
+          </ul>
+          
+          <div class="info" style="margin:16px 0;">
+            <strong>Obsługiwane formaty CSV:</strong><br/>
+            • <b>Klasyczny</b> – nagłówki w pierwszym wierszu (np. <code>eventName,eventId,...</code>)<br/>
+            • <b>Pivot</b> – klucze w pierwszej kolumnie (np. <code>key;Rekord 1;Rekord 2</code>)<br/>
+            <span class="muted">Format jest wykrywany automatycznie.</span>
+          </div>
+          
+          <div class="warn">
+            <strong>Uwaga:</strong> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
+          </div>
+        </div>
+        
+        <form method="post" action="{url_for('admin_bp.import_run')}" enctype="multipart/form-data" class="import-form">
+          <input type="hidden" name="token" value="{token}" />
+          
+          <div class="file-group">
+            <label>Wydarzenia.csv</label>
+            <input type="file" name="wydarzenia" accept=".csv" />
+          </div>
+          
+          <div class="file-group">
+            <label>Bilety.csv (opcjonalnie)</label>
+            <input type="file" name="bilety" accept=".csv" />
+          </div>
+          
+          <div class="confirm-group">
+            <label>
+              <input type="checkbox" name="confirm" value="yes" />
+              Potwierdzam import (nadpisze klasy biletów dla eventów z pliku)
+            </label>
+          </div>
+          
+          <button class="btn btnPrimary" type="submit" style="width:100%;">Importuj pliki</button>
+        </form>
+      </div>
     </div>
     """
     return _page("Import CSV", body)
@@ -894,40 +1464,147 @@ def events_list():
     token = _require_admin_token()
     events = list_events(limit=500)
 
+    def _status_pill(status: str) -> str:
+        """Return styled pill for event status."""
+        s = (status or "").lower()
+        if s == "active" or s == "aktywne":
+            return '<span class="pill pill-success">Aktywne</span>'
+        elif s == "draft" or s == "szkic":
+            return '<span class="pill pill-warning">Szkic</span>'
+        elif s == "ended" or s == "zakończone":
+            return '<span class="pill pill-neutral">Zakończone</span>'
+        else:
+            return f'<span class="pill">{status or "—"}</span>'
+
     rows = []
     for e in events:
+        status = e.get('status') or ''
+        status_class = "active" if status.lower() in ("active", "aktywne") else "draft" if status.lower() in ("draft", "szkic") else "ended"
+        
         rows.append(
             f"""
-            <div class="card">
-              <div style="display:flex; justify-content: space-between; gap: 10px;">
-                <div>
-                  <div style="font-weight:700;">{e.get('event_name','')}</div>
-                  <div class="muted"><code>{e.get('event_id','')}</code></div>
+            <div class="event-card" data-status="{status_class}">
+              <div class="event-card-accent"></div>
+              <div class="event-card-content">
+                <div class="event-card-header">
+                  <div class="event-card-info">
+                    <div class="event-card-title">{e.get('event_name','')}</div>
+                    <div class="event-card-id"><code>{e.get('event_id','')}</code></div>
+                  </div>
+                  <div class="event-card-status">
+                    {_status_pill(status)}
+                  </div>
                 </div>
-                <div>
-                  <span class="pill">{(e.get('status') or '—')}</span>
+                <div class="event-card-actions">
+                  <a class="btn" href="{url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token)}">Edytuj</a>
+                  <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
                 </div>
-              </div>
-              <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-                <a class="btn" href="{url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token)}">Edytuj</a>
-                <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
               </div>
             </div>
             """
         )
 
     body = f"""
-    <div style="margin-bottom:14px;">
+    <style>
+      .events-toolbar {{
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+      }}
+      .events-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 20px;
+      }}
+      .event-card {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: box-shadow 0.2s ease, transform 0.2s ease;
+      }}
+      .event-card:hover {{
+        box-shadow: 0 4px 12px rgba(0, 101, 215, 0.1);
+        transform: translateY(-2px);
+      }}
+      .event-card-accent {{
+        height: 4px;
+        background: var(--md-border);
+      }}
+      .event-card[data-status="active"] .event-card-accent {{
+        background: linear-gradient(90deg, #00E09F, #00A1D7);
+      }}
+      .event-card[data-status="draft"] .event-card-accent {{
+        background: #fcd34d;
+      }}
+      .event-card[data-status="ended"] .event-card-accent {{
+        background: #94a3b8;
+      }}
+      .event-card-content {{
+        padding: 20px;
+      }}
+      .event-card-header {{
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 16px;
+      }}
+      .event-card-title {{
+        font-weight: 600;
+        font-size: 16px;
+        color: var(--md-text);
+        margin-bottom: 4px;
+      }}
+      .event-card-id {{
+        font-size: 12px;
+        color: var(--md-text-muted);
+      }}
+      .event-card-id code {{
+        font-size: 11px;
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }}
+      .event-card-actions {{
+        display: flex;
+        gap: 8px;
+      }}
+      .event-card-actions .btn {{
+        padding: 8px 14px;
+        font-size: 13px;
+      }}
+      .empty-state {{
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--md-text-muted);
+      }}
+      .empty-state-icon {{
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.5;
+      }}
+    </style>
+    
+    <div class="events-toolbar">
       <a class="btn btnPrimary" href="{url_for('admin_bp.event_new', token=token)}">+ Nowe wydarzenie</a>
-      <a class="btn" style="margin-left:10px;" href="{url_for('admin_bp.import_page', token=token)}">Import CSV</a>
-      <a class="btn" style="margin-left:10px; background:#e3f2fd;" href="{url_for('admin_bp.orders_list', token=token)}">Zamówienia</a>
-      <a class="btn" style="margin-left:10px;" href="{url_for('admin_bp.users_list', token=token)}">Konta admin</a>
+      <a class="btn" href="{url_for('admin_bp.import_page', token=token)}">Import CSV</a>
     </div>
-    <div class="grid">
-      {''.join(rows) if rows else '<div class="muted">Brak wydarzeń</div>'}
+    
+    {f'''
+    <div class="events-grid">
+      {''.join(rows)}
     </div>
+    ''' if rows else '''
+    <div class="empty-state">
+      <div class="empty-state-icon">📅</div>
+      <p>Brak wydarzeń</p>
+      <p class="muted">Dodaj pierwsze wydarzenie klikając "Nowe wydarzenie"</p>
+    </div>
+    '''}
     """
-    return _page("Admin – wydarzenia", body)
+    return _page("Wydarzenia", body)
 
 
 @admin_bp.route("/events/new", methods=["GET"])
@@ -1734,49 +2411,174 @@ def orders_list():
         """)
 
     body = f"""
-    <div style="margin-bottom:12px;">
-      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
-    </div>
+    <style>
+      .orders-filter {{
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        margin-bottom: 24px;
+        padding: 20px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+      }}
+      .orders-filter .filter-group {{
+        flex: 1;
+        min-width: 180px;
+      }}
+      .orders-filter .filter-group label {{
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--md-text-muted);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }}
+      .orders-filter select {{
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid var(--md-border);
+        border-radius: 8px;
+        font-size: 14px;
+        background: #fff;
+        cursor: pointer;
+      }}
+      .orders-filter select:focus {{
+        outline: none;
+        border-color: var(--md-primary);
+        box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
+      }}
+      .orders-filter .filter-actions {{
+        display: flex;
+        gap: 8px;
+      }}
+      .orders-table-wrapper {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .orders-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }}
+      .orders-table th {{
+        text-align: left;
+        padding: 14px 16px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--md-text-muted);
+        background: #f8fafc;
+        border-bottom: 2px solid var(--md-border);
+      }}
+      .orders-table th.text-right {{ text-align: right; }}
+      .orders-table td {{
+        padding: 14px 16px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+      }}
+      .orders-table td.text-right {{ text-align: right; }}
+      .orders-table tbody tr {{
+        transition: background 0.15s ease;
+      }}
+      .orders-table tbody tr:hover {{
+        background: #f8fafc;
+      }}
+      .orders-table tbody tr:last-child td {{
+        border-bottom: none;
+      }}
+      .orders-table .order-link {{
+        color: var(--md-primary);
+        font-weight: 500;
+      }}
+      .orders-table .order-link:hover {{
+        text-decoration: underline;
+      }}
+      .orders-table code {{
+        font-size: 12px;
+        background: #f1f5f9;
+        padding: 3px 8px;
+        border-radius: 4px;
+      }}
+      .orders-empty {{
+        padding: 60px 20px;
+        text-align: center;
+        color: var(--md-text-muted);
+      }}
+      .orders-stats {{
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+      }}
+      .stat-card {{
+        flex: 1;
+        padding: 16px 20px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 10px;
+      }}
+      .stat-card .stat-value {{
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--md-primary);
+      }}
+      .stat-card .stat-label {{
+        font-size: 12px;
+        color: var(--md-text-muted);
+        margin-top: 4px;
+      }}
+    </style>
 
-    <div class="card" style="margin-bottom:16px;">
-      <form method="get" action="{url_for('admin_bp.orders_list')}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+    <div class="orders-filter">
+      <form method="get" action="{url_for('admin_bp.orders_list')}" style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; width:100%;">
         <input type="hidden" name="token" value="{token}" />
-        <div>
-          <div class="muted">Status</div>
-          <select name="status" style="padding:8px; border-radius:6px; border:1px solid #ccc;">
+        <div class="filter-group">
+          <label for="status-filter">Status</label>
+          <select name="status" id="status-filter">
             <option value="">— wszystkie —</option>
             {status_options}
           </select>
         </div>
-        <div>
-          <div class="muted">Wydarzenie</div>
-          <select name="event_id" style="padding:8px; border-radius:6px; border:1px solid #ccc;">
+        <div class="filter-group">
+          <label for="event-filter">Wydarzenie</label>
+          <select name="event_id" id="event-filter">
             <option value="">— wszystkie —</option>
             {event_options}
           </select>
         </div>
-        <button class="btn" type="submit">Filtruj</button>
-        <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">Wyczyść</a>
+        <div class="filter-actions">
+          <button class="btn btnPrimary" type="submit">Filtruj</button>
+          <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">Wyczyść</a>
+        </div>
       </form>
     </div>
 
-    <div class="card">
-      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+    <div class="orders-table-wrapper">
+      <table class="orders-table">
         <thead>
-          <tr style="border-bottom:2px solid #eee;">
-            <th style="text-align:left; padding:8px;">Wydarzenie</th>
-            <th style="text-align:left; padding:8px;">Forma płatności</th>
-            <th style="text-align:left; padding:8px;">Nr proformy</th>
-            <th style="text-align:left; padding:8px;">Id zamówienia</th>
-            <th style="text-align:right; padding:8px;">Ilość osób</th>
-            <th style="text-align:right; padding:8px;">Wartość netto</th>
-            <th style="text-align:left; padding:8px;">Status</th>
+          <tr>
+            <th>Wydarzenie</th>
+            <th>Forma płatności</th>
+            <th>Nr proformy</th>
+            <th>Id zamówienia</th>
+            <th class="text-right">Ilość osób</th>
+            <th class="text-right">Wartość netto</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="7" class="muted" style="padding:20px; text-align:center;">Brak zamówień</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="7" class="orders-empty">Brak zamówień spełniających kryteria</td></tr>'}
         </tbody>
       </table>
+    </div>
+    
+    <div class="muted" style="margin-top:12px; font-size:12px;">
+      Wyświetlono {len(rows)} zamówień
     </div>
     """
     return _page("Zamówienia", body)
@@ -1824,54 +2626,243 @@ def order_detail(order_id: str):
     if status == "pending_payment":
         mark_paid_form = f"""
         <div style="margin-top:16px; padding-top:16px; border-top:1px solid #eee;">
-          <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" onsubmit="return confirm('Oznaczyć zamówienie jako opłacone? Zostanie wygenerowana faktura VAT.');">
-            <input type="hidden" name="token" value="{token}" />
-            <button class="btn btnPrimary" type="submit">Oznacz jako opłacone</button>
-            <span class="muted" style="margin-left:10px;">Po kliknięciu: status → paid, wygenerowany mail task do faktury</span>
-          </form>
+          <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">Oznacz jako opłacone</button>
+          <span class="muted" style="margin-left:10px;">Po kliknięciu: status → paid, wygenerowana faktura VAT</span>
+        </div>
+        
+        <!-- Modal potwierdzenia -->
+        <div id="markPaidModal" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+          <div style="background:#fff; border-radius:12px; padding:28px 36px; max-width:440px; box-shadow:0 8px 30px rgba(0,0,0,0.2); text-align:center;">
+            <div style="font-size:20px; font-weight:700; margin-bottom:16px; color:#111;">Potwierdzenie płatności</div>
+            <div style="color:#444; margin-bottom:28px; line-height:1.6;">
+              Oznaczyć zamówienie jako <strong>opłacone</strong>?<br/>
+              <span style="color:#666; font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:center;">
+              <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
+                <input type="hidden" name="token" value="{token}" />
+                <button class="btn btnPrimary" type="submit" style="min-width:110px; padding:12px 20px;">Tak, oznacz</button>
+              </form>
+              <button class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:110px; padding:12px 20px;">Anuluj</button>
+            </div>
+          </div>
         </div>
         """
 
+    # Status pill color based on status
+    status_class = "pill-success" if status == "paid" else "pill-warning" if status == "pending_payment" else "pill" if status == "received" else "pill-error"
+
     body = f"""
-    <div style="margin-bottom:12px;">
+    <style>
+      .order-breadcrumb {{
+        margin-bottom: 20px;
+      }}
+      .order-header {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 24px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        margin-bottom: 24px;
+      }}
+      .order-header-info h2 {{
+        margin: 0 0 4px 0;
+        font-size: 20px;
+        font-weight: 600;
+      }}
+      .order-header-info code {{
+        font-size: 13px;
+      }}
+      .order-sections {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }}
+      @media (max-width: 900px) {{
+        .order-sections {{ grid-template-columns: 1fr; }}
+      }}
+      .order-section {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .order-section-header {{
+        padding: 16px 20px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--md-border);
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--md-text);
+      }}
+      .order-section-body {{
+        padding: 20px;
+      }}
+      .order-section .kv {{
+        grid-template-columns: 140px 1fr;
+      }}
+      .order-section .kv > div {{
+        border-bottom: 1px solid #f8fafc;
+        padding: 10px 0;
+      }}
+      .order-section .kv > div:nth-child(odd) {{
+        color: var(--md-text-muted);
+        font-weight: 500;
+        font-size: 13px;
+      }}
+      .order-amount {{
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--md-primary);
+      }}
+      .docs-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        margin-top: 16px;
+      }}
+      .docs-table th {{
+        text-align: left;
+        padding: 10px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--md-text-muted);
+        background: #f8fafc;
+        border-bottom: 1px solid var(--md-border);
+      }}
+      .docs-table td {{
+        padding: 10px 12px;
+        border-bottom: 1px solid #f1f5f9;
+      }}
+      .action-section {{
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid var(--md-border);
+      }}
+      .mark-paid-modal {{
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+      }}
+      .mark-paid-modal-content {{
+        background: #fff;
+        border-radius: 16px;
+        padding: 32px 40px;
+        max-width: 440px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        text-align: center;
+      }}
+      .mark-paid-modal h3 {{
+        margin: 0 0 16px 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--md-text);
+      }}
+      .mark-paid-modal p {{
+        color: #64748b;
+        margin-bottom: 28px;
+        line-height: 1.6;
+      }}
+      .mark-paid-modal .modal-actions {{
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+      }}
+    </style>
+
+    <div class="order-breadcrumb">
       <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
-      {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
+      {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
     </div>
 
-    <div class="card" style="margin-bottom:16px;">
-      <div style="display:flex; justify-content:space-between; align-items:start;">
-        <div>
-          <div style="font-weight:700;">Zamówienie</div>
-          <div class="muted"><code>{order_id}</code></div>
-        </div>
-        <div>
-          <span class="pill" style="{style}">{label}</span>
-        </div>
+    <div class="order-header">
+      <div class="order-header-info">
+        <h2>Zamówienie</h2>
+        <code>{order_id}</code>
+      </div>
+      <div>
+        <span class="pill {status_class}" style="{style}">{label}</span>
       </div>
     </div>
 
-    <div class="grid">
-      <div class="card">
-        <div style="font-weight:700; margin-bottom:10px;">Dane nabywcy</div>
-        <div class="kv">
-          <div class="muted">Email</div><div>{order.get('purchaser_email', '') or '—'}</div>
-          <div class="muted">Imię</div><div>{order.get('purchaser_first_name', '') or '—'}</div>
-          <div class="muted">Nazwisko</div><div>{order.get('purchaser_last_name', '') or '—'}</div>
-          <div class="muted">Telefon</div><div>{order.get('purchaser_phone', '') or '—'}</div>
-          <div class="muted">NIP</div><div>{order.get('purchaser_nip', '') or '—'}</div>
+    <div class="order-sections">
+      <div class="order-section">
+        <div class="order-section-header">Dane nabywcy</div>
+        <div class="order-section-body">
+          <div class="kv">
+            <div>Email</div><div>{order.get('purchaser_email', '') or '—'}</div>
+            <div>Imię</div><div>{order.get('purchaser_first_name', '') or '—'}</div>
+            <div>Nazwisko</div><div>{order.get('purchaser_last_name', '') or '—'}</div>
+            <div>Telefon</div><div>{order.get('purchaser_phone', '') or '—'}</div>
+            <div>NIP</div><div>{order.get('purchaser_nip', '') or '—'}</div>
+          </div>
         </div>
       </div>
 
-      <div class="card">
-        <div style="font-weight:700; margin-bottom:10px;">Płatność</div>
-        <div class="kv">
-          <div class="muted">Kwota</div><div><b>{total:.2f} {currency}</b></div>
-          <div class="muted">Opcja płatności</div><div>{order.get('payment_option_name', '') or '—'}</div>
-          <div class="muted">Kod promocyjny</div><div>{order.get('promo_code', '') or '—'}</div>
-          <div class="muted">Wydarzenie</div><div>{event_name or '—'} <code class="muted">{event_id}</code></div>
+      <div class="order-section">
+        <div class="order-section-header">Płatność</div>
+        <div class="order-section-body">
+          <div class="kv">
+            <div>Kwota</div><div class="order-amount">{total:.2f} {currency}</div>
+            <div>Opcja</div><div>{order.get('payment_option_name', '') or '—'}</div>
+            <div>Kod promocyjny</div><div>{order.get('promo_code', '') or '—'}</div>
+            <div>Wydarzenie</div><div>{event_name or '—'}</div>
+          </div>
+          
+          {f'''
+          <div style="margin-top:20px;">
+            <div class="section-title">Dokumenty wFirma</div>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Typ</th><th>Numer</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                {"".join(
+                    f"<tr><td>{d.get('document_type', '')}</td><td><code>{d.get('wfirma_number', '')}</code></td><td>{d.get('status', '')}</td></tr>"
+                    for d in wfirma_docs
+                )}
+              </tbody>
+            </table>
+          </div>
+          ''' if wfirma_docs else ''}
+          
+          {f'''
+          <div class="action-section">
+            <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">
+              Oznacz jako opłacone
+            </button>
+            <span class="muted" style="margin-left:12px; font-size:12px;">Generuje fakturę VAT i wysyła powiadomienia</span>
+          </div>
+          
+          <div id="markPaidModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
+            <div class="mark-paid-modal-content">
+              <h3>Potwierdzenie płatności</h3>
+              <p>
+                Oznaczyć zamówienie jako <strong>opłacone</strong>?<br/>
+                <span style="font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
+              </p>
+              <div class="modal-actions">
+                <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
+                  <input type="hidden" name="token" value="{token}" />
+                  <button class="btn btnPrimary" type="submit" style="min-width:120px;">Tak, oznacz</button>
+                </form>
+                <button class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:120px;">Anuluj</button>
+              </div>
+            </div>
+          </div>
+          ''' if status == "pending_payment" else ''}
         </div>
-        {docs_html}
-        {mark_paid_form}
       </div>
     </div>
     """
@@ -2161,56 +3152,130 @@ def users_list():
     
     rows = []
     for u in users:
-        status_badge = '<span class="pill" style="background:#ecfdf3;">Aktywne</span>' if u.get("is_active") else '<span class="pill" style="background:#fff5f5;">Nieaktywne</span>'
+        status_badge = '<span class="pill pill-success">Aktywne</span>' if u.get("is_active") else '<span class="pill pill-error">Nieaktywne</span>'
         locked = ""
         if u.get("locked_until"):
             import datetime
             locked_until = u["locked_until"]
             now = datetime.datetime.now(datetime.timezone.utc)
             if isinstance(locked_until, datetime.datetime) and locked_until > now:
-                locked = f'<span class="pill" style="background:#fff8e1;">Zablokowany do {locked_until.strftime("%H:%M")}</span>'
+                locked = f'<span class="pill pill-warning">Zablokowany do {locked_until.strftime("%H:%M")}</span>'
         
         last_login = str(u.get("last_login_at", ""))[:16] if u.get("last_login_at") else "—"
         
+        # Generate initials for avatar
+        email = u.get('email', '')
+        initials = email[0].upper() if email else "?"
+        
         rows.append(f"""
             <tr>
-              <td>{u.get('email', '')}</td>
-              <td>{status_badge} {locked}</td>
-              <td class="muted">{last_login}</td>
-              <td class="muted">{str(u.get('created_at', ''))[:16]}</td>
               <td>
-                <a href="{url_for('admin_bp.user_reset_password', user_id=u['id'], token=token)}" class="btn" style="padding:4px 8px; font-size:12px;">Reset hasła</a>
-                {f'<a href="{url_for("admin_bp.user_disable", user_id=u["id"], token=token)}" class="btn" style="padding:4px 8px; font-size:12px;">Dezaktywuj</a>' if u.get('is_active') else f'<a href="{url_for("admin_bp.user_enable", user_id=u["id"], token=token)}" class="btn" style="padding:4px 8px; font-size:12px;">Aktywuj</a>'}
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg, #00E09F, #00A1D7); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:600; font-size:14px;">{initials}</div>
+                  <span>{email}</span>
+                </div>
+              </td>
+              <td><div style="display:flex; gap:6px; flex-wrap:wrap;">{status_badge} {locked}</div></td>
+              <td><span class="muted">{last_login}</span></td>
+              <td><span class="muted">{str(u.get('created_at', ''))[:16]}</span></td>
+              <td>
+                <div style="display:flex; gap:6px;">
+                  <a href="{url_for('admin_bp.user_reset_password', user_id=u['id'], token=token)}" class="btn" style="padding:6px 12px; font-size:12px;">Reset hasła</a>
+                  {f'<a href="{url_for("admin_bp.user_disable", user_id=u["id"], token=token)}" class="btn" style="padding:6px 12px; font-size:12px;">Dezaktywuj</a>' if u.get('is_active') else f'<a href="{url_for("admin_bp.user_enable", user_id=u["id"], token=token)}" class="btn btnPrimary" style="padding:6px 12px; font-size:12px;">Aktywuj</a>'}
+                </div>
               </td>
             </tr>
         """)
     
     body = f"""
-    <div style="margin-bottom:12px;">
-      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
-      <a class="btn btnPrimary" href="{url_for('admin_bp.user_new', token=token)}" style="margin-left:10px;">+ Dodaj admina</a>
+    <style>
+      .users-toolbar {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }}
+      .users-table-wrapper {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .users-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }}
+      .users-table th {{
+        text-align: left;
+        padding: 14px 16px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--md-text-muted);
+        background: #f8fafc;
+        border-bottom: 2px solid var(--md-border);
+      }}
+      .users-table td {{
+        padding: 14px 16px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+      }}
+      .users-table tbody tr {{
+        transition: background 0.15s ease;
+      }}
+      .users-table tbody tr:hover {{
+        background: #f8fafc;
+      }}
+      .users-table tbody tr:last-child td {{
+        border-bottom: none;
+      }}
+      .audit-link {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 20px;
+        padding: 12px 16px;
+        background: #f8fafc;
+        border: 1px solid var(--md-border);
+        border-radius: 8px;
+        color: var(--md-text-muted);
+        font-size: 13px;
+        transition: all 0.15s ease;
+      }}
+      .audit-link:hover {{
+        background: #f1f5f9;
+        color: var(--md-primary);
+        text-decoration: none;
+      }}
+    </style>
+
+    <div class="users-toolbar">
+      <div class="muted">Zarządzanie kontami administratorów</div>
+      <a class="btn btnPrimary" href="{url_for('admin_bp.user_new', token=token)}">+ Dodaj admina</a>
     </div>
 
-    <div class="card">
-      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+    <div class="users-table-wrapper">
+      <table class="users-table">
         <thead>
-          <tr style="border-bottom:2px solid #eee;">
-            <th style="text-align:left; padding:8px;">Email</th>
-            <th style="text-align:left; padding:8px;">Status</th>
-            <th style="text-align:left; padding:8px;">Ostatnie logowanie</th>
-            <th style="text-align:left; padding:8px;">Utworzono</th>
-            <th style="text-align:left; padding:8px;">Akcje</th>
+          <tr>
+            <th>Użytkownik</th>
+            <th>Status</th>
+            <th>Ostatnie logowanie</th>
+            <th>Utworzono</th>
+            <th>Akcje</th>
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="5" class="muted" style="padding:20px; text-align:center;">Brak kont</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="5" style="padding:40px; text-align:center; color:var(--md-text-muted);">Brak kont administratorów</td></tr>'}
         </tbody>
       </table>
     </div>
     
-    <div style="margin-top:20px;">
-      <a href="{url_for('admin_bp.audit_log', token=token)}" class="muted">Zobacz log audytu →</a>
-    </div>
+    <a href="{url_for('admin_bp.audit_log', token=token)}" class="audit-link">
+      <span>📋</span> Zobacz log audytu
+    </a>
     """
     return _page("Konta admin", body)
 
@@ -2260,30 +3325,84 @@ def user_new():
     csrf_token = _generate_csrf_token()
     
     body = f"""
-    <div style="margin-bottom:12px;">
+    <style>
+      .form-card {{
+        max-width: 480px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .form-card-header {{
+        padding: 20px 24px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--md-border);
+      }}
+      .form-card-header h3 {{
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+      }}
+      .form-card-body {{
+        padding: 24px;
+      }}
+      .form-group {{
+        margin-bottom: 20px;
+      }}
+      .form-group label {{
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--md-text-muted);
+        margin-bottom: 6px;
+      }}
+      .form-group input {{
+        width: 100%;
+        padding: 12px 14px;
+        border: 1px solid var(--md-border);
+        border-radius: 8px;
+        font-size: 14px;
+      }}
+      .form-group input:focus {{
+        outline: none;
+        border-color: var(--md-primary);
+        box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
+      }}
+    </style>
+
+    <div style="margin-bottom:20px;">
       <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
     </div>
     
-    <div class="card" style="max-width:500px;">
-      <h3 style="margin-top:0;">Dodaj nowe konto admina</h3>
-      
-      {f'<div class="ok" style="margin-bottom:16px;">{success}</div>' if success else ''}
-      {f'<div class="error" style="margin-bottom:16px;">{error}</div>' if error else ''}
-      
-      <form method="post" action="{url_for('admin_bp.user_new', token=token)}">
-        <input type="hidden" name="csrf_token" value="{csrf_token}" />
+    <div class="form-card">
+      <div class="form-card-header">
+        <h3>Dodaj nowe konto admina</h3>
+      </div>
+      <div class="form-card-body">
+        {f'<div class="ok" style="margin-bottom:20px;">{success}</div>' if success else ''}
+        {f'<div class="error" style="margin-bottom:20px;">{error}</div>' if error else ''}
         
-        <div class="muted">Email</div>
-        <input type="email" name="email" required style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
-        
-        <div class="muted">Hasło (min. 8 znaków)</div>
-        <input type="password" name="password" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
-        
-        <div class="muted">Powtórz hasło</div>
-        <input type="password" name="password2" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
-        
-        <button class="btn btnPrimary" type="submit">Utwórz konto</button>
-      </form>
+        <form method="post" action="{url_for('admin_bp.user_new', token=token)}">
+          <input type="hidden" name="csrf_token" value="{csrf_token}" />
+          
+          <div class="form-group">
+            <label for="email">Adres email</label>
+            <input type="email" id="email" name="email" required placeholder="admin@example.com" />
+          </div>
+          
+          <div class="form-group">
+            <label for="password">Hasło (min. 8 znaków)</label>
+            <input type="password" id="password" name="password" required minlength="8" placeholder="Wprowadź hasło" />
+          </div>
+          
+          <div class="form-group">
+            <label for="password2">Powtórz hasło</label>
+            <input type="password" id="password2" name="password2" required minlength="8" placeholder="Powtórz hasło" />
+          </div>
+          
+          <button class="btn btnPrimary" type="submit" style="width:100%;">Utwórz konto</button>
+        </form>
+      </div>
     </div>
     """
     return _page("Nowe konto admina", body)
@@ -2330,28 +3449,83 @@ def user_reset_password(user_id: int):
     csrf_token = _generate_csrf_token()
     
     body = f"""
-    <div style="margin-bottom:12px;">
+    <style>
+      .form-card {{
+        max-width: 480px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .form-card-header {{
+        padding: 20px 24px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--md-border);
+      }}
+      .form-card-header h3 {{
+        margin: 0 0 4px 0;
+        font-size: 18px;
+        font-weight: 600;
+      }}
+      .form-card-header .muted {{
+        margin: 0;
+      }}
+      .form-card-body {{
+        padding: 24px;
+      }}
+      .form-group {{
+        margin-bottom: 20px;
+      }}
+      .form-group label {{
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--md-text-muted);
+        margin-bottom: 6px;
+      }}
+      .form-group input {{
+        width: 100%;
+        padding: 12px 14px;
+        border: 1px solid var(--md-border);
+        border-radius: 8px;
+        font-size: 14px;
+      }}
+      .form-group input:focus {{
+        outline: none;
+        border-color: var(--md-primary);
+        box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
+      }}
+    </style>
+
+    <div style="margin-bottom:20px;">
       <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
     </div>
     
-    <div class="card" style="max-width:500px;">
-      <h3 style="margin-top:0;">Reset hasła</h3>
-      <div class="muted" style="margin-bottom:16px;">Konto: <b>{target_user['email']}</b></div>
-      
-      {f'<div class="ok" style="margin-bottom:16px;">{success}</div>' if success else ''}
-      {f'<div class="error" style="margin-bottom:16px;">{error}</div>' if error else ''}
-      
-      <form method="post" action="{url_for('admin_bp.user_reset_password', user_id=user_id, token=token)}">
-        <input type="hidden" name="csrf_token" value="{csrf_token}" />
+    <div class="form-card">
+      <div class="form-card-header">
+        <h3>Reset hasła</h3>
+        <p class="muted">Konto: <b>{target_user['email']}</b></p>
+      </div>
+      <div class="form-card-body">
+        {f'<div class="ok" style="margin-bottom:20px;">{success}</div>' if success else ''}
+        {f'<div class="error" style="margin-bottom:20px;">{error}</div>' if error else ''}
         
-        <div class="muted">Nowe hasło (min. 8 znaków)</div>
-        <input type="password" name="password" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
-        
-        <div class="muted">Powtórz nowe hasło</div>
-        <input type="password" name="password2" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
-        
-        <button class="btn btnPrimary" type="submit">Zmień hasło</button>
-      </form>
+        <form method="post" action="{url_for('admin_bp.user_reset_password', user_id=user_id, token=token)}">
+          <input type="hidden" name="csrf_token" value="{csrf_token}" />
+          
+          <div class="form-group">
+            <label for="password">Nowe hasło (min. 8 znaków)</label>
+            <input type="password" id="password" name="password" required minlength="8" placeholder="Wprowadź nowe hasło" />
+          </div>
+          
+          <div class="form-group">
+            <label for="password2">Powtórz nowe hasło</label>
+            <input type="password" id="password2" name="password2" required minlength="8" placeholder="Powtórz nowe hasło" />
+          </div>
+          
+          <button class="btn btnPrimary" type="submit" style="width:100%;">Zmień hasło</button>
+        </form>
+      </div>
     </div>
     """
     return _page("Reset hasła", body)
@@ -2476,53 +3650,98 @@ def audit_log():
     logs = list_admin_audit_log(limit=100)
     
     ACTION_LABELS = {
-        "login_success": ("Logowanie", "ok"),
-        "login_failed_wrong_password": ("Błędne hasło", "error"),
-        "login_failed_unknown_user": ("Nieznany email", "error"),
-        "login_failed_inactive": ("Konto nieaktywne", "warn"),
-        "login_failed_locked": ("Konto zablokowane", "warn"),
-        "logout": ("Wylogowanie", ""),
-        "create_user": ("Utworzenie konta", "ok"),
-        "disable_user": ("Dezaktywacja", "warn"),
-        "enable_user": ("Aktywacja", "ok"),
-        "reset_password": ("Reset hasła", "warn"),
-        "bootstrap_create_admin": ("Bootstrap", "ok"),
+        "login_success": ("Logowanie", "pill-success"),
+        "login_failed_wrong_password": ("Błędne hasło", "pill-error"),
+        "login_failed_unknown_user": ("Nieznany email", "pill-error"),
+        "login_failed_inactive": ("Konto nieaktywne", "pill-warning"),
+        "login_failed_locked": ("Konto zablokowane", "pill-warning"),
+        "logout": ("Wylogowanie", "pill-neutral"),
+        "create_user": ("Utworzenie konta", "pill-success"),
+        "disable_user": ("Dezaktywacja", "pill-warning"),
+        "enable_user": ("Aktywacja", "pill-success"),
+        "reset_password": ("Reset hasła", "pill-warning"),
+        "bootstrap_create_admin": ("Bootstrap", "pill-success"),
     }
     
     rows = []
     for log in logs:
         action = log.get("action", "")
-        label, cls = ACTION_LABELS.get(action, (action, ""))
-        style = {"ok": "background:#ecfdf3;", "error": "background:#fff5f5;", "warn": "background:#fff8e1;"}.get(cls, "")
+        label, pill_class = ACTION_LABELS.get(action, (action, "pill"))
         
         rows.append(f"""
             <tr>
-              <td class="muted">{str(log.get('created_at', ''))[:19]}</td>
-              <td><span class="pill" style="{style}">{label}</span></td>
+              <td><span class="muted">{str(log.get('created_at', ''))[:19]}</span></td>
+              <td><span class="pill {pill_class}">{label}</span></td>
               <td>{log.get('admin_email', '') or '—'}</td>
               <td>{log.get('target_email', '') or '—'}</td>
-              <td class="muted">{log.get('ip', '') or '—'}</td>
+              <td><span class="muted">{log.get('ip', '') or '—'}</span></td>
             </tr>
         """)
     
     body = f"""
-    <div style="margin-bottom:12px;">
+    <style>
+      .audit-table-wrapper {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .audit-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }}
+      .audit-table th {{
+        text-align: left;
+        padding: 14px 16px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--md-text-muted);
+        background: #f8fafc;
+        border-bottom: 2px solid var(--md-border);
+      }}
+      .audit-table td {{
+        padding: 12px 16px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+      }}
+      .audit-table tbody tr {{
+        transition: background 0.15s ease;
+      }}
+      .audit-table tbody tr:hover {{
+        background: #f8fafc;
+      }}
+      .audit-table tbody tr:last-child td {{
+        border-bottom: none;
+      }}
+      .audit-header {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }}
+    </style>
+
+    <div class="audit-header">
       <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
+      <span class="muted">Ostatnie 100 wpisów</span>
     </div>
 
-    <div class="card">
-      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+    <div class="audit-table-wrapper">
+      <table class="audit-table">
         <thead>
-          <tr style="border-bottom:2px solid #eee;">
-            <th style="text-align:left; padding:8px;">Data</th>
-            <th style="text-align:left; padding:8px;">Akcja</th>
-            <th style="text-align:left; padding:8px;">Wykonał</th>
-            <th style="text-align:left; padding:8px;">Dotyczy</th>
-            <th style="text-align:left; padding:8px;">IP</th>
+          <tr>
+            <th>Data i czas</th>
+            <th>Akcja</th>
+            <th>Wykonał</th>
+            <th>Dotyczy</th>
+            <th>Adres IP</th>
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="5" class="muted" style="padding:20px; text-align:center;">Brak wpisów</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="5" style="padding:40px; text-align:center; color:var(--md-text-muted);">Brak wpisów w logu audytu</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -2536,9 +3755,46 @@ def audit_log():
 @admin_bp.errorhandler(500)
 def _err(e):
     token = (request.args.get("token") or "").strip()
-    back = ""
-    if token:
-        back = f'<p><a class="btn" href="{url_for("admin_bp.events_list", token=token)}">Lista wydarzeń</a></p>'
-    body = f'<div class="error"><b>{getattr(e, "code", 500)}</b> {getattr(e, "description", str(e))}</div>{back}'
-    return _page("Błąd", body), getattr(e, "code", 500)
+    error_code = getattr(e, "code", 500)
+    error_desc = getattr(e, "description", str(e))
+    
+    body = f"""
+    <style>
+      .error-page {{
+        max-width: 500px;
+        margin: 40px auto;
+        text-align: center;
+      }}
+      .error-code {{
+        font-size: 72px;
+        font-weight: 700;
+        color: var(--md-primary);
+        margin-bottom: 16px;
+        line-height: 1;
+      }}
+      .error-message {{
+        font-size: 18px;
+        color: var(--md-text);
+        margin-bottom: 24px;
+      }}
+      .error-details {{
+        background: #fee2e2;
+        color: #991b1b;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 24px;
+        font-size: 14px;
+      }}
+    </style>
+    
+    <div class="error-page">
+      <div class="error-code">{error_code}</div>
+      <div class="error-message">Wystąpił błąd</div>
+      <div class="error-details">{error_desc}</div>
+      <a class="btn btnPrimary" href="{url_for('admin_bp.events_list', token=token) if token else url_for('admin_bp.login')}">
+        {'Wróć do wydarzeń' if token else 'Zaloguj się'}
+      </a>
+    </div>
+    """
+    return _page("Błąd", body), error_code
 
