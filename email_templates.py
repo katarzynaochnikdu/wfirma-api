@@ -1097,8 +1097,12 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                       </tr>
                       {tickets_rows}
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #FFF7ED; color: #9A3412;">Status</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #FFF7ED; color: #9A3412; text-align: right;">OCZEKUJE NA PŁATNOŚĆ</td>
+                        <td colspan="2" style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; color: #495057;">Status</td>
+                        <td style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; text-align: right;">
+                          <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; background-color: #FFF3E0; color: #B45309; font-weight: 600;">
+                            Oczekuje na płatność
+                          </span>
+                        </td>
                       </tr>
                     </table>
                   </td>
