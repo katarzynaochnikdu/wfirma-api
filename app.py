@@ -2374,16 +2374,33 @@ def backstage_attendee():
             get_participants_for_order,
         )
         
-        # WALIDACJA: Sprawdź czy zamówienie istnieje
-        order = get_order(order_id)
+        # WALIDACJA: Sprawdź czy zamówienie istnieje (z retry dla race condition)
+        # Zoho wysyła webhooki równolegle i czasem attendee przychodzi przed order
+        import time as time_module
+        order = None
+        max_retries = 3
+        retry_delay_seconds = 1.5  # 1.5s między próbami
+        
+        for attempt in range(max_retries):
+            order = get_order(order_id)
+            if order:
+                if attempt > 0:
+                    print(f"[ATTENDEE WEBHOOK] Zamówienie {order_id} znalezione po {attempt + 1} próbach (race condition resolved)")
+                break
+            
+            if attempt < max_retries - 1:
+                print(f"[ATTENDEE WEBHOOK] Zamówienie {order_id} nie istnieje (próba {attempt + 1}/{max_retries}), czekam {retry_delay_seconds}s...")
+                time_module.sleep(retry_delay_seconds)
+        
         if not order:
-            print(f"[ATTENDEE WEBHOOK] BŁĄD: Zamówienie {order_id} nie istnieje w bazie!")
+            print(f"[ATTENDEE WEBHOOK] BŁĄD: Zamówienie {order_id} nie istnieje w bazie po {max_retries} próbach!")
             return jsonify({
                 'status': 'error',
                 'error': f'Zamówienie {order_id} nie istnieje',
                 'order_id': order_id,
                 'ticket_id': ticket_id,
-                'hint': 'Upewnij się, że webhook zamówienia został przetworzony przed webhookiem uczestnika'
+                'retries': max_retries,
+                'hint': 'Webhook order nie dotarł w czasie oczekiwania. Sprawdź czy Zoho wysyła webhooki poprawnie.'
             }), 404
         
         # WALIDACJA: Sprawdź czy bilet należy do tego zamówienia
