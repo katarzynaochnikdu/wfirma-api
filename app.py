@@ -395,19 +395,27 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
     refresh_expires_at = None
     
     if not final_refresh_token:
-        # Priorytet: Postgres > ENV
-        try:
-            from pg_storage import get_wfirma_token
-            pg_token = get_wfirma_token(company_name)
-            if pg_token and pg_token.get('refresh_token'):
-                final_refresh_token = pg_token['refresh_token']
-                refresh_expires_at = pg_token.get('refresh_token_expires_at')
-                print(f"[LOG] [{company_name.upper()}] Użyto refresh_token z Postgres")
-        except Exception as e:
-            print(f"[LOG] [{company_name.upper()}] Błąd odczytu z Postgres: {e}")
-        
-        if not final_refresh_token:
-            final_refresh_token = config['refresh_token']
+        # Priorytet: ENV > Postgres (ENV jest źródłem ręcznych aktualizacji po redeployu)
+        env_refresh = (config.get('refresh_token') or "").strip()
+        env_refresh_expires = (os.environ.get(f"{prefix}REFRESH_TOKEN_EXPIRES") or "").strip()
+        if env_refresh:
+            final_refresh_token = env_refresh
+            if env_refresh_expires:
+                try:
+                    refresh_expires_at = int(env_refresh_expires)
+                except ValueError:
+                    print(f"[LOG] [{company_name.upper()}] REFRESH_TOKEN_EXPIRES w ENV nie jest liczbą - pomijam")
+            print(f"[LOG] [{company_name.upper()}] Użyto refresh_token z ENV ({prefix}REFRESH_TOKEN)")
+        else:
+            try:
+                from pg_storage import get_wfirma_token
+                pg_token = get_wfirma_token(company_name)
+                if pg_token and pg_token.get('refresh_token'):
+                    final_refresh_token = pg_token['refresh_token']
+                    refresh_expires_at = pg_token.get('refresh_token_expires_at')
+                    print(f"[LOG] [{company_name.upper()}] Użyto refresh_token z Postgres")
+            except Exception as e:
+                print(f"[LOG] [{company_name.upper()}] Błąd odczytu z Postgres: {e}")
     
     # Jeśli to NOWY refresh_token, ustaw nową datę ważności (30 dni)
     if refresh_token:
