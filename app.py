@@ -474,28 +474,31 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
     refresh_expires_at = None
     
     if not final_refresh_token:
-        # Priorytet: ENV > Postgres (ENV jest źródłem ręcznych aktualizacji po redeployu)
-        env_refresh = (config.get('refresh_token') or "").strip()
-        env_refresh_expires = (os.environ.get(f"{prefix}REFRESH_TOKEN_EXPIRES") or "").strip()
-        if env_refresh:
-            final_refresh_token = env_refresh
-            if env_refresh_expires:
-                try:
-                    refresh_expires_at = int(env_refresh_expires)
-                except ValueError:
-                    print(f"[LOG] [{company_name.upper()}] REFRESH_TOKEN_EXPIRES w ENV nie jest liczbą - pomijam")
-            print(f"{log_prefix} refresh_source=env fp={_token_fingerprint(final_refresh_token)}")
-        else:
-            try:
-                from pg_storage import get_wfirma_token
-                pg_token = get_wfirma_token(company_name)
-                if pg_token and pg_token.get('refresh_token'):
-                    final_refresh_token = pg_token['refresh_token']
-                    refresh_expires_at = pg_token.get('refresh_token_expires_at')
-                    print(f"{log_prefix} refresh_source=pg fp={_token_fingerprint(final_refresh_token)}")
-            except Exception as e:
-                print(f"{log_prefix} Błąd odczytu z Postgres: {e}")
-                traceback.print_exc()
+        # WAŻNE: Postgres jest źródłem prawdy (bo rotacja!)
+        # ENV tylko fallback gdy Postgres pusty
+        try:
+            from pg_storage import get_wfirma_token
+            pg_token = get_wfirma_token(company_name)
+            if pg_token and pg_token.get('refresh_token'):
+                final_refresh_token = pg_token['refresh_token']
+                refresh_expires_at = pg_token.get('refresh_token_expires_at')
+                print(f"{log_prefix} refresh_source=pg fp={_token_fingerprint(final_refresh_token)}")
+        except Exception as e:
+            print(f"{log_prefix} Błąd odczytu z Postgres: {e}")
+            traceback.print_exc()
+        
+        # Fallback: ENV (np. przy pierwszej instalacji gdy Postgres pusty)
+        if not final_refresh_token:
+            env_refresh = (config.get('refresh_token') or "").strip()
+            env_refresh_expires = (os.environ.get(f"{prefix}REFRESH_TOKEN_EXPIRES") or "").strip()
+            if env_refresh:
+                final_refresh_token = env_refresh
+                if env_refresh_expires:
+                    try:
+                        refresh_expires_at = int(env_refresh_expires)
+                    except ValueError:
+                        print(f"[LOG] [{company_name.upper()}] REFRESH_TOKEN_EXPIRES w ENV nie jest liczbą - pomijam")
+                print(f"{log_prefix} refresh_source=env_fallback fp={_token_fingerprint(final_refresh_token)}")
     
     # Jeśli to NOWY refresh_token, ustaw nową datę ważności (30 dni)
     if refresh_token:
@@ -619,23 +622,28 @@ def refresh_access_token(forced_refresh_token=None, company=None, skip_fresh_che
             refresh_token = forced
             refresh_source = "forced"
         else:
-            env_refresh = _normalize_env_secret(config.get("refresh_token"))
-            if env_refresh:
-                refresh_token = env_refresh
-                refresh_source = "env"
-            elif pg_tok and pg_tok.get("refresh_token"):
+            # WAŻNE: Postgres jest źródłem prawdy (bo rotacja refresh tokena!)
+            # ENV tylko jako fallback gdy Postgres pusty
+            if pg_tok and pg_tok.get("refresh_token"):
                 refresh_token = _normalize_env_secret(pg_tok.get("refresh_token"))
                 refresh_source = "pg"
-            elif company is None and os.path.exists(TOKEN_FILE):
-                try:
-                    with open(TOKEN_FILE, 'r') as f:
-                        data = json.load(f)
-                    file_refresh = _normalize_env_secret(data.get('refresh_token'))
-                    if file_refresh:
-                        refresh_token = file_refresh
-                        refresh_source = "file"
-                except Exception:
-                    pass
+            else:
+                # Fallback: ENV (np. przy pierwszej instalacji gdy Postgres pusty)
+                env_refresh = _normalize_env_secret(config.get("refresh_token"))
+                if env_refresh:
+                    refresh_token = env_refresh
+                    refresh_source = "env_fallback"
+                    print(f"{log_prefix} Używam refresh_token z ENV (Postgres pusty)")
+                elif company is None and os.path.exists(TOKEN_FILE):
+                    try:
+                        with open(TOKEN_FILE, 'r') as f:
+                            data = json.load(f)
+                        file_refresh = _normalize_env_secret(data.get('refresh_token'))
+                        if file_refresh:
+                            refresh_token = file_refresh
+                            refresh_source = "file_fallback"
+                    except Exception:
+                        pass
 
         if not refresh_token:
             print(f"{log_prefix} Brak refresh tokena, nie można odświeżyć sesji")
@@ -1367,15 +1375,18 @@ def load_token(silent=False, company=None):
         except Exception:
             pass
 
-    # 2) ENV jako manual override/seed (z normalizacją)
+    # 2) ENV jako fallback/seed (z normalizacją)
     env_access = _normalize_env_secret(config.get('access_token'))
     env_expires_raw = _normalize_env_secret(config.get('token_expires'))
     env_refresh = _normalize_env_secret(config.get('refresh_token'))
 
-    # Refresh token z ENV ma najwyższy priorytet (ręcznie ustawiony po /auth)
-    if env_refresh:
+    # WAŻNE: Postgres jest źródłem prawdy dla refresh_token (bo rotacja!)
+    # ENV refresh_token używany TYLKO jako fallback gdy Postgres pusty
+    if not refresh_token and env_refresh:
         refresh_token = env_refresh
-        refresh_source = "env"
+        refresh_source = "env_fallback"
+        if not silent:
+            print(f"[LOG] [{company_name.upper()}] Refresh token z ENV (fallback - Postgres pusty)")
 
     # Access token z ENV traktuj jako fallback (np. w pierwszych minutach po /auth)
     if env_access and env_expires_raw:
@@ -1385,7 +1396,7 @@ def load_token(silent=False, company=None):
                 access_token = env_access
                 expires_at = env_expires
                 if not silent:
-                    print(f"[LOG] [{company_name.upper()}] Tokeny wczytane z ENV ({prefix}*)")
+                    print(f"[LOG] [{company_name.upper()}] Access token z ENV ({prefix}*)")
         except Exception:
             pass
 
