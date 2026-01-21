@@ -4079,10 +4079,11 @@ def wfirma_ping():
         if resp.status_code == 200:
             data = resp.json()
             # Sprawdź czy odpowiedź zawiera oczekiwaną strukturę
-            contractors = data.get('contractors', [])
+            # wFirma zwraca dict z kluczami "0", "1", "parameters" (nie list!)
+            contractors = data.get('contractors', {})
             total = 0
-            if contractors and len(contractors) > 0:
-                params = contractors[0].get('parameters', {})
+            if isinstance(contractors, dict):
+                params = contractors.get('parameters', {})
                 total = params.get('total', 0)
             
             return jsonify({
@@ -4129,7 +4130,8 @@ def wfirma_ping():
 @require_token
 def check_contractor(token, nip):
     """Sprawdź czy kontrahent istnieje po NIP"""
-    contractor, resp = wfirma_find_contractor_by_nip(token, nip)
+    company_id = wfirma_get_company_id(token)
+    contractor, resp = wfirma_find_contractor_by_nip(token, nip, company_id)
     if contractor:
         return jsonify({'exists': True, 'contractor': contractor})
 
@@ -4151,7 +4153,8 @@ def add_contractor(token):
     
     if not data:
         return jsonify({'error': 'Brak danych w żądaniu'}), 400
-    contractor, resp = wfirma_add_contractor(token, data)
+    company_id = wfirma_get_company_id(token)
+    contractor, resp = wfirma_add_contractor(token, data, company_id)
     if contractor:
         return jsonify({'success': True, 'contractor': contractor})
 
@@ -4171,7 +4174,8 @@ def create_invoice(token):
     
     if not data:
         return jsonify({'error': 'Brak danych w żądaniu'}), 400
-    invoice, resp = wfirma_create_invoice(token, data)
+    company_id = wfirma_get_company_id(token)
+    invoice, resp = wfirma_create_invoice(token, data, company_id)
     if invoice:
         return jsonify({'success': True, 'invoice': invoice})
 
@@ -5245,7 +5249,8 @@ def invoice_send_email(token, invoice_id):
     if not email or '@' not in email:
         return jsonify({'error': 'Brak lub niepoprawny email'}), 400
 
-    resp = wfirma_send_invoice_email(token, invoice_id, email)
+    company_id = wfirma_get_company_id(token)
+    resp = wfirma_send_invoice_email(token, invoice_id, email, company_id)
     if resp.status_code == 200:
         try:
             data = resp.json()
@@ -5340,8 +5345,11 @@ def workflow_create_correction(token):
     
     print(f"[CORRECTION] Tworzę korektę dla faktury ID={parent_invoice_id}, company={company}")
     
+    # Pobierz company_id (wymagane przez wFirma API)
+    wfirma_company_id = wfirma_get_company_id(token)
+    
     # 1) Pobierz oryginalną fakturę żeby uzyskać dane kontrahenta i pozycji
-    original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id))
+    original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id), wfirma_company_id)
     if err or not original_invoice:
         return jsonify({
             'error': 'Nie udało się pobrać faktury oryginalnej',
@@ -5360,20 +5368,12 @@ def workflow_create_correction(token):
     # 2) Pobierz serię jeśli podano nazwę
     series_id = None
     if series_name:
-        resp_series = wfirma_find_series(token, series_name)
-        if resp_series.status_code == 200:
-            try:
-                series_list = resp_series.json().get('series', [])
-                if isinstance(series_list, dict):
-                    for key, val in series_list.items():
-                        if isinstance(val, dict) and 'serie' in val:
-                            s = val['serie']
-                            if s.get('name', '').lower() == series_name.lower():
-                                series_id = int(s.get('id'))
-                                print(f"[CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
-                                break
-            except Exception as e:
-                print(f"[CORRECTION] Błąd parsowania serii: {e}")
+        series = wfirma_find_series_by_name(token, series_name, wfirma_company_id)
+        if series and series.get('id'):
+            series_id = int(series.get('id'))
+            print(f"[CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
+        else:
+            print(f"[CORRECTION] Nie znaleziono serii: {series_name}")
     
     # 3) Buduj payload faktury korygującej
     # Mapowanie stawek VAT
@@ -5435,7 +5435,7 @@ def workflow_create_correction(token):
     print(f"[CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(positions)}")
     
     # 4) Utwórz fakturę korygującą
-    invoice_result, resp = wfirma_create_invoice(token, correction_payload)
+    invoice_result, resp = wfirma_create_invoice(token, correction_payload, wfirma_company_id)
     
     if invoice_result and invoice_result.get('id'):
         return jsonify({
