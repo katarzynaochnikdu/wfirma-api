@@ -50,7 +50,7 @@ def generate_tickets_table_rows(tickets: List[Dict[str, Any]], color_gradient_1:
     
     # Wiersze biletów z alternującym tłem
     for idx, ticket in enumerate(tickets):
-        name = ticket.get("name", "Bilet")
+        name = ticket.get("name", "Rezerwacja")
         qty = ticket.get("quantity", 1)
         price = ticket.get("price", 0)
         
@@ -192,8 +192,8 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
                         <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #F1F3F5; color: #333333; border-top: 2px solid {color_gradient_1};">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #F1F3F5; color: #333333; border-top: 2px solid {color_gradient_1}; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -223,7 +223,7 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
                     <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #2196F3;">
                       <tr>
                         <td style="font-size: 13px; padding: 8px 6px; background-color: #E3F2FD;">
-                          <p style="margin: 0; color: #1565C0;">📄 <strong>Faktura zostanie wystawiona na osobę fizyczną</strong> zgodnie z podanymi danymi rozliczeniowymi.</p>
+                          <p style="margin: 0; color: #1565C0;">Faktura zostanie wystawiona na osobę fizyczną zgodnie z podanymi danymi rozliczeniowymi.</p>
                         </td>
                       </tr>
                     </table>
@@ -233,10 +233,10 @@ TEMPLATE_STRIPE_PERSONAL = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 10px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a></p>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -345,8 +345,8 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                         <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #F1F3F5; color: #333333; border-top: 2px solid {color_gradient_1};">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #F1F3F5; color: #333333; border-top: 2px solid {color_gradient_1}; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -381,7 +381,7 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                     <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #4CAF50;">
                       <tr>
                         <td colspan="2" style="font-size: 14px; font-weight: bold; padding: 8px 6px; background-color: #E8F5E9; color: #2E7D32;">
-                          ✅ Weryfikacja NIP
+                          Weryfikacja NIP
                         </td>
                       </tr>
                       <tr>
@@ -392,9 +392,9 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                       <tr>
                         <td colspan="2" style="font-size: 12px; padding: 8px 6px; color: #666; border-top: 1px dashed #C8E6C9;">
                           <p style="margin: 0 0 2px 0; font-weight: bold; color: #333;">Dane z rejestru GUS:</p>
-                          <p style="margin: 0 0 2px 0;">🏢 {gus_company_name}</p>
-                          <p style="margin: 0 0 2px 0;">📍 {gus_address}</p>
-                          <p style="margin: 0;">📋 REGON: {gus_regon}</p>
+                          <p style="margin: 0 0 2px 0;">{gus_company_name}</p>
+                          <p style="margin: 0 0 2px 0;">{gus_address}</p>
+                          <p style="margin: 0;">REGON: {gus_regon}</p>
                         </td>
                       </tr>
                     </table>
@@ -404,10 +404,10 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 10px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a></p>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -516,8 +516,8 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                         <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff;">Razem do zapłaty</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: {color_gradient_2}; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #F1F3F5; color: #333333; border-top: 2px solid {color_gradient_1};">Razem do zapłaty</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #F1F3F5; color: #333333; border-top: 2px solid {color_gradient_1}; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -550,7 +550,7 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                     <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #FF9800;">
                       <tr>
                         <td style="font-size: 14px; font-weight: bold; padding: 8px 6px; background-color: #FFF3E0; color: #E65100;">
-                          ⚠️ Weryfikacja NIP
+                          Weryfikacja NIP
                         </td>
                       </tr>
                       <tr>
@@ -561,13 +561,13 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                       </tr>
                       <tr>
                         <td style="font-size: 12px; padding: 8px 6px; background-color: #FFF8E1; border-top: 1px dashed #FFE0B2;">
-                          <p style="margin: 0 0 8px 0; color: #E65100;">📄 <strong>Jeśli dokonasz płatności z tego linka</strong>, faktura zostanie wystawiona na osobę fizyczną.</p>
+                          <p style="margin: 0 0 8px 0; color: #E65100;"><strong>Jeśli dokonasz płatności z tego linka</strong>, faktura zostanie wystawiona na osobę fizyczną.</p>
                           <p style="margin: 0; color: #333;">Jeśli chcesz otrzymać fakturę na firmę, zarejestruj się ponownie z poprawnym NIP:</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding: 12px 6px; background-color: #FFF8E1; text-align: center;">
-                          <a href="{url_event}" target="_blank" style="display: inline-block; padding: 10px 20px; background-color: #E65100; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 6px;">🔄 Zarejestruj się ponownie</a>
+                          <a href="{url_event}" target="_blank" style="display: inline-block; padding: 10px 20px; background-color: #E65100; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 6px;">Zarejestruj się ponownie</a>
                         </td>
                       </tr>
                     </table>
@@ -577,10 +577,10 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 10px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a></p>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -892,10 +892,10 @@ TEMPLATE_FOC_CONFIRMATION = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 10px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a></p>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -1125,10 +1125,10 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 10px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a></p>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -1304,8 +1304,8 @@ TEMPLATE_PAYMENT_CONFIRMATION = '''<!doctype html>
                         <td style="font-size: 14px; padding: 8px 6px; background-color: #F1F3F5; color: #495057; text-align: right;">{total_vat_formatted}</td>
                       </tr>
                       <tr>
-                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #4CAF50; color: #ffffff;">Razem zapłacono</td>
-                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #4CAF50; color: #ffffff; text-align: right;">{total_gross_formatted}</td>
+                        <td colspan="2" style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #E8F5E9; color: #2E7D32; border-top: 2px solid #4CAF50;">Razem zapłacono</td>
+                        <td style="font-weight: bold; font-size: 16px; padding: 10px 6px; background-color: #E8F5E9; color: #2E7D32; border-top: 2px solid #4CAF50; text-align: right;">{total_gross_formatted}</td>
                       </tr>
                     </table>
                   </td>
@@ -1335,7 +1335,7 @@ TEMPLATE_PAYMENT_CONFIRMATION = '''<!doctype html>
                     <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #4CAF50;">
                       <tr>
                         <td style="font-size: 13px; padding: 8px 6px; background-color: #E8F5E9;">
-                          <p style="margin: 0; color: #2E7D32;">📄 <strong>Faktura VAT</strong> zostanie wysłana na podany adres email w ciągu 24h.</p>
+                          <p style="margin: 0; color: #2E7D32;"><strong>Faktura VAT</strong> zostanie wysłana na podany adres email w ciągu 24h.</p>
                         </td>
                       </tr>
                     </table>
@@ -1345,10 +1345,10 @@ TEMPLATE_PAYMENT_CONFIRMATION = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 10px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a></p>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -1463,7 +1463,7 @@ def render_payment_confirmation_email(
 
 
 # =============================================================================
-# SZABLON: Potwierdzenie biletu dla UCZESTNIKA (indywidualny email)
+# SZABLON: Potwierdzenie rezerwacji dla UCZESTNIKA (indywidualny email)
 # =============================================================================
 
 TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
@@ -1471,7 +1471,7 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Twój bilet – {event_name}</title>
+  <title>Potwierdzenie rezerwacji – {event_name}</title>
 </head>
 <body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
@@ -1491,89 +1491,92 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                   </td>
                 </tr>
 
-                <!-- HEADER: Twój bilet -->
+                <!-- HEADER: Potwierdzenie rezerwacji - BEZ GRADIENTU -->
                 <tr>
                   <td style="padding: 24px 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%;">
-                      <tr>
-                        <td style="background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); padding: 16px 20px; border-radius: 8px;">
-                          <h1 style="margin: 0; font-size: 24px; color: #ffffff; font-weight: bold;">✅ Twoje miejsce na {event_name} jest potwierdzone!</h1>
-                        </td>
-                      </tr>
-                    </table>
+                    <h1 style="margin: 0; font-size: 22px; color: #333333; font-weight: bold;">
+                      Twoja rezerwacja jest potwierdzona!
+                    </h1>
                   </td>
                 </tr>
 
                 <!-- GREETING -->
                 <tr>
-                  <td style="padding: 0 24px 16px 24px;">
+                  <td style="padding: 0 24px 20px 24px;">
                     <p style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Cześć <strong>{participant_first_name}</strong>!</p>
                     <p style="margin: 0; font-size: 15px; color: #555; line-height: 1.5;">
-                      Masz potwierdzony bilet na wydarzenie <strong>{event_name}</strong>. 
-                      Poniżej znajdziesz szczegóły swojego biletu.
+                      Twoje miejsce na wydarzeniu <strong>{event_name}</strong> zostało potwierdzone. 
+                      Poniżej znajdziesz szczegóły swojej rezerwacji.
                     </p>
                   </td>
                 </tr>
 
-                <!-- TICKET CARD -->
+                <!-- DANE WYDARZENIA - jasne tło -->
                 <tr>
-                  <td style="padding: 0 24px 20px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%; border: 2px solid {color_gradient_1}; border-radius: 12px; overflow: hidden;">
-                      <!-- Ticket header -->
-                      <tr>
-                        <td style="background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); padding: 12px 16px;">
-                          <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 1px;">Bilet</p>
-                          <p style="margin: 4px 0 0 0; font-size: 20px; color: #ffffff; font-weight: bold;">{ticket_name}</p>
-                        </td>
-                      </tr>
-                      <!-- Ticket details -->
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #F8F9FA; border-radius: 8px;">
                       <tr>
                         <td style="padding: 16px;">
-                          <table cellpadding="0" cellspacing="0" style="width: 100%;">
-                            <tr>
-                              <td style="padding: 8px 0; border-bottom: 1px dashed #e0e0e0;">
-                                <span style="font-size: 13px; color: #888;">Uczestnik</span><br>
-                                <span style="font-size: 15px; color: #333; font-weight: 500;">{participant_full_name}</span>
-                              </td>
-                            </tr>
-                            <tr>
-                              <td style="padding: 8px 0; border-bottom: 1px dashed #e0e0e0;">
-                                <span style="font-size: 13px; color: #888;">Email</span><br>
-                                <span style="font-size: 15px; color: #333;">{participant_email}</span>
-                              </td>
-                            </tr>
-                            <tr>
-                              <td style="padding: 8px 0; border-bottom: 1px dashed #e0e0e0;">
-                                <span style="font-size: 13px; color: #888;">Wartość biletu</span><br>
-                                <span style="font-size: 18px; color: {color_gradient_1}; font-weight: bold;">{ticket_price_formatted}</span>
-                                {discount_info}
-                              </td>
-                            </tr>
-                            <tr>
-                              <td style="padding: 8px 0;">
-                                <span style="font-size: 13px; color: #888;">ID biletu</span><br>
-                                <span style="font-size: 12px; color: #666; font-family: monospace;">{ticket_id}</span>
-                              </td>
-                            </tr>
-                          </table>
+                          <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Wydarzenie</p>
+                          <p style="margin: 0; font-size: 18px; color: #333; font-weight: bold;">{event_name}</p>
+                          <p style="margin: 8px 0 0 0; font-size: 14px; color: {color_gradient_1}; font-weight: 500;">{ticket_name}</p>
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
 
-                <!-- EVENT DETAILS -->
+                <!-- EVENT DETAILS (data, lokalizacja) -->
                 {event_datetime_section}
                 {event_location_section}
 
-                <!-- FOOTER -->
+                <!-- DANE UCZESTNIKA - białe tło z obramowaniem -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 8px;">
+                      <tr>
+                        <td style="padding: 16px;">
+                          <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Uczestnik</p>
+                          <p style="margin: 0; font-size: 16px; color: #333; font-weight: 500;">{participant_full_name}</p>
+                          <p style="margin: 4px 0 0 0; font-size: 14px; color: #555;">{participant_email}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- WARTOŚĆ REZERWACJI -->
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%;">
+                      <tr>
+                        <td style="padding: 12px 0; border-top: 1px solid #e0e0e0;">
+                          <span style="font-size: 13px; color: #888;">Wartość rezerwacji:</span>
+                          <span style="font-size: 16px; color: #333; font-weight: bold; margin-left: 8px;">{ticket_price_formatted}</span>
+                          {discount_info}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- NUMER POTWIERDZENIA -->
+                <tr>
+                  <td style="padding: 0 24px 20px 24px;">
+                    <p style="margin: 0; font-size: 11px; color: #888;">
+                      Numer potwierdzenia: <span style="font-family: monospace; color: #666;">{ticket_id}</span>
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- FOOTER - jasne tło, ciemny tekst -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: {color_gradient_1};">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F9FA;">
                       <tr>
-                        <td style="padding: 12px 24px;">
-                          <p style="text-align: center; color: #ffffff; font-size: 14px; margin: 0;">
-                            Masz pytania? Napisz do nas: <a href="mailto:{md_email_kontakt}" style="color: #ffffff; text-decoration: underline;">{md_email_kontakt}</a>
+                        <td style="padding: 16px 24px;">
+                          <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">
+                            Masz pytania? Napisz do nas: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>
                           </p>
                         </td>
                       </tr>
@@ -1604,16 +1607,17 @@ def render_participant_ticket_email(
     event_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    Renderuje email z potwierdzeniem biletu dla UCZESTNIKA (nie purchasera).
+    Renderuje email z potwierdzeniem rezerwacji dla UCZESTNIKA (nie purchasera).
     
-    Każdy uczestnik dostaje swój własny email z informacją o swoim bilecie.
+    Każdy uczestnik dostaje swój własny email z informacją o swojej rezerwacji.
+    Bilety z kodami QR będą wysyłane osobno przed wydarzeniem.
     
     Args:
         event_name: Nazwa eventu
         participant_*: Dane uczestnika
-        ticket_name: Nazwa/typ biletu
-        ticket_id: ID biletu (do weryfikacji)
-        ticket_price: Cena biletu (brutto)
+        ticket_name: Nazwa/typ rezerwacji
+        ticket_id: Numer potwierdzenia rezerwacji
+        ticket_price: Wartość rezerwacji (brutto)
         discount_amount: Kwota rabatu (jeśli był)
         event_config: Konfiguracja eventu
     
@@ -1625,7 +1629,7 @@ def render_participant_ticket_email(
     # Discount info
     discount_info = ""
     if discount_amount and discount_amount > 0:
-        discount_info = f'<br><span style="font-size: 12px; color: #4CAF50;">✓ Uwzględniono rabat: -{format_currency(discount_amount)}</span>'
+        discount_info = f'<br><span style="font-size: 12px; color: #4CAF50;">Uwzględniono rabat: -{format_currency(discount_amount)}</span>'
     
     # Free ticket
     if ticket_price <= 0:
@@ -1638,7 +1642,7 @@ def render_participant_ticket_email(
         "participant_first_name": participant_first_name or "Uczestnik",
         "participant_full_name": f"{participant_first_name} {participant_last_name}".strip() or "Uczestnik",
         "participant_email": participant_email,
-        "ticket_name": ticket_name or "Bilet",
+        "ticket_name": ticket_name or "Rezerwacja",
         "ticket_id": ticket_id or "-",
         "ticket_price_formatted": price_formatted,
         "discount_info": discount_info,

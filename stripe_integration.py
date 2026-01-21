@@ -450,7 +450,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     purchaser_email_error = None
     
     if purchaser_email and not skip_purchaser_email:
-        purchaser_subject = f"Potwierdzenie płatności – {event_name}"
+        purchaser_subject = f"Płatność potwierdzona! Twoja rezerwacja na {event_name}"
         
         # Użyj stylizowanego szablonu
         try:

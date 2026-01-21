@@ -377,7 +377,7 @@ def send_participant_ticket_emails(
             continue
         
         # Wyślij email
-        subject = f"Twój bilet – {event_name}"
+        subject = f"Już jest! Twoje potwierdzenie rezerwacji na {event_name}!"
         
         _log("INFO", "Wysyłam email do uczestnika", {
             "to": participant_email,
@@ -558,7 +558,7 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
         if flow == FLOW_FOC:
             # dedupe: jeśli już kiedykolwiek logowaliśmy ten template jako purchaser, nie ponawiaj
             if not mail_log_exists(event_order_id, TEMPLATE_REGISTRATION_CONFIRMATION, direction="purchaser"):
-                subject = f"Potwierdzenie rezerwacji – {event_name}"
+                subject = f"Już jest! Twoja rezerwacja na {event_name} jest potwierdzona!"
                 body_html = render_foc_confirmation_email(
                     event_name=event_name,
                     purchaser_first_name=order.get("purchaser_first_name", "") or "",
@@ -586,7 +586,7 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                 sent["purchaser"] = bool(res.get("success"))
         elif flow == FLOW_PROFORMA:
             if not mail_log_exists(event_order_id, TEMPLATE_PROFORMA_SENT, direction="purchaser"):
-                subject = f"Potwierdzenie rejestracji – {event_name} (pro-forma w 24h)"
+                subject = f"Twoja rejestracja na {event_name} - pro-forma w 24h"
                 body_html = render_proforma_reservation_email(
                     event_name=event_name,
                     purchaser_first_name=order.get("purchaser_first_name", "") or "",
