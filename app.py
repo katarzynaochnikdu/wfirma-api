@@ -4022,6 +4022,95 @@ def token_status():
     status['message'] = f'Brak ważnego tokenu dla firmy {company.upper()}. Przejdź do /auth?company={company}'
     return jsonify(status)
 
+@app.route('/api/wfirma/ping')
+def wfirma_ping():
+    """
+    Health check wFirma API - sprawdza czy połączenie działa.
+    Pobiera listę kontrahentów (limit 1) jako test.
+    Parametr ?company=md lub ?company=test określa firmę.
+    """
+    import time
+    start_time = time.time()
+    
+    company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
+    if company not in SUPPORTED_COMPANIES:
+        company = DEFAULT_COMPANY
+    
+    config = get_company_config(company)
+    company_name = config['company'].upper()
+    
+    # 1. Sprawdź czy mamy token
+    token = load_token(silent=True, company=company)
+    if not token:
+        return jsonify({
+            'ok': False,
+            'company': company_name,
+            'error': 'no_token',
+            'message': f'Brak ważnego tokenu. Przejdź do /auth?company={company}',
+            'elapsed_ms': int((time.time() - start_time) * 1000)
+        }), 401
+    
+    # 2. Wykonaj testowe zapytanie do wFirma (pobierz 1 kontrahenta)
+    try:
+        test_url = "https://api2.wfirma.pl/contractors/find"
+        test_payload = {
+            "contractors": [{
+                "parameters": [
+                    {"limit": 1}
+                ]
+            }]
+        }
+        headers = get_wfirma_headers(token)
+        
+        resp = requests.post(test_url, json=test_payload, headers=headers, timeout=10)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            # Sprawdź czy odpowiedź zawiera oczekiwaną strukturę
+            contractors = data.get('contractors', [])
+            total = 0
+            if contractors and len(contractors) > 0:
+                params = contractors[0].get('parameters', {})
+                total = params.get('total', 0)
+            
+            return jsonify({
+                'ok': True,
+                'company': company_name,
+                'wfirma_status': resp.status_code,
+                'contractors_total': total,
+                'message': 'Połączenie z wFirma działa poprawnie',
+                'elapsed_ms': elapsed_ms
+            })
+        else:
+            return jsonify({
+                'ok': False,
+                'company': company_name,
+                'error': 'wfirma_error',
+                'wfirma_status': resp.status_code,
+                'wfirma_response': resp.text[:500],
+                'message': 'wFirma zwróciła błąd',
+                'elapsed_ms': elapsed_ms
+            }), 502
+            
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'ok': False,
+            'company': company_name,
+            'error': 'timeout',
+            'message': 'wFirma nie odpowiada (timeout 10s)',
+            'elapsed_ms': int((time.time() - start_time) * 1000)
+        }), 504
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'company': company_name,
+            'error': 'exception',
+            'message': str(e),
+            'elapsed_ms': int((time.time() - start_time) * 1000)
+        }), 500
+
+
 @app.route('/api/contractor/<nip>')
 @require_api_key
 @require_token
