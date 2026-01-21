@@ -4050,9 +4050,20 @@ def wfirma_ping():
             'elapsed_ms': int((time.time() - start_time) * 1000)
         }), 401
     
-    # 2. Wykonaj testowe zapytanie do wFirma (pobierz 1 kontrahenta)
+    # 2. Pobierz company_id (wymagane przez wFirma API)
+    wfirma_company_id = wfirma_get_company_id(token)
+    if not wfirma_company_id:
+        return jsonify({
+            'ok': False,
+            'company': company_name,
+            'error': 'no_company_id',
+            'message': 'Nie udało się pobrać company_id z wFirma (token może być nieważny)',
+            'elapsed_ms': int((time.time() - start_time) * 1000)
+        }), 502
+    
+    # 3. Wykonaj testowe zapytanie do wFirma (pobierz 1 kontrahenta)
     try:
-        test_url = "https://api2.wfirma.pl/contractors/find"
+        test_url = f"https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2&company_id={wfirma_company_id}"
         test_payload = {
             "contractors": [{
                 "parameters": [
@@ -4077,6 +4088,7 @@ def wfirma_ping():
             return jsonify({
                 'ok': True,
                 'company': company_name,
+                'wfirma_company_id': wfirma_company_id,
                 'wfirma_status': resp.status_code,
                 'contractors_total': total,
                 'message': 'Połączenie z wFirma działa poprawnie',
@@ -4086,6 +4098,7 @@ def wfirma_ping():
             return jsonify({
                 'ok': False,
                 'company': company_name,
+                'wfirma_company_id': wfirma_company_id,
                 'error': 'wfirma_error',
                 'wfirma_status': resp.status_code,
                 'wfirma_response': resp.text[:500],
