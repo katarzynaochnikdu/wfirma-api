@@ -2266,7 +2266,7 @@ def list_admin_audit_log(limit: int = 100) -> List[Dict[str, Any]]:
                    al.target_email, al.ip, al.user_agent, al.data, al.created_at
             FROM admin_audit_log al
             LEFT JOIN admin_users au ON al.admin_user_id = au.id
-            ORDER BY al.created_at DESC
+            ORDER BY al.created_at DESC, al.id DESC
             LIMIT %s
             """,
             (int(limit),),
