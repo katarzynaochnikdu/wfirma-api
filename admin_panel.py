@@ -2261,23 +2261,64 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
 
     warn_html = "".join(warnings)
 
-    def _fmt_value(fd: Dict[str, str]) -> str:
+    # Grupuj pola w sekcje logiczne
+    field_sections = {
+        "Podstawowe dane": ["eventId", "eventName", "md_email_kontakt", "md_mobile_kontakt", "md_email_techniczny", "md_phone_techniczny"],
+        "Szczegóły wydarzenia": ["event_day_text_1", "event_day_text_2", "event_address_text_street", "event_address_text_postcode", "event_address_text_city"],
+        "Kolory i branding": ["color_gradient_1", "color_gradient_2"],
+        "Obrazy i media": ["event_mail_link_top_banner", "event_mail_link_bottom_banner", "event_logo_link", "event_logo_link_white", "event_logo_link_color"],
+        "Linki Backstage": ["event_config_link", "event_orders_link", "event_attendees_link"],
+    }
+    
+    def _render_field(fd: Dict[str, str]) -> str:
         k = fd["key"]
         v = _val(k)
+        label = fd["label"]
+        kind = fd.get("kind", "text")
+        
         if not v:
-            return "—"
-        kind = fd.get("kind")
+            return f'''
+            <div class="field-row">
+              <div class="field-label">
+                {label}
+                <span class="field-key" style="display:none;">{k}</span>
+              </div>
+              <div class="field-value muted">—</div>
+            </div>
+            '''
+        
+        # Format value based on type
         if kind == "url" and _is_http_url(v):
-            return f'<a href="{v}" target="_blank" rel="noopener noreferrer">{v}</a>'
-        if kind == "color" and _is_hex_color(v):
-            return f'{v}<span class="swatch" style="background:{v};"></span>'
-        return v
-
-    kv_html = "".join(
-        f"<div class='muted'>{fd['label']}<div class='formHint'><code>{fd['key']}</code></div></div>"
-        f"<div>{_fmt_value(fd)}</div>"
-        for fd in FIELD_DEFS
-    )
+            preview_html = f'<div style="margin-top:8px;"><img src="{v}" style="max-width:100%; height:auto; max-height:200px; border-radius:8px; border:1px solid #e5e7eb;" onerror="this.style.display=\'none\'" /></div>' if any(ext in v.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg']) else ''
+            value_html = f'<a href="{v}" target="_blank" rel="noopener" style="color:#0065D7; text-decoration:none;">Otwórz link ↗</a>{preview_html}'
+        elif kind == "color" and _is_hex_color(v):
+            value_html = f'<div style="display:flex; align-items:center; gap:12px;"><div style="width:60px; height:36px; border-radius:8px; background:{v}; border:1px solid #e5e7eb;"></div><code style="font-size:13px;">{v}</code></div>'
+        else:
+            value_html = v
+        
+        return f'''
+        <div class="field-row">
+          <div class="field-label">
+            {label}
+            <span class="field-key" style="display:none;">{k}</span>
+          </div>
+          <div class="field-value">{value_html}</div>
+        </div>
+        '''
+    
+    sections_html = ""
+    for section_name, field_keys in field_sections.items():
+        fields_in_section = [fd for fd in FIELD_DEFS if fd["key"] in field_keys]
+        if not fields_in_section:
+            continue
+        
+        fields_html = "".join(_render_field(fd) for fd in fields_in_section)
+        sections_html += f'''
+        <div class="preview-section">
+          <div class="preview-section-header">{section_name}</div>
+          <div class="preview-section-body">{fields_html}</div>
+        </div>
+        '''
 
     # Sekcja Backstage
     backstage_html = ""
@@ -2294,42 +2335,109 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         '''
 
     body = f"""
-    <div style="margin-bottom:12px;">
-      <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do edycji</a>
-      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
+    <style>
+      .preview-section {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        margin-bottom: 20px;
+        overflow: hidden;
+      }}
+      .preview-section-header {{
+        padding: 16px 24px;
+        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+        font-weight: 600;
+        font-size: 15px;
+        color: #0f172a;
+        border-bottom: 1px solid var(--md-border);
+      }}
+      .preview-section-body {{
+        padding: 0;
+      }}
+      .field-row {{
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 20px;
+        padding: 20px 24px;
+        border-bottom: 1px solid #f1f5f9;
+      }}
+      .field-row:last-child {{
+        border-bottom: none;
+      }}
+      .field-label {{
+        font-weight: 500;
+        color: #475569;
+        font-size: 14px;
+      }}
+      .field-key {{
+        display: block;
+        font-size: 11px;
+        color: #94a3b8;
+        font-family: monospace;
+        margin-top: 4px;
+      }}
+      .field-value {{
+        color: #0f172a;
+        font-size: 14px;
+        word-break: break-word;
+      }}
+      .toggle-tech-names {{
+        display: inline-block;
+        margin-left: 12px;
+        padding: 4px 10px;
+        font-size: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        cursor: pointer;
+        color: #64748b;
+        transition: all 0.2s;
+      }}
+      .toggle-tech-names:hover {{
+        background: #e2e8f0;
+        color: #334155;
+      }}
+      @media (max-width: 900px) {{
+        .field-row {{
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }}
+      }}
+    </style>
+    
+    <script>
+      function toggleTechNames() {{
+        const keys = document.querySelectorAll('.field-key');
+        const btn = document.getElementById('toggleBtn');
+        const isHidden = keys[0].style.display === 'none' || keys[0].style.display === '';
+        
+        keys.forEach(key => {{
+          key.style.display = isHidden ? 'block' : 'none';
+        }});
+        
+        btn.textContent = isHidden ? '🔒 Ukryj nazwy API' : '🔓 Pokaż nazwy API';
+      }}
+    </script>
+    
+    <div style="margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div style="display:flex; gap:10px;">
+        <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do edycji</a>
+        <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
+      </div>
+      <button id="toggleBtn" onclick="toggleTechNames()" class="toggle-tech-names">🔓 Pokaż nazwy API</button>
     </div>
+    
     {missing_html}
     {warn_html}
+    
     <div class="card" style="margin-top:12px;">
-      <div style="font-weight:700; font-size:18px;">{event_name}</div>
-      <div class="muted"><code>{event_id}</code></div>
+      <div style="font-weight:700; font-size:20px; color:#0f172a;">{event_name}</div>
+      <div class="muted" style="margin-top:4px;"><code>{event_id}</code></div>
     </div>
+    
     {backstage_html}
-    <div class="grid" style="margin-top:16px;">
-      <div class="card">
-        <div style="font-weight:700; margin-bottom:10px;">Podgląd (baner/logo/kolory)</div>
-        <div class="banner">
-          {'<img src="'+banner+'" alt="banner" />' if banner else '<div class="muted" style="padding:12px;">Brak banera</div>'}
-        </div>
-        <div style="margin-top:10px; display:flex; gap:12px; align-items:center;">
-          <div style="width:72px; height:72px; border:1px solid #eee; border-radius:12px; overflow:hidden;">
-            {'<img src="'+logo+'" alt="logo" />' if logo else '<div class="muted" style="padding:10px;">Brak logo</div>'}
-          </div>
-          <div>
-            <div class="muted">color_gradient_1 / color_gradient_2</div>
-            <div style="display:flex; gap:8px; margin-top:4px;">
-              <div style="width:42px;height:26px;border-radius:6px;border:1px solid #eee;background:{(color1 if _is_hex_color(color1) else '#fff')}"></div>
-              <div style="width:42px;height:26px;border-radius:6px;border:1px solid #eee;background:{(color2 if _is_hex_color(color2) else '#fff')}"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div style="font-weight:700; margin-bottom:10px;">Pola (pełna lista)</div>
-        <div class="kv">{kv_html}</div>
-      </div>
-    </div>
+    
+    {sections_html}
     """
     return _page("Podgląd wydarzenia", body)
 
@@ -2424,14 +2532,26 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
         kind = fd.get("kind", "text")
         raw_val = field_values.get(k) or ""
         safe_val = raw_val.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-        swatch = ""
-        if kind == "color" and _is_hex_color(raw_val):
-            swatch = f'<span class="swatch" style="background:{raw_val};"></span>'
+        
+        # Podgląd dla kolorów
+        color_preview = ""
+        if kind == "color":
+            color_preview = f'<div id="preview_{k}" class="color-preview" style="width:60px; height:36px; border-radius:8px; border:1px solid #e5e7eb; margin-top:8px; background:{raw_val if _is_hex_color(raw_val) else "#fff"};"></div>'
+        
+        # Podgląd dla obrazów (URL)
+        image_preview = ""
+        if kind == "url" and raw_val and any(ext in raw_val.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg']):
+            image_preview = f'<div id="preview_{k}" class="image-preview" style="margin-top:8px;"><img src="{raw_val}" style="max-width:100%; height:auto; max-height:120px; border-radius:8px; border:1px solid #e5e7eb;" onerror="this.parentElement.style.display=\'none\'" /></div>'
+        elif kind == "url":
+            image_preview = f'<div id="preview_{k}" class="image-preview" style="margin-top:8px; display:none;"></div>'
+        
         fields_html.append(
             f"""
-            <div class="formLabel">{label}<div class="formHint"><code>{k}</code> {swatch}</div></div>
+            <div class="formLabel">{label}<div class="formHint"><code>{k}</code></div></div>
             <div>
-              <input type="text" name="{_field_name(k)}" value="{safe_val}" placeholder="{hint}" />
+              <input type="text" name="{_field_name(k)}" value="{safe_val}" placeholder="{hint}" data-field-key="{k}" data-field-kind="{kind}" oninput="updatePreview(this)" />
+              {color_preview}
+              {image_preview}
             </div>
             """
         )
@@ -2513,12 +2633,45 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
           1) Wypełnij pola po lewej.<br/>
           2) Linki zawsze zaczynaj od <code>https://</code>.<br/>
           3) Kolory wpisuj jako hex, np. <code>#269571</code>.<br/>
-          4) Kliknij <b>Podgląd (bez zapisu)</b> – sprawdzisz baner/logo/linki zanim zapiszesz.
+          4) Kliknij <b>Podgląd (bez zapisu)</b> – sprawdzisz baner/logo/linki zanim zapiszesz.<br/>
+          <br/>
+          <span style="color:#00A1D7;">✨ Podglądy obrazów i kolorów aktualizują się na żywo!</span>
         </div>
         <div style="height:10px;"></div>
         <div class="muted"><b>Uwaga:</b> token w URL trafia do logów. Docelowo możemy zrobić logowanie (cookie), żeby token nie był w adresie.</div>
       </div>
     </div>
+    
+    <script>
+      function updatePreview(input) {{
+        const key = input.getAttribute('data-field-key');
+        const kind = input.getAttribute('data-field-kind');
+        const value = input.value.trim();
+        const previewEl = document.getElementById('preview_' + key);
+        
+        if (!previewEl) return;
+        
+        if (kind === 'color') {{
+          // Walidacja koloru hex
+          const isValidColor = /^#[0-9A-Fa-f]{{6}}$/.test(value);
+          if (isValidColor) {{
+            previewEl.style.background = value;
+            previewEl.style.display = 'block';
+          }} else {{
+            previewEl.style.background = '#fff';
+          }}
+        }} else if (kind === 'url') {{
+          // Sprawdź czy to link do obrazka
+          const isImageUrl = value && /\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$/i.test(value);
+          if (isImageUrl && value.startsWith('http')) {{
+            previewEl.innerHTML = '<img src="' + value + '" style="max-width:100%; height:auto; max-height:120px; border-radius:8px; border:1px solid #e5e7eb;" onerror="this.parentElement.style.display=\\'none\\'" />';
+            previewEl.style.display = 'block';
+          }} else {{
+            previewEl.style.display = 'none';
+          }}
+        }}
+      }}
+    </script>
     """
     return _page("Edytuj wydarzenie" if not is_new else "Nowe wydarzenie", body)
 
