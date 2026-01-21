@@ -632,9 +632,17 @@ def _build_event_location_section(event_config: Dict[str, Any]) -> str:
     address = event_config.get("event_location_address", "")
     zip_code = event_config.get("event_location_zip", "")
     city = event_config.get("event_location_city", "")
+    google_link = (event_config.get("event_location_google_link") or "").strip()
     if not place and not address:
         return ""
     address_line = f"{address}, {zip_code} {city}".strip(", ")
+    place_html = place
+    address_html = address_line
+    if google_link:
+        if place:
+            place_html = f'<a href="{google_link}" target="_blank" rel="noopener" style="color:#0f172a; text-decoration:none;">{place}</a>'
+        if address_line:
+            address_html = f'<a href="{google_link}" target="_blank" rel="noopener" style="color:#0f172a; text-decoration:none;">{address_line}</a>'
     return f'''
                       <tr>
                         <td style="padding: 0;">
@@ -644,8 +652,8 @@ def _build_event_location_section(event_config: Dict[str, Any]) -> str:
                                 <img src="https://static.zohocdn.com/backstage/v1.0/images/mini_location-icon-cabc9c63a7da9a671cee8477f28c09c4.png" alt="Lokalizacja" width="20" style="width: 20px;">
                               </td>
                               <td style="padding-left: 5px; vertical-align: top;">
-                                <p style="font-weight: bold;">{place}</p>
-                                <p>{address_line}</p>
+                                <p style="font-weight: bold; margin: 0 0 2px 0;">{place_html}</p>
+                                <p style="margin: 0;">{address_html}</p>
                               </td>
                             </tr>
                           </table>
@@ -1518,12 +1526,12 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
 
                 <!-- TREŚĆ GŁÓWNA -->
                 <tr>
-                  <td valign="top" style="padding: 12px 24px 24px 24px; background-color: #FFFFFF;">
+                  <td valign="top" style="padding: 12px 24px 16px 24px; background-color: #FFFFFF;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important;">
                       <tr>
                         <td style="padding: 0;"><h2 style="font-size: 22px; margin: 0;">Cześć <strong>{participant_first_name}</strong></h2></td>
                       </tr>
-                      <tr><td style="height: 24px;"></td></tr>
+                      <tr><td style="height: 16px;"></td></tr>
                       <tr>
                         <td style="padding: 0;">
                           <p style="font-size: 18px; color: #2E7D32; font-weight: bold; margin: 0 0 12px 0;">Twoja rezerwacja jest potwierdzona!</p>
@@ -1533,36 +1541,49 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                           </p>
                         </td>
                       </tr>
-                      <tr><td style="height: 24px;"></td></tr>
+                      <tr><td style="height: 16px;"></td></tr>
                     </table>
                   </td>
                 </tr>
 
-                <!-- DANE WYDARZENIA - jasne tło -->
+                <!-- LOKALIZACJA -->
                 <tr>
-                  <td style="padding: 0 24px 16px 24px;">
+                  <td style="padding: 0 24px 12px 24px;">
                     <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #F8F9FA; border-radius: 8px;">
                       <tr>
-                        <td style="padding: 16px;">
-                          <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Wydarzenie</p>
-                          <p style="margin: 0; font-size: 18px; color: #333; font-weight: bold;">{event_name}</p>
-                          <p style="margin: 8px 0 0 0; font-size: 14px; color: {color_gradient_1}; font-weight: 500;">{ticket_name}</p>
+                        <td style="padding: 14px 16px;">
+                          <p style="margin: 0 0 6px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Lokalizacja</p>
+                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
+                            {event_datetime_section}
+                            {event_location_section}
+                          </table>
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
 
-                <!-- EVENT DETAILS (data, lokalizacja) -->
-                {event_datetime_section}
-                {event_location_section}
+                <!-- DANE WYDARZENIA -->
+                <tr>
+                  <td style="padding: 0 24px 12px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #FFFFFF; border: 1px solid #e0e0e0; border-radius: 8px;">
+                      <tr>
+                        <td style="padding: 14px 16px;">
+                          <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Wydarzenie</p>
+                          <p style="margin: 0; font-size: 18px; color: #333; font-weight: bold;">{event_name}</p>
+                          <p style="margin: 6px 0 0 0; font-size: 14px; color: {color_gradient_1}; font-weight: 500;">{ticket_name}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
 
                 <!-- DANE UCZESTNIKA - białe tło z obramowaniem -->
                 <tr>
-                  <td style="padding: 0 24px 16px 24px;">
+                  <td style="padding: 0 24px 12px 24px;">
                     <table cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 8px;">
                       <tr>
-                        <td style="padding: 16px;">
+                        <td style="padding: 14px 16px;">
                           <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Uczestnik</p>
                           <p style="margin: 0; font-size: 16px; color: #333; font-weight: 500;">{participant_full_name}</p>
                           <p style="margin: 4px 0 0 0; font-size: 14px; color: #555;">{participant_email}</p>
@@ -1574,10 +1595,10 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
 
                 <!-- WARTOŚĆ REZERWACJI -->
                 <tr>
-                  <td style="padding: 0 24px 16px 24px;">
+                  <td style="padding: 0 24px 12px 24px;">
                     <table cellpadding="0" cellspacing="0" style="width: 100%;">
                       <tr>
-                        <td style="padding: 12px 0; border-top: 1px solid #e0e0e0;">
+                        <td style="padding: 8px 0; border-top: 1px solid #e0e0e0;">
                           <span style="font-size: 13px; color: #888;">Wartość rezerwacji:</span>
                           <span style="font-size: 16px; color: #333; font-weight: bold; margin-left: 8px;">{ticket_price_formatted}</span>
                           {discount_info}
@@ -1589,7 +1610,7 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
 
                 <!-- NUMER POTWIERDZENIA -->
                 <tr>
-                  <td style="padding: 0 24px 20px 24px;">
+                  <td style="padding: 0 24px 12px 24px;">
                     <p style="margin: 0; font-size: 11px; color: #888;">
                       Numer potwierdzenia: <span style="font-family: monospace; color: #666;">{ticket_id}</span>
                     </p>
