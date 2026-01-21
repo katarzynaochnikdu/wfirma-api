@@ -2505,7 +2505,9 @@ def backstage_attendee():
         }
         
         if existing:
-            # Aktualizuj istniejącego
+            # Aktualizuj istniejącego (nie nadpisuj statusu emailed)
+            existing_status = (existing.get("status") if isinstance(existing, dict) else "") or ""
+            new_status = "emailed" if existing_status.lower() == "emailed" else "registered"
             effective_email = email or (existing.get("email") if isinstance(existing, dict) else "") or ""
             effective_first_name = first_name or (existing.get("first_name") if isinstance(existing, dict) else "") or ""
             effective_last_name = last_name or (existing.get("last_name") if isinstance(existing, dict) else "") or ""
@@ -2517,7 +2519,7 @@ def backstage_attendee():
                 first_name=effective_first_name,
                 last_name=effective_last_name,
                 phone=effective_phone,
-                status="registered",
+                status=new_status,
                 extra_data=extra_data,
             )
             print(f"[ATTENDEE WEBHOOK] Zaktualizowano uczestnika: {success}")

@@ -235,7 +235,12 @@ CREATE INDEX IF NOT EXISTS idx_oauth_states_company ON oauth_states(company);
 CREATE TABLE IF NOT EXISTS admin_users (
   id BIGSERIAL PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
   password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'admin',
+  allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   failed_login_count INTEGER NOT NULL DEFAULT 0,
   locked_until TIMESTAMPTZ,
@@ -335,6 +340,13 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
 
         # 1) Schemat (idempotentne CREATE IF NOT EXISTS)
         cur.execute(SCHEMA_SQL)
+
+        # 1b) Dodatkowe kolumny (idempotentne ALTER) - bezpieczne dla istniejących baz
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS first_name TEXT")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_name TEXT")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
 
         # 2) Wersja migracji
         cur.execute("SELECT 1 FROM schema_migrations WHERE version=%s", (SCHEMA_VERSION,))
@@ -1907,7 +1919,8 @@ def get_admin_user_by_email(email: str) -> Optional[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, email, password_hash, is_active, failed_login_count, locked_until,
+            SELECT id, email, first_name, last_name, password_hash, role, allowed_pages,
+                   must_change_password, is_active, failed_login_count, locked_until,
                    created_at, updated_at, last_login_at
             FROM admin_users
             WHERE LOWER(email) = LOWER(%s)
@@ -1931,7 +1944,8 @@ def get_admin_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, email, password_hash, is_active, failed_login_count, locked_until,
+            SELECT id, email, first_name, last_name, password_hash, role, allowed_pages,
+                   must_change_password, is_active, failed_login_count, locked_until,
                    created_at, updated_at, last_login_at
             FROM admin_users
             WHERE id = %s
@@ -1955,8 +1969,8 @@ def list_admin_users() -> List[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, email, is_active, failed_login_count, locked_until,
-                   created_at, updated_at, last_login_at
+            SELECT id, email, first_name, last_name, role, allowed_pages, must_change_password,
+                   is_active, failed_login_count, locked_until, created_at, updated_at, last_login_at
             FROM admin_users
             ORDER BY created_at ASC
             """
@@ -1967,7 +1981,15 @@ def list_admin_users() -> List[Dict[str, Any]]:
             _put_conn(pool, conn)
 
 
-def create_admin_user(email: str, password_hash: str) -> Optional[Dict[str, Any]]:
+def create_admin_user(
+    email: str,
+    password_hash: str,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    role: str = "admin",
+    allowed_pages: Optional[List[str]] = None,
+    must_change_password: bool = False,
+) -> Optional[Dict[str, Any]]:
     """Tworzy nowego admina. Zwraca utworzony rekord (bez password_hash)."""
     ensure_schema()
     pool = None
@@ -1977,11 +1999,19 @@ def create_admin_user(email: str, password_hash: str) -> Optional[Dict[str, Any]
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            INSERT INTO admin_users (email, password_hash)
-            VALUES (LOWER(%s), %s)
-            RETURNING id, email, is_active, created_at
+            INSERT INTO admin_users (email, first_name, last_name, password_hash, role, allowed_pages, must_change_password)
+            VALUES (LOWER(%s), %s, %s, %s, %s, %s, %s)
+            RETURNING id, email, first_name, last_name, role, allowed_pages, must_change_password, is_active, created_at
             """,
-            (str(email).strip(), str(password_hash)),
+            (
+                str(email).strip(),
+                (str(first_name).strip() if first_name else None),
+                (str(last_name).strip() if last_name else None),
+                str(password_hash),
+                str(role or "admin"),
+                psycopg2.extras.Json(allowed_pages or []),  # type: ignore[attr-defined]
+                bool(must_change_password),
+            ),
         )
         row = cur.fetchone()
         return dict(row) if row else None
@@ -1993,7 +2023,7 @@ def create_admin_user(email: str, password_hash: str) -> Optional[Dict[str, Any]
             _put_conn(pool, conn)
 
 
-def update_admin_user_password(user_id: int, password_hash: str) -> bool:
+def update_admin_user_password(user_id: int, password_hash: str, must_change_password: Optional[bool] = None) -> bool:
     """Aktualizuje hasło admina."""
     ensure_schema()
     pool = None
@@ -2004,10 +2034,12 @@ def update_admin_user_password(user_id: int, password_hash: str) -> bool:
         cur.execute(
             """
             UPDATE admin_users
-            SET password_hash = %s, updated_at = NOW()
+            SET password_hash = %s,
+                must_change_password = COALESCE(%s, must_change_password),
+                updated_at = NOW()
             WHERE id = %s
             """,
-            (str(password_hash), int(user_id)),
+            (str(password_hash), must_change_password, int(user_id)),
         )
         return cur.rowcount > 0
     except Exception as e:
@@ -2037,6 +2069,47 @@ def update_admin_user_active(user_id: int, is_active: bool) -> bool:
         return cur.rowcount > 0
     except Exception as e:
         print(f"[DB] update_admin_user_active error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def update_admin_user_access(
+    user_id: int,
+    first_name: Optional[str],
+    last_name: Optional[str],
+    role: str,
+    allowed_pages: Optional[List[str]],
+) -> bool:
+    """Aktualizuje imię/nazwisko, rolę i uprawnienia użytkownika."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE admin_users
+            SET first_name = %s,
+                last_name = %s,
+                role = %s,
+                allowed_pages = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (
+                (str(first_name).strip() if first_name else None),
+                (str(last_name).strip() if last_name else None),
+                str(role or "admin"),
+                psycopg2.extras.Json(allowed_pages or []),  # type: ignore[attr-defined]
+                int(user_id),
+            ),
+        )
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] update_admin_user_access error: {e}")
         return False
     finally:
         if pool is not None and conn is not None:
