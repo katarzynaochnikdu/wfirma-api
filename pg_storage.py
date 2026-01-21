@@ -1210,6 +1210,23 @@ def try_advisory_lock(lock_id: int) -> bool:
             _put_conn(pool, conn)
 
 
+def advisory_lock(lock_id: int) -> None:
+    """
+    Blokujący lock w Postgres (dla wielu workerów).
+    Uwaga: to jest mechanizm kontroli współbieżności, nie "sleep" – blokuje do czasu przejęcia locka.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_lock(%s)", (int(lock_id),))
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 def advisory_unlock(lock_id: int) -> None:
     """Zwalnia globalny lock w Postgres."""
     ensure_schema()
