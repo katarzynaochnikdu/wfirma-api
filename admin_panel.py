@@ -1053,8 +1053,8 @@ BASE_HTML = """
       --md-bg: #f8fafc;
       --md-card-bg: #ffffff;
       --md-border: #e2e8f0;
-      --md-text: #1e293b;
-      --md-text-muted: #64748b;
+      --md-text: #111111;
+      --md-text-muted: #333333;
     }
     
     /* ========== BASE STYLES ========== */
@@ -1155,7 +1155,7 @@ BASE_HTML = """
     
     /* ========== CARDS ========== */
     .card { 
-      border: 1px solid var(--md-border); 
+      border: 1px solid var(--md-primary); 
       border-radius: 10px; 
       padding: 20px; 
       background: var(--md-card-bg);
@@ -1224,7 +1224,7 @@ BASE_HTML = """
     }
     .btn:hover { 
       background: #f8fafc; 
-      border-color: #cbd5e1;
+      border-color: var(--md-secondary);
       text-decoration: none;
     }
     .btnPrimary { 
