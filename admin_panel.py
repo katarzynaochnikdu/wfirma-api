@@ -2230,6 +2230,11 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     logo = _val("event_logo_link") or _val("event_logo_link_white") or _val("event_logo_link_color")
     color1 = _val("color_gradient_1")
     color2 = _val("color_gradient_2")
+    
+    # Linki do Backstage
+    backstage_config_link = _val("event_config_link")
+    backstage_orders_link = _val("event_orders_link")
+    backstage_attendees_link = _val("event_attendees_link")
 
     missing = [fd["key"] for fd in FIELD_DEFS if not _val(fd["key"])]
     missing_html = ""
@@ -2274,6 +2279,20 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         for fd in FIELD_DEFS
     )
 
+    # Sekcja Backstage
+    backstage_html = ""
+    if backstage_config_link or backstage_orders_link or backstage_attendees_link:
+        backstage_html = f'''
+        <div style="margin-top:16px; padding:16px 20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px;">
+          <div style="font-weight:600; margin-bottom:10px; color:#0369a1;">🔗 Otwórz w Zoho Backstage</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Konfiguracja wydarzenia</a>' if backstage_config_link else ''}
+            {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Zamówienia</a>' if backstage_orders_link else ''}
+            {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Uczestnicy</a>' if backstage_attendees_link else ''}
+          </div>
+        </div>
+        '''
+
     body = f"""
     <div style="margin-bottom:12px;">
       <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do edycji</a>
@@ -2285,6 +2304,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
       <div style="font-weight:700; font-size:18px;">{event_name}</div>
       <div class="muted"><code>{event_id}</code></div>
     </div>
+    {backstage_html}
     <div class="grid" style="margin-top:16px;">
       <div class="card">
         <div style="font-weight:700; margin-bottom:10px;">Podgląd (baner/logo/kolory)</div>
@@ -3146,6 +3166,12 @@ def order_detail(order_id: str):
     # Pobierz event
     ev = get_event(event_id) if event_id else None
     event_name = ev.get("event_name", "") if ev else ""
+    event_data = (ev.get("data") if ev else {}) or {}
+    
+    # Linki do Backstage
+    backstage_config_link = event_data.get("event_config_link", "") or ""
+    backstage_orders_link = event_data.get("event_orders_link", "") or ""
+    backstage_attendees_link = event_data.get("event_attendees_link", "") or ""
 
     # Pobierz dokumenty wFirma
     wfirma_docs = get_wfirma_documents(order_id)
@@ -3354,6 +3380,17 @@ def order_detail(order_id: str):
       <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
       {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
     </div>
+    
+    {f'''
+    <div style="margin-bottom:20px; padding:16px 20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px;">
+      <div style="font-weight:600; margin-bottom:10px; color:#0369a1;">🔗 Otwórz w Zoho Backstage</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Konfiguracja wydarzenia</a>' if backstage_config_link else ''}
+        {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Zamówienia</a>' if backstage_orders_link else ''}
+        {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Uczestnicy</a>' if backstage_attendees_link else ''}
+      </div>
+    </div>
+    ''' if (backstage_config_link or backstage_orders_link or backstage_attendees_link) else ''}
 
     <div class="order-header">
       <div class="order-header-info">
