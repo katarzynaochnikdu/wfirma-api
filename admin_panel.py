@@ -2,9 +2,12 @@ import json
 import os
 import csv
 import io
+import secrets
+from functools import wraps
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Blueprint, Response, abort, redirect, render_template_string, request, url_for
+from flask import Blueprint, Response, abort, redirect, render_template_string, request, session, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from pg_storage import (
     delete_event,
@@ -19,18 +22,390 @@ from pg_storage import (
     get_payment_rule,
     upsert_payment_rule,
     delete_payment_rule,
+    match_payment_rule,
     # Orders
     list_orders,
     get_order,
     update_order_status,
     get_wfirma_documents,
+    count_participants_by_status,
+    # Admin users
+    admin_user_count,
+    get_admin_user_by_email,
+    get_admin_user_by_id,
+    list_admin_users,
+    create_admin_user,
+    update_admin_user_password,
+    update_admin_user_active,
+    update_admin_user_last_login,
+    increment_admin_user_failed_login,
+    delete_admin_user,
+    insert_admin_audit_log,
+    list_admin_audit_log,
 )
 
 
 admin_bp = Blueprint("admin_bp", __name__)
 
 
-ADMIN_PANEL_TOKEN = os.environ.get("ADMIN_PANEL_TOKEN")  # ustaw w Render ENV
+ADMIN_PANEL_TOKEN = os.environ.get("ADMIN_PANEL_TOKEN")  # ustaw w Render ENV (LEGACY - docelowo usunąć)
+ADMIN_BOOTSTRAP_TOKEN = os.environ.get("ADMIN_BOOTSTRAP_TOKEN")  # tymczasowy token do utworzenia pierwszego admina
+
+
+# ---------------------------------------------------------------------------
+# SESSION-BASED AUTHENTICATION (nowe logowanie email+hasło)
+# ---------------------------------------------------------------------------
+
+def _get_current_admin_user() -> Optional[Dict[str, Any]]:
+    """Zwraca aktualnie zalogowanego admina z sesji (lub None)."""
+    user_id = session.get("admin_user_id")
+    if not user_id:
+        return None
+    user = get_admin_user_by_id(user_id)
+    if not user or not user.get("is_active"):
+        # Wyczyść nieważną sesję
+        session.pop("admin_user_id", None)
+        return None
+    return user
+
+
+def _require_admin_login():
+    """
+    Dekorator wymagający zalogowania przez sesję.
+    Jeśli użytkownik nie jest zalogowany, przekierowuje do /admin/login.
+    
+    TYMCZASOWO: akceptuje też stary ADMIN_PANEL_TOKEN (dla migracji).
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # 1. Sprawdź sesję (nowe logowanie)
+            user = _get_current_admin_user()
+            if user:
+                # Dodaj user do kontekstu (request.admin_user)
+                request.admin_user = user
+                return f(*args, **kwargs)
+            
+            # 2. LEGACY: sprawdź stary token (do usunięcia po migracji)
+            if ADMIN_PANEL_TOKEN:
+                token = (
+                    (request.args.get("token") or "").strip()
+                    or (request.form.get("token") or "").strip()
+                    or (request.headers.get("X-Admin-Token") or "").strip()
+                )
+                if token and token == ADMIN_PANEL_TOKEN:
+                    # Legacy token - nie ma user, ale przepuszczamy
+                    request.admin_user = None
+                    return f(*args, **kwargs)
+            
+            # 3. Niezalogowany - redirect do logowania
+            return redirect(url_for("admin_bp.login"))
+        return decorated_function
+    return decorator
+
+
+def _get_admin_token_for_legacy() -> Optional[str]:
+    """Zwraca token dla legacy URL-i (jeśli jest w sesji lub request)."""
+    # Jeśli zalogowany przez sesję, nie potrzeba tokenu
+    if _get_current_admin_user():
+        return None
+    # Legacy: token z request
+    return (
+        (request.args.get("token") or "").strip()
+        or (request.form.get("token") or "").strip()
+    ) or None
+
+
+def _generate_csrf_token() -> str:
+    """Generuje lub zwraca istniejący CSRF token z sesji."""
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return session["csrf_token"]
+
+
+def _verify_csrf_token() -> bool:
+    """Weryfikuje CSRF token z formularza."""
+    form_token = request.form.get("csrf_token", "").strip()
+    session_token = session.get("csrf_token", "")
+    return form_token and session_token and secrets.compare_digest(form_token, session_token)
+
+
+def _get_client_ip() -> str:
+    """Pobiera IP klienta (uwzględnia proxy)."""
+    return request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+
+
+# ---------------------------------------------------------------------------
+# LOGIN / LOGOUT ROUTES
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/login", methods=["GET", "POST"])
+def login():
+    """Strona logowania do panelu admin."""
+    error = None
+    
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        password = (request.form.get("password") or "").strip()
+        
+        if not email or not password:
+            error = "Podaj email i hasło"
+        else:
+            user = get_admin_user_by_email(email)
+            if not user:
+                error = "Nieprawidłowy email lub hasło"
+                insert_admin_audit_log(
+                    action="login_failed_unknown_user",
+                    target_email=email,
+                    ip=_get_client_ip(),
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                )
+            elif not user.get("is_active"):
+                error = "Konto jest nieaktywne"
+                insert_admin_audit_log(
+                    action="login_failed_inactive",
+                    admin_user_id=user["id"],
+                    target_email=email,
+                    ip=_get_client_ip(),
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                )
+            elif user.get("locked_until"):
+                import datetime
+                locked = user["locked_until"]
+                now = datetime.datetime.now(datetime.timezone.utc)
+                if isinstance(locked, datetime.datetime) and locked > now:
+                    error = f"Konto zablokowane do {locked.strftime('%H:%M:%S')}"
+                    insert_admin_audit_log(
+                        action="login_failed_locked",
+                        admin_user_id=user["id"],
+                        target_email=email,
+                        ip=_get_client_ip(),
+                        user_agent=request.headers.get("User-Agent", "")[:500],
+                    )
+                else:
+                    # Lock wygasł, kontynuuj sprawdzanie hasła
+                    pass
+            
+            if not error:
+                # Sprawdź hasło
+                if check_password_hash(user["password_hash"], password):
+                    # Sukces - zaloguj
+                    session["admin_user_id"] = user["id"]
+                    session.permanent = True  # Sesja trwa dłużej niż przeglądarka
+                    update_admin_user_last_login(user["id"])
+                    insert_admin_audit_log(
+                        action="login_success",
+                        admin_user_id=user["id"],
+                        target_email=email,
+                        ip=_get_client_ip(),
+                        user_agent=request.headers.get("User-Agent", "")[:500],
+                    )
+                    return redirect(url_for("admin_bp.events_list"))
+                else:
+                    # Błędne hasło
+                    failed_count = increment_admin_user_failed_login(user["id"])
+                    if failed_count >= 5:
+                        error = "Zbyt wiele nieudanych prób. Konto zablokowane na 15 minut."
+                    else:
+                        error = "Nieprawidłowy email lub hasło"
+                    insert_admin_audit_log(
+                        action="login_failed_wrong_password",
+                        admin_user_id=user["id"],
+                        target_email=email,
+                        ip=_get_client_ip(),
+                        user_agent=request.headers.get("User-Agent", "")[:500],
+                        data={"failed_count": failed_count},
+                    )
+    
+    # Formularz logowania
+    body = f"""
+    <div style="max-width:400px; margin:60px auto;">
+      <div class="card">
+        <h2 style="margin-bottom:20px;">Panel Admin - Logowanie</h2>
+        {f'<div style="background:#fff5f5; color:#c53030; padding:12px; border-radius:8px; margin-bottom:16px;">{error}</div>' if error else ''}
+        <form method="post" action="{url_for('admin_bp.login')}">
+          <div class="muted">Email</div>
+          <input type="email" name="email" required autofocus style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+          
+          <div class="muted">Hasło</div>
+          <input type="password" name="password" required style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
+          
+          <button class="btn btnPrimary" type="submit" style="width:100%;">Zaloguj się</button>
+        </form>
+      </div>
+    </div>
+    """
+    return _page("Logowanie", body, show_nav=False)
+
+
+@admin_bp.route("/logout", methods=["GET", "POST"])
+def logout():
+    """Wylogowanie z panelu admin."""
+    user = _get_current_admin_user()
+    if user:
+        insert_admin_audit_log(
+            action="logout",
+            admin_user_id=user["id"],
+            target_email=user["email"],
+            ip=_get_client_ip(),
+            user_agent=request.headers.get("User-Agent", "")[:500],
+        )
+    session.pop("admin_user_id", None)
+    session.pop("csrf_token", None)
+    return redirect(url_for("admin_bp.login"))
+
+
+# ---------------------------------------------------------------------------
+# BOOTSTRAP - tworzenie pierwszego konta admina
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/bootstrap", methods=["GET", "POST"])
+def bootstrap():
+    """
+    Tworzenie pierwszego konta admina.
+    
+    WARUNKI:
+    - Działa TYLKO gdy tabela admin_users jest pusta.
+    - Wymaga ADMIN_BOOTSTRAP_TOKEN (osobny od ADMIN_PANEL_TOKEN).
+    - Po utworzeniu pierwszego admina endpoint przestaje działać.
+    """
+    # Sprawdź czy są już admini
+    count = admin_user_count()
+    if count > 0:
+        return _page(
+            "Bootstrap niedostępny",
+            """
+            <div class="warn">
+              <b>Bootstrap jest niedostępny.</b><br/>
+              W systemie istnieje już co najmniej jedno konto admina.<br/>
+              <a href="/admin/login">Przejdź do logowania</a>
+            </div>
+            """,
+            show_nav=False,
+        )
+    
+    # Sprawdź token bootstrap
+    if not ADMIN_BOOTSTRAP_TOKEN:
+        return _page(
+            "Bootstrap niezskonfigurowany",
+            """
+            <div class="error">
+              <b>Brak ADMIN_BOOTSTRAP_TOKEN w ENV.</b><br/>
+              Ustaw tę zmienną w Render Dashboard, aby utworzyć pierwsze konto admina.
+            </div>
+            """,
+            show_nav=False,
+        )
+    
+    provided_token = (
+        (request.args.get("token") or "").strip()
+        or (request.form.get("bootstrap_token") or "").strip()
+    )
+    
+    # Jeśli nie podano tokenu, pokaż formularz z pytaniem o token
+    if not provided_token:
+        body = """
+        <div style="max-width:400px; margin:60px auto;">
+          <div class="card">
+            <h2 style="margin-bottom:20px;">Bootstrap - Tworzenie pierwszego admina</h2>
+            <div class="muted" style="margin-bottom:16px;">
+              Podaj token bootstrap (ADMIN_BOOTSTRAP_TOKEN z Render ENV).
+            </div>
+            <form method="get" action="">
+              <div class="muted">Token bootstrap</div>
+              <input type="password" name="token" required autofocus 
+                     style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
+              <button class="btn btnPrimary" type="submit" style="width:100%;">Dalej</button>
+            </form>
+          </div>
+        </div>
+        """
+        return _page("Bootstrap", body, show_nav=False)
+    
+    # Weryfikuj token
+    if provided_token != ADMIN_BOOTSTRAP_TOKEN:
+        return _page(
+            "Nieprawidłowy token",
+            """
+            <div class="error">
+              <b>Nieprawidłowy token bootstrap.</b><br/>
+              Sprawdź czy podałeś poprawną wartość ADMIN_BOOTSTRAP_TOKEN.
+            </div>
+            <div style="margin-top:16px;">
+              <a href="/admin/bootstrap" class="btn">Spróbuj ponownie</a>
+            </div>
+            """,
+            show_nav=False,
+        )
+    
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        password = (request.form.get("password") or "").strip()
+        password2 = (request.form.get("password2") or "").strip()
+        
+        # Walidacja
+        if not email or "@" not in email:
+            error = "Podaj prawidłowy adres email"
+        elif not password or len(password) < 8:
+            error = "Hasło musi mieć co najmniej 8 znaków"
+        elif password != password2:
+            error = "Hasła nie są identyczne"
+        else:
+            # Utwórz konto
+            password_hash = generate_password_hash(password)
+            user = create_admin_user(email, password_hash)
+            
+            if user:
+                insert_admin_audit_log(
+                    action="bootstrap_create_admin",
+                    admin_user_id=user["id"],
+                    target_email=email,
+                    ip=_get_client_ip(),
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                )
+                success = f"Konto admina {email} zostało utworzone!"
+            else:
+                error = "Błąd podczas tworzenia konta (może już istnieje taki email?)"
+    
+    # Formularz tworzenia konta
+    body = f"""
+    <div style="max-width:400px; margin:60px auto;">
+      <div class="card">
+        <h2 style="margin-bottom:20px;">Utwórz pierwsze konto admina</h2>
+        
+        {f'<div class="ok" style="margin-bottom:16px;">{success}<br/><a href="/admin/login">Przejdź do logowania</a></div>' if success else ''}
+        {f'<div class="error" style="margin-bottom:16px;">{error}</div>' if error else ''}
+        
+        {'' if success else f'''
+        <form method="post" action="{url_for('admin_bp.bootstrap', token=provided_token)}">
+          <input type="hidden" name="bootstrap_token" value="{provided_token}" />
+          
+          <div class="muted">Email</div>
+          <input type="email" name="email" required autofocus 
+                 style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+          
+          <div class="muted">Hasło (min. 8 znaków)</div>
+          <input type="password" name="password" required minlength="8"
+                 style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+          
+          <div class="muted">Powtórz hasło</div>
+          <input type="password" name="password2" required minlength="8"
+                 style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
+          
+          <button class="btn btnPrimary" type="submit" style="width:100%;">Utwórz konto</button>
+        </form>
+        
+        <div class="muted" style="margin-top:16px; font-size:11px;">
+          Po utworzeniu konta usuń ADMIN_BOOTSTRAP_TOKEN z Render ENV.
+        </div>
+        '''}
+      </div>
+    </div>
+    """
+    return _page("Bootstrap", body, show_nav=False)
 
 
 # Definicje pól dla marketingu (label, opis, placeholder).
@@ -82,19 +457,36 @@ FIELD_DEFS: List[Dict[str, str]] = [
 
 
 def _require_admin_token() -> str:
-    if not ADMIN_PANEL_TOKEN:
-        abort(500, description="Brak ADMIN_PANEL_TOKEN w konfiguracji serwera")
-
-    token = (
-        (request.args.get("token") or "").strip()
-        or (request.form.get("token") or "").strip()
-        or (request.headers.get("X-Admin-Token") or "").strip()
-    )
-    if not token:
-        abort(401, description="Brak tokenu admina (parametr token / header X-Admin-Token)")
-    if token != ADMIN_PANEL_TOKEN:
-        abort(403, description="Nieprawidłowy token admina")
-    return token
+    """
+    Wymaga autoryzacji do panelu admin.
+    
+    MIGRACJA: obsługuje zarówno sesję (nowe) jak i token (legacy).
+    - Jeśli użytkownik jest zalogowany przez sesję: zwraca pusty string (URLs bez tokenu).
+    - Jeśli token jest poprawny: zwraca token (legacy URLs).
+    - Jeśli żadne: przekierowuje do /admin/login.
+    """
+    # 1. Sprawdź sesję (nowe logowanie)
+    user = _get_current_admin_user()
+    if user:
+        request.admin_user = user
+        return ""  # Zalogowany przez sesję - token nie jest potrzebny
+    
+    # 2. Sprawdź legacy token
+    if ADMIN_PANEL_TOKEN:
+        token = (
+            (request.args.get("token") or "").strip()
+            or (request.form.get("token") or "").strip()
+            or (request.headers.get("X-Admin-Token") or "").strip()
+        )
+        if token and token == ADMIN_PANEL_TOKEN:
+            request.admin_user = None  # Legacy - brak user
+            return token
+    
+    # 3. Niezalogowany - redirect do logowania (zamiast abort)
+    # Używamy abort z redirect response, żeby Flask to obsłużył
+    from flask import make_response
+    resp = make_response(redirect(url_for("admin_bp.login")))
+    abort(resp)
 
 
 def _safe_json_loads(s: str) -> Tuple[Optional[Any], Optional[str]]:
@@ -306,22 +698,44 @@ BASE_HTML = """
   </style>
 </head>
 <body>
+  {% if show_nav %}
   <div class="row" style="justify-content: space-between; align-items: baseline;">
     <div>
       <h2 style="margin:0;">{{ title }}</h2>
-      <div class="muted">Panel admin (Postgres) – zabezpieczony tokenem</div>
+      <div class="muted">Panel admin (Postgres) – {{ auth_info }}</div>
     </div>
-    <div class="muted">token: <code>***</code></div>
+    <div>
+      {% if user_email %}
+      <span class="muted">{{ user_email }}</span>
+      <a href="{{ logout_url }}" class="btn" style="margin-left:10px; padding:6px 12px;">Wyloguj</a>
+      {% else %}
+      <span class="muted">token: <code>***</code></span>
+      {% endif %}
+    </div>
   </div>
   <hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />
+  {% endif %}
   {{ body|safe }}
 </body>
 </html>
 """
 
 
-def _page(title: str, body: str) -> str:
-    return render_template_string(BASE_HTML, title=title, body=body)
+def _page(title: str, body: str, show_nav: bool = True) -> str:
+    """Renderuje stronę panelu admin."""
+    user = _get_current_admin_user()
+    user_email = user.get("email") if user else None
+    auth_info = f"zalogowany jako {user_email}" if user_email else "zabezpieczony tokenem"
+    
+    return render_template_string(
+        BASE_HTML,
+        title=title,
+        body=body,
+        show_nav=show_nav,
+        user_email=user_email,
+        auth_info=auth_info,
+        logout_url=url_for("admin_bp.logout") if user else None,
+    )
 
 
 @admin_bp.route("/", methods=["GET"])
@@ -507,7 +921,7 @@ def events_list():
       <a class="btn btnPrimary" href="{url_for('admin_bp.event_new', token=token)}">+ Nowe wydarzenie</a>
       <a class="btn" style="margin-left:10px;" href="{url_for('admin_bp.import_page', token=token)}">Import CSV</a>
       <a class="btn" style="margin-left:10px; background:#e3f2fd;" href="{url_for('admin_bp.orders_list', token=token)}">Zamówienia</a>
-      <span class="muted" style="margin-left:10px;">Zalecane: trzymaj token tylko u adminów.</span>
+      <a class="btn" style="margin-left:10px;" href="{url_for('admin_bp.users_list', token=token)}">Konta admin</a>
     </div>
     <div class="grid">
       {''.join(rows) if rows else '<div class="muted">Brak wydarzeń</div>'}
@@ -1525,6 +1939,388 @@ def order_mark_paid(order_id: str):
         )
 
     return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+
+# ---------------------------------------------------------------------------
+# ZARZĄDZANIE KONTAMI ADMIN
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/users", methods=["GET"])
+def users_list():
+    """Lista kont admina."""
+    token = _require_admin_token()
+    
+    users = list_admin_users()
+    
+    rows = []
+    for u in users:
+        status_badge = '<span class="pill" style="background:#ecfdf3;">Aktywne</span>' if u.get("is_active") else '<span class="pill" style="background:#fff5f5;">Nieaktywne</span>'
+        locked = ""
+        if u.get("locked_until"):
+            import datetime
+            locked_until = u["locked_until"]
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if isinstance(locked_until, datetime.datetime) and locked_until > now:
+                locked = f'<span class="pill" style="background:#fff8e1;">Zablokowany do {locked_until.strftime("%H:%M")}</span>'
+        
+        last_login = str(u.get("last_login_at", ""))[:16] if u.get("last_login_at") else "—"
+        
+        rows.append(f"""
+            <tr>
+              <td>{u.get('email', '')}</td>
+              <td>{status_badge} {locked}</td>
+              <td class="muted">{last_login}</td>
+              <td class="muted">{str(u.get('created_at', ''))[:16]}</td>
+              <td>
+                <a href="{url_for('admin_bp.user_reset_password', user_id=u['id'], token=token)}" class="btn" style="padding:4px 8px; font-size:12px;">Reset hasła</a>
+                {f'<a href="{url_for("admin_bp.user_disable", user_id=u["id"], token=token)}" class="btn" style="padding:4px 8px; font-size:12px;">Dezaktywuj</a>' if u.get('is_active') else f'<a href="{url_for("admin_bp.user_enable", user_id=u["id"], token=token)}" class="btn" style="padding:4px 8px; font-size:12px;">Aktywuj</a>'}
+              </td>
+            </tr>
+        """)
+    
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
+      <a class="btn btnPrimary" href="{url_for('admin_bp.user_new', token=token)}" style="margin-left:10px;">+ Dodaj admina</a>
+    </div>
+
+    <div class="card">
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <thead>
+          <tr style="border-bottom:2px solid #eee;">
+            <th style="text-align:left; padding:8px;">Email</th>
+            <th style="text-align:left; padding:8px;">Status</th>
+            <th style="text-align:left; padding:8px;">Ostatnie logowanie</th>
+            <th style="text-align:left; padding:8px;">Utworzono</th>
+            <th style="text-align:left; padding:8px;">Akcje</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(rows) if rows else '<tr><td colspan="5" class="muted" style="padding:20px; text-align:center;">Brak kont</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    
+    <div style="margin-top:20px;">
+      <a href="{url_for('admin_bp.audit_log', token=token)}" class="muted">Zobacz log audytu →</a>
+    </div>
+    """
+    return _page("Konta admin", body)
+
+
+@admin_bp.route("/users/new", methods=["GET", "POST"])
+def user_new():
+    """Dodawanie nowego konta admina."""
+    token = _require_admin_token()
+    current_user = getattr(request, "admin_user", None)
+    
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        # Weryfikacja CSRF
+        if not _verify_csrf_token():
+            error = "Błąd CSRF - odśwież stronę i spróbuj ponownie"
+        else:
+            email = (request.form.get("email") or "").strip().lower()
+            password = (request.form.get("password") or "").strip()
+            password2 = (request.form.get("password2") or "").strip()
+            
+            if not email or "@" not in email:
+                error = "Podaj prawidłowy adres email"
+            elif get_admin_user_by_email(email):
+                error = "Konto z tym emailem już istnieje"
+            elif not password or len(password) < 8:
+                error = "Hasło musi mieć co najmniej 8 znaków"
+            elif password != password2:
+                error = "Hasła nie są identyczne"
+            else:
+                password_hash = generate_password_hash(password)
+                user = create_admin_user(email, password_hash)
+                
+                if user:
+                    insert_admin_audit_log(
+                        action="create_user",
+                        admin_user_id=current_user["id"] if current_user else None,
+                        target_email=email,
+                        ip=_get_client_ip(),
+                        user_agent=request.headers.get("User-Agent", "")[:500],
+                    )
+                    success = f"Konto {email} zostało utworzone"
+                else:
+                    error = "Błąd podczas tworzenia konta"
+    
+    csrf_token = _generate_csrf_token()
+    
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
+    </div>
+    
+    <div class="card" style="max-width:500px;">
+      <h3 style="margin-top:0;">Dodaj nowe konto admina</h3>
+      
+      {f'<div class="ok" style="margin-bottom:16px;">{success}</div>' if success else ''}
+      {f'<div class="error" style="margin-bottom:16px;">{error}</div>' if error else ''}
+      
+      <form method="post" action="{url_for('admin_bp.user_new', token=token)}">
+        <input type="hidden" name="csrf_token" value="{csrf_token}" />
+        
+        <div class="muted">Email</div>
+        <input type="email" name="email" required style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+        
+        <div class="muted">Hasło (min. 8 znaków)</div>
+        <input type="password" name="password" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+        
+        <div class="muted">Powtórz hasło</div>
+        <input type="password" name="password2" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
+        
+        <button class="btn btnPrimary" type="submit">Utwórz konto</button>
+      </form>
+    </div>
+    """
+    return _page("Nowe konto admina", body)
+
+
+@admin_bp.route("/users/<int:user_id>/reset-password", methods=["GET", "POST"])
+def user_reset_password(user_id: int):
+    """Reset hasła dla konta admina."""
+    token = _require_admin_token()
+    current_user = getattr(request, "admin_user", None)
+    
+    target_user = get_admin_user_by_id(user_id)
+    if not target_user:
+        abort(404, description="Nie znaleziono konta")
+    
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        if not _verify_csrf_token():
+            error = "Błąd CSRF - odśwież stronę i spróbuj ponownie"
+        else:
+            password = (request.form.get("password") or "").strip()
+            password2 = (request.form.get("password2") or "").strip()
+            
+            if not password or len(password) < 8:
+                error = "Hasło musi mieć co najmniej 8 znaków"
+            elif password != password2:
+                error = "Hasła nie są identyczne"
+            else:
+                password_hash = generate_password_hash(password)
+                if update_admin_user_password(user_id, password_hash):
+                    insert_admin_audit_log(
+                        action="reset_password",
+                        admin_user_id=current_user["id"] if current_user else None,
+                        target_email=target_user["email"],
+                        ip=_get_client_ip(),
+                        user_agent=request.headers.get("User-Agent", "")[:500],
+                    )
+                    success = f"Hasło dla {target_user['email']} zostało zmienione"
+                else:
+                    error = "Błąd podczas zmiany hasła"
+    
+    csrf_token = _generate_csrf_token()
+    
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
+    </div>
+    
+    <div class="card" style="max-width:500px;">
+      <h3 style="margin-top:0;">Reset hasła</h3>
+      <div class="muted" style="margin-bottom:16px;">Konto: <b>{target_user['email']}</b></div>
+      
+      {f'<div class="ok" style="margin-bottom:16px;">{success}</div>' if success else ''}
+      {f'<div class="error" style="margin-bottom:16px;">{error}</div>' if error else ''}
+      
+      <form method="post" action="{url_for('admin_bp.user_reset_password', user_id=user_id, token=token)}">
+        <input type="hidden" name="csrf_token" value="{csrf_token}" />
+        
+        <div class="muted">Nowe hasło (min. 8 znaków)</div>
+        <input type="password" name="password" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:12px;" />
+        
+        <div class="muted">Powtórz nowe hasło</div>
+        <input type="password" name="password2" required minlength="8" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-bottom:20px;" />
+        
+        <button class="btn btnPrimary" type="submit">Zmień hasło</button>
+      </form>
+    </div>
+    """
+    return _page("Reset hasła", body)
+
+
+@admin_bp.route("/users/<int:user_id>/disable", methods=["GET", "POST"])
+def user_disable(user_id: int):
+    """Dezaktywacja konta admina."""
+    token = _require_admin_token()
+    current_user = getattr(request, "admin_user", None)
+    
+    target_user = get_admin_user_by_id(user_id)
+    if not target_user:
+        abort(404, description="Nie znaleziono konta")
+    
+    # Nie pozwól dezaktywować samego siebie
+    if current_user and current_user["id"] == user_id:
+        return _page(
+            "Błąd",
+            '<div class="error">Nie możesz dezaktywować własnego konta.</div>'
+            f'<p><a class="btn" href="{url_for("admin_bp.users_list", token=token)}">← Lista kont</a></p>',
+        )
+    
+    if request.method == "POST":
+        if not _verify_csrf_token():
+            return _page(
+                "Błąd CSRF",
+                '<div class="error">Błąd CSRF - odśwież stronę i spróbuj ponownie.</div>'
+                f'<p><a class="btn" href="{url_for("admin_bp.users_list", token=token)}">← Lista kont</a></p>',
+            )
+        
+        if update_admin_user_active(user_id, False):
+            insert_admin_audit_log(
+                action="disable_user",
+                admin_user_id=current_user["id"] if current_user else None,
+                target_email=target_user["email"],
+                ip=_get_client_ip(),
+                user_agent=request.headers.get("User-Agent", "")[:500],
+            )
+        return redirect(url_for("admin_bp.users_list", token=token))
+    
+    csrf_token = _generate_csrf_token()
+    
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
+    </div>
+    
+    <div class="card" style="max-width:500px;">
+      <h3 style="margin-top:0;">Dezaktywacja konta</h3>
+      <div class="warn" style="margin-bottom:16px;">
+        Czy na pewno chcesz dezaktywować konto <b>{target_user['email']}</b>?<br/>
+        Użytkownik nie będzie mógł się zalogować.
+      </div>
+      
+      <form method="post" action="{url_for('admin_bp.user_disable', user_id=user_id, token=token)}">
+        <input type="hidden" name="csrf_token" value="{csrf_token}" />
+        <button class="btn btnDanger" type="submit">Dezaktywuj</button>
+        <a class="btn" href="{url_for('admin_bp.users_list', token=token)}" style="margin-left:10px;">Anuluj</a>
+      </form>
+    </div>
+    """
+    return _page("Dezaktywacja konta", body)
+
+
+@admin_bp.route("/users/<int:user_id>/enable", methods=["GET", "POST"])
+def user_enable(user_id: int):
+    """Aktywacja konta admina."""
+    token = _require_admin_token()
+    current_user = getattr(request, "admin_user", None)
+    
+    target_user = get_admin_user_by_id(user_id)
+    if not target_user:
+        abort(404, description="Nie znaleziono konta")
+    
+    if request.method == "POST":
+        if not _verify_csrf_token():
+            return _page(
+                "Błąd CSRF",
+                '<div class="error">Błąd CSRF - odśwież stronę i spróbuj ponownie.</div>'
+                f'<p><a class="btn" href="{url_for("admin_bp.users_list", token=token)}">← Lista kont</a></p>',
+            )
+        
+        if update_admin_user_active(user_id, True):
+            insert_admin_audit_log(
+                action="enable_user",
+                admin_user_id=current_user["id"] if current_user else None,
+                target_email=target_user["email"],
+                ip=_get_client_ip(),
+                user_agent=request.headers.get("User-Agent", "")[:500],
+            )
+        return redirect(url_for("admin_bp.users_list", token=token))
+    
+    csrf_token = _generate_csrf_token()
+    
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
+    </div>
+    
+    <div class="card" style="max-width:500px;">
+      <h3 style="margin-top:0;">Aktywacja konta</h3>
+      <div style="margin-bottom:16px;">
+        Czy chcesz aktywować konto <b>{target_user['email']}</b>?
+      </div>
+      
+      <form method="post" action="{url_for('admin_bp.user_enable', user_id=user_id, token=token)}">
+        <input type="hidden" name="csrf_token" value="{csrf_token}" />
+        <button class="btn btnPrimary" type="submit">Aktywuj</button>
+        <a class="btn" href="{url_for('admin_bp.users_list', token=token)}" style="margin-left:10px;">Anuluj</a>
+      </form>
+    </div>
+    """
+    return _page("Aktywacja konta", body)
+
+
+@admin_bp.route("/audit-log", methods=["GET"])
+def audit_log():
+    """Log audytu akcji adminów."""
+    token = _require_admin_token()
+    
+    logs = list_admin_audit_log(limit=100)
+    
+    ACTION_LABELS = {
+        "login_success": ("Logowanie", "ok"),
+        "login_failed_wrong_password": ("Błędne hasło", "error"),
+        "login_failed_unknown_user": ("Nieznany email", "error"),
+        "login_failed_inactive": ("Konto nieaktywne", "warn"),
+        "login_failed_locked": ("Konto zablokowane", "warn"),
+        "logout": ("Wylogowanie", ""),
+        "create_user": ("Utworzenie konta", "ok"),
+        "disable_user": ("Dezaktywacja", "warn"),
+        "enable_user": ("Aktywacja", "ok"),
+        "reset_password": ("Reset hasła", "warn"),
+        "bootstrap_create_admin": ("Bootstrap", "ok"),
+    }
+    
+    rows = []
+    for log in logs:
+        action = log.get("action", "")
+        label, cls = ACTION_LABELS.get(action, (action, ""))
+        style = {"ok": "background:#ecfdf3;", "error": "background:#fff5f5;", "warn": "background:#fff8e1;"}.get(cls, "")
+        
+        rows.append(f"""
+            <tr>
+              <td class="muted">{str(log.get('created_at', ''))[:19]}</td>
+              <td><span class="pill" style="{style}">{label}</span></td>
+              <td>{log.get('admin_email', '') or '—'}</td>
+              <td>{log.get('target_email', '') or '—'}</td>
+              <td class="muted">{log.get('ip', '') or '—'}</td>
+            </tr>
+        """)
+    
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.users_list', token=token)}">← Lista kont</a>
+    </div>
+
+    <div class="card">
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <thead>
+          <tr style="border-bottom:2px solid #eee;">
+            <th style="text-align:left; padding:8px;">Data</th>
+            <th style="text-align:left; padding:8px;">Akcja</th>
+            <th style="text-align:left; padding:8px;">Wykonał</th>
+            <th style="text-align:left; padding:8px;">Dotyczy</th>
+            <th style="text-align:left; padding:8px;">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(rows) if rows else '<tr><td colspan="5" class="muted" style="padding:20px; text-align:center;">Brak wpisów</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    """
+    return _page("Log audytu", body)
 
 
 @admin_bp.errorhandler(401)

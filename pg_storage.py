@@ -228,6 +228,40 @@ CREATE TABLE IF NOT EXISTS oauth_states (
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_states_company ON oauth_states(company);
+
+-- ---------------------------------------------------------------------------
+-- ADMIN USERS (logowanie do panelu /admin)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS admin_users (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  failed_login_count INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_login_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users(email);
+
+-- ---------------------------------------------------------------------------
+-- ADMIN AUDIT LOG (kto/co/kiedy w panelu admin)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  admin_user_id BIGINT REFERENCES admin_users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_email TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_user_id ON admin_audit_log(admin_user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action ON admin_audit_log(action);
 """
 
 
@@ -1838,4 +1872,329 @@ def count_participants_by_status(event_order_id: str) -> Dict[str, int]:
     finally:
         _put_conn(pool, conn)
 
+
+# ---------------------------------------------------------------------------
+# ADMIN USERS CRUD (logowanie do panelu /admin)
+# ---------------------------------------------------------------------------
+
+
+def admin_user_count() -> int:
+    """Zwraca liczbę kont admin (do sprawdzenia czy można bootstrap)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM admin_users")
+        row = cur.fetchone()
+        return row[0] if row else 0
+    except Exception as e:
+        print(f"[DB] admin_user_count error: {e}")
+        return 0
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_admin_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Pobiera admina po email."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id, email, password_hash, is_active, failed_login_count, locked_until,
+                   created_at, updated_at, last_login_at
+            FROM admin_users
+            WHERE LOWER(email) = LOWER(%s)
+            """,
+            (str(email).strip(),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_admin_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Pobiera admina po id."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id, email, password_hash, is_active, failed_login_count, locked_until,
+                   created_at, updated_at, last_login_at
+            FROM admin_users
+            WHERE id = %s
+            """,
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def list_admin_users() -> List[Dict[str, Any]]:
+    """Lista wszystkich adminów."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id, email, is_active, failed_login_count, locked_until,
+                   created_at, updated_at, last_login_at
+            FROM admin_users
+            ORDER BY created_at ASC
+            """
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def create_admin_user(email: str, password_hash: str) -> Optional[Dict[str, Any]]:
+    """Tworzy nowego admina. Zwraca utworzony rekord (bez password_hash)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            INSERT INTO admin_users (email, password_hash)
+            VALUES (LOWER(%s), %s)
+            RETURNING id, email, is_active, created_at
+            """,
+            (str(email).strip(), str(password_hash)),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[DB] create_admin_user error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def update_admin_user_password(user_id: int, password_hash: str) -> bool:
+    """Aktualizuje hasło admina."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE admin_users
+            SET password_hash = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (str(password_hash), int(user_id)),
+        )
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] update_admin_user_password error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def update_admin_user_active(user_id: int, is_active: bool) -> bool:
+    """Aktywuje lub dezaktywuje admina."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE admin_users
+            SET is_active = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (bool(is_active), int(user_id)),
+        )
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] update_admin_user_active error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def update_admin_user_last_login(user_id: int) -> bool:
+    """Aktualizuje last_login_at i resetuje failed_login_count."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE admin_users
+            SET last_login_at = NOW(), failed_login_count = 0, locked_until = NULL, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (int(user_id),),
+        )
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] update_admin_user_last_login error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def increment_admin_user_failed_login(user_id: int, lock_minutes: int = 15) -> int:
+    """
+    Zwiększa failed_login_count. Po 5 próbach ustawia locked_until.
+    Zwraca nową wartość failed_login_count.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        # Inkrementuj licznik
+        cur.execute(
+            """
+            UPDATE admin_users
+            SET failed_login_count = failed_login_count + 1, updated_at = NOW()
+            WHERE id = %s
+            RETURNING failed_login_count
+            """,
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+        count = row[0] if row else 0
+
+        # Po 5 nieudanych próbach zablokuj konto
+        if count >= 5:
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET locked_until = NOW() + INTERVAL '%s minutes'
+                WHERE id = %s
+                """,
+                (int(lock_minutes), int(user_id)),
+            )
+        return count
+    except Exception as e:
+        print(f"[DB] increment_admin_user_failed_login error: {e}")
+        return 0
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def delete_admin_user(user_id: int) -> bool:
+    """Usuwa admina (hard delete)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM admin_users WHERE id = %s", (int(user_id),))
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] delete_admin_user error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# ADMIN AUDIT LOG
+# ---------------------------------------------------------------------------
+
+
+def insert_admin_audit_log(
+    action: str,
+    admin_user_id: Optional[int] = None,
+    target_email: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
+    """Dodaje wpis do logu audytu. Zwraca id wpisu."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO admin_audit_log (admin_user_id, action, target_email, ip, user_agent, data)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                admin_user_id,
+                str(action),
+                target_email,
+                ip,
+                user_agent,
+                psycopg2.extras.Json(data or {}),  # type: ignore[attr-defined]
+            ),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        print(f"[DB] insert_admin_audit_log error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def list_admin_audit_log(limit: int = 100) -> List[Dict[str, Any]]:
+    """Lista ostatnich wpisów audytu."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT al.id, al.admin_user_id, au.email as admin_email, al.action,
+                   al.target_email, al.ip, al.user_agent, al.data, al.created_at
+            FROM admin_audit_log al
+            LEFT JOIN admin_users au ON al.admin_user_id = au.id
+            ORDER BY al.created_at DESC
+            LIMIT %s
+            """,
+            (int(limit),),
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
 

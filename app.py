@@ -18,6 +18,22 @@ import threading
 
 app = Flask(__name__)
 
+# ---------------------------------------------------------------------------
+# FLASK SECRET KEY (wymagany dla sesji i CSRF w panelu admin)
+# ---------------------------------------------------------------------------
+FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip()
+if FLASK_SECRET_KEY:
+    app.secret_key = FLASK_SECRET_KEY
+    # Konfiguracja bezpiecznych sesji
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # Secure=True tylko gdy jest HTTPS (na Render zawsze jest)
+    # Lokalnie może być HTTP, więc sprawdzamy czy to produkcja
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"):
+        app.config["SESSION_COOKIE_SECURE"] = True
+else:
+    print("[WARN] Brak FLASK_SECRET_KEY w ENV - sesje admin nie będą działać")
+
 # Panel admin (konfiguracja eventów w Postgres)
 try:
     from admin_panel import admin_bp
