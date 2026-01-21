@@ -3747,6 +3747,8 @@ def order_mark_paid(order_id: str):
 def users_list():
     """Lista kont admina."""
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    can_audit = _user_has_permission(current_user, "audit")
     
     users = list_admin_users()
     
