@@ -3346,9 +3346,9 @@ def order_detail(order_id: str):
         border: 2px solid rgba(2,6,23,0.2);
         border-top-color: #0f172a;
       }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
+      @keyframes spin {{
+        to {{ transform: rotate(360deg); }}
+      }}
     </style>
 
     <div class="order-breadcrumb">
