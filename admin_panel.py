@@ -3487,12 +3487,12 @@ def order_detail(order_id: str):
       .mark-paid-modal .btn {{
         position: relative;
       }}
-      .mark-paid-modal .btn[disabled] {
+      .mark-paid-modal .btn[disabled] {{
         opacity: 0.7;
         cursor: not-allowed;
         transform: none;
-      }
-      .btn-spinner {
+      }}
+      .btn-spinner {{
         display: inline-block;
         width: 16px;
         height: 16px;
@@ -3501,11 +3501,11 @@ def order_detail(order_id: str):
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
         vertical-align: middle;
-      }
-      .btn-spinner.dark {
+      }}
+      .btn-spinner.dark {{
         border: 2px solid rgba(2,6,23,0.2);
         border-top-color: #0f172a;
-      }
+      }}
       @keyframes spin {{
         to {{ transform: rotate(360deg); }}
       }}
