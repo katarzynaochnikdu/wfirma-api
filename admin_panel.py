@@ -2236,30 +2236,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     backstage_orders_link = _val("event_orders_link")
     backstage_attendees_link = _val("event_attendees_link")
 
-    missing = [fd["key"] for fd in FIELD_DEFS if not _val(fd["key"])]
-    missing_html = ""
-    if missing:
-        missing_html = (
-            "<div class='warn'><b>Brakuje pól:</b> "
-            + ", ".join(f"<code>{k}</code>" for k in missing)
-            + "</div>"
-        )
-    else:
-        missing_html = "<div class='ok'><b>OK:</b> wszystkie pola są wypełnione.</div>"
-
-    warnings = []
-    for fd in FIELD_DEFS:
-        k = fd["key"]
-        kind = fd.get("kind")
-        v = _val(k)
-        if not v:
-            continue
-        if kind == "url" and not _is_http_url(v):
-            warnings.append(f"<div class='warn'>Pole <code>{k}</code> nie wygląda jak URL (brak http/https).</div>")
-        if kind == "color" and not _is_hex_color(v):
-            warnings.append(f"<div class='warn'>Pole <code>{k}</code> nie wygląda jak kolor hex (np. #269571).</div>")
-
-    warn_html = "".join(warnings)
+    # Nie alarmujemy o brakujących polach - można edytować w razie potrzeby
 
     # Grupuj pola w sekcje logiczne
     field_sections = {
@@ -2289,10 +2266,10 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         
         # Format value based on type
         if kind == "url" and _is_http_url(v):
-            preview_html = f'<div style="margin-top:8px;"><img src="{v}" style="max-width:100%; height:auto; max-height:200px; border-radius:8px; border:1px solid #e5e7eb;" onerror="this.style.display=\'none\'" /></div>' if any(ext in v.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg']) else ''
-            value_html = f'<a href="{v}" target="_blank" rel="noopener" style="color:#0065D7; text-decoration:none;">Otwórz link ↗</a>{preview_html}'
+            preview_html = f'<div style="margin-top:12px;"><img src="{v}" style="max-width:100%; height:auto; max-height:400px; border-radius:12px; border:2px solid #e5e7eb; box-shadow:0 2px 8px rgba(0,0,0,0.08);" onerror="this.style.display=\'none\'" /></div>' if any(ext in v.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg']) else ''
+            value_html = f'<a href="{v}" target="_blank" rel="noopener" style="color:#0065D7; text-decoration:none; font-weight:500;">Otwórz link ↗</a>{preview_html}'
         elif kind == "color" and _is_hex_color(v):
-            value_html = f'<div style="display:flex; align-items:center; gap:12px;"><div style="width:60px; height:36px; border-radius:8px; background:{v}; border:1px solid #e5e7eb;"></div><code style="font-size:13px;">{v}</code></div>'
+            value_html = f'<div style="display:flex; align-items:center; gap:16px;"><div style="width:80px; height:50px; border-radius:10px; background:{v}; border:2px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></div><code style="font-size:14px; font-weight:600;">{v}</code></div>'
         else:
             value_html = v
         
@@ -2338,36 +2315,43 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     <style>
       .preview-section {{
         background: #fff;
-        border: 1px solid var(--md-border);
-        border-radius: 12px;
-        margin-bottom: 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 16px;
+        margin-bottom: 32px;
         overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
       }}
       .preview-section-header {{
-        padding: 16px 24px;
-        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-        font-weight: 600;
-        font-size: 15px;
-        color: #0f172a;
-        border-bottom: 1px solid var(--md-border);
+        padding: 20px 28px;
+        background: linear-gradient(135deg, #0065D7, #00A1D7);
+        font-weight: 700;
+        font-size: 17px;
+        color: #ffffff;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
       }}
       .preview-section-body {{
-        padding: 0;
+        padding: 8px 0;
       }}
       .field-row {{
         display: grid;
-        grid-template-columns: 200px 1fr;
-        gap: 20px;
-        padding: 20px 24px;
+        grid-template-columns: 240px 1fr;
+        gap: 28px;
+        padding: 24px 28px;
         border-bottom: 1px solid #f1f5f9;
+        transition: background 0.2s;
+      }}
+      .field-row:hover {{
+        background: #fafbfc;
       }}
       .field-row:last-child {{
         border-bottom: none;
       }}
       .field-label {{
-        font-weight: 500;
-        color: #475569;
-        font-size: 14px;
+        font-weight: 600;
+        color: #334155;
+        font-size: 15px;
+        line-height: 1.4;
       }}
       .field-key {{
         display: block;
@@ -2378,8 +2362,9 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
       }}
       .field-value {{
         color: #0f172a;
-        font-size: 14px;
+        font-size: 15px;
         word-break: break-word;
+        line-height: 1.5;
       }}
       .toggle-tech-names {{
         display: inline-block;
@@ -2427,10 +2412,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
       <button id="toggleBtn" onclick="toggleTechNames()" class="toggle-tech-names">🔓 Pokaż nazwy API</button>
     </div>
     
-    {missing_html}
-    {warn_html}
-    
-    <div class="card" style="margin-top:12px;">
+    <div class="card" style="margin-top:20px;">
       <div style="font-weight:700; font-size:20px; color:#0f172a;">{event_name}</div>
       <div class="muted" style="margin-top:4px;"><code>{event_id}</code></div>
     </div>
@@ -3502,9 +3484,9 @@ def order_detail(order_id: str):
         gap: 12px;
         justify-content: center;
       }}
-      .mark-paid-modal .btn {
+      .mark-paid-modal .btn {{
         position: relative;
-      }
+      }}
       .mark-paid-modal .btn[disabled] {
         opacity: 0.7;
         cursor: not-allowed;
