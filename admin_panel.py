@@ -7,7 +7,7 @@ import secrets
 from functools import wraps
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Blueprint, Response, abort, redirect, render_template_string, request, session, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template_string, request, session, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from pg_storage import (
@@ -3287,6 +3287,10 @@ def orders_list():
 def order_detail(order_id: str):
     """Szczegóły zamówienia."""
     token = _require_admin_token()
+    
+    # Pobierz flash messages
+    from flask import get_flashed_messages
+    messages = get_flashed_messages(with_categories=True)
 
     order = get_order(order_id)
     if not order:
@@ -3515,6 +3519,13 @@ def order_detail(order_id: str):
       <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
       {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
     </div>
+    
+    {''.join([
+        f'''<div style="margin-bottom:16px; padding:16px 20px; background:{'#fef2f2' if cat == 'error' else '#fffbeb' if cat == 'warning' else '#f0fdf4'}; border:2px solid {'#fecaca' if cat == 'error' else '#fde68a' if cat == 'warning' else '#bbf7d0'}; border-radius:10px; color:{'#991b1b' if cat == 'error' else '#92400e' if cat == 'warning' else '#166534'}; font-weight:500;">
+          {msg}
+        </div>'''
+        for cat, msg in messages
+    ])}
     
     {f'''
     <div style="margin-bottom:20px; padding:16px 20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px;">
@@ -3905,6 +3916,14 @@ def order_mark_paid(order_id: str):
             print(f"[ADMIN MARK-PAID] Pomijam emaile do uczestników - brak kompletu webhooków")
     except Exception as e:
         print(f"[ADMIN MARK-PAID] Błąd wysyłki emaili do uczestników: {e}")
+
+    # 9. Komunikat dla użytkownika
+    if not invoice_created:
+        flash(f"⚠️ UWAGA: Zamówienie oznaczone jako opłacone, ale faktura VAT NIE została wygenerowana! Błąd: {invoice_error}. Musisz utworzyć fakturę ręcznie w wFirma.", "error")
+    elif not purchaser_email_sent:
+        flash(f"✓ Faktura VAT utworzona ({invoice_number}), ale email do kupującego nie został wysłany. Sprawdź logi.", "warning")
+    else:
+        flash(f"✓ Zamówienie opłacone! Faktura VAT: {invoice_number}, email wysłany do {purchaser_email}.", "success")
 
     return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
 
