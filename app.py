@@ -532,15 +532,9 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
     if refresh_expires_at:
         os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(refresh_expires_at)
 
-    # 2b. Jeśli pojawił się NOWY refresh_token - zapisz do Render ENV (jeśli skonfigurowane)
+    # 2b. Jeśli pojawił się NOWY refresh_token – NIE zapisuj do Render ENV (tylko Postgres)
     if refresh_token and refresh_expires_at:
-        update_render_env_vars(
-            {
-                f"{prefix}REFRESH_TOKEN": final_refresh_token,
-                f"{prefix}REFRESH_TOKEN_EXPIRES": str(refresh_expires_at),
-            },
-            reason=f"wfirma_new_refresh_token:{company_name}",
-        )
+        print(f"[RENDER ENV] Pominięto zapis (tylko Postgres) reason=wfirma_new_refresh_token:{company_name}")
     
     # 3. Jeśli nowy refresh_token - wyślij email jako backup
     if refresh_token and send_refresh_email:
@@ -3978,7 +3972,8 @@ def token_refresh():
         }), 400
     
     # Próba odświeżenia (skip_fresh_check=True gdy force=True)
-    new_token = refresh_access_token(forced_refresh_token=config['refresh_token'], company=company, skip_fresh_check=force)
+    # Nie wymuszaj refresh_tokena z ENV – Postgres jest źródłem prawdy.
+    new_token = refresh_access_token(company=company, skip_fresh_check=force)
     
     if new_token:
         return jsonify({
