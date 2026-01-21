@@ -298,13 +298,13 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- TREŚĆ GŁÓWNA -->
                 <tr>
                   <td valign="top" style="padding: 12px 24px 24px 24px; background-color: #FFFFFF;">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important;">
                       <tr>
-                        <td><h2 style="font-size: 22px; margin: 0;">Cześć <strong>{purchaser_first_name}</strong></h2></td>
+                        <td style="padding: 0;"><h2 style="font-size: 22px; margin: 0;">Cześć <strong>{purchaser_first_name}</strong></h2></td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
-                        <td><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p></td>
+                        <td style="padding: 0;"><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p></td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       {event_datetime_section}
@@ -313,7 +313,7 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                       
                       <!-- PRZYCISK PŁATNOŚCI -->
                       <tr>
-                        <td>
+                        <td style="padding: 0;">
                           <table border="0" cellpadding="0" cellspacing="0">
                             <tr>
                               <td style="display: inline-block; border-radius: 8px; background-color: {color_gradient_1};">
@@ -331,9 +331,9 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- SZCZEGÓŁY ZAMÓWIENIA -->
                 <tr>
                   <td style="padding: 0 24px 8px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
                       </tr>
                       {tickets_rows}
                       <tr>
@@ -355,9 +355,9 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- DANE ROZLICZENIOWE -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="2" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
                       </tr>
                       <tr class="two-column">
                         <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 50%;">
@@ -378,7 +378,7 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- WERYFIKACJA NIP - POPRAWNY -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #4CAF50;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #4CAF50;">
                       <tr>
                         <td colspan="2" style="font-size: 14px; font-weight: bold; padding: 8px 6px; background-color: #E8F5E9; color: #2E7D32;">
                           Weryfikacja NIP
@@ -404,7 +404,7 @@ TEMPLATE_STRIPE_NIP_VALID = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F9FA;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
                         <td style="padding: 16px 24px;">
                           <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
@@ -469,13 +469,13 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- TREŚĆ GŁÓWNA -->
                 <tr>
                   <td valign="top" style="padding: 12px 24px 24px 24px; background-color: #FFFFFF;">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important;">
                       <tr>
-                        <td><h2 style="font-size: 22px; margin: 0;">Cześć <strong>{purchaser_first_name}</strong></h2></td>
+                        <td style="padding: 0;"><h2 style="font-size: 22px; margin: 0;">Cześć <strong>{purchaser_first_name}</strong></h2></td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       <tr>
-                        <td><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p></td>
+                        <td style="padding: 0;"><p>Dziękujemy za rejestrację na <strong>{event_name}</strong>. Aby dokończyć rejestrację i zarezerwować miejsce, wymagane jest dokonanie płatności.</p></td>
                       </tr>
                       <tr><td style="height: 24px;"></td></tr>
                       {event_datetime_section}
@@ -484,7 +484,7 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                       
                       <!-- PRZYCISK PŁATNOŚCI -->
                       <tr>
-                        <td>
+                        <td style="padding: 0;">
                           <table border="0" cellpadding="0" cellspacing="0">
                             <tr>
                               <td style="display: inline-block; border-radius: 8px; background-color: {color_gradient_1};">
@@ -502,9 +502,9 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- SZCZEGÓŁY ZAMÓWIENIA -->
                 <tr>
                   <td style="padding: 0 24px 8px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="3" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
+                        <td colspan="3" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Szczegóły zamówienia</td>
                       </tr>
                       {tickets_rows}
                       <tr>
@@ -526,9 +526,9 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- DANE ROZLICZENIOWE -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td colspan="2" style="font-size: 16px; font-weight: bold; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Dane rozliczeniowe</td>
                       </tr>
                       <tr class="two-column">
                         <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 50%;">
@@ -547,7 +547,7 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- WERYFIKACJA NIP - NIEPOPRAWNY -->
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; border: 1px solid #FF9800;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #FF9800;">
                       <tr>
                         <td style="font-size: 14px; font-weight: bold; padding: 8px 6px; background-color: #FFF3E0; color: #E65100;">
                           Weryfikacja NIP
@@ -577,7 +577,7 @@ TEMPLATE_STRIPE_NIP_INVALID = '''<!doctype html>
                 <!-- FOOTER -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F9FA;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
                         <td style="padding: 16px 24px;">
                           <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
@@ -1495,23 +1495,25 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                   </td>
                 </tr>
 
-                <!-- HEADER: Potwierdzenie rezerwacji - BEZ GRADIENTU -->
+                <!-- TREŚĆ GŁÓWNA -->
                 <tr>
-                  <td style="padding: 24px 24px 16px 24px;">
-                    <h1 style="margin: 0; font-size: 22px; color: #333333; font-weight: bold;">
-                      Twoja rezerwacja jest potwierdzona!
-                    </h1>
-                  </td>
-                </tr>
-
-                <!-- GREETING -->
-                <tr>
-                  <td style="padding: 0 24px 20px 24px;">
-                    <p style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Cześć <strong>{participant_first_name}</strong>!</p>
-                    <p style="margin: 0; font-size: 15px; color: #555; line-height: 1.5;">
-                      Twoje miejsce na wydarzeniu <strong>{event_name}</strong> zostało potwierdzone. 
-                      Poniżej znajdziesz szczegóły swojej rezerwacji.
-                    </p>
+                  <td valign="top" style="padding: 12px 24px 24px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important;">
+                      <tr>
+                        <td style="padding: 0;"><h2 style="font-size: 22px; margin: 0;">Cześć <strong>{participant_first_name}</strong></h2></td>
+                      </tr>
+                      <tr><td style="height: 24px;"></td></tr>
+                      <tr>
+                        <td style="padding: 0;">
+                          <p style="font-size: 18px; color: #2E7D32; font-weight: bold; margin: 0 0 12px 0;">Twoja rezerwacja jest potwierdzona!</p>
+                          <p style="margin: 0; font-size: 14px; color: #555; line-height: 1.5;">
+                            Twoje miejsce na wydarzeniu <strong>{event_name}</strong> zostało potwierdzone. 
+                            Poniżej znajdziesz szczegóły swojej rezerwacji.
+                          </p>
+                        </td>
+                      </tr>
+                      <tr><td style="height: 24px;"></td></tr>
+                    </table>
                   </td>
                 </tr>
 
@@ -1576,11 +1578,11 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                 <!-- FOOTER - jasne tło, ciemny tekst -->
                 <tr>
                   <td valign="top">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F9FA;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width:100%!important; background-color: #F8F9FA;">
                       <tr>
                         <td style="padding: 16px 24px;">
                           <p style="text-align: center; color: #666666; font-size: 13px; margin: 0;">
-                            Masz pytania? Napisz do nas: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>
+                            Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>
                           </p>
                         </td>
                       </tr>
