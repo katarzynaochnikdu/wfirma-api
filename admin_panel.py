@@ -30,6 +30,9 @@ from pg_storage import (
     update_order_status,
     get_wfirma_documents,
     count_participants_by_status,
+    # Mails
+    mail_log_exists,
+    save_mail_log,
     # Admin users
     admin_user_count,
     get_admin_user_by_email,
@@ -3330,6 +3333,26 @@ def order_detail(order_id: str):
         </div>
         """
 
+    # === STATUS AUTOMATYZACJI ===
+    # Sprawdź jakie dokumenty wFirma istnieją
+    has_proforma = any(d.get("document_type") == "proforma" for d in wfirma_docs)
+    has_final_invoice = any(d.get("document_type") == "normal" for d in wfirma_docs)
+    
+    # Sprawdź jakie maile zostały wysłane
+    mail_proforma_sent = mail_log_exists(order_id, "proforma_sent", direction="purchaser")
+    mail_payment_confirmation_sent = mail_log_exists(order_id, "payment_confirmation", direction="purchaser")
+    
+    # Sprawdź statusy uczestników
+    participants_stats = count_participants_by_status(order_id)
+    total_participants = sum(participants_stats.values())
+    emailed_participants = participants_stats.get("emailed", 0)
+    
+    # Określ oczekiwany flow na podstawie payment_option_name
+    payment_option = (order.get("payment_option_name") or "").lower()
+    is_proforma_flow = "pro-forma" in payment_option or "proforma" in payment_option
+    is_foc_flow = total == 0 or "foc" in payment_option or "free" in payment_option
+    is_stripe_flow = not is_proforma_flow and not is_foc_flow and total > 0
+
     # Przycisk "Oznacz jako opłacone" tylko dla pending_payment (obok statusu)
     mark_paid_form = ""
     if status == "pending_payment":
@@ -3626,6 +3649,135 @@ def order_detail(order_id: str):
         </div>
       </div>
     </div>
+
+    <!-- SEKCJA: Status automatyzacji -->
+    <div class="order-section" style="margin-top:24px; grid-column: 1 / -1;">
+      <div class="order-section-header">Status automatyzacji</div>
+      <div class="order-section-body">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px;">
+          
+          <!-- Dokumenty -->
+          <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+            <div style="font-weight:600; margin-bottom:12px; color:#334155; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Dokumenty wFirma</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="pill {'pill-success' if has_proforma else 'pill-error'}" style="font-size:11px;">{'✓' if has_proforma else '✗'}</span>
+                <span style="font-size:13px;">Proforma</span>
+                {f'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(\\'genProformaModal\\').style.display=\\'flex\\'">Wygeneruj</button>' if not has_proforma and is_proforma_flow else ''}
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="pill {'pill-success' if has_final_invoice else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if has_final_invoice else '—' if status != 'paid' else '✗'}</span>
+                <span style="font-size:13px;">Faktura końcowa</span>
+                {f'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(\\'genInvoiceModal\\').style.display=\\'flex\\'">Wygeneruj</button>' if not has_final_invoice and status == 'paid' else ''}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Maile do kupującego -->
+          <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+            <div style="font-weight:600; margin-bottom:12px; color:#334155; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Maile do kupującego</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="pill {'pill-success' if mail_proforma_sent else 'pill-warning' if not is_proforma_flow else 'pill-error'}" style="font-size:11px;">{'✓' if mail_proforma_sent else '—' if not is_proforma_flow else '✗'}</span>
+                <span style="font-size:13px;">Email z proformą</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="pill {'pill-success' if mail_payment_confirmation_sent else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if mail_payment_confirmation_sent else '—' if status != 'paid' else '✗'}</span>
+                <span style="font-size:13px;">Potwierdzenie płatności</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Uczestnicy -->
+          <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+            <div style="font-weight:600; margin-bottom:12px; color:#334155; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Uczestnicy</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:13px;">Łącznie: <strong>{total_participants}</strong></span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="pill {'pill-success' if emailed_participants == total_participants and total_participants > 0 else 'pill-warning' if status != 'paid' else 'pill-error' if emailed_participants < total_participants else 'pill'}" style="font-size:11px;">
+                  {emailed_participants}/{total_participants}
+                </span>
+                <span style="font-size:13px;">Powiadomieni</span>
+              </div>
+            </div>
+          </div>
+          
+        </div>
+        
+        <!-- Legenda -->
+        <div style="margin-top:16px; padding-top:16px; border-top:1px solid #e2e8f0; font-size:12px; color:#64748b;">
+          <span style="margin-right:16px;"><span class="pill pill-success" style="font-size:10px;">✓</span> Zrealizowano</span>
+          <span style="margin-right:16px;"><span class="pill pill-warning" style="font-size:10px;">—</span> Nie dotyczy / oczekuje</span>
+          <span><span class="pill pill-error" style="font-size:10px;">✗</span> Brakuje</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Modal: Generuj proformę -->
+    <div id="genProformaModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
+      <div class="mark-paid-modal-content">
+        <h3>Wygeneruj proformę</h3>
+        <p>
+          Utworzyć proformę w wFirma dla tego zamówienia?<br/>
+          <span style="font-size:13px;">Email z proformą zostanie wysłany do kupującego (jeśli jeszcze nie wysłano).</span>
+        </p>
+        <div class="modal-actions">
+          <form id="genProformaForm" method="post" action="{url_for('admin_bp.order_generate_proforma', order_id=order_id)}" style="margin:0;">
+            <input type="hidden" name="token" value="{token}" />
+            <button id="genProformaSubmit" class="btn btnPrimary" type="submit" style="min-width:160px;">
+              <span class="btn-label">Tak, generuj</span>
+              <span class="btn-spinner" style="display:none;"></span>
+            </button>
+          </form>
+          <button class="btn" type="button" onclick="document.getElementById('genProformaModal').style.display='none'" style="min-width:120px;">
+            Anuluj
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Modal: Generuj fakturę końcową -->
+    <div id="genInvoiceModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
+      <div class="mark-paid-modal-content">
+        <h3>Wygeneruj fakturę końcową</h3>
+        <p>
+          Utworzyć fakturę VAT w wFirma dla tego zamówienia?<br/>
+          <span style="font-size:13px;">Email z potwierdzeniem zostanie wysłany do kupującego (jeśli jeszcze nie wysłano).</span>
+        </p>
+        <div class="modal-actions">
+          <form id="genInvoiceForm" method="post" action="{url_for('admin_bp.order_generate_invoice', order_id=order_id)}" style="margin:0;">
+            <input type="hidden" name="token" value="{token}" />
+            <button id="genInvoiceSubmit" class="btn btnPrimary" type="submit" style="min-width:160px;">
+              <span class="btn-label">Tak, generuj</span>
+              <span class="btn-spinner" style="display:none;"></span>
+            </button>
+          </form>
+          <button class="btn" type="button" onclick="document.getElementById('genInvoiceModal').style.display='none'" style="min-width:120px;">
+            Anuluj
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <script>
+      // Spinner dla modali generowania
+      ['genProformaForm', 'genInvoiceForm'].forEach(function(formId) {{
+        var form = document.getElementById(formId);
+        if (!form) return;
+        form.addEventListener('submit', function() {{
+          var submitBtn = form.querySelector('button[type="submit"]');
+          if (submitBtn) {{
+            submitBtn.disabled = true;
+            var label = submitBtn.querySelector('.btn-label');
+            var spinner = submitBtn.querySelector('.btn-spinner');
+            if (label) label.textContent = 'Generuję...';
+            if (spinner) spinner.style.display = 'inline-block';
+          }}
+        }});
+      }});
+    </script>
     """
     return _page("Szczegóły zamówienia", body)
 
@@ -3757,13 +3909,12 @@ def order_mark_paid(order_id: str):
     # 5. Aktualizuj status zamówienia
     update_order_status(order_id, "paid")
 
-    # 6. Wyślij email z potwierdzeniem rezerwacji do kupującego
-    from pg_storage import save_mail_log
-
+    # 6. Wyślij email z potwierdzeniem rezerwacji do kupującego (tylko jeśli nie był wysłany)
     purchaser_email_sent = False
     purchaser_email_error = None
+    purchaser_email_already_sent = mail_log_exists(order_id, "payment_confirmation", "purchaser")
     
-    if purchaser_email:
+    if purchaser_email and not purchaser_email_already_sent:
         try:
             from email_templates import render_payment_confirmation_email
             from backstage_engine import _send_email_via_make
@@ -3816,6 +3967,8 @@ def order_mark_paid(order_id: str):
         except Exception as e:
             purchaser_email_error = str(e)
             print(f"[ADMIN MARK-PAID] WYJĄTEK wysyłki emaila: {e}")
+    elif purchaser_email_already_sent:
+        print(f"[ADMIN MARK-PAID] Email potwierdzenia już był wysłany - pomijam duplikat")
 
     # 7. Email wewnętrzny
     import os
@@ -3829,6 +3982,9 @@ def order_mark_paid(order_id: str):
             if invoice_created and purchaser_email_sent:
                 internal_subject = f"[PAID OK] Zamówienie opłacone (admin) – {event_name}"
                 status_html = '<p style="color: #28a745;"><strong>✓ Faktura utworzona, email wysłany</strong></p>'
+            elif invoice_created and purchaser_email_already_sent:
+                internal_subject = f"[PAID OK] Zamówienie opłacone (admin) – {event_name}"
+                status_html = '<p style="color: #28a745;"><strong>✓ Faktura utworzona</strong></p><p style="color: #17a2b8;">ℹ️ Email do kupującego był już wysłany wcześniej</p>'
             elif invoice_created:
                 internal_subject = f"[PAID] Zamówienie opłacone, faktura OK – {event_name}"
                 status_html = f'<p style="color: #ffc107;"><strong>✓ Faktura utworzona</strong></p><p style="color: #dc3545;">⚠️ Email nie wysłany: {purchaser_email_error or "brak adresu"}</p>'
@@ -3901,10 +4057,384 @@ def order_mark_paid(order_id: str):
     # 9. Komunikat dla użytkownika
     if not invoice_created:
         flash(f"⚠️ UWAGA: Zamówienie oznaczone jako opłacone, ale faktura VAT NIE została wygenerowana! Błąd: {invoice_error}. Musisz utworzyć fakturę ręcznie w wFirma.", "error")
-    elif not purchaser_email_sent:
+    elif purchaser_email_already_sent:
+        flash(f"✓ Zamówienie opłacone! Faktura VAT: {invoice_number}. Email do kupującego był już wcześniej wysłany.", "success")
+    elif not purchaser_email_sent and purchaser_email:
         flash(f"✓ Faktura VAT utworzona ({invoice_number}), ale email do kupującego nie został wysłany. Sprawdź logi.", "warning")
+    elif not purchaser_email:
+        flash(f"✓ Zamówienie opłacone! Faktura VAT: {invoice_number}. Brak adresu email kupującego.", "warning")
     else:
         flash(f"✓ Zamówienie opłacone! Faktura VAT: {invoice_number}, email wysłany do {purchaser_email}.", "success")
+
+    return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+
+@admin_bp.route("/orders/<order_id>/generate-proforma", methods=["POST"])
+@_require_permission("orders")
+def order_generate_proforma(order_id: str):
+    """
+    Ręcznie generuje proformę dla zamówienia.
+    
+    Flow:
+    1. Sprawdza czy proforma już istnieje
+    2. Generuje proformę przez wFirma
+    3. Wysyła email (jeśli nie był wysłany)
+    4. Aktualizuje status na pending_payment
+    """
+    token = _require_admin_token()
+
+    order = get_order(order_id)
+    if not order:
+        abort(404, description="Nie znaleziono zamówienia")
+
+    # 1. Sprawdź czy proforma już istnieje
+    existing_docs = get_wfirma_documents(order_id)
+    has_proforma = any((d or {}).get("document_type") == "proforma" for d in (existing_docs or []))
+    
+    if has_proforma:
+        flash("Proforma już istnieje dla tego zamówienia.", "warning")
+        return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+    # Pobierz dane eventu
+    event_id = order.get("event_id", "")
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+    event_data = (ev.get("data") if ev else {}) or {}
+
+    # Dane kupującego
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_first_name = order.get("purchaser_first_name", "") or ""
+    purchaser_last_name = order.get("purchaser_last_name", "") or ""
+    purchaser_name = f"{purchaser_first_name} {purchaser_last_name}".strip()
+    purchaser_nip = order.get("purchaser_nip", "") or ""
+    
+    # Kwota
+    total_raw = order.get("total", 0)
+    try:
+        total_value = float(total_raw or 0)
+    except Exception:
+        total_value = 0.0
+    currency_value = order.get("currency", "PLN") or "PLN"
+
+    print(f"[ADMIN GEN-PROFORMA] Tworzę proformę dla {order_id} | event={event_name[:30] if event_name else 'N/A'}")
+
+    # Przygotuj dane do faktury
+    raw_payload = order.get("raw", {}) or {}
+    
+    billing_address_data = raw_payload.get("eventOrder_billingAddress", {}) or {}
+    billing_address = billing_address_data.get("streetAddress1") or billing_address_data.get("street") or "-"
+    billing_zip = billing_address_data.get("zipcode") or billing_address_data.get("zip") or "00-000"
+    billing_city = billing_address_data.get("city") or "-"
+    
+    # Wyciągnij i wzbogać bilety
+    enriched_tickets = []
+    try:
+        from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+        
+        raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+        if raw_tickets and event_id:
+            enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+            print(f"[ADMIN GEN-PROFORMA] Wygenerowano {len(enriched_tickets)} pozycji biletów")
+    except Exception as e:
+        print(f"[ADMIN GEN-PROFORMA] Błąd pobierania biletów: {e}")
+    
+    order_data_for_invoice = {
+        "event_order_id": order_id,
+        "event_id": event_id,
+        "purchaser_email": purchaser_email,
+        "purchaser_first_name": purchaser_first_name,
+        "purchaser_last_name": purchaser_last_name,
+        "purchaser_nip": purchaser_nip,
+        "billing_address": billing_address,
+        "billing_zip": billing_zip,
+        "billing_city": billing_city,
+        "total": total_value,
+        "currency": currency_value,
+        "tickets": enriched_tickets,
+    }
+
+    # 2. Generuj proformę
+    proforma_created = False
+    proforma_number = None
+    proforma_error = None
+    
+    try:
+        from backstage_engine import _create_proforma_invoice
+        
+        success, proforma_result, error = _create_proforma_invoice(
+            order_data=order_data_for_invoice,
+            event_name=event_name,
+            send_email=False,  # Nie wysyłamy przez wFirma, sami wyślemy
+        )
+        
+        if success and proforma_result:
+            proforma_created = True
+            proforma_number = proforma_result.get("invoice", {}).get("fullnumber")
+            print(f"[ADMIN GEN-PROFORMA] Proforma utworzona: {proforma_number}")
+        else:
+            proforma_error = error
+            print(f"[ADMIN GEN-PROFORMA] BŁĄD tworzenia proformy: {error}")
+    except Exception as e:
+        proforma_error = str(e)
+        print(f"[ADMIN GEN-PROFORMA] WYJĄTEK podczas tworzenia proformy: {e}")
+
+    # 3. Aktualizuj status zamówienia
+    if proforma_created:
+        update_order_status(order_id, "pending_payment")
+
+    # 4. Wyślij email z proformą (jeśli nie był wysłany)
+    email_sent = False
+    email_error = None
+    
+    if proforma_created and purchaser_email and not mail_log_exists(order_id, "proforma_sent", "purchaser"):
+        try:
+            from email_templates import render_proforma_reservation_email
+            from backstage_engine import _send_email_via_make
+            
+            proforma_subject = f"Twoja rejestracja na {event_name} - płatność pro forma"
+            
+            proforma_body_html = render_proforma_reservation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name or "Uczestnik",
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                total_gross=total_value,
+                currency=currency_value,
+                event_config=event_data,
+                tickets=enriched_tickets,
+                proforma_number=proforma_number,
+            )
+            
+            save_mail_log(
+                event_order_id=order_id,
+                direction="purchaser",
+                template_key="proforma_sent",
+                to_email=purchaser_email,
+                subject=proforma_subject,
+                data={
+                    "event_order_id": order_id,
+                    "event_name": event_name,
+                    "proforma_number": proforma_number,
+                    "total": total_value,
+                    "currency": currency_value,
+                },
+            )
+            
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=proforma_subject,
+                body_html=proforma_body_html,
+                event_order_id=order_id,
+                template_type="proforma_sent",
+            )
+            
+            if result.get("success"):
+                email_sent = True
+                print(f"[ADMIN GEN-PROFORMA] Email z proformą wysłany do {purchaser_email}")
+            else:
+                email_error = result.get("error", "Nieznany błąd")
+                print(f"[ADMIN GEN-PROFORMA] BŁĄD wysyłki emaila: {email_error}")
+        except Exception as e:
+            email_error = str(e)
+            print(f"[ADMIN GEN-PROFORMA] WYJĄTEK wysyłki emaila: {e}")
+    elif mail_log_exists(order_id, "proforma_sent", "purchaser"):
+        print(f"[ADMIN GEN-PROFORMA] Email z proformą już był wysłany - pomijam")
+
+    # 5. Komunikat dla użytkownika
+    if not proforma_created:
+        flash(f"❌ Błąd generowania proformy: {proforma_error}", "error")
+    elif not email_sent and purchaser_email and not mail_log_exists(order_id, "proforma_sent", "purchaser"):
+        flash(f"✓ Proforma utworzona ({proforma_number}), ale email nie został wysłany: {email_error}", "warning")
+    elif not purchaser_email:
+        flash(f"✓ Proforma utworzona ({proforma_number}). Brak adresu email kupującego.", "warning")
+    else:
+        flash(f"✓ Proforma utworzona ({proforma_number}) i email wysłany do {purchaser_email}.", "success")
+
+    return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+
+@admin_bp.route("/orders/<order_id>/generate-invoice", methods=["POST"])
+@_require_permission("orders")
+def order_generate_invoice(order_id: str):
+    """
+    Ręcznie generuje fakturę końcową (VAT) dla zamówienia.
+    
+    Flow:
+    1. Sprawdza czy faktura końcowa już istnieje
+    2. Sprawdza czy zamówienie jest opłacone
+    3. Generuje fakturę przez wFirma
+    4. Wysyła email potwierdzenia (jeśli nie był wysłany)
+    """
+    token = _require_admin_token()
+
+    order = get_order(order_id)
+    if not order:
+        abort(404, description="Nie znaleziono zamówienia")
+
+    status = order.get("status", "received")
+    
+    # Sprawdź czy zamówienie jest opłacone
+    if status != "paid":
+        flash(f"Nie można wygenerować faktury końcowej - zamówienie nie jest opłacone (status: {status}). Użyj 'Oznacz jako opłacone'.", "error")
+        return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+    # 1. Sprawdź czy faktura końcowa już istnieje
+    existing_docs = get_wfirma_documents(order_id)
+    has_final_invoice = any((d or {}).get("document_type") == "normal" for d in (existing_docs or []))
+    
+    if has_final_invoice:
+        flash("Faktura końcowa już istnieje dla tego zamówienia.", "warning")
+        return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+    # Pobierz dane eventu
+    event_id = order.get("event_id", "")
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+    event_data = (ev.get("data") if ev else {}) or {}
+
+    # Dane kupującego
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_first_name = order.get("purchaser_first_name", "") or ""
+    purchaser_last_name = order.get("purchaser_last_name", "") or ""
+    purchaser_name = f"{purchaser_first_name} {purchaser_last_name}".strip()
+    purchaser_nip = order.get("purchaser_nip", "") or ""
+    
+    # Kwota
+    total_raw = order.get("total", 0)
+    try:
+        total_value = float(total_raw or 0)
+    except Exception:
+        total_value = 0.0
+    currency_value = order.get("currency", "PLN") or "PLN"
+
+    print(f"[ADMIN GEN-INVOICE] Tworzę fakturę końcową dla {order_id} | event={event_name[:30] if event_name else 'N/A'}")
+
+    # Przygotuj dane do faktury
+    raw_payload = order.get("raw", {}) or {}
+    
+    billing_address_data = raw_payload.get("eventOrder_billingAddress", {}) or {}
+    billing_address = billing_address_data.get("streetAddress1") or billing_address_data.get("street") or "-"
+    billing_zip = billing_address_data.get("zipcode") or billing_address_data.get("zip") or "00-000"
+    billing_city = billing_address_data.get("city") or "-"
+    
+    # Wyciągnij i wzbogać bilety
+    enriched_tickets = []
+    try:
+        from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+        
+        raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+        if raw_tickets and event_id:
+            enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+            print(f"[ADMIN GEN-INVOICE] Wygenerowano {len(enriched_tickets)} pozycji biletów")
+    except Exception as e:
+        print(f"[ADMIN GEN-INVOICE] Błąd pobierania biletów: {e}")
+    
+    order_data_for_invoice = {
+        "event_order_id": order_id,
+        "event_id": event_id,
+        "purchaser_email": purchaser_email,
+        "purchaser_first_name": purchaser_first_name,
+        "purchaser_last_name": purchaser_last_name,
+        "purchaser_nip": purchaser_nip,
+        "billing_address": billing_address,
+        "billing_zip": billing_zip,
+        "billing_city": billing_city,
+        "total": total_value,
+        "currency": currency_value,
+        "tickets": enriched_tickets,
+    }
+
+    # 2. Generuj fakturę końcową
+    invoice_created = False
+    invoice_number = None
+    invoice_error = None
+    
+    try:
+        from backstage_engine import _create_paid_invoice
+        
+        success, invoice_result, error = _create_paid_invoice(
+            order_data=order_data_for_invoice,
+            event_name=event_name,
+            send_email=False,  # Nie wysyłamy przez wFirma, sami wyślemy
+        )
+        
+        if success and invoice_result:
+            invoice_created = True
+            invoice_number = invoice_result.get("invoice", {}).get("fullnumber")
+            print(f"[ADMIN GEN-INVOICE] Faktura utworzona: {invoice_number}")
+        else:
+            invoice_error = error
+            print(f"[ADMIN GEN-INVOICE] BŁĄD tworzenia faktury: {error}")
+    except Exception as e:
+        invoice_error = str(e)
+        print(f"[ADMIN GEN-INVOICE] WYJĄTEK podczas tworzenia faktury: {e}")
+
+    # 3. Wyślij email potwierdzenia (jeśli nie był wysłany)
+    email_sent = False
+    email_error = None
+    
+    if invoice_created and purchaser_email and not mail_log_exists(order_id, "payment_confirmation", "purchaser"):
+        try:
+            from email_templates import render_payment_confirmation_email
+            from backstage_engine import _send_email_via_make
+            
+            confirmation_subject = f"Płatność potwierdzona! Twoja rezerwacja na {event_name}"
+            
+            confirmation_body_html = render_payment_confirmation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name or "Uczestnik",
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                purchaser_phone=order.get("purchaser_phone", ""),
+                total_gross=total_value,
+                event_config=event_data,
+                tickets=enriched_tickets,
+            )
+            
+            save_mail_log(
+                event_order_id=order_id,
+                direction="purchaser",
+                template_key="payment_confirmation",
+                to_email=purchaser_email,
+                subject=confirmation_subject,
+                data={
+                    "event_order_id": order_id,
+                    "event_name": event_name,
+                    "invoice_number": invoice_number,
+                    "total": total_value,
+                    "currency": currency_value,
+                },
+            )
+            
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=confirmation_subject,
+                body_html=confirmation_body_html,
+                event_order_id=order_id,
+                template_type="payment_confirmation",
+            )
+            
+            if result.get("success"):
+                email_sent = True
+                print(f"[ADMIN GEN-INVOICE] Email potwierdzenia wysłany do {purchaser_email}")
+            else:
+                email_error = result.get("error", "Nieznany błąd")
+                print(f"[ADMIN GEN-INVOICE] BŁĄD wysyłki emaila: {email_error}")
+        except Exception as e:
+            email_error = str(e)
+            print(f"[ADMIN GEN-INVOICE] WYJĄTEK wysyłki emaila: {e}")
+    elif mail_log_exists(order_id, "payment_confirmation", "purchaser"):
+        print(f"[ADMIN GEN-INVOICE] Email potwierdzenia już był wysłany - pomijam")
+
+    # 4. Komunikat dla użytkownika
+    if not invoice_created:
+        flash(f"❌ Błąd generowania faktury końcowej: {invoice_error}", "error")
+    elif not email_sent and purchaser_email and not mail_log_exists(order_id, "payment_confirmation", "purchaser"):
+        flash(f"✓ Faktura końcowa utworzona ({invoice_number}), ale email nie został wysłany: {email_error}", "warning")
+    elif not purchaser_email:
+        flash(f"✓ Faktura końcowa utworzona ({invoice_number}). Brak adresu email kupującego.", "warning")
+    else:
+        flash(f"✓ Faktura końcowa utworzona ({invoice_number}) i email wysłany do {purchaser_email}.", "success")
 
     return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
 

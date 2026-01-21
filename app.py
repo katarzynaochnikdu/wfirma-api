@@ -343,9 +343,11 @@ def update_render_env_vars(values: dict, reason: str = "") -> bool:
         resp = requests.patch(url, headers=headers, json=payload, timeout=20)
         ok = resp.status_code in (200, 201, 202, 204)
         if not ok and resp.status_code in (404, 405):
-            print(f"[RENDER ENV] PATCH niedostępny (status={resp.status_code}) — próbuję PUT")
-            resp = requests.put(url, headers=headers, json=payload, timeout=20)
-            ok = resp.status_code in (200, 201, 202, 204)
+            # NIE robimy fallback na PUT - PUT nadpisuje WSZYSTKIE zmienne (katastrofa!)
+            # Render API nie obsługuje PATCH na /env-vars, tylko PUT który wymaga pełnej listy
+            print(f"[RENDER ENV] PATCH niedostępny (status={resp.status_code}) — PUT WYŁĄCZONY (niebezpieczny)")
+            print(f"[RENDER ENV] Zmienne zapisane tylko do pamięci procesu i Postgres")
+            return True  # os.environ już zaktualizowany na początku funkcji
         if ok:
             print(f"[RENDER ENV] OK status={resp.status_code} keys=[{keys}]")
         else:
@@ -549,7 +551,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
             prefix=prefix
         )
 
-def refresh_access_token(forced_refresh_token=None, company=None):
+def refresh_access_token(forced_refresh_token=None, company=None, skip_fresh_check=False):
     """
     Odśwież access_token używając refresh_token.
     
@@ -562,6 +564,7 @@ def refresh_access_token(forced_refresh_token=None, company=None):
     Args:
         forced_refresh_token: Wymuszony refresh token
         company: Firma/zestaw danych ('md' lub 'test')
+        skip_fresh_check: Jeśli True, pomija sprawdzanie czy token jest świeży (wymusza refresh)
     """
     config = get_company_config(company)
     prefix = config['prefix']
@@ -584,13 +587,15 @@ def refresh_access_token(forced_refresh_token=None, company=None):
 
     try:
         log_prefix = f"[TOKEN REFRESH] [{company_name.upper()}]"
-        print(f"{log_prefix} START forced={bool(forced_refresh_token)}")
+        print(f"{log_prefix} START forced={bool(forced_refresh_token)} skip_fresh_check={skip_fresh_check}")
         # Jeśli inny worker już odświeżył token (i zapisał do Postgres) – użyj i nie rób refreshu ponownie
         now_ts = int(time.time())
         pg_tok = None
         if get_wfirma_token:
             pg_tok = get_wfirma_token(company_name)
-        if pg_tok and pg_tok.get("access_token") and int(pg_tok.get("access_token_expires_at") or 0) > (now_ts + 60):
+        
+        # Pomijamy sprawdzanie świeżości jeśli skip_fresh_check=True (wymuszony refresh)
+        if not skip_fresh_check and pg_tok and pg_tok.get("access_token") and int(pg_tok.get("access_token_expires_at") or 0) > (now_ts + 60):
             access_token = str(pg_tok["access_token"])
             expires_at = int(pg_tok["access_token_expires_at"])
             os.environ[f"{prefix}ACCESS_TOKEN"] = access_token
@@ -601,6 +606,9 @@ def refresh_access_token(forced_refresh_token=None, company=None):
                 os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(int(pg_tok["refresh_token_expires_at"]))
             print(f"{log_prefix} Token już świeży w Postgres – pomijam refresh")
             return access_token
+        
+        if skip_fresh_check:
+            print(f"{log_prefix} WYMUSZONY REFRESH (skip_fresh_check=True)")
 
         # Wybór refresh tokena (bez sekretów w logu)
         refresh_token = None
@@ -633,7 +641,12 @@ def refresh_access_token(forced_refresh_token=None, company=None):
             print(f"{log_prefix} Brak refresh tokena, nie można odświeżyć sesji")
             return None
 
-        print(f"{log_prefix} Próba odświeżenia access_token (refresh_source={refresh_source}, refresh_fp={_token_fingerprint(refresh_token)})")
+        old_refresh_fp = _token_fingerprint(refresh_token)
+        print(f"{log_prefix} ========== WYWOŁANIE wFirma API ==========")
+        print(f"{log_prefix} refresh_source={refresh_source}")
+        print(f"{log_prefix} refresh_token_fp={old_refresh_fp}")
+        print(f"{log_prefix} refresh_token_len={len(refresh_token) if refresh_token else 0}")
+        
         token_url = "https://api2.wfirma.pl/oauth2/token"
         payload = {
             'grant_type': 'refresh_token',
@@ -642,21 +655,48 @@ def refresh_access_token(forced_refresh_token=None, company=None):
             'refresh_token': refresh_token
         }
 
-        print(f"{log_prefix} Refresh payload keys: {list(payload.keys())}")
+        print(f"{log_prefix} REQUEST URL: {token_url}")
+        print(f"{log_prefix} REQUEST grant_type=refresh_token")
+        print(f"{log_prefix} REQUEST client_id={config['client_id'][:12]}..." if config['client_id'] else f"{log_prefix} REQUEST client_id=BRAK!")
+        print(f"{log_prefix} REQUEST client_secret={'***' if config['client_secret'] else 'BRAK!'}")
+        print(f"{log_prefix} REQUEST refresh_token_fp={old_refresh_fp}")
+        
         response = requests.post(token_url, data=payload)
-        print(f"{log_prefix} Refresh response status: {response.status_code}")
+        
+        print(f"{log_prefix} ========== ODPOWIEDŹ wFirma API ==========")
+        print(f"{log_prefix} RESPONSE status_code={response.status_code}")
+        print(f"{log_prefix} RESPONSE headers Content-Type={response.headers.get('Content-Type', 'N/A')}")
+        
         if response.status_code == 200:
             new_tokens = response.json()
             new_access = new_tokens.get('access_token')
             new_refresh = new_tokens.get('refresh_token')
             expires_in = int(new_tokens.get('expires_in', 3600))
-
-            print(f"{log_prefix} Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
-
+            
+            # Szczegółowe logowanie odpowiedzi
+            print(f"{log_prefix} RESPONSE keys={list(new_tokens.keys())}")
+            print(f"{log_prefix} RESPONSE access_token={'TAK len=' + str(len(new_access)) if new_access else 'BRAK'}")
+            print(f"{log_prefix} RESPONSE refresh_token={'TAK len=' + str(len(new_refresh)) if new_refresh else 'BRAK'}")
+            print(f"{log_prefix} RESPONSE expires_in={expires_in}")
+            
             if new_access:
+                new_access_fp = _token_fingerprint(new_access)
+                print(f"{log_prefix} access_token_fp={new_access_fp}")
+                
                 if new_refresh:
-                    print(f"{log_prefix} wFirma zwróciła refresh_token przy refresh — ROTUJĘ (nowy refresh)")
-                    print(f"{log_prefix} refresh_new_fp={_token_fingerprint(new_refresh)}")
+                    new_refresh_fp = _token_fingerprint(new_refresh)
+                    refresh_changed = (old_refresh_fp != new_refresh_fp)
+                    print(f"{log_prefix} *** ROTACJA REFRESH TOKEN ***")
+                    print(f"{log_prefix} refresh_old_fp={old_refresh_fp}")
+                    print(f"{log_prefix} refresh_new_fp={new_refresh_fp}")
+                    print(f"{log_prefix} refresh_CHANGED={refresh_changed}")
+                else:
+                    print(f"{log_prefix} refresh_token NIE zwrócony (brak rotacji)")
+                
+                print(f"{log_prefix} ========== ZAPIS TOKENA ==========")
+                print(f"{log_prefix} save_token: access_fp={new_access_fp}, expires_in={expires_in}")
+                print(f"{log_prefix} save_token: refresh={'TAK fp=' + _token_fingerprint(new_refresh) if new_refresh else 'NIE (zachowaj stary)'}")
+                
                 save_token(
                     new_access,
                     expires_in,
@@ -665,13 +705,18 @@ def refresh_access_token(forced_refresh_token=None, company=None):
                     send_refresh_email=False,
                     refresh_token_source="refresh_rotation" if new_refresh else None,
                 )
+                print(f"{log_prefix} ========== SUKCES ==========")
                 print(f"{log_prefix} Access token odświeżony pomyślnie")
                 return new_access
 
-            print(f"{log_prefix} Brak access_token w odpowiedzi: {list(new_tokens.keys())}")
+            print(f"{log_prefix} ========== BŁĄD ==========")
+            print(f"{log_prefix} Brak access_token w odpowiedzi!")
+            print(f"{log_prefix} Otrzymane klucze: {list(new_tokens.keys())}")
             return None
 
-        print(f"{log_prefix} Błąd API refresh token: {response.status_code} {response.text}")
+        print(f"{log_prefix} ========== BŁĄD API ==========")
+        print(f"{log_prefix} status_code={response.status_code}")
+        print(f"{log_prefix} response_text={response.text[:500] if response.text else 'PUSTY'}")
         return None
     except Exception as e:
         print(f"[TOKEN REFRESH] [{company_name.upper()}] EXCEPTION: {e}")
@@ -3888,15 +3933,20 @@ def callback():
 def token_refresh():
     """
     Ręcznie odśwież access token używając refresh tokena.
-    Parametr ?company=md lub ?company=test
+    Parametry:
+      ?company=md lub ?company=test
+      ?force=true - wymusza refresh nawet jeśli token jest świeży (pomija cache)
     """
     company = (request.args.get('company') or DEFAULT_COMPANY).lower().strip()
     if company not in SUPPORTED_COMPANIES:
         company = DEFAULT_COMPANY
     
+    # Parametr force - wymusza faktyczne wywołanie do wFirma API
+    force = request.args.get('force', '').lower() in ('true', '1', 'yes')
+    
     config = get_company_config(company)
     
-    print(f"[TOKEN REFRESH] Próba odświeżenia tokenu dla firmy: {company.upper()}")
+    print(f"[TOKEN REFRESH] Próba odświeżenia tokenu dla firmy: {company.upper()} (force={force})")
     print(f"[TOKEN REFRESH] Client ID exists: {bool(config['client_id'])}")
     print(f"[TOKEN REFRESH] Client Secret exists: {bool(config['client_secret'])}")
     print(f"[TOKEN REFRESH] Refresh Token exists: {bool(config['refresh_token'])}")
@@ -3916,8 +3966,8 @@ def token_refresh():
             'company': company
         }), 400
     
-    # Próba odświeżenia
-    new_token = refresh_access_token(forced_refresh_token=config['refresh_token'], company=company)
+    # Próba odświeżenia (skip_fresh_check=True gdy force=True)
+    new_token = refresh_access_token(forced_refresh_token=config['refresh_token'], company=company, skip_fresh_check=force)
     
     if new_token:
         return jsonify({
