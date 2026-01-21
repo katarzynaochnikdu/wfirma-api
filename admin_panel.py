@@ -1208,6 +1208,7 @@ def orders_list():
 
     # Pobierz listę eventów do filtrowania
     events = list_events(limit=100)
+    event_name_by_id = {str(e.get("event_id") or ""): (e.get("event_name") or "") for e in (events or [])}
     event_options = "".join(
         f'<option value="{e.get("event_id", "")}" {"selected" if e.get("event_id") == event_filter else ""}>{e.get("event_name", "")}</option>'
         for e in events
@@ -1224,15 +1225,69 @@ def orders_list():
         label, style = ORDER_STATUS_LABELS.get(status, ("?", ""))
         total = o.get("total") or 0
         currency = o.get("currency", "PLN")
+        order_id = o.get("event_order_id", "") or ""
+        event_id = o.get("event_id", "") or ""
+
+        # Wydarzenie (bez danych osobowych)
+        event_name = event_name_by_id.get(str(event_id)) or (str(event_id)[:8] + "…") if event_id else "—"
+
+        # Forma płatności (heurystyka)
+        payment_option_name = (o.get("payment_option_name") or "").strip()
+        po_low = payment_option_name.lower()
+        if float(total or 0) == 0:
+            payment_form = "Bezpłatne (FOC)"
+        elif ("pro" in po_low and "forma" in po_low) or ("proforma" in po_low):
+            payment_form = "Płatność pro forma"
+        elif ("online" in po_low) or ("stripe" in po_low):
+            payment_form = "Online (Stripe)"
+        else:
+            payment_form = payment_option_name or "—"
+
+        # Liczba osób: suma statusów uczestników (jeśli brak – 0)
+        participants_count = 0
+        try:
+            from pg_storage import count_participants_by_status
+            pc = count_participants_by_status(str(order_id))
+            participants_count = int(sum((pc or {}).values()))
+        except Exception:
+            participants_count = 0
+
+        # Nr proformy + netto z dokumentu (jeśli jest)
+        proforma_number = "—"
+        netto_value = None
+        try:
+            wfirma_docs = get_wfirma_documents(str(order_id))
+            # weź najnowszą proformę jeśli istnieje
+            proforma_doc = next((d for d in (wfirma_docs or []) if (d.get("document_type") == "proforma")), None)
+            if proforma_doc:
+                proforma_number = proforma_doc.get("wfirma_number") or "—"
+                raw = proforma_doc.get("raw") or {}
+                if isinstance(raw, dict):
+                    inv = raw.get("invoice") or {}
+                    if isinstance(inv, dict) and inv.get("netto") is not None:
+                        try:
+                            netto_value = float(inv.get("netto"))
+                        except Exception:
+                            netto_value = None
+        except Exception:
+            pass
+
+        # Fallback netto: licz z brutto (VAT 23%) jeśli nie mamy z wFirma
+        if netto_value is None:
+            try:
+                netto_value = float(total) / 1.23
+            except Exception:
+                netto_value = 0.0
 
         rows.append(f"""
             <tr>
-              <td><a href="{url_for('admin_bp.order_detail', order_id=o.get('event_order_id', ''), token=token)}"><code>{o.get('event_order_id', '')[:16]}...</code></a></td>
-              <td>{o.get('purchaser_email', '') or '—'}</td>
-              <td>{o.get('purchaser_first_name', '')} {o.get('purchaser_last_name', '')}</td>
-              <td style="text-align:right;">{total:.2f} {currency}</td>
+              <td>{event_name}</td>
+              <td>{payment_form}</td>
+              <td><code>{proforma_number}</code></td>
+              <td><a href="{url_for('admin_bp.order_detail', order_id=order_id, token=token)}"><code>{order_id[:10]}…{order_id[-4:] if len(order_id) > 4 else ''}</code></a></td>
+              <td style="text-align:right;">{participants_count}</td>
+              <td style="text-align:right;">{netto_value:.2f} {currency}</td>
               <td><span class="pill" style="{style}">{label}</span></td>
-              <td class="muted">{str(o.get('created_at', ''))[:16]}</td>
             </tr>
         """)
 
@@ -1267,16 +1322,17 @@ def orders_list():
       <table style="width:100%; border-collapse:collapse; font-size:14px;">
         <thead>
           <tr style="border-bottom:2px solid #eee;">
-            <th style="text-align:left; padding:8px;">ID</th>
-            <th style="text-align:left; padding:8px;">Email</th>
-            <th style="text-align:left; padding:8px;">Nabywca</th>
-            <th style="text-align:right; padding:8px;">Kwota</th>
+            <th style="text-align:left; padding:8px;">Wydarzenie</th>
+            <th style="text-align:left; padding:8px;">Forma płatności</th>
+            <th style="text-align:left; padding:8px;">Nr proformy</th>
+            <th style="text-align:left; padding:8px;">Id zamówienia</th>
+            <th style="text-align:right; padding:8px;">Ilość osób</th>
+            <th style="text-align:right; padding:8px;">Wartość netto</th>
             <th style="text-align:left; padding:8px;">Status</th>
-            <th style="text-align:left; padding:8px;">Data</th>
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="6" class="muted" style="padding:20px; text-align:center;">Brak zamówień</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="7" class="muted" style="padding:20px; text-align:center;">Brak zamówień</td></tr>'}
         </tbody>
       </table>
     </div>
