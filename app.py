@@ -11,6 +11,8 @@ import re
 import datetime
 import base64
 import uuid
+import traceback
+import hashlib
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
@@ -315,16 +317,49 @@ def _maybe_send_critical_env_alert(missing_critical: list, missing_optional: lis
 
 # ==================== FUNKCJE POMOCNICZE ====================
 
-def update_render_env_var(key, value):
+def update_render_env_vars(values: dict, reason: str = "") -> bool:
     """
-    WYŁĄCZONE: Aktualizacja Render ENV przez API była źródłem problemów z nadpisywaniem zmiennych.
-    Teraz aktualizuje TYLKO pamięć procesu (os.environ).
-    Tokeny działają w ramach sesji, a przy restart są ładowane z ENV ustawionych ręcznie na Render.
+    Aktualizuje ENV w pamięci procesu oraz (jeśli skonfigurowane) w Render przez API.
     """
-    # Aktualizuj tylko pamięć procesu - bezpieczne, nie dotyka Render API
-    os.environ[key] = value
-    print(f"[LOG] update_render_env_var: zaktualizowano os.environ[{key}] (tylko pamięć, Render API WYŁĄCZONE)")
-    return True
+    if not values:
+        return False
+
+    for k, v in values.items():
+        os.environ[str(k)] = str(v)
+
+    if not RENDER_API_KEY or not RENDER_SERVICE_ID:
+        print("[RENDER ENV] Pomijam zapis do Render (brak RENDER_API_KEY lub RENDER_SERVICE_ID)")
+        return True
+
+    try:
+        url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars"
+        headers = {
+            "Authorization": f"Bearer {RENDER_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = [{"key": str(k), "value": str(v)} for k, v in values.items()]
+        keys = ", ".join([str(k) for k in values.keys()])
+        print(f"[RENDER ENV] START update keys=[{keys}] reason={reason or 'n/a'}")
+        resp = requests.patch(url, headers=headers, json=payload, timeout=20)
+        ok = resp.status_code in (200, 201, 202, 204)
+        if not ok and resp.status_code in (404, 405):
+            print(f"[RENDER ENV] PATCH niedostępny (status={resp.status_code}) — próbuję PUT")
+            resp = requests.put(url, headers=headers, json=payload, timeout=20)
+            ok = resp.status_code in (200, 201, 202, 204)
+        if ok:
+            print(f"[RENDER ENV] OK status={resp.status_code} keys=[{keys}]")
+        else:
+            print(f"[RENDER ENV] ERROR status={resp.status_code} keys=[{keys}] body={resp.text}")
+        return ok
+    except Exception as e:
+        print(f"[RENDER ENV] EXCEPTION: {e}")
+        traceback.print_exc()
+        return False
+
+
+def update_render_env_var(key, value, reason: str = "") -> bool:
+    """Wrapper dla pojedynczej zmiennej ENV."""
+    return update_render_env_vars({key: value}, reason=reason)
 
 
 def _normalize_env_secret(value: str | None) -> str:
@@ -337,6 +372,17 @@ def _normalize_env_secret(value: str | None) -> str:
     if len(v) >= 2 and ((v[0] == v[-1]) and v[0] in ("'", '"')):
         v = v[1:-1].strip()
     return v
+
+
+def _token_fingerprint(value: str | None) -> str:
+    v = _normalize_env_secret(value)
+    if not v:
+        return "none"
+    try:
+        h = hashlib.sha256(v.encode("utf-8")).hexdigest()[:10]
+        return f"len={len(v)} sha10={h}"
+    except Exception:
+        return f"len={len(v)} sha10=error"
 
 
 def _send_new_refresh_token_email(company: str, refresh_token: str, refresh_expires_at: int, prefix: str):
@@ -401,7 +447,7 @@ Wiadomość wygenerowana automatycznie po autoryzacji OAuth2 wFirma.
         print(f"[TOKEN EMAIL] Błąd wysyłki: {e}")
 
 
-def save_token(access_token, expires_in, refresh_token=None, company=None):
+def save_token(access_token, expires_in, refresh_token=None, company=None, send_refresh_email: bool = True, refresh_token_source: str | None = None):
     """
     Zapisz token do POSTGRES (główne źródło) + pamięć procesu.
     Postgres jest trwały - przetrwa restart/deploy.
@@ -411,12 +457,15 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
         expires_in: Czas ważności w sekundach
         refresh_token: Refresh token (opcjonalny - jeśli nowy)
         company: Firma/zestaw danych ('md' lub 'test')
+        send_refresh_email: Czy wysyłać email z nowym refresh tokenem
+        refresh_token_source: Źródło nowego refresh tokena (np. manual_auth, refresh_rotation)
     """
     config = get_company_config(company)
     prefix = config['prefix']
     company_name = config['company']
     
     expires_at = int(time.time() + expires_in - 60)  # 60 sek margines
+    log_prefix = f"[TOKEN SAVE] [{company_name.upper()}]"
     
     # Pobierz istniejący refresh_token jeśli nowy nie podany
     final_refresh_token = refresh_token
@@ -433,7 +482,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
                     refresh_expires_at = int(env_refresh_expires)
                 except ValueError:
                     print(f"[LOG] [{company_name.upper()}] REFRESH_TOKEN_EXPIRES w ENV nie jest liczbą - pomijam")
-            print(f"[LOG] [{company_name.upper()}] Użyto refresh_token z ENV ({prefix}REFRESH_TOKEN)")
+            print(f"{log_prefix} refresh_source=env fp={_token_fingerprint(final_refresh_token)}")
         else:
             try:
                 from pg_storage import get_wfirma_token
@@ -441,15 +490,17 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
                 if pg_token and pg_token.get('refresh_token'):
                     final_refresh_token = pg_token['refresh_token']
                     refresh_expires_at = pg_token.get('refresh_token_expires_at')
-                    print(f"[LOG] [{company_name.upper()}] Użyto refresh_token z Postgres")
+                    print(f"{log_prefix} refresh_source=pg fp={_token_fingerprint(final_refresh_token)}")
             except Exception as e:
-                print(f"[LOG] [{company_name.upper()}] Błąd odczytu z Postgres: {e}")
+                print(f"{log_prefix} Błąd odczytu z Postgres: {e}")
+                traceback.print_exc()
     
     # Jeśli to NOWY refresh_token, ustaw nową datę ważności (30 dni)
     if refresh_token:
         refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)
+        print(f"{log_prefix} refresh_provided source={refresh_token_source or 'manual'} fp={_token_fingerprint(refresh_token)}")
     
-    print(f"[LOG] [{company_name.upper()}] save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
+    print(f"{log_prefix} save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
     
     # 1. GŁÓWNE: Zapisz do POSTGRES (trwałe!)
     try:
@@ -475,9 +526,19 @@ def save_token(access_token, expires_in, refresh_token=None, company=None):
         os.environ[f"{prefix}REFRESH_TOKEN"] = final_refresh_token
     if refresh_expires_at:
         os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(refresh_expires_at)
+
+    # 2b. Jeśli pojawił się NOWY refresh_token - zapisz do Render ENV (jeśli skonfigurowane)
+    if refresh_token and refresh_expires_at:
+        update_render_env_vars(
+            {
+                f"{prefix}REFRESH_TOKEN": final_refresh_token,
+                f"{prefix}REFRESH_TOKEN_EXPIRES": str(refresh_expires_at),
+            },
+            reason=f"wfirma_new_refresh_token:{company_name}",
+        )
     
     # 3. Jeśli nowy refresh_token - wyślij email jako backup
-    if refresh_token:
+    if refresh_token and send_refresh_email:
         expires_date_str = datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M')
         print(f"[LOG] [{company_name.upper()}] Nowy refresh_token ważny do: {expires_date_str}")
         
@@ -522,6 +583,8 @@ def refresh_access_token(forced_refresh_token=None, company=None):
         advisory_lock(lock_id)
 
     try:
+        log_prefix = f"[TOKEN REFRESH] [{company_name.upper()}]"
+        print(f"{log_prefix} START forced={bool(forced_refresh_token)}")
         # Jeśli inny worker już odświeżył token (i zapisał do Postgres) – użyj i nie rób refreshu ponownie
         now_ts = int(time.time())
         pg_tok = None
@@ -536,7 +599,7 @@ def refresh_access_token(forced_refresh_token=None, company=None):
                 os.environ[f"{prefix}REFRESH_TOKEN"] = str(pg_tok["refresh_token"])
             if pg_tok.get("refresh_token_expires_at"):
                 os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(int(pg_tok["refresh_token_expires_at"]))
-            print(f"[LOG] [{company_name.upper()}] Token już świeży w Postgres – pomijam refresh")
+            print(f"{log_prefix} Token już świeży w Postgres – pomijam refresh")
             return access_token
 
         # Wybór refresh tokena (bez sekretów w logu)
@@ -567,10 +630,10 @@ def refresh_access_token(forced_refresh_token=None, company=None):
                     pass
 
         if not refresh_token:
-            print(f"[LOG] [{company_name.upper()}] Brak refresh tokena, nie można odświeżyć sesji")
+            print(f"{log_prefix} Brak refresh tokena, nie można odświeżyć sesji")
             return None
 
-        print(f"[LOG] [{company_name.upper()}] Próba odświeżenia access_token (refresh_source={refresh_source})")
+        print(f"{log_prefix} Próba odświeżenia access_token (refresh_source={refresh_source}, refresh_fp={_token_fingerprint(refresh_token)})")
         token_url = "https://api2.wfirma.pl/oauth2/token"
         payload = {
             'grant_type': 'refresh_token',
@@ -579,28 +642,40 @@ def refresh_access_token(forced_refresh_token=None, company=None):
             'refresh_token': refresh_token
         }
 
-        print(f"[LOG] [{company_name.upper()}] Refresh payload keys: {list(payload.keys())}")
+        print(f"{log_prefix} Refresh payload keys: {list(payload.keys())}")
         response = requests.post(token_url, data=payload)
-        print(f"[LOG] [{company_name.upper()}] Refresh response status: {response.status_code}")
+        print(f"{log_prefix} Refresh response status: {response.status_code}")
         if response.status_code == 200:
             new_tokens = response.json()
             new_access = new_tokens.get('access_token')
             new_refresh = new_tokens.get('refresh_token')
             expires_in = int(new_tokens.get('expires_in', 3600))
 
-            print(f"[LOG] [{company_name.upper()}] Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
+            print(f"{log_prefix} Refresh response: access={bool(new_access)}, refresh={bool(new_refresh)}, expires={expires_in}")
 
             if new_access:
                 if new_refresh:
-                    print(f"[LOG] [{company_name.upper()}] wFirma zwróciła refresh_token przy refresh — IGNORUJĘ (refresh_token tylko przez ręczne /auth)")
-                save_token(new_access, expires_in, None, company=company)
-                print(f"[LOG] [{company_name.upper()}] Access token odświeżony pomyślnie")
+                    print(f"{log_prefix} wFirma zwróciła refresh_token przy refresh — ROTUJĘ (nowy refresh)")
+                    print(f"{log_prefix} refresh_new_fp={_token_fingerprint(new_refresh)}")
+                save_token(
+                    new_access,
+                    expires_in,
+                    refresh_token=new_refresh,
+                    company=company,
+                    send_refresh_email=False,
+                    refresh_token_source="refresh_rotation" if new_refresh else None,
+                )
+                print(f"{log_prefix} Access token odświeżony pomyślnie")
                 return new_access
 
-            print(f"[LOG] [{company_name.upper()}] Brak access_token w odpowiedzi: {list(new_tokens.keys())}")
+            print(f"{log_prefix} Brak access_token w odpowiedzi: {list(new_tokens.keys())}")
             return None
 
-        print(f"[LOG] [{company_name.upper()}] Błąd API refresh token: {response.status_code} {response.text}")
+        print(f"{log_prefix} Błąd API refresh token: {response.status_code} {response.text}")
+        return None
+    except Exception as e:
+        print(f"[TOKEN REFRESH] [{company_name.upper()}] EXCEPTION: {e}")
+        traceback.print_exc()
         return None
     finally:
         if advisory_unlock:
@@ -608,6 +683,10 @@ def refresh_access_token(forced_refresh_token=None, company=None):
                 advisory_unlock(lock_id)
             except Exception:
                 pass
+        try:
+            print(f"{log_prefix} END")
+        except Exception:
+            pass
 
 def is_token_valid():
     """Sprawdź czy zapisany token jest ważny dla domyślnej firmy"""
@@ -3777,7 +3856,13 @@ def callback():
         refresh_token = token_data.get('refresh_token')
         
         # Zapisz token dla danej firmy (wraz z refresh_token)
-        save_token(access_token, expires_in, refresh_token, company=company)
+        save_token(
+            access_token,
+            expires_in,
+            refresh_token,
+            company=company,
+            refresh_token_source="manual_auth",
+        )
         
         print(f"[CALLBACK] [{company.upper()}] ✓ Tokeny zapisane pomyślnie!")
         

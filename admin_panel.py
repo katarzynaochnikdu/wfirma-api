@@ -3330,32 +3330,58 @@ def order_detail(order_id: str):
         </div>
         """
 
-    # Przycisk "Oznacz jako opłacone" tylko dla pending_payment
+    # Przycisk "Oznacz jako opłacone" tylko dla pending_payment (obok statusu)
     mark_paid_form = ""
     if status == "pending_payment":
         mark_paid_form = f"""
-        <div style="margin-top:16px; padding-top:16px; border-top:1px solid #eee;">
-          <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">Oznacz jako opłacone</button>
-          <span class="muted" style="margin-left:10px;">Po kliknięciu: status → paid, wygenerowana faktura VAT</span>
-        </div>
-        
-        <!-- Modal potwierdzenia -->
-        <div id="markPaidModal" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
-          <div style="background:#fff; border-radius:12px; padding:28px 36px; max-width:440px; box-shadow:0 8px 30px rgba(0,0,0,0.2); text-align:center;">
-            <div style="font-size:20px; font-weight:700; margin-bottom:16px; color:#111;">Potwierdzenie płatności</div>
-            <div style="color:#444; margin-bottom:28px; line-height:1.6;">
+        <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">
+          Oznacz jako opłacone
+        </button>
+
+        <div id="markPaidModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
+          <div class="mark-paid-modal-content">
+            <h3>Potwierdzenie płatności</h3>
+            <p>
               Oznaczyć zamówienie jako <strong>opłacone</strong>?<br/>
-              <span style="color:#666; font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
+              <span style="font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
+            </p>
+            <div class="modal-actions">
+              <form id="markPaidForm" method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
+                <input type="hidden" name="token" value="{token}" />
+                <button id="markPaidSubmit" class="btn btnPrimary" type="submit" style="min-width:160px;">
+                  <span class="btn-label">Tak, oznacz</span>
+                  <span class="btn-spinner" style="display:none;"></span>
+                </button>
+              </form>
+              <button id="markPaidCancel" class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:120px;">
+                Anuluj
+              </button>
             </div>
-            <div style="display:flex; gap:12px; justify-content:center;">
-              <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
-            <input type="hidden" name="token" value="{token}" />
-                <button class="btn btnPrimary" type="submit" style="min-width:110px; padding:12px 20px;">Tak, oznacz</button>
-          </form>
-              <button class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:110px; padding:12px 20px;">Anuluj</button>
+            <div id="markPaidHint" class="muted" style="margin-top:14px; font-size:12px; display:none;">
+              Przetwarzanie… poczekaj chwilę
             </div>
           </div>
         </div>
+        <script>
+          (function() {{
+            var form = document.getElementById('markPaidForm');
+            if (!form) return;
+            form.addEventListener('submit', function() {{
+              var submitBtn = document.getElementById('markPaidSubmit');
+              var cancelBtn = document.getElementById('markPaidCancel');
+              var hint = document.getElementById('markPaidHint');
+              if (submitBtn) {{
+                submitBtn.disabled = true;
+                var label = submitBtn.querySelector('.btn-label');
+                var spinner = submitBtn.querySelector('.btn-spinner');
+                if (label) label.textContent = 'Oznaczam...';
+                if (spinner) spinner.style.display = 'inline-block';
+              }}
+              if (cancelBtn) cancelBtn.disabled = true;
+              if (hint) hint.style.display = 'block';
+            }});
+          }})();
+        </script>
         """
 
     # Status pill color based on status
@@ -3383,6 +3409,12 @@ def order_detail(order_id: str):
       }}
       .order-header-info code {{
         font-size: 13px;
+      }}
+      .order-header-actions {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        justify-content: flex-end;
       }}
       .order-sections {{
         display: grid;
@@ -3543,8 +3575,9 @@ def order_detail(order_id: str):
         <h2>Zamówienie</h2>
         <code>{order_id}</code>
         </div>
-        <div>
+        <div class="order-header-actions">
         <span class="pill {status_class}" style="{style}">{label}</span>
+        {mark_paid_form}
       </div>
     </div>
 
@@ -3589,59 +3622,7 @@ def order_detail(order_id: str):
           </div>
           ''' if wfirma_docs else ''}
           
-          {f'''
-          <div class="action-section">
-            <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">
-              Oznacz jako opłacone
-            </button>
-            <span class="muted" style="margin-left:12px; font-size:12px;">Generuje fakturę VAT i wysyła powiadomienia</span>
-          </div>
           
-          <div id="markPaidModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
-            <div class="mark-paid-modal-content">
-              <h3>Potwierdzenie płatności</h3>
-              <p>
-                Oznaczyć zamówienie jako <strong>opłacone</strong>?<br/>
-                <span style="font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
-              </p>
-              <div class="modal-actions">
-                <form id="markPaidForm" method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
-                  <input type="hidden" name="token" value="{token}" />
-                  <button id="markPaidSubmit" class="btn btnPrimary" type="submit" style="min-width:160px;">
-                    <span class="btn-label">Tak, oznacz</span>
-                    <span class="btn-spinner" style="display:none;"></span>
-                  </button>
-                </form>
-                <button id="markPaidCancel" class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:120px;">
-                  Anuluj
-                </button>
-              </div>
-              <div id="markPaidHint" class="muted" style="margin-top:14px; font-size:12px; display:none;">
-                Przetwarzanie… poczekaj chwilę
-              </div>
-            </div>
-          </div>
-          <script>
-            (function() {{
-              var form = document.getElementById('markPaidForm');
-              if (!form) return;
-              form.addEventListener('submit', function() {{
-                var submitBtn = document.getElementById('markPaidSubmit');
-                var cancelBtn = document.getElementById('markPaidCancel');
-                var hint = document.getElementById('markPaidHint');
-                if (submitBtn) {{
-                  submitBtn.disabled = true;
-                  var label = submitBtn.querySelector('.btn-label');
-                  var spinner = submitBtn.querySelector('.btn-spinner');
-                  if (label) label.textContent = 'Oznaczam...';
-                  if (spinner) spinner.style.display = 'inline-block';
-                }}
-                if (cancelBtn) cancelBtn.disabled = true;
-                if (hint) hint.style.display = 'block';
-              }});
-            }})();
-          </script>
-          ''' if status == "pending_payment" else ''}
         </div>
       </div>
     </div>
