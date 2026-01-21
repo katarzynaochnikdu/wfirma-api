@@ -1219,6 +1219,27 @@ def orders_list():
         for s, (label, _) in ORDER_STATUS_LABELS.items()
     )
 
+    # Cache reguł płatności per event (żeby nie robić N zapytań na 200 wierszy)
+    rules_by_event_id: Dict[str, List[Dict[str, Any]]] = {}
+    for o in orders:
+        eid = str(o.get("event_id") or "")
+        if eid and eid not in rules_by_event_id:
+            rules_by_event_id[eid] = list_payment_rules(eid) or []
+
+    def _flow_from_rules(event_id: str, payment_type: Optional[int]) -> Optional[str]:
+        """Zwraca flow (FOC/PROFORMA/STRIPE) bez heurystyk po nazwie."""
+        rules = rules_by_event_id.get(str(event_id) or "", [])
+        # 1) dopasowanie po payment_type
+        for r in rules:
+            rpt = r.get("payment_type")
+            if rpt is not None and rpt == payment_type:
+                return r.get("flow")
+        # 2) reguła domyślna
+        for r in rules:
+            if r.get("is_default"):
+                return r.get("flow")
+        return None
+
     rows = []
     for o in orders:
         status = o.get("status", "received")
@@ -1227,21 +1248,10 @@ def orders_list():
         currency = o.get("currency", "PLN")
         order_id = o.get("event_order_id", "") or ""
         event_id = o.get("event_id", "") or ""
+        payment_type = o.get("payment_type")
 
         # Wydarzenie (bez danych osobowych)
         event_name = event_name_by_id.get(str(event_id)) or (str(event_id)[:8] + "…") if event_id else "—"
-
-        # Forma płatności (heurystyka)
-        payment_option_name = (o.get("payment_option_name") or "").strip()
-        po_low = payment_option_name.lower()
-        if float(total or 0) == 0:
-            payment_form = "Bezpłatne (FOC)"
-        elif ("pro" in po_low and "forma" in po_low) or ("proforma" in po_low):
-            payment_form = "Płatność pro forma"
-        elif ("online" in po_low) or ("stripe" in po_low):
-            payment_form = "Online (Stripe)"
-        else:
-            payment_form = payment_option_name or "—"
 
         # Liczba osób: suma statusów uczestników (jeśli brak – 0)
         participants_count = 0
@@ -1255,11 +1265,13 @@ def orders_list():
         # Nr proformy + netto z dokumentu (jeśli jest)
         proforma_number = "—"
         netto_value = None
+        has_proforma = False
         try:
             wfirma_docs = get_wfirma_documents(str(order_id))
             # weź najnowszą proformę jeśli istnieje
             proforma_doc = next((d for d in (wfirma_docs or []) if (d.get("document_type") == "proforma")), None)
             if proforma_doc:
+                has_proforma = True
                 proforma_number = proforma_doc.get("wfirma_number") or "—"
                 raw = proforma_doc.get("raw") or {}
                 if isinstance(raw, dict):
@@ -1271,6 +1283,22 @@ def orders_list():
                             netto_value = None
         except Exception:
             pass
+
+        # Forma płatności (ściśle, bez heurystyk po nazwie)
+        if float(total or 0) == 0:
+            payment_form = "FOC"
+        elif has_proforma:
+            payment_form = "Pro forma"
+        else:
+            flow = _flow_from_rules(str(event_id), payment_type if isinstance(payment_type, int) else payment_type)
+            if flow == "STRIPE":
+                payment_form = "Online (Stripe)"
+            elif flow == "PROFORMA":
+                payment_form = "Pro forma"
+            elif flow == "FOC":
+                payment_form = "FOC"
+            else:
+                payment_form = "—"
 
         # Fallback netto: licz z brutto (VAT 23%) jeśli nie mamy z wFirma
         if netto_value is None:
