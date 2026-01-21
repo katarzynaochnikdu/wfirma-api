@@ -6,6 +6,7 @@ import os
 import hmac
 import hashlib
 import requests
+import time
 from typing import Any, Dict, Optional, Tuple
 
 try:
@@ -140,6 +141,8 @@ def _get_stripe_status(sandbox: bool = False) -> Dict[str, Any]:
 # CHECKOUT SESSION
 # ---------------------------------------------------------------------------
 
+CHECKOUT_SESSION_TTL_SECONDS = 24 * 60 * 60  # 24h - ważność linku do płatności
+
 
 def create_checkout_session(
     event_order_id: str,
@@ -209,6 +212,9 @@ def create_checkout_session(
             "mode": "payment",
             "metadata": meta,
             "client_reference_id": event_order_id,
+            # Link do płatności ważny 24h od utworzenia (Stripe Checkout Session expiry)
+            # Dajemy minimalny margines -60s, żeby nie wyjść poza limit po stronie Stripe.
+            "expires_at": int(time.time()) + CHECKOUT_SESSION_TTL_SECONDS - 60,
         }
         
         # Dodaj opcjonalne parametry
