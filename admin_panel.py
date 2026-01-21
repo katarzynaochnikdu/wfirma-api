@@ -1609,7 +1609,7 @@ BASE_HTML = """
           </defs>
           <path fill="url(#mdGrad)" d="M33.85 27.74c2-.0 4.1-.8 5.16-1.68.58-.46.86-.98.86-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.62-3.85h10.03c.97 0 1.8-.67 1.85-1.65 0-4.4-3.59-8.1-7.69-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.48-13.6c1.88 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM56.49 4.81c-1.06 0-1.82.8-1.82 1.87v5.99c-1.07-.98-2.8-1.9-4.9-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.82 1.83 1.07 0 1.83-.8 1.83-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.64 0-4.44-2.2-4.44-5.1 0-2.91 1.8-5.14 4.44-5.14 2.68 0 4.47 2.23 4.47 5.14 0 2.9-1.79 5.1-4.47 5.1zM65.07 12.94c0-1.07-.76-1.86-1.82-1.86-1.07 0-1.83.79-1.83 1.86v12.63c0 1.07.76 1.86 1.83 1.86 1.06 0 1.82-.79 1.82-1.86V12.94zm-1.73-4.44c1.06 0 1.92-.86 1.92-1.93 0-1.07-.86-1.93-1.92-1.93-1.06 0-1.92.86-1.92 1.93 0 1.07.86 1.93 1.92 1.93zM81.33 4.81c-1.07 0-1.83.8-1.83 1.87v5.99c-1.06-.98-2.79-1.9-4.89-1.9-4.1 0-7.36 3.49-7.36 8.5 0 4.98 3.25 8.47 7.48 8.47 2.07 0 3.86-1.1 4.77-2.14 0 1.04.76 1.83 1.83 1.83 1.06 0 1.82-.8 1.82-1.87V6.68c0-1.1-.76-1.87-1.82-1.87zm-6.14 19.57c-2.65 0-4.44-2.2-4.44-5.1 0-2.91 1.79-5.14 4.44-5.14 2.67 0 4.47 2.23 4.47 5.14 0 2.9-1.8 5.1-4.47 5.1zM93.97 27.74c2.01 0 4.1-.8 5.17-1.68.58-.46.85-.98.85-1.5 0-.8-.67-1.53-1.55-1.53-.33 0-.67.09-1.03.28-.67.37-1.4 1.07-3.62 1.07-2.1 0-4.1-1.35-4.61-3.85h10.03c.97 0 1.79-.67 1.85-1.65 0-4.4-3.59-8.1-7.7-8.1-4.01 0-7.81 3.24-7.81 8.71 0 4.71 3.22 8.26 8.42 8.26zm-.49-13.6c1.89 0 3.65 1.37 3.8 3.12v.21h-7.96c.49-2.54 2.13-3.33 4.16-3.33zM102.51 24.9c1.58 2.14 4.17 2.84 6.57 2.84 2.83 0 5.99-1.74 5.99-4.89 0-3.58-2.89-4.43-5.35-5.1-1.79-.49-3.34-.89-3.34-2.3 0-1.53 1.4-1.68 2.31-1.68 1.49 0 2.68.58 3.37 1.47.52.49 1.46.58 2.07.09.85-.7.64-1.65.18-2.26-1.28-1.62-3.68-2.29-5.54-2.29-2.98 0-5.9 1.8-5.9 4.83 0 3.61 3.07 4.44 5.59 5.14 1.8.49 3.31.95 3.31 2.26 0 1.59-1.49 1.77-2.37 1.8-1.95 0-3.13-.67-4.29-1.86-.7-.7-1.46-.7-2.1-.31-1.03.67-.91 1.68-.5 2.26zM119.6 27.43c1.06 0 1.82-.79 1.82-1.86v-3.21l1.49-1.38 5.47 5.81c.37.4.85.61 1.34.61.82 0 1.85-.73 1.85-1.8 0-.46-.18-.95-.58-1.38l-5.32-5.81 4.59-4.25c.49-.43.73-.92.73-1.38 0-.73-.79-1.71-1.73-1.71-.46 0-.94.18-1.34.58l-6.5 6.33V6.68c0-1.07-.76-1.87-1.82-1.87-1.07 0-1.83.8-1.83 1.87v18.89c0 1.07.76 1.86 1.83 1.86zM1.76 10.94c.77 0 1.43.5 1.67 1.2.95-.69 2.08-1.09 3.39-1.09 2.27 0 4.01.76 5.16 2.18 1.15-1.37 2.81-2.18 4.92-2.18 4.26 0 6.66 2.69 6.79 7.36v7.44c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-7.36c-.09-2.76-1.03-3.82-3.21-3.84-2.18 0-3.14 1.27-3.28 3.84v7.36c0 .98-.79 1.77-1.76 1.77-.97 0-1.76-.79-1.76-1.77v-6.71c-.01-.07-.01-.14 0-.22v-.42c-.1-2.76-1.04-3.82-3.21-3.84-2.26 0-3.2 1.35-3.29 4.09v7.1c0 .98-.79 1.77-1.76 1.77C.79 27.59 0 26.8 0 25.82V12.71c0-.98.79-1.77 1.76-1.77zM142.59 0c1.3-.01 2.12 1.42 1.45 2.52l-4.64 7.72c-.47.79-1.5 1.04-2.28.57-.79-.47-1.05-1.5-.57-2.28l3.1-5.16-6.18.07c-.89.01-1.62-.68-1.69-1.55l-.0-.1c-.01-.92.73-1.67 1.65-1.68l9.16-.1z"/>
         </svg>
-      </div>
+    </div>
       <nav class="topbar-nav">
         {% if can_events %}
         <a href="{{ events_url }}">Wydarzenia</a>
@@ -1634,7 +1634,7 @@ BASE_HTML = """
         {% else %}
         <span>token: <code>***</code></span>
         {% endif %}
-      </div>
+  </div>
     </div>
   </div>
   
@@ -1643,7 +1643,7 @@ BASE_HTML = """
     <div class="page-header">
       <h1>{{ title }}</h1>
     </div>
-    {{ body|safe }}
+  {{ body|safe }}
   </div>
   {% else %}
   <!-- No nav (login page etc.) -->
@@ -1794,31 +1794,31 @@ def import_page():
           <ul>
             <li>Upsert eventów (po <code>eventId</code>)</li>
             <li>Nadpisanie klas biletów dla eventów z pliku</li>
-          </ul>
+        </ul>
           
           <div class="info" style="margin:16px 0;">
             <strong>Obsługiwane formaty CSV:</strong><br/>
-            • <b>Klasyczny</b> – nagłówki w pierwszym wierszu (np. <code>eventName,eventId,...</code>)<br/>
-            • <b>Pivot</b> – klucze w pierwszej kolumnie (np. <code>key;Rekord 1;Rekord 2</code>)<br/>
+          • <b>Klasyczny</b> – nagłówki w pierwszym wierszu (np. <code>eventName,eventId,...</code>)<br/>
+          • <b>Pivot</b> – klucze w pierwszej kolumnie (np. <code>key;Rekord 1;Rekord 2</code>)<br/>
             <span class="muted">Format jest wykrywany automatycznie.</span>
-          </div>
-          
-          <div class="warn">
-            <strong>Uwaga:</strong> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
-          </div>
         </div>
+          
+        <div class="warn">
+            <strong>Uwaga:</strong> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
+        </div>
+      </div>
         
         <form method="post" action="{url_for('admin_bp.import_run')}" enctype="multipart/form-data" class="import-form">
-          <input type="hidden" name="token" value="{token}" />
+        <input type="hidden" name="token" value="{token}" />
           
           <div class="file-group">
             <label>Wydarzenia.csv</label>
-            <input type="file" name="wydarzenia" accept=".csv" />
+        <input type="file" name="wydarzenia" accept=".csv" />
           </div>
           
           <div class="file-group">
             <label>Bilety.csv (opcjonalnie)</label>
-            <input type="file" name="bilety" accept=".csv" />
+        <input type="file" name="bilety" accept=".csv" />
           </div>
           
           <div class="confirm-group">
@@ -1829,7 +1829,7 @@ def import_page():
           </div>
           
           <button class="btn btnPrimary" type="submit" style="width:100%;">Importuj pliki</button>
-        </form>
+      </form>
       </div>
     </div>
     """
@@ -1989,14 +1989,14 @@ def events_list():
                   <div class="event-card-info">
                     <div class="event-card-title">{e.get('event_name','')}</div>
                     <div class="event-card-id"><code>{e.get('event_id','')}</code></div>
-                  </div>
+                </div>
                   <div class="event-card-status">
                     {_status_pill(status)}
-                  </div>
                 </div>
+              </div>
                 <div class="event-card-actions">
-                  <a class="btn" href="{url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token)}">Edytuj</a>
-                  <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
+                <a class="btn" href="{url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token)}">Edytuj</a>
+                <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
                 </div>
               </div>
             </div>
@@ -3096,7 +3096,7 @@ def orders_list():
         </div>
         <div class="filter-actions">
           <button class="btn btnPrimary" type="submit">Filtruj</button>
-          <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">Wyczyść</a>
+        <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">Wyczyść</a>
         </div>
       </form>
     </div>
@@ -3184,9 +3184,9 @@ def order_detail(order_id: str):
             </div>
             <div style="display:flex; gap:12px; justify-content:center;">
               <form method="post" action="{url_for('admin_bp.order_mark_paid', order_id=order_id)}" style="margin:0;">
-                <input type="hidden" name="token" value="{token}" />
+            <input type="hidden" name="token" value="{token}" />
                 <button class="btn btnPrimary" type="submit" style="min-width:110px; padding:12px 20px;">Tak, oznacz</button>
-              </form>
+          </form>
               <button class="btn" type="button" onclick="document.getElementById('markPaidModal').style.display='none'" style="min-width:110px; padding:12px 20px;">Anuluj</button>
             </div>
           </div>
@@ -3359,8 +3359,8 @@ def order_detail(order_id: str):
       <div class="order-header-info">
         <h2>Zamówienie</h2>
         <code>{order_id}</code>
-      </div>
-      <div>
+        </div>
+        <div>
         <span class="pill {status_class}" style="{style}">{label}</span>
       </div>
     </div>
@@ -3369,7 +3369,7 @@ def order_detail(order_id: str):
       <div class="order-section">
         <div class="order-section-header">Dane nabywcy</div>
         <div class="order-section-body">
-          <div class="kv">
+        <div class="kv">
             <div>Email</div><div>{order.get('purchaser_email', '') or '—'}</div>
             <div>Imię</div><div>{order.get('purchaser_first_name', '') or '—'}</div>
             <div>Nazwisko</div><div>{order.get('purchaser_last_name', '') or '—'}</div>
@@ -3382,12 +3382,12 @@ def order_detail(order_id: str):
       <div class="order-section">
         <div class="order-section-header">Płatność</div>
         <div class="order-section-body">
-          <div class="kv">
+        <div class="kv">
             <div>Kwota</div><div class="order-amount">{total:.2f} {currency}</div>
             <div>Opcja</div><div>{order.get('payment_option_name', '') or '—'}</div>
             <div>Kod promocyjny</div><div>{order.get('promo_code', '') or '—'}</div>
             <div>Wydarzenie</div><div>{event_name or '—'}</div>
-          </div>
+        </div>
           
           {f'''
           <div style="margin-top:20px;">
@@ -3595,7 +3595,7 @@ def order_mark_paid(order_id: str):
 
     # 6. Wyślij email z potwierdzeniem rezerwacji do kupującego
     from pg_storage import save_mail_log
-    
+
     purchaser_email_sent = False
     purchaser_email_error = None
     
