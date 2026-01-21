@@ -1098,8 +1098,8 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                       {tickets_rows}
                       <tr>
                         <td colspan="2" style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; color: #495057;">Status</td>
-                        <td style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; text-align: right;">
-                          <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; background-color: #FFF3E0; color: #B45309; font-weight: 600;">
+                        <td style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; text-align: right; white-space: nowrap;">
+                          <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; background-color: #FFF3E0; color: #B45309; font-weight: 600; white-space: nowrap;">
                             Oczekuje na płatność
                           </span>
                         </td>
@@ -1181,9 +1181,30 @@ def render_proforma_reservation_email(
             except (ValueError, TypeError):
                 qty_num = 1
 
+            # Ustal cenę jednostkową brutto (tak jak w mailu z linkiem do płatności)
+            price = t.get("price")
+            if price is None:
+                price = t.get("unit_price_gross")
+            if price is None:
+                price = t.get("unit_price")
+            if price is None:
+                # fallback: jeśli mamy total_gross, przelicz na jednostkową
+                total_gross = t.get("total_gross")
+                if total_gross is not None and qty_num > 0:
+                    try:
+                        price = float(total_gross) / float(qty_num)
+                    except (ValueError, TypeError):
+                        price = 0
+
+            try:
+                price_num = float(price) if price is not None else 0.0
+            except (ValueError, TypeError):
+                price_num = 0.0
+
             normalized_tickets.append({
                 "name": str(name),
                 "quantity": qty_num,
+                "price": price_num,
             })
         except Exception:
             continue

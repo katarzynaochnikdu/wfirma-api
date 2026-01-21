@@ -586,7 +586,7 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                 sent["purchaser"] = bool(res.get("success"))
         elif flow == FLOW_PROFORMA:
             if not mail_log_exists(event_order_id, TEMPLATE_PROFORMA_SENT, direction="purchaser"):
-                subject = f"Twoja rejestracja na {event_name} - pro-forma w 24h"
+                subject = f"Twoja rejestracja na {event_name} - płatność pro forma"
                 body_html = render_proforma_reservation_email(
                     event_name=event_name,
                     purchaser_first_name=order.get("purchaser_first_name", "") or "",
