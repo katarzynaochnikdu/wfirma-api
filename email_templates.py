@@ -1098,7 +1098,7 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                       {tickets_rows}
                       <tr>
                         <td colspan="2" style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; color: #495057;">Status</td>
-                        <td style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; text-align: right; white-space: nowrap;">
+                        <td width="190" style="font-size: 14px; padding: 10px 6px; background-color: #F8F9FA; text-align: right; white-space: nowrap; width: 190px;">
                           <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; background-color: #FFF3E0; color: #B45309; font-weight: 600; white-space: nowrap;">
                             Oczekuje na płatność
                           </span>
