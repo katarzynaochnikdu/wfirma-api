@@ -1330,7 +1330,7 @@ BASE_HTML = """
     /* ========== LAYOUT ========== */
     .row { display: flex; gap: 16px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .content-wrapper { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+    .content-wrapper { padding: 16px 24px; max-width: 1200px; margin: 0 auto; }
     
     /* ========== NAVIGATION ========== */
     .topbar {
@@ -1393,8 +1393,8 @@ BASE_HTML = """
     
     /* ========== PAGE HEADER ========== */
     .page-header {
-      margin-bottom: 24px;
-      padding-bottom: 16px;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
       border-bottom: 1px solid var(--md-border);
     }
     .page-header h1 {
@@ -1412,30 +1412,28 @@ BASE_HTML = """
     .card { 
       border: 1px solid var(--md-primary); 
       border-radius: 10px; 
-      padding: 20px; 
+      padding: 16px; 
       background: var(--md-card-bg);
       box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }
     .card-header {
       font-weight: 600;
       font-size: 15px;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--md-border);
       color: var(--md-text);
     }
     
     /* ========== SECTION ========== */
-    .section {
-      margin-bottom: 24px;
-    }
+    .section { margin-bottom: 16px; }
     .section-title {
       font-size: 13px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: var(--md-text-muted);
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
     
     /* ========== TYPOGRAPHY ========== */
@@ -1527,10 +1525,10 @@ BASE_HTML = """
     .formHint { font-size: 12px; color: var(--md-text-muted); margin-top: 4px; }
     
     /* ========== TABLES ========== */
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; max-width: 1100px; margin: 0 auto; border-collapse: collapse; }
     th { 
       text-align: left; 
-      padding: 12px 16px; 
+      padding: 8px 12px; 
       font-size: 12px;
       font-weight: 600;
       text-transform: uppercase;
@@ -1539,7 +1537,7 @@ BASE_HTML = """
       border-bottom: 2px solid var(--md-border);
     }
     td { 
-      padding: 12px 16px; 
+      padding: 8px 12px; 
       border-bottom: 1px solid var(--md-border);
       font-size: 14px;
     }
@@ -1547,7 +1545,7 @@ BASE_HTML = """
     
     /* ========== KEY-VALUE GRID ========== */
     .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; font-size: 14px; }
-    .kv > div { padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .kv > div { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
     .kv > div:nth-child(odd) { color: var(--md-text-muted); font-weight: 500; }
     
     /* ========== ALERTS ========== */
@@ -2316,16 +2314,20 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
 
     body = f"""
     <style>
+      .preview-container {{
+        max-width: 980px;
+        margin: 0 auto;
+      }}
       .preview-section {{
         background: #fff;
         border: 2px solid #e2e8f0;
         border-radius: 16px;
-        margin-bottom: 32px;
+        margin-bottom: 24px;
         overflow: hidden;
         box-shadow: 0 4px 12px rgba(0,0,0,0.06);
       }}
       .preview-section-header {{
-        padding: 20px 28px;
+        padding: 16px 20px;
         background: linear-gradient(135deg, #0065D7, #00A1D7);
         font-weight: 700;
         font-size: 17px;
@@ -2334,13 +2336,13 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         text-transform: uppercase;
       }}
       .preview-section-body {{
-        padding: 8px 0;
+        padding: 6px 0;
       }}
       .field-row {{
         display: grid;
         grid-template-columns: 240px 1fr;
         gap: 28px;
-        padding: 24px 28px;
+        padding: 16px 20px;
         border-bottom: 1px solid #f1f5f9;
         transition: background 0.2s;
       }}
@@ -2415,14 +2417,16 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
       <button id="toggleBtn" onclick="toggleTechNames()" class="toggle-tech-names">🔓 Pokaż nazwy API</button>
     </div>
     
-    <div class="card" style="margin-top:20px;">
-      <div style="font-weight:700; font-size:20px; color:#0f172a;">{event_name}</div>
-      <div class="muted" style="margin-top:4px;"><code>{event_id}</code></div>
+    <div class="preview-container">
+      <div class="card" style="margin-top:20px;">
+        <div style="font-weight:700; font-size:20px; color:#0f172a;">{event_name}</div>
+        <div class="muted" style="margin-top:4px;"><code>{event_id}</code></div>
+      </div>
+      
+      {backstage_html}
+      
+      {sections_html}
     </div>
-    
-    {backstage_html}
-    
-    {sections_html}
     """
     return _page("Podgląd wydarzenia", body)
 
@@ -3160,6 +3164,8 @@ def orders_list():
         border: 1px solid var(--md-border);
         border-radius: 12px;
         overflow: hidden;
+        max-width: 1100px;
+        margin: 0 auto;
       }}
       .orders-table {{
         width: 100%;
@@ -3168,7 +3174,7 @@ def orders_list():
       }}
       .orders-table th {{
         text-align: left;
-        padding: 14px 16px;
+        padding: 10px 12px;
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
@@ -3179,7 +3185,7 @@ def orders_list():
       }}
       .orders-table th.text-right {{ text-align: right; }}
       .orders-table td {{
-        padding: 14px 16px;
+        padding: 10px 12px;
         border-bottom: 1px solid #f1f5f9;
         vertical-align: middle;
       }}
@@ -3483,13 +3489,14 @@ def order_detail(order_id: str):
       }}
       .docs-table {{
         width: 100%;
+        max-width: 980px;
         border-collapse: collapse;
         font-size: 13px;
-        margin-top: 16px;
+        margin: 10px auto 0;
       }}
       .docs-table th {{
         text-align: left;
-        padding: 10px 12px;
+        padding: 8px 10px;
         font-size: 11px;
         font-weight: 600;
         text-transform: uppercase;
@@ -3499,12 +3506,12 @@ def order_detail(order_id: str):
         border-bottom: 1px solid var(--md-border);
       }}
       .docs-table td {{
-        padding: 10px 12px;
+        padding: 8px 10px;
         border-bottom: 1px solid #f1f5f9;
       }}
       .action-section {{
-        margin-top: 20px;
-        padding-top: 20px;
+        margin-top: 14px;
+        padding-top: 14px;
         border-top: 1px solid var(--md-border);
       }}
       .mark-paid-modal {{
@@ -4518,6 +4525,8 @@ def users_list():
         border: 1px solid var(--md-border);
         border-radius: 12px;
         overflow: hidden;
+        max-width: 1100px;
+        margin: 0 auto;
       }}
       .users-table {{
         width: 100%;
@@ -4526,7 +4535,7 @@ def users_list():
       }}
       .users-table th {{
         text-align: left;
-        padding: 14px 16px;
+        padding: 10px 12px;
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
@@ -4536,7 +4545,7 @@ def users_list():
         border-bottom: 2px solid var(--md-border);
       }}
       .users-table td {{
-        padding: 14px 16px;
+        padding: 10px 12px;
         border-bottom: 1px solid #f1f5f9;
         vertical-align: middle;
       }}
@@ -4666,6 +4675,7 @@ def user_new():
     <style>
       .form-card {{
         max-width: 480px;
+        margin: 0 auto;
         background: #fff;
         border: 1px solid var(--md-border);
         border-radius: 12px;
@@ -4813,6 +4823,7 @@ def user_reset_password(user_id: int):
     <style>
       .form-card {{
         max-width: 480px;
+        margin: 0 auto;
         background: #fff;
         border: 1px solid var(--md-border);
         border-radius: 12px;
@@ -4946,6 +4957,7 @@ def user_access(user_id: int):
     <style>
       .form-card {{
         max-width: 520px;
+        margin: 0 auto;
         background: #fff;
         border: 1px solid var(--md-border);
         border-radius: 12px;
@@ -5190,6 +5202,8 @@ def audit_log():
         border: 1px solid var(--md-border);
         border-radius: 12px;
         overflow: hidden;
+        max-width: 1100px;
+        margin: 0 auto;
       }}
       .audit-table {{
         width: 100%;
@@ -5198,7 +5212,7 @@ def audit_log():
       }}
       .audit-table th {{
         text-align: left;
-        padding: 14px 16px;
+        padding: 10px 12px;
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
@@ -5208,7 +5222,7 @@ def audit_log():
         border-bottom: 2px solid var(--md-border);
       }}
       .audit-table td {{
-        padding: 12px 16px;
+        padding: 10px 12px;
         border-bottom: 1px solid #f1f5f9;
         vertical-align: middle;
       }}

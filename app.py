@@ -4050,8 +4050,14 @@ def wfirma_ping():
             'elapsed_ms': int((time.time() - start_time) * 1000)
         }), 401
     
-    # 2. Pobierz company_id (wymagane przez wFirma API)
+    # 2. Pobierz company_id (wymagane przez wFirma API) + lekki retry
     wfirma_company_id = wfirma_get_company_id(token)
+    if not wfirma_company_id:
+        for _ in range(2):
+            time.sleep(0.4)
+            wfirma_company_id = wfirma_get_company_id(token)
+            if wfirma_company_id:
+                break
     if not wfirma_company_id:
         return jsonify({
             'ok': False,
