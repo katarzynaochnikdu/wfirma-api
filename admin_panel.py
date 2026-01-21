@@ -3663,12 +3663,12 @@ def order_detail(order_id: str):
               <div style="display:flex; align-items:center; gap:8px;">
                 <span class="pill {'pill-success' if has_proforma else 'pill-error'}" style="font-size:11px;">{'✓' if has_proforma else '✗'}</span>
                 <span style="font-size:13px;">Proforma</span>
-                {f'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(\\'genProformaModal\\').style.display=\\'flex\\'">Wygeneruj</button>' if not has_proforma and is_proforma_flow else ''}
+                {'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(&quot;genProformaModal&quot;).style.display=&quot;flex&quot;">Wygeneruj</button>' if not has_proforma and is_proforma_flow else ''}
               </div>
               <div style="display:flex; align-items:center; gap:8px;">
                 <span class="pill {'pill-success' if has_final_invoice else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if has_final_invoice else '—' if status != 'paid' else '✗'}</span>
                 <span style="font-size:13px;">Faktura końcowa</span>
-                {f'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(\\'genInvoiceModal\\').style.display=\\'flex\\'">Wygeneruj</button>' if not has_final_invoice and status == 'paid' else ''}
+                {'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(&quot;genInvoiceModal&quot;).style.display=&quot;flex&quot;">Wygeneruj</button>' if not has_final_invoice and status == 'paid' else ''}
               </div>
             </div>
           </div>
