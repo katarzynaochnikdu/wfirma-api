@@ -4171,6 +4171,13 @@ def orders_list():
         text-align: center;
         color: var(--md-text-muted);
       }}
+      .orders-empty img {{
+        display: block;
+        margin: 0 auto;
+        width: 40%;
+        max-width: 420px;
+        height: auto;
+      }}
       .orders-stats {{
         display: flex;
         gap: 12px;
@@ -4333,11 +4340,12 @@ def order_detail(order_id: str):
     # Przycisk "Oznacz jako opłacone" tylko dla pending_payment (obok statusu) - ukryty dla viewera
     mark_paid_form = ""
     if status == "pending_payment" and not is_viewer:
-        proforma_info_btn = f' ({proforma_number})' if proforma_number else ''
+        proforma_info_btn = f'{proforma_number}' if proforma_number else ''
         proforma_info_modal = f'<div style="margin-bottom:16px; padding:12px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; font-size:14px;">Proforma: <strong style="color:#0369a1;">{proforma_number}</strong> • {total:.2f} {currency}</div>' if proforma_number else ''
         mark_paid_form = f"""
-        <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">
-          Oznacz jako opłacone{proforma_info_btn}
+        <button class="mark-paid-pill" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">
+          <span class="mark-paid-title">Oznacz jako opłacone</span>
+          {f'<span class="mark-paid-sub">{proforma_info_btn}</span>' if proforma_info_btn else ''}
         </button>
 
         <div id="markPaidModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
@@ -4389,6 +4397,74 @@ def order_detail(order_id: str):
 
     # Status pill color based on status
     status_class = "pill-success" if status == "paid" else "pill-warning" if status == "pending_payment" else "pill" if status == "received" else "pill-error"
+
+    # Prawa kolumna: status automatyzacji + Backstage
+    automation_side_html = f"""
+    <div class="order-side-card">
+      <div class="order-side-header">Status automatyzacji</div>
+      <div class="order-side-body">
+        <div class="auto-block">
+          <div class="auto-title">Dokumenty wFirma</div>
+          <div class="auto-row">
+            <span class="pill {'pill-success' if has_proforma else 'pill-error'}" style="font-size:11px;">{'✓' if has_proforma else '✗'}</span>
+            <span>Proforma</span>
+            {'<button class="btn" onclick="document.getElementById(&quot;genProformaModal&quot;).style.display=&quot;flex&quot;">Wygeneruj</button>' if (not has_proforma and is_proforma_flow and not is_viewer) else ''}
+          </div>
+          <div class="auto-row">
+            <span class="pill {'pill-success' if has_final_invoice else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if has_final_invoice else '—' if status != 'paid' else '✗'}</span>
+            <span>Faktura końcowa</span>
+            {'<button class="btn" onclick="document.getElementById(&quot;genInvoiceModal&quot;).style.display=&quot;flex&quot;">Wygeneruj</button>' if (not has_final_invoice and status == 'paid' and not is_viewer) else ''}
+          </div>
+        </div>
+        <div class="auto-block">
+          <div class="auto-title">Maile do kupującego</div>
+          <div class="auto-row">
+            <span class="pill {'pill-success' if mail_proforma_sent else 'pill-warning' if not is_proforma_flow else 'pill-error'}" style="font-size:11px;">{'✓' if mail_proforma_sent else '—' if not is_proforma_flow else '✗'}</span>
+            <span>Email z proformą</span>
+          </div>
+          <div class="auto-row">
+            <span class="pill {'pill-success' if mail_payment_confirmation_sent else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if mail_payment_confirmation_sent else '—' if status != 'paid' else '✗'}</span>
+            <span>Potwierdzenie płatności</span>
+          </div>
+        </div>
+        <div class="auto-block">
+          <div class="auto-title">Uczestnicy</div>
+          <div class="auto-row">
+            <span>Łącznie: <strong>{total_participants}</strong></span>
+          </div>
+          <div class="auto-row">
+            <span class="pill {'pill-success' if emailed_participants == total_participants and total_participants > 0 else 'pill-warning' if status != 'paid' else 'pill-error' if emailed_participants < total_participants else 'pill'}" style="font-size:11px;">
+              {emailed_participants}/{total_participants}
+            </span>
+            <span>Powiadomieni</span>
+          </div>
+        </div>
+        <div class="auto-legend">
+          <span><span class="pill pill-success" style="font-size:10px;">✓</span> Zrealizowano</span>
+          <span><span class="pill pill-warning" style="font-size:10px;">—</span> Oczekuje</span>
+          <span><span class="pill pill-error" style="font-size:10px;">✗</span> Brakuje</span>
+        </div>
+      </div>
+    </div>
+    """
+
+    backstage_side_html = ""
+    if (backstage_config_link or backstage_orders_link or backstage_attendees_link) and not is_viewer:
+        backstage_side_html = f"""
+        <div class="order-side-card">
+          <div class="order-side-header">Backstage</div>
+          <div class="order-side-body" style="text-align:center;">
+            <div style="margin-bottom:10px;">
+              <img src="/backstage-logo.jpg" alt="Backstage" style="width:28px; height:28px; border-radius:6px;" />
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Konfiguracja ↗</a>' if backstage_config_link else ''}
+              {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Zamówienia ↗</a>' if backstage_orders_link else ''}
+              {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Uczestnicy ↗</a>' if backstage_attendees_link else ''}
+            </div>
+          </div>
+        </div>
+        """
 
     body = f"""
     <style>
@@ -4442,6 +4518,34 @@ def order_detail(order_id: str):
         background: #fff;
         border: 1px solid rgba(15, 23, 42, 0.08);
       }}
+      .mark-paid-pill {{
+        border-radius: 999px;
+        padding: 10px 16px;
+        background: #fff;
+        border: 1px solid rgba(255,255,255,0.7);
+        color: var(--event-accent);
+        font-weight: 700;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        min-width: 180px;
+        box-shadow: 0 6px 16px rgba(2, 6, 23, 0.12);
+      }}
+      .mark-paid-pill:hover {{
+        background: #f8fafc;
+        border-color: #fff;
+      }}
+      .mark-paid-title {{
+        font-size: 13px;
+        line-height: 1.1;
+      }}
+      .mark-paid-sub {{
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0.9;
+      }}
       .order-header-actions {{
         display: flex;
         align-items: center;
@@ -4464,6 +4568,76 @@ def order_detail(order_id: str):
         border: 1px solid var(--md-border);
         border-radius: 12px;
         overflow: hidden;
+      }}
+      .order-side {{
+        width: 260px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        position: sticky;
+        top: 20px;
+        align-self: flex-start;
+      }}
+      @media (max-width: 1100px) {{
+        .order-side {{
+          position: static;
+          width: 100%;
+        }}
+      }}
+      .order-side-card {{
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }}
+      .order-side-header {{
+        padding: 12px 14px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--md-border);
+        font-weight: 700;
+        font-size: 12px;
+        color: #334155;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }}
+      .order-side-body {{
+        padding: 12px 14px;
+      }}
+      .auto-block {{
+        padding: 10px 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        margin-bottom: 10px;
+      }}
+      .auto-title {{
+        font-weight: 600;
+        font-size: 12px;
+        color: #334155;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-bottom: 8px;
+      }}
+      .auto-row {{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }}
+      .auto-row .btn {{
+        margin-left: auto;
+        font-size: 11px;
+        padding: 4px 8px;
+      }}
+      .auto-legend {{
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 8px;
       }}
       .order-section-header {{
         padding: 16px 20px;
@@ -4666,71 +4840,6 @@ def order_detail(order_id: str):
       </div>
     </div>
 
-    <!-- SEKCJA: Status automatyzacji -->
-    <div class="order-section" style="margin-top:24px; grid-column: 1 / -1;">
-      <div class="order-section-header">Status automatyzacji</div>
-      <div class="order-section-body">
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px;">
-          
-          <!-- Dokumenty -->
-          <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-            <div style="font-weight:600; margin-bottom:12px; color:#334155; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Dokumenty wFirma</div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="pill {'pill-success' if has_proforma else 'pill-error'}" style="font-size:11px;">{'✓' if has_proforma else '✗'}</span>
-                <span style="font-size:13px;">Proforma</span>
-                {'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(&quot;genProformaModal&quot;).style.display=&quot;flex&quot;">Wygeneruj</button>' if not has_proforma and is_proforma_flow else ''}
-              </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="pill {'pill-success' if has_final_invoice else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if has_final_invoice else '—' if status != 'paid' else '✗'}</span>
-                <span style="font-size:13px;">Faktura końcowa</span>
-                {'<button class="btn" style="margin-left:auto; font-size:11px; padding:4px 10px;" onclick="document.getElementById(&quot;genInvoiceModal&quot;).style.display=&quot;flex&quot;">Wygeneruj</button>' if not has_final_invoice and status == 'paid' else ''}
-              </div>
-            </div>
-          </div>
-          
-          <!-- Maile do kupującego -->
-          <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-            <div style="font-weight:600; margin-bottom:12px; color:#334155; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Maile do kupującego</div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="pill {'pill-success' if mail_proforma_sent else 'pill-warning' if not is_proforma_flow else 'pill-error'}" style="font-size:11px;">{'✓' if mail_proforma_sent else '—' if not is_proforma_flow else '✗'}</span>
-                <span style="font-size:13px;">Email z proformą</span>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="pill {'pill-success' if mail_payment_confirmation_sent else 'pill-warning' if status != 'paid' else 'pill-error'}" style="font-size:11px;">{'✓' if mail_payment_confirmation_sent else '—' if status != 'paid' else '✗'}</span>
-                <span style="font-size:13px;">Potwierdzenie płatności</span>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Uczestnicy -->
-          <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-            <div style="font-weight:600; margin-bottom:12px; color:#334155; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Uczestnicy</div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:13px;">Łącznie: <strong>{total_participants}</strong></span>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="pill {'pill-success' if emailed_participants == total_participants and total_participants > 0 else 'pill-warning' if status != 'paid' else 'pill-error' if emailed_participants < total_participants else 'pill'}" style="font-size:11px;">
-                  {emailed_participants}/{total_participants}
-                </span>
-                <span style="font-size:13px;">Powiadomieni</span>
-              </div>
-            </div>
-          </div>
-          
-        </div>
-        
-        <!-- Legenda -->
-        <div style="margin-top:16px; padding-top:16px; border-top:1px solid #e2e8f0; font-size:12px; color:#64748b;">
-          <span style="margin-right:16px;"><span class="pill pill-success" style="font-size:10px;">✓</span> Zrealizowano</span>
-          <span style="margin-right:16px;"><span class="pill pill-warning" style="font-size:10px;">—</span> Nie dotyczy / oczekuje</span>
-          <span><span class="pill pill-error" style="font-size:10px;">✗</span> Brakuje</span>
-        </div>
-      </div>
-    </div>
-    
     <!-- SEKCJA: Uczestnicy -->
     <div class="order-section" style="margin-top:24px; grid-column: 1 / -1;">
       <div class="order-section-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -4769,21 +4878,10 @@ def order_detail(order_id: str):
     
     </div><!-- koniec głównej treści -->
     
-    {f'''
-    <div style="width:140px; flex-shrink:0; position:sticky; top:20px; align-self:flex-start;">
-      <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px; padding:12px; text-align:center;">
-        <div style="margin-bottom:10px;">
-          <img src="/backstage-logo.jpg" alt="Backstage" style="width:28px; height:28px; border-radius:6px;" />
-        </div>
-        <div style="font-size:10px; font-weight:600; color:#0369a1; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">Backstage</div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Konfiguracja ↗</a>' if backstage_config_link else ''}
-          {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Zamówienia ↗</a>' if backstage_orders_link else ''}
-          {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Uczestnicy ↗</a>' if backstage_attendees_link else ''}
-        </div>
-      </div>
+    <div class="order-side">
+      {automation_side_html}
+      {backstage_side_html}
     </div>
-    ''' if (backstage_config_link or backstage_orders_link or backstage_attendees_link) and not is_viewer else ''}
     
     </div><!-- koniec flex container -->
     
