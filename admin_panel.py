@@ -3106,7 +3106,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
           </td>
           <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
             <input type="text" name="ticket_class_vat" value="" placeholder="np. 23" style="width:100%; text-align:right;" />
-            <input type="hidden" name="ticket_class_data_json" value="{}" />
+            <input type="hidden" name="ticket_class_data_json" value="{{}}" />
           </td>
           <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; width:90px;">
             <button type="button" class="btn btnDanger" style="padding:4px 8px; font-size:11px;" onclick="removeTicketRow(this)">Usuń</button>

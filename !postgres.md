@@ -31,3 +31,6 @@ SELECT COUNT(*) FROM mail_log;
 
 Wyjdz
 \q
+
+DELETE FROM backstage_webhook_events     
+WHERE dedupe_key = '093259dd2e2399ffb2c2465e186189a6';
