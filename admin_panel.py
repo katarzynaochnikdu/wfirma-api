@@ -2830,6 +2830,9 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     fields_html = []
     for fd in FIELD_DEFS:
         k = fd["key"]
+        # eventId jest edytowany wyłącznie w polu głównym (na górze)
+        if k == "eventId":
+            continue
         label = fd["label"]
         hint = fd.get("hint", "")
         kind = fd.get("kind", "text")
