@@ -2300,6 +2300,14 @@ def events_list():
         background: #f0f9ff;
         border: 1px solid #bae6fd;
         color: #0369a1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+      }}
+      .event-card-actions .backstage-btn img {{
+        display: block;
       }}
       .event-card-actions .backstage-btn:hover {{
         background: #e0f2fe;
