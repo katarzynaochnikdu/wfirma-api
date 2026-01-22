@@ -2726,7 +2726,7 @@ def _render_ticket_classes_section(tickets: List[Dict[str, Any]]) -> str:
     <div class="card" style="margin-top:20px; border:2px solid #a855f7;">
       <div style="font-weight:700; margin-bottom:12px; color:#7c3aed; display:flex; justify-content:space-between; align-items:center;">
         <span>🎫 Typy biletów ({len(tickets)})</span>
-        <span style="font-size:12px; color:#94a3b8; font-weight:400;">Edycja w sekcji "Zaawansowane" ↓</span>
+        <span style="font-size:12px; color:#94a3b8; font-weight:400;">Edycja poniżej w sekcji "Typy biletów"</span>
       </div>
       <table style="width:100%; border-collapse:collapse; font-size:14px;">
         <tr style="background:#f8fafc;">
@@ -2804,6 +2804,73 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
             """
         )
 
+    # Edytor typów biletów (tabela)
+    ticket_editor_rows = ""
+    for t in tickets or []:
+        tc_id = str(t.get("ticket_class_id") or "")
+        tc_name = str(t.get("ticket_name") or "")
+        tc_data = t.get("data") or {}
+        tc_price = tc_data.get("ticket_price")
+        if tc_price is None:
+            tc_price = tc_data.get("price")
+        if tc_price is None:
+            tc_price = ""
+        tc_vat = tc_data.get("vat_rate")
+        if tc_vat is None:
+            tc_vat = tc_data.get("vat")
+        if tc_vat is None:
+            tc_vat = ""
+        tc_data_json = json.dumps(tc_data, ensure_ascii=False)
+
+        safe_tc_id = tc_id.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        safe_tc_name = tc_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        safe_tc_price = str(tc_price).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        safe_tc_vat = str(tc_vat).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        safe_tc_data_json = tc_data_json.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+        ticket_editor_rows += f"""
+        <tr class="ticket-class-row">
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+            <input type="text" name="ticket_class_id" value="{safe_tc_id}" placeholder="ID z Backstage" style="width:100%; font-family:monospace; font-size:12px;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+            <input type="text" name="ticket_class_name" value="{safe_tc_name}" placeholder="Nazwa biletu" style="width:100%;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+            <input type="text" name="ticket_class_price" value="{safe_tc_price}" placeholder="np. 399.00" style="width:100%; text-align:right;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+            <input type="text" name="ticket_class_vat" value="{safe_tc_vat}" placeholder="np. 23" style="width:100%; text-align:right;" />
+            <input type="hidden" name="ticket_class_data_json" value="{safe_tc_data_json}" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; width:90px;">
+            <button type="button" class="btn btnDanger" style="padding:4px 8px; font-size:11px;" onclick="removeTicketRow(this)">Usuń</button>
+          </td>
+        </tr>
+        """
+
+    if not ticket_editor_rows:
+        ticket_editor_rows = """
+        <tr class="ticket-class-row">
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+            <input type="text" name="ticket_class_id" value="" placeholder="ID z Backstage" style="width:100%; font-family:monospace; font-size:12px;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+            <input type="text" name="ticket_class_name" value="" placeholder="Nazwa biletu" style="width:100%;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+            <input type="text" name="ticket_class_price" value="" placeholder="np. 399.00" style="width:100%; text-align:right;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+            <input type="text" name="ticket_class_vat" value="" placeholder="np. 23" style="width:100%; text-align:right;" />
+            <input type="hidden" name="ticket_class_data_json" value="{}" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; width:90px;">
+            <button type="button" class="btn btnDanger" style="padding:4px 8px; font-size:11px;" onclick="removeTicketRow(this)">Usuń</button>
+          </td>
+        </tr>
+        """
+
     preview_link = ""
     rules_link = ""
     tickets_link = ""
@@ -2833,7 +2900,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     <div class="grid">
       <div class="card">
         <div style="font-weight:700; margin-bottom:10px;">Dane wydarzenia</div>
-        <form method="post" action="{url_for('admin_bp.event_save')}">
+        <form id="event-form" method="post" action="{url_for('admin_bp.event_save')}">
           <input type="hidden" name="token" value="{token}" />
           <div class="muted">event_id</div>
           <input type="text" name="event_id" value="{event_id}" placeholder="np. 24311000000651079" {'readonly' if (not is_new) else ''} />
@@ -2857,6 +2924,32 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
           </div>
 
           <div style="height:10px;"></div>
+          <div style="border:1px solid #e2e8f0; border-radius:12px; padding:12px; background:#f8fafc;">
+            <div style="font-weight:700; margin-bottom:8px;">Typy biletów (edytowalne)</div>
+            <div class="muted" style="margin-bottom:10px;">Wpisz ID z Backstage, nazwę, cenę netto i VAT. Zmiany zapiszą się razem z wydarzeniem.</div>
+            <div style="overflow:auto;">
+              <table id="ticket-classes-table" style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead>
+                  <tr style="background:#eef2ff;">
+                    <th style="padding:8px; text-align:left; font-size:11px; text-transform:uppercase; color:#64748b;">ticket_class_id</th>
+                    <th style="padding:8px; text-align:left; font-size:11px; text-transform:uppercase; color:#64748b;">Nazwa</th>
+                    <th style="padding:8px; text-align:right; font-size:11px; text-transform:uppercase; color:#64748b;">Cena netto</th>
+                    <th style="padding:8px; text-align:right; font-size:11px; text-transform:uppercase; color:#64748b;">VAT</th>
+                    <th style="padding:8px; text-align:right; font-size:11px; text-transform:uppercase; color:#64748b;">Akcje</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ticket_editor_rows}
+                </tbody>
+              </table>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+              <button class="btn" type="button" onclick="addTicketRow()">+ Dodaj typ</button>
+              <button class="btn" type="button" onclick="syncTicketClassesJson()">Aktualizuj JSON poniżej</button>
+            </div>
+          </div>
+
+          <div style="height:10px;"></div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn" type="submit" formaction="{url_for('admin_bp.preview_draft')}" formmethod="post">Podgląd (bez zapisu)</button>
             <button class="btn btnPrimary" type="submit">Zapisz</button>
@@ -2873,7 +2966,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
             <textarea name="kv_paste" placeholder="event_location_place<TAB>Regent Warsaw Hotel"></textarea>
             <div style="height:10px;"></div>
             <div class="muted">ticket_classes_json (lista) – opcjonalnie</div>
-            <textarea name="ticket_classes_json">{ticket_classes_json}</textarea>
+            <textarea id="ticket_classes_json" name="ticket_classes_json">{ticket_classes_json}</textarea>
           </details>
         </form>
       </div>
@@ -2896,6 +2989,9 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     {_render_ticket_classes_section(tickets) if event_id else ''}
     
     <script>
+      let ticketJsonManualEdit = false;
+      let ticketTableEdited = false;
+
       function updatePreview(input) {{
         const key = input.getAttribute('data-field-key');
         const kind = input.getAttribute('data-field-kind');
@@ -2923,6 +3019,134 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
             previewEl.style.display = 'none';
           }}
         }}
+      }}
+
+      function parseNumberValue(value) {{
+        const raw = (value || '').trim();
+        if (!raw) return null;
+        const normalized = raw.replace(',', '.');
+        const num = Number(normalized);
+        return Number.isFinite(num) ? num : raw;
+      }}
+
+      function syncTicketClassesJson() {{
+        const rows = document.querySelectorAll('#ticket-classes-table tbody .ticket-class-row');
+        const list = [];
+        rows.forEach((row) => {{
+          const idEl = row.querySelector('input[name="ticket_class_id"]');
+          const nameEl = row.querySelector('input[name="ticket_class_name"]');
+          const priceEl = row.querySelector('input[name="ticket_class_price"]');
+          const vatEl = row.querySelector('input[name="ticket_class_vat"]');
+          const dataEl = row.querySelector('input[name="ticket_class_data_json"]');
+
+          const ticketClassId = (idEl ? idEl.value.trim() : '');
+          const ticketName = (nameEl ? nameEl.value.trim() : '');
+          const priceRaw = (priceEl ? priceEl.value.trim() : '');
+          const vatRaw = (vatEl ? vatEl.value.trim() : '');
+          const dataRaw = (dataEl ? dataEl.value.trim() : '');
+
+          if (!ticketClassId && !ticketName && !priceRaw && !vatRaw) {{
+            return;
+          }}
+
+          let data = {{}};
+          if (dataRaw) {{
+            try {{
+              data = JSON.parse(dataRaw);
+            }} catch (e) {{
+              data = {{}};
+            }}
+          }}
+
+          if (priceRaw) {{
+            data['ticket_price'] = parseNumberValue(priceRaw);
+            if ('price' in data) delete data['price'];
+          }} else {{
+            if ('ticket_price' in data) delete data['ticket_price'];
+            if ('price' in data) delete data['price'];
+          }}
+
+          if (vatRaw) {{
+            data['vat_rate'] = parseNumberValue(vatRaw);
+            if ('vat' in data) delete data['vat'];
+          }} else {{
+            if ('vat_rate' in data) delete data['vat_rate'];
+            if ('vat' in data) delete data['vat'];
+          }}
+
+          list.push({{
+            ticket_class_id: ticketClassId,
+            ticket_name: ticketName,
+            data: data
+          }});
+        }});
+
+        const textarea = document.getElementById('ticket_classes_json');
+        if (textarea) {{
+          textarea.value = JSON.stringify(list, null, 2);
+          ticketJsonManualEdit = false;
+          ticketTableEdited = true;
+        }}
+      }}
+
+      function addTicketRow() {{
+        const tbody = document.querySelector('#ticket-classes-table tbody');
+        if (!tbody) return;
+        const row = document.createElement('tr');
+        row.className = 'ticket-class-row';
+        row.innerHTML = `
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+            <input type="text" name="ticket_class_id" value="" placeholder="ID z Backstage" style="width:100%; font-family:monospace; font-size:12px;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+            <input type="text" name="ticket_class_name" value="" placeholder="Nazwa biletu" style="width:100%;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+            <input type="text" name="ticket_class_price" value="" placeholder="np. 399.00" style="width:100%; text-align:right;" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+            <input type="text" name="ticket_class_vat" value="" placeholder="np. 23" style="width:100%; text-align:right;" />
+            <input type="hidden" name="ticket_class_data_json" value="{}" />
+          </td>
+          <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; width:90px;">
+            <button type="button" class="btn btnDanger" style="padding:4px 8px; font-size:11px;" onclick="removeTicketRow(this)">Usuń</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+        ticketTableEdited = true;
+      }}
+
+      function removeTicketRow(btn) {{
+        const row = btn && btn.closest ? btn.closest('tr') : null;
+        if (row && row.parentElement) {{
+          row.parentElement.removeChild(row);
+        }}
+        ticketTableEdited = true;
+      }}
+
+      const ticketJsonTextarea = document.getElementById('ticket_classes_json');
+      if (ticketJsonTextarea) {{
+        ticketJsonTextarea.addEventListener('input', function() {{
+          ticketJsonManualEdit = true;
+          ticketTableEdited = false;
+        }});
+      }}
+
+      const ticketTable = document.getElementById('ticket-classes-table');
+      if (ticketTable) {{
+        ticketTable.addEventListener('input', function() {{
+          ticketJsonManualEdit = false;
+          ticketTableEdited = true;
+        }});
+      }}
+
+      const eventForm = document.getElementById('event-form');
+      if (eventForm) {{
+        eventForm.addEventListener('submit', function() {{
+          if (!ticketJsonManualEdit || ticketTableEdited) {{
+            syncTicketClassesJson();
+          }}
+        }});
       }}
     </script>
     """
