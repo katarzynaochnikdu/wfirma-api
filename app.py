@@ -421,13 +421,21 @@ def event_calendar_ics(event_id: str):
     ]
     ics_content = "\r\n".join(ics_lines)
     
-    # Zwróć jako plik do pobrania
+    # Zwróć jako plik do pobrania (nazwa pliku = nazwa wydarzenia)
     from flask import Response
+    import re
+    from urllib.parse import quote
+    raw_filename = (event_name or "wydarzenie").strip()
+    safe_filename = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_filename).strip("_")
+    if not safe_filename:
+        safe_filename = str(event_id or "wydarzenie")
+    filename = f"{safe_filename}.ics"
+    filename_star = quote(f"{raw_filename}.ics")
     return Response(
         ics_content,
         content_type="text/calendar; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="{event_id}.ics"'
+            "Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{filename_star}'
         }
     )
 

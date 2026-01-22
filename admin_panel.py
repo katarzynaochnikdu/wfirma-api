@@ -3362,6 +3362,11 @@ def event_tickets(event_id: str):
     if not ev:
         abort(404, description="Nie znaleziono eventu")
 
+    event_data = ev.get("data") or {}
+    color1 = event_data.get("color_gradient_1") or "#0065D7"
+    color2 = event_data.get("color_gradient_2") or ""
+    header_bg = f"linear-gradient(135deg, {color1} 0%, {color2} 100%)" if color2 else color1
+
     # Pobierz dane
     ticket_classes = get_ticket_classes(event_id)
     stats = get_event_ticket_stats(event_id)
@@ -3420,20 +3425,15 @@ def event_tickets(event_id: str):
     </div>
     """
 
-    # Sekcja 2: Klasy biletów
-    data_header_html = '<th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Dane JSONB</th>' if not is_viewer else ''
+    # Sekcja 2: Klasy biletów (bez danych technicznych)
     ticket_rows = []
     for tc in ticket_classes:
         tc_id = tc.get("ticket_class_id", "")
         tc_name = tc.get("ticket_name", "") or tc.get("data", {}).get("name", "") or "—"
-        tc_data = tc.get("data", {})
-        tc_data_str = json.dumps(tc_data, ensure_ascii=False, indent=2) if tc_data else "{}"
-        data_cell_html = f'<td><details><summary class="muted">Pokaż dane</summary><pre style="font-size:11px; max-height:200px; overflow:auto;">{tc_data_str}</pre></details></td>' if not is_viewer else ''
         ticket_rows.append(f"""
             <tr>
               <td><code>{tc_id}</code></td>
               <td>{tc_name}</td>
-              {data_cell_html}
             </tr>
         """)
 
@@ -3445,11 +3445,10 @@ def event_tickets(event_id: str):
           <tr style="background:#f8fafc;">
             <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">ID klasy</th>
             <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Nazwa</th>
-            {data_header_html}
           </tr>
         </thead>
         <tbody>
-          {''.join(ticket_rows) if ticket_rows else f'<tr><td colspan="{3 if not is_viewer else 2}" class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
+          {''.join(ticket_rows) if ticket_rows else '<tr><td colspan="2" class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -3507,9 +3506,13 @@ def event_tickets(event_id: str):
       {'<span class="pill" style="background:#e0f2fe; color:#0369a1; margin-left:auto;">Tryb podglądu</span>' if is_viewer else ''}
     </div>
 
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-weight:700;">{ev.get('event_name', '')}</div>
-      <div class="muted"><code>{event_id}</code></div>
+    <div class="card" style="margin-bottom:16px; border:2px solid {color1}; overflow:hidden;">
+      <div style="padding:16px 20px; background:{header_bg};">
+        <div style="font-weight:700; font-size:18px; color:#ffffff;">{ev.get('event_name', '')}</div>
+        <div style="margin-top:6px; color:#e2e8f0;">
+          <code style="font-size:12px; background:rgba(255,255,255,0.15); color:#ffffff; border:1px solid rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px;">{event_id}</code>
+        </div>
+      </div>
     </div>
 
     {stats_html}
