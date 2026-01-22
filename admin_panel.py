@@ -3818,7 +3818,18 @@ def orders_list():
         else:
             events = [e for e in events if e.get("event_id") in allowed_events]
     
-    event_name_by_id = {str(e.get("event_id") or ""): (e.get("event_name") or "") for e in (events or [])}
+    event_meta_by_id: Dict[str, Dict[str, str]] = {}
+    for e in (events or []):
+        eid = str(e.get("event_id") or "")
+        if not eid:
+            continue
+        data = e.get("data") or {}
+        event_meta_by_id[eid] = {
+            "name": e.get("event_name") or "",
+            "color": data.get("color_gradient_1") or "",
+            "city": data.get("event_location_city") or data.get("event_address_text_city") or "",
+        }
+    event_name_by_id = {eid: meta.get("name", "") for eid, meta in event_meta_by_id.items()}
     event_options = "".join(
         f'<option value="{e.get("event_id", "")}" {"selected" if e.get("event_id") == event_filter else ""}>{e.get("event_name", "")}</option>'
         for e in events
@@ -3850,6 +3861,16 @@ def orders_list():
                 return r.get("flow")
         return None
 
+    payment_pill_styles = {
+        "FOC": "background:#ecfdf3; color:#166534; border:1px solid #bbf7d0;",
+        "Pro forma": "background:#fff7ed; color:#9a3412; border:1px solid #fed7aa;",
+        "Online (Stripe)": "background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;",
+    }
+
+    def _payment_pill(form: str) -> str:
+        style = payment_pill_styles.get(form, "background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0;")
+        return f'<span class="pill pill-payment" style="{style}">{form}</span>'
+
     rows = []
     for o in orders:
         status = o.get("status", "received")
@@ -3860,8 +3881,13 @@ def orders_list():
         event_id = o.get("event_id", "") or ""
         payment_type = o.get("payment_type")
 
-        # Wydarzenie (bez danych osobowych)
-        event_name = event_name_by_id.get(str(event_id)) or (str(event_id)[:8] + "…") if event_id else "—"
+        # Wydarzenie (bez danych osobowych) + kolor + miasto
+        event_meta = event_meta_by_id.get(str(event_id), {})
+        event_name = event_meta.get("name") or (str(event_id)[:8] + "…") if event_id else "—"
+        event_color = (event_meta.get("color") or "").strip()
+        event_city = (event_meta.get("city") or "").strip() or "—"
+        event_color_style = f' style="color:{event_color};"' if event_color else ""
+        event_cell_html = f'<div class="order-event-name"{event_color_style}>{event_name}</div><div class="order-event-city">{event_city}</div>'
 
         # Liczba osób: suma statusów uczestników (jeśli brak – 0)
         participants_count = 0
@@ -3872,10 +3898,12 @@ def orders_list():
         except Exception:
             participants_count = 0
 
-        # Nr proformy + netto z dokumentu (jeśli jest)
+        # Nr proformy / faktury + netto z dokumentu (jeśli jest)
         proforma_number = "—"
+        invoice_number = "—"
         netto_value = None
         has_proforma = False
+        has_invoice = False
         try:
             wfirma_docs = get_wfirma_documents(str(order_id))
             # weź najnowszą proformę jeśli istnieje
@@ -3883,14 +3911,20 @@ def orders_list():
             if proforma_doc:
                 has_proforma = True
                 proforma_number = proforma_doc.get("wfirma_number") or "—"
-                raw = proforma_doc.get("raw") or {}
-                if isinstance(raw, dict):
-                    inv = raw.get("invoice") or {}
-                    if isinstance(inv, dict) and inv.get("netto") is not None:
-                        try:
-                            netto_value = float(inv.get("netto"))
-                        except Exception:
-                            netto_value = None
+            # weź najnowszą fakturę końcową (normal) jeśli istnieje
+            invoice_doc = next((d for d in (wfirma_docs or []) if (d.get("document_type") == "normal")), None)
+            if invoice_doc:
+                has_invoice = True
+                invoice_number = invoice_doc.get("wfirma_number") or "—"
+            doc_for_netto = proforma_doc or invoice_doc
+            raw = (doc_for_netto.get("raw") if doc_for_netto else {}) or {}
+            if isinstance(raw, dict):
+                inv = raw.get("invoice") or {}
+                if isinstance(inv, dict) and inv.get("netto") is not None:
+                    try:
+                        netto_value = float(inv.get("netto"))
+                    except Exception:
+                        netto_value = None
         except Exception:
             pass
 
@@ -3927,12 +3961,14 @@ def orders_list():
             except Exception:
                 netto_value = 0.0
 
+        payment_form_html = _payment_pill(payment_form)
         rows.append(f"""
             <tr>
-              <td>{event_name}</td>
-              <td>{payment_form}</td>
-              <td><code>{proforma_number}</code></td>
+              <td>{event_cell_html}</td>
+              <td>{payment_form_html}</td>
               <td><a href="{url_for('admin_bp.order_detail', order_id=order_id, token=token)}"><code>{order_id[:10]}…{order_id[-4:] if len(order_id) > 4 else ''}</code></a></td>
+              <td><code>{proforma_number}</code></td>
+              <td><code>{invoice_number}</code></td>
               <td style="text-align:right;">{participants_count}</td>
               <td style="text-align:right;">{netto_value:.2f} {currency}</td>
               <td><span class="pill" style="{style}">{label}</span></td>
@@ -4036,6 +4072,27 @@ def orders_list():
         padding: 3px 8px;
         border-radius: 4px;
       }}
+      .orders-table .order-event-name {{
+        font-weight: 700;
+        font-size: 15px;
+        line-height: 1.2;
+        letter-spacing: 0.2px;
+        font-family: "Segoe UI Semibold", "Segoe UI", "Trebuchet MS", Arial, sans-serif;
+      }}
+      .orders-table .order-event-city {{
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 4px;
+      }}
+      .orders-table .pill-payment {{
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
+        white-space: nowrap;
+      }}
       .orders-empty {{
         padding: 60px 20px;
         text-align: center;
@@ -4093,17 +4150,18 @@ def orders_list():
       <table class="orders-table">
         <thead>
           <tr>
-            <th>Wydarzenie</th>
+            <th>Wydarzenie / Miasto</th>
             <th>Forma płatności</th>
+            <th>Nr zamówienia</th>
             <th>Nr proformy</th>
-            <th>Id zamówienia</th>
+            <th>Nr faktury</th>
             <th class="text-right">Ilość osób</th>
             <th class="text-right">Wartość netto</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="7" class="orders-empty">Brak zamówień spełniających kryteria</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="8" class="orders-empty">Brak zamówień spełniających kryteria</td></tr>'}
         </tbody>
       </table>
     </div>
