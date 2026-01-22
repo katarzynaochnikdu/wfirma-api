@@ -262,7 +262,7 @@ def _send_admin_credentials_email(to_email: str, full_name: str, temp_password: 
     <div style="background:#f8fafc; padding:24px 12px; font-family: 'EuclidCircularB', Arial, sans-serif; color:#1e293b;">
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px; margin:0 auto; background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
         <tr>
-          <td style="background:linear-gradient(90deg,#00E09F 0%,#00A1D7 50%,#0065D7 100%); padding:22px 24px;">
+          <td style="background:#0065D7; padding:22px 24px;">
             <div style="color:#fff; font-size:18px; font-weight:700; letter-spacing:0.3px;">HALO MEDIDESK</div>
             <div style="color:#e0f2fe; font-size:13px; margin-top:4px;">Dostęp do portalu</div>
           </td>
