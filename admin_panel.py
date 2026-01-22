@@ -2729,10 +2729,22 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     </div>
     
     <div class="preview-container">
-      <div class="card" style="margin-top:20px; border:1px solid #e2e8f0; overflow:hidden;">
-        <div style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+      <div class="card" style="margin-top:16px; border:2px solid {color1 or '#0065D7'}; overflow:hidden;">
+        <div style="padding:16px 20px; background:{header_bg}; display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;">
+          <div></div>
+          <div style="text-align:center;">
+            <div style="font-weight:700; font-size:22px; color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.15);">{event_name}</div>
+            {'<div style="margin-top:6px; color:#e2e8f0;"><code style="font-size:12px; background:rgba(255,255,255,0.15); color:#ffffff; border:1px solid rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px;">' + event_id + '</code></div>' if not is_viewer else ''}
+          </div>
+          <div style="text-align:right;">
+            {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '" style="background:#ffffff; color:#0f172a; border:1px solid rgba(255,255,255,0.6); font-weight:700;">⚙️ Konfiguracja</a>' if not is_viewer else ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px; border:1px solid #e2e8f0; overflow:hidden;">
+        <div style="padding:16px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
           <div style="font-weight:700; color:#0f172a;">Podsumowanie sprzedaży</div>
-          <a href="{url_for('admin_bp.event_tickets', event_id=event_id, token=token)}" class="btn btnPrimary" style="font-size:13px;">Zobacz szczegóły biletów →</a>
         </div>
         <div style="display:grid; grid-template-columns: repeat(3, 1fr); border-top:1px solid #e2e8f0;">
           <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
@@ -2752,27 +2764,6 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
           </div>
         </div>
       </div>
-
-      <div class="card" style="margin-top:16px; border:2px solid {color1 or '#0065D7'}; overflow:hidden;">
-        <div style="padding:16px 20px; background:{header_bg}; display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;">
-          <div></div>
-          <div style="text-align:center;">
-            <div style="font-weight:700; font-size:22px; color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.15);">{event_name}</div>
-            {'<div style="margin-top:6px; color:#e2e8f0;"><code style="font-size:12px; background:rgba(255,255,255,0.15); color:#ffffff; border:1px solid rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px;">' + event_id + '</code></div>' if not is_viewer else ''}
-          </div>
-          <div style="text-align:right;">
-            {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '" style="background:#ffffff; color:#0f172a; border:1px solid rgba(255,255,255,0.6); font-weight:700;">Sprawdź konfigurację wydarzenia</a>' if not is_viewer else ''}
-          </div>
-        </div>
-      </div>
-      
-      {backstage_html if not is_viewer else ''}
-      
-      {ticket_classes_html}
-      
-      {calendar_html}
-      
-      {sections_html}
     </div>
     """
     return _page("Podgląd wydarzenia", body)
