@@ -52,6 +52,20 @@ def backstage_logo():
     logo_path = os.path.join(os.path.dirname(__file__), 'backstage-logo.jpg')
     return send_file(logo_path, mimetype='image/jpeg')
 
+
+@app.route('/Empty_order_list.png', methods=['GET'])
+def empty_order_list():
+    """Serwuje obrazek pustej listy zamówień (PNG)."""
+    image_path = os.path.join(os.path.dirname(__file__), 'Empty_order_list.png')
+    return send_file(image_path, mimetype='image/png')
+
+
+@app.route('/Empty_list_1.jpg', methods=['GET'])
+def empty_list_1():
+    """Serwuje obrazek pustej listy (JPG)."""
+    image_path = os.path.join(os.path.dirname(__file__), 'Empty_list_1.jpg')
+    return send_file(image_path, mimetype='image/jpeg')
+
 # Konfiguracja z zmiennych środowiskowych (wFirma OAuth)
 # UWAGA: Teraz obsługujemy dwa zestawy danych: WFIRMA_MD_* i WFIRMA_TEST_*
 CLIENT_ID = os.environ.get('CLIENT_ID')

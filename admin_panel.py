@@ -4234,7 +4234,7 @@ def orders_list():
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="8" class="orders-empty"><img src="/Empty_order_list.png" alt="Brak zamówień" style="max-width:420px; width:100%; height:auto; opacity:0.9;" /></td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="8" class="orders-empty"><img src="/Empty_list_1.jpg" alt="Brak zamówień" style="max-width:420px; width:100%; height:auto; opacity:0.9;" /></td></tr>'}
         </tbody>
       </table>
     </div>
