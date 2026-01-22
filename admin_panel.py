@@ -28,10 +28,12 @@ from pg_storage import (
     list_orders,
     get_order,
     update_order_status,
+    delete_order,
     get_wfirma_documents,
     count_participants_by_status,
     # Event tickets/participants stats
     get_participants_for_event,
+    get_participants_for_order,
     get_event_ticket_stats,
     # Mails
     mail_log_exists,
@@ -3558,6 +3560,9 @@ def order_detail(order_id: str):
     backstage_orders_link = event_data.get("event_orders_link", "") or ""
     backstage_attendees_link = event_data.get("event_attendees_link", "") or ""
 
+    # Pobierz uczestników zamówienia
+    participants = get_participants_for_order(order_id)
+
     # Pobierz dokumenty wFirma
     wfirma_docs = get_wfirma_documents(order_id)
     docs_html = ""
@@ -3578,7 +3583,9 @@ def order_detail(order_id: str):
 
     # === STATUS AUTOMATYZACJI ===
     # Sprawdź jakie dokumenty wFirma istnieją
-    has_proforma = any(d.get("document_type") == "proforma" for d in wfirma_docs)
+    proforma_doc = next((d for d in wfirma_docs if d.get("document_type") == "proforma"), None)
+    has_proforma = proforma_doc is not None
+    proforma_number = proforma_doc.get("wfirma_number", "") if proforma_doc else ""
     has_final_invoice = any(d.get("document_type") == "normal" for d in wfirma_docs)
     
     # Sprawdź jakie maile zostały wysłane
@@ -3599,14 +3606,17 @@ def order_detail(order_id: str):
     # Przycisk "Oznacz jako opłacone" tylko dla pending_payment (obok statusu)
     mark_paid_form = ""
     if status == "pending_payment":
+        proforma_info_btn = f' ({proforma_number})' if proforma_number else ''
+        proforma_info_modal = f'<div style="margin-bottom:16px; padding:12px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; font-size:14px;">Proforma: <strong style="color:#0369a1;">{proforma_number}</strong> • {total:.2f} {currency}</div>' if proforma_number else ''
         mark_paid_form = f"""
         <button class="btn btnPrimary" type="button" onclick="document.getElementById('markPaidModal').style.display='flex'">
-          Oznacz jako opłacone
+          Oznacz jako opłacone{proforma_info_btn}
         </button>
 
         <div id="markPaidModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
           <div class="mark-paid-modal-content">
             <h3>Potwierdzenie płatności</h3>
+            {proforma_info_modal}
             <p>
               Oznaczyć zamówienie jako <strong>opłacone</strong>?<br/>
               <span style="font-size:13px;">Zostanie wygenerowana faktura VAT i wysłane powiadomienia.</span>
@@ -3814,9 +3824,14 @@ def order_detail(order_id: str):
       }}
     </style>
 
-    <div class="order-breadcrumb">
-      <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
-      {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
+    <div class="order-breadcrumb" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div>
+        <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
+        {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
+      </div>
+      <button class="btn btnDanger" type="button" onclick="document.getElementById('deleteOrderModal').style.display='flex'" style="font-size:13px;">
+        🗑 Usuń zamówienie
+      </button>
     </div>
     
     {''.join([
@@ -3959,6 +3974,42 @@ def order_detail(order_id: str):
       </div>
     </div>
     
+    <!-- SEKCJA: Uczestnicy -->
+    <div class="order-section" style="margin-top:24px; grid-column: 1 / -1;">
+      <div class="order-section-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>Uczestnicy ({len(participants)})</span>
+      </div>
+      <div class="order-section-body" style="padding:0;">
+        {f'''
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+          <thead>
+            <tr style="background:#f8fafc; border-bottom:1px solid var(--md-border);">
+              <th style="text-align:left; padding:12px 16px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--md-text-muted);">Imię i nazwisko</th>
+              <th style="text-align:left; padding:12px 16px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--md-text-muted);">Email</th>
+              <th style="text-align:left; padding:12px 16px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--md-text-muted);">Telefon</th>
+              <th style="text-align:left; padding:12px 16px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--md-text-muted);">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {"".join(
+              f'''<tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:12px 16px;">{(p.get("first_name") or "") + " " + (p.get("last_name") or "")}</td>
+                <td style="padding:12px 16px;"><code style="font-size:12px;">{p.get("email") or "—"}</code></td>
+                <td style="padding:12px 16px;">{p.get("phone") or "—"}</td>
+                <td style="padding:12px 16px;">
+                  <span class="pill {"pill-success" if p.get("status") == "emailed" else "pill-warning" if p.get("status") == "registered" else "pill"}" style="font-size:11px;">
+                    {"✉ Powiadomiony" if p.get("status") == "emailed" else "📝 Zarejestrowany" if p.get("status") == "registered" else (p.get("status") or "—")}
+                  </span>
+                </td>
+              </tr>'''
+              for p in participants
+            )}
+          </tbody>
+        </table>
+        ''' if participants else '<div style="padding:24px; text-align:center; color:var(--md-text-muted);">Brak uczestników w tym zamówieniu</div>'}
+      </div>
+    </div>
+    
     <!-- Modal: Generuj proformę -->
     <div id="genProformaModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
       <div class="mark-paid-modal-content">
@@ -4005,9 +4056,41 @@ def order_detail(order_id: str):
       </div>
     </div>
     
+    <!-- Modal: Usuń zamówienie -->
+    <div id="deleteOrderModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
+      <div class="mark-paid-modal-content">
+        <h3 style="color:#dc2626;">🗑 Usuń zamówienie</h3>
+        <p>
+          <strong>UWAGA!</strong> Ta operacja jest <strong>nieodwracalna</strong>.<br/>
+          Usunięte zostaną:
+        </p>
+        <ul style="text-align:left; margin:16px 0; color:#64748b; font-size:13px;">
+          <li>Dane zamówienia</li>
+          <li>Wszyscy uczestnicy</li>
+          <li>Bilety zamówienia</li>
+          <li>Historia maili</li>
+        </ul>
+        <p style="font-size:13px; color:#dc2626; font-weight:500;">
+          Dokumenty wFirma NIE zostaną usunięte (trzeba ręcznie).
+        </p>
+        <div class="modal-actions">
+          <form id="deleteOrderForm" method="post" action="{url_for('admin_bp.order_delete', order_id=order_id)}" style="margin:0;">
+            <input type="hidden" name="token" value="{token}" />
+            <button id="deleteOrderSubmit" class="btn btnDanger" type="submit" style="min-width:160px;">
+              <span class="btn-label">Tak, usuń</span>
+              <span class="btn-spinner dark" style="display:none;"></span>
+            </button>
+          </form>
+          <button class="btn" type="button" onclick="document.getElementById('deleteOrderModal').style.display='none'" style="min-width:120px;">
+            Anuluj
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <script>
       // Spinner dla modali generowania
-      ['genProformaForm', 'genInvoiceForm'].forEach(function(formId) {{
+      ['genProformaForm', 'genInvoiceForm', 'deleteOrderForm'].forEach(function(formId) {{
         var form = document.getElementById(formId);
         if (!form) return;
         form.addEventListener('submit', function() {{
@@ -4016,7 +4099,7 @@ def order_detail(order_id: str):
             submitBtn.disabled = true;
             var label = submitBtn.querySelector('.btn-label');
             var spinner = submitBtn.querySelector('.btn-spinner');
-            if (label) label.textContent = 'Generuję...';
+            if (label) label.textContent = formId === 'deleteOrderForm' ? 'Usuwam...' : 'Generuję...';
             if (spinner) spinner.style.display = 'inline-block';
           }}
         }});
@@ -4311,6 +4394,57 @@ def order_mark_paid(order_id: str):
         flash(f"✓ Zamówienie opłacone! Faktura VAT: {invoice_number}, email wysłany do {purchaser_email}.", "success")
 
     return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+
+
+@admin_bp.route("/orders/<order_id>/delete", methods=["POST"])
+@_require_permission("orders")
+def order_delete(order_id: str):
+    """
+    Usuwa zamówienie i powiązane dane.
+    
+    UWAGA: Operacja nieodwracalna! Dokumenty wFirma NIE są usuwane automatycznie.
+    """
+    token = _require_admin_token()
+    
+    order = get_order(order_id)
+    if not order:
+        flash("Zamówienie nie istnieje lub zostało już usunięte.", "warning")
+        return redirect(url_for("admin_bp.orders_list", token=token))
+    
+    # Zaloguj w audit logu przed usunięciem
+    try:
+        admin_user = _get_current_admin_user()
+        admin_email = admin_user.get("email", "unknown") if admin_user else "unknown"
+        insert_admin_audit_log(
+            admin_email=admin_email,
+            action="delete_order",
+            target_entity="order",
+            target_id=order_id,
+            details={
+                "purchaser_email": order.get("purchaser_email", ""),
+                "event_id": order.get("event_id", ""),
+                "total": order.get("total", 0),
+                "status": order.get("status", ""),
+            },
+        )
+    except Exception as e:
+        print(f"[ADMIN DELETE ORDER] Błąd zapisu audit log: {e}")
+    
+    # Usuń zamówienie
+    result = delete_order(order_id)
+    
+    if result.get("error"):
+        flash(f"Błąd usuwania: {result['error']}", "error")
+        return redirect(url_for("admin_bp.order_detail", order_id=order_id, token=token))
+    
+    flash(
+        f"Zamówienie {order_id[:20]}... zostało usunięte. "
+        f"Usunięto: {result.get('participants', 0)} uczestników, "
+        f"{result.get('order_tickets', 0)} biletów, "
+        f"{result.get('mail_log', 0)} logów maili.",
+        "success"
+    )
+    return redirect(url_for("admin_bp.orders_list", token=token))
 
 
 @admin_bp.route("/orders/<order_id>/generate-proforma", methods=["POST"])

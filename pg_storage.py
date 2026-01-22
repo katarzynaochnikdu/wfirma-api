@@ -815,6 +815,56 @@ def list_orders(
             _put_conn(pool, conn)
 
 
+def delete_order(event_order_id: str) -> Dict[str, Any]:
+    """
+    Usuwa zamówienie i powiązane dane (participants, order_tickets, mail_log).
+    
+    UWAGA: Operacja nieodwracalna! Tylko dla adminów.
+    
+    Returns:
+        Dict z informacją o usuniętych rekordach
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        deleted = {
+            "event_order_id": event_order_id,
+            "participants": 0,
+            "order_tickets": 0,
+            "mail_log": 0,
+            "orders": 0,
+        }
+        
+        # 1. Usuń uczestników
+        cur.execute("DELETE FROM participants WHERE event_order_id = %s", (str(event_order_id),))
+        deleted["participants"] = cur.rowcount
+        
+        # 2. Usuń bilety zamówienia
+        cur.execute("DELETE FROM order_tickets WHERE event_order_id = %s", (str(event_order_id),))
+        deleted["order_tickets"] = cur.rowcount
+        
+        # 3. Usuń logi maili
+        cur.execute("DELETE FROM mail_log WHERE event_order_id = %s", (str(event_order_id),))
+        deleted["mail_log"] = cur.rowcount
+        
+        # 4. Usuń zamówienie
+        cur.execute("DELETE FROM orders WHERE event_order_id = %s", (str(event_order_id),))
+        deleted["orders"] = cur.rowcount
+        
+        print(f"[DB] delete_order {event_order_id}: {deleted}")
+        return deleted
+    except Exception as e:
+        print(f"[DB] delete_order error: {e}")
+        return {"error": str(e)}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 def list_orders_older_than_minutes(
     min_age_minutes: int,
     limit: int = 200,
