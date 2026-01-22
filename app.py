@@ -290,14 +290,35 @@ def event_calendar_ics(event_id: str):
     import datetime as dt
     
     def _parse_iso_datetime(s: str) -> dt.datetime | None:
-        """Parsuje datę ISO, zwraca None jeśli błąd."""
+        """Parsuje datę (ISO + popularne formaty), zwraca None jeśli błąd."""
         if not s:
             return None
-        try:
-            clean_dt = s.replace("Z", "").split(".")[0]
-            return dt.datetime.fromisoformat(clean_dt)
-        except Exception:
+        raw = s.strip()
+        if not raw:
             return None
+        # ISO 8601 (z obsługą Z / offsetu)
+        try:
+            iso_val = raw.replace("Z", "+00:00") if raw.endswith("Z") else raw
+            return dt.datetime.fromisoformat(iso_val)
+        except Exception:
+            pass
+        # Popularne formaty z CSV / ręcznego wprowadzenia
+        for fmt in (
+            "%d-%m-%Y %H:%M",
+            "%d-%m-%Y %H:%M:%S",
+            "%d.%m.%Y %H:%M",
+            "%d.%m.%Y %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d",
+            "%d-%m-%Y",
+            "%d.%m.%Y",
+        ):
+            try:
+                return dt.datetime.strptime(raw, fmt)
+            except Exception:
+                continue
+        return None
     
     # Data i czas START
     event_datetime_str = data.get("event_date_time") or ""
@@ -343,9 +364,11 @@ def event_calendar_ics(event_id: str):
     start_hour = first_day_start.hour
     start_minute = first_day_start.minute
     
-    # Format dla iCal: YYYYMMDDTHHmmssZ
+    # Format dla iCal: YYYYMMDDTHHmmss (local) albo YYYYMMDDTHHmmssZ (UTC)
     def to_ical_dt(d: dt.datetime) -> str:
-        return d.strftime("%Y%m%dT%H%M%SZ")
+        if d.tzinfo is None:
+            return d.strftime("%Y%m%dT%H%M%S")
+        return d.astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     
     dtstamp = to_ical_dt(dt.datetime.utcnow())
     

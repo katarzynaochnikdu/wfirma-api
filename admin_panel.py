@@ -122,6 +122,13 @@ def _is_viewer(user: Optional[Dict[str, Any]]) -> bool:
     return (user.get("role") or "").strip().lower() == "viewer"
 
 
+def _is_admin_user(user: Optional[Dict[str, Any]]) -> bool:
+    """Czy user ma rolę admin (pełny dostęp)."""
+    if not user:
+        return True  # legacy token / brak usera
+    return (user.get("role") or "").strip().lower() == "admin"
+
+
 def _normalize_allowed_events(value: Any) -> List[str]:
     """Normalizuje listę dozwolonych wydarzeń."""
     if not value:
@@ -2110,6 +2117,7 @@ def events_list():
     token = _require_admin_token()
     current_user = _get_current_admin_user()
     is_viewer = _is_viewer(current_user)
+    is_admin = _is_admin_user(current_user)
     
     events = list_events(limit=500)
     
@@ -2186,9 +2194,9 @@ def events_list():
                 </div>
               </div>
                 <div class="event-card-actions">
-                {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token) + '">Edytuj</a>' if not is_viewer else ''}
+                {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token) + '">Edytuj</a>' if is_admin else ''}
                 <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
-                {backstage_btn if not is_viewer else ''}
+                {backstage_btn if is_admin else ''}
                 </div>
               </div>
             </div>
@@ -2309,8 +2317,8 @@ def events_list():
     </style>
     
     <div class="events-toolbar">
-      {'<a class="btn btnPrimary" href="' + url_for('admin_bp.event_new', token=token) + '">+ Nowe wydarzenie</a>' if not is_viewer else ''}
-      {'<a class="btn" href="' + url_for('admin_bp.import_page', token=token) + '">Import CSV</a>' if not is_viewer else ''}
+      {'<a class="btn btnPrimary" href="' + url_for('admin_bp.event_new', token=token) + '">+ Nowe wydarzenie</a>' if is_admin else ''}
+      {'<a class="btn" href="' + url_for('admin_bp.import_page', token=token) + '">Import CSV</a>' if is_admin else ''}
       {'<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>' if is_viewer else ''}
     </div>
     
@@ -2334,8 +2342,8 @@ def events_list():
 def event_new():
     token = _require_admin_token()
     
-    # Blokuj tworzenie dla viewera
-    if _is_viewer(_get_current_admin_user()):
+    # Blokuj tworzenie dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
         abort(403, description="Brak uprawnień do tworzenia wydarzeń")
     
     return _event_form_page(token=token, event=None, tickets=[])
@@ -2346,8 +2354,8 @@ def event_new():
 def event_edit(event_id: str):
     token = _require_admin_token()
     
-    # Viewer nie może edytować - przekieruj do podglądu
-    if _is_viewer(_get_current_admin_user()):
+    # Nie-admin nie może edytować - przekieruj do podglądu
+    if not _is_admin_user(_get_current_admin_user()):
         return redirect(url_for("admin_bp.event_preview", event_id=event_id, token=token))
     
     ev = get_event(event_id)
@@ -2362,8 +2370,8 @@ def event_edit(event_id: str):
 def event_save():
     token = _require_admin_token()
     
-    # Blokuj edycję dla viewera
-    if _is_viewer(_get_current_admin_user()):
+    # Blokuj edycję dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
         abort(403, description="Brak uprawnień do edycji")
 
     event_id = (request.form.get("event_id") or "").strip()
@@ -2433,8 +2441,8 @@ def event_save():
 def event_delete(event_id: str):
     token = _require_admin_token()
     
-    # Blokuj usuwanie dla viewera
-    if _is_viewer(_get_current_admin_user()):
+    # Blokuj usuwanie dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
         abort(403, description="Brak uprawnień do usuwania")
     
     delete_event(event_id)
@@ -2450,6 +2458,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     logo = _val("event_logo_link") or _val("event_logo_link_white") or _val("event_logo_link_color")
     color1 = _val("color_gradient_1")
     color2 = _val("color_gradient_2")
+    header_bg = f"linear-gradient(135deg, {color1} 0%, {color2} 100%)" if (color1 and color2) else (color1 or "#0065D7")
     
     # Linki do Backstage
     backstage_config_link = _val("event_config_link")
@@ -2602,20 +2611,8 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     participants_emailed = stats["participants_by_status"].get("emailed", 0)
     participants_registered = stats["participants_by_status"].get("registered", 0)
     
-    # Link do kalendarza (.ics)
-    calendar_url = url_for('event_calendar_ics', event_id=event_id, _external=True)
-    calendar_html = f'''
-    <div style="margin-top:16px; padding:14px 20px; background:#fffbeb; border:1px solid #fcd34d; border-radius:10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <span style="font-size:24px;">📅</span>
-        <div>
-          <div style="font-weight:600; color:#92400e;">Dodaj do kalendarza</div>
-          <div style="font-size:12px; color:#a16207;">Google Calendar, Outlook, Apple Calendar</div>
-        </div>
-      </div>
-      <a href="{calendar_url}" class="btn" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-size:13px;">Pobierz .ics</a>
-    </div>
-    '''
+    # Link do kalendarza (.ics) - tymczasowo ukryty
+    calendar_html = ""
 
     body = f"""
     <style>
@@ -2725,9 +2722,9 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     
     <div class="preview-container">
       <div class="card" style="margin-top:20px; border:2px solid {color1 or '#0065D7'}; overflow:hidden;">
-        <div style="text-align:center; padding:20px 24px 16px; background:linear-gradient(135deg, {color1 or '#0065D7'}08 0%, {color1 or '#0065D7'}03 100%);">
-          <div style="font-weight:700; font-size:22px; color:#0f172a;">{event_name}</div>
-          {'<div class="muted" style="margin-top:6px;"><code style="font-size:12px;">' + event_id + '</code></div>' if not is_viewer else ''}
+        <div style="text-align:center; padding:20px 24px 16px; background:{header_bg};">
+          <div style="font-weight:700; font-size:22px; color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.15);">{event_name}</div>
+          {'<div style="margin-top:6px; color:#e2e8f0;"><code style="font-size:12px; background:rgba(255,255,255,0.15); color:#ffffff; border:1px solid rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px;">' + event_id + '</code></div>' if not is_viewer else ''}
         </div>
         <div style="display:grid; grid-template-columns: repeat(3, 1fr); border-top:1px solid #e2e8f0;">
           <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
@@ -3424,17 +3421,19 @@ def event_tickets(event_id: str):
     """
 
     # Sekcja 2: Klasy biletów
+    data_header_html = '<th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Dane JSONB</th>' if not is_viewer else ''
     ticket_rows = []
     for tc in ticket_classes:
         tc_id = tc.get("ticket_class_id", "")
         tc_name = tc.get("ticket_name", "") or tc.get("data", {}).get("name", "") or "—"
         tc_data = tc.get("data", {})
         tc_data_str = json.dumps(tc_data, ensure_ascii=False, indent=2) if tc_data else "{}"
+        data_cell_html = f'<td><details><summary class="muted">Pokaż dane</summary><pre style="font-size:11px; max-height:200px; overflow:auto;">{tc_data_str}</pre></details></td>' if not is_viewer else ''
         ticket_rows.append(f"""
             <tr>
               <td><code>{tc_id}</code></td>
               <td>{tc_name}</td>
-              <td><details><summary class="muted">Pokaż dane</summary><pre style="font-size:11px; max-height:200px; overflow:auto;">{tc_data_str}</pre></details></td>
+              {data_cell_html}
             </tr>
         """)
 
@@ -3446,11 +3445,11 @@ def event_tickets(event_id: str):
           <tr style="background:#f8fafc;">
             <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">ID klasy</th>
             <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Nazwa</th>
-            <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Dane JSONB</th>
+            {data_header_html}
           </tr>
         </thead>
         <tbody>
-          {''.join(ticket_rows) if ticket_rows else '<tr><td colspan="3" class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
+          {''.join(ticket_rows) if ticket_rows else f'<tr><td colspan="{3 if not is_viewer else 2}" class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
         </tbody>
       </table>
     </div>
