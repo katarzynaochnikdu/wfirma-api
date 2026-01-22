@@ -354,7 +354,7 @@ def event_calendar_ics(event_id: str):
     
     # Escape special characters for iCal
     def ical_escape(s: str) -> str:
-        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+        return s.replace("\r", "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
     
     # Generuj VEVENT dla każdego dnia
     vevents = []
@@ -371,33 +371,38 @@ def event_calendar_ics(event_id: str):
             day_title = event_name
             day_description = base_description
         
-        vevent = f"""BEGIN:VEVENT
-UID:event-{event_id}-day{day_num + 1}@medidesk.pl
-DTSTAMP:{dtstamp}
-DTSTART:{to_ical_dt(day_start)}
-DTEND:{to_ical_dt(day_end)}
-SUMMARY:{ical_escape(day_title)}
-LOCATION:{ical_escape(location)}
-DESCRIPTION:{ical_escape(day_description)}
-STATUS:CONFIRMED
-END:VEVENT"""
-        vevents.append(vevent)
+        vevent_lines = [
+            "BEGIN:VEVENT",
+            f"UID:event-{event_id}-day{day_num + 1}@medidesk.pl",
+            f"DTSTAMP:{dtstamp}",
+            f"DTSTART:{to_ical_dt(day_start)}",
+            f"DTEND:{to_ical_dt(day_end)}",
+            f"SUMMARY:{ical_escape(day_title)}",
+            f"LOCATION:{ical_escape(location)}",
+            f"DESCRIPTION:{ical_escape(day_description)}",
+            "STATUS:CONFIRMED",
+            "END:VEVENT",
+        ]
+        vevents.append("\r\n".join(vevent_lines))
     
     # Generuj pełny .ics
-    ics_content = f"""BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Medidesk//Events//PL
-CALSCALE:GREGORIAN
-METHOD:PUBLISH
-{chr(10).join(vevents)}
-END:VCALENDAR
-"""
+    ics_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Medidesk//Events//PL",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        *vevents,
+        "END:VCALENDAR",
+        "",
+    ]
+    ics_content = "\r\n".join(ics_lines)
     
     # Zwróć jako plik do pobrania
     from flask import Response
     return Response(
         ics_content,
-        mimetype="text/calendar",
+        content_type="text/calendar; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="{event_id}.ics"'
         }
