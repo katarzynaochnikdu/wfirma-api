@@ -4414,14 +4414,14 @@ def order_delete(order_id: str):
     # Zaloguj w audit logu przed usunięciem
     try:
         admin_user = _get_current_admin_user()
-        admin_email = admin_user.get("email", "unknown") if admin_user else "unknown"
         insert_admin_audit_log(
-            admin_email=admin_email,
             action="delete_order",
-            target_entity="order",
-            target_id=order_id,
-            details={
-                "purchaser_email": order.get("purchaser_email", ""),
+            admin_user_id=admin_user.get("id") if admin_user else None,
+            target_email=order.get("purchaser_email", ""),
+            ip=_get_client_ip(),
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            data={
+                "order_id": order_id,
                 "event_id": order.get("event_id", ""),
                 "total": order.get("total", 0),
                 "status": order.get("status", ""),
