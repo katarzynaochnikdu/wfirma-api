@@ -1564,9 +1564,11 @@ BASE_HTML = """
       box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
     }
     textarea { min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .formGrid { display: grid; grid-template-columns: 280px 1fr; gap: 10px 14px; align-items: start; }
-    .formLabel { font-size: 13px; color: var(--md-text); padding-top: 10px; font-weight: 500; }
-    .formHint { font-size: 12px; color: var(--md-text-muted); margin-top: 4px; }
+    .formGrid { display: grid; grid-template-columns: 200px 1fr; gap: 8px 12px; align-items: start; }
+    .formLabel { font-size: 13px; color: var(--md-text); padding-top: 10px; font-weight: 500; word-wrap: break-word; }
+    .formHint { display: none; }
+    .grid-edit { display: grid; grid-template-columns: 1fr 200px; gap: 16px; }
+    input[type="text"] { word-break: break-all; }
     
     /* ========== TABLES ========== */
     table { width: 100%; max-width: 1100px; margin: 0 auto; border-collapse: collapse; }
@@ -2068,7 +2070,7 @@ def events_list():
                 <div class="event-card-actions">
                 {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token) + '">Edytuj</a>' if not is_viewer else ''}
                 <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
-                {backstage_btn}
+                {backstage_btn if not is_viewer else ''}
                 </div>
               </div>
             </div>
@@ -2625,7 +2627,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         </div>
       </div>
       
-      {backstage_html}
+      {backstage_html if not is_viewer else ''}
       
       {ticket_classes_html}
       
@@ -2897,7 +2899,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
       {delete_form}
     </div>
 
-    <div class="grid">
+    <div class="grid-edit">
       <div class="card">
         <div style="font-weight:700; margin-bottom:10px;">Dane wydarzenia</div>
         <form id="event-form" method="post" action="{url_for('admin_bp.event_save')}">
@@ -4525,7 +4527,7 @@ def order_detail(order_id: str):
         </div>
       </div>
     </div>
-    ''' if (backstage_config_link or backstage_orders_link or backstage_attendees_link) else ''}
+    ''' if (backstage_config_link or backstage_orders_link or backstage_attendees_link) and not is_viewer else ''}
     
     </div><!-- koniec flex container -->
     
