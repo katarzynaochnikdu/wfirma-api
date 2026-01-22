@@ -61,14 +61,26 @@ SUPPORTED_COMPANIES = ['md', 'test', 'md_test']
 DEFAULT_COMPANY = 'md'  # Domyślna firma jeśli nie podano
 
 
+def _pg_company_name(company: str) -> str:
+    """
+    Mapuje nazwę firmy na nazwę używaną w Postgres dla tokenów.
+    md_test używa tokenów MD, więc mapujemy na 'md'.
+    """
+    c = (company or DEFAULT_COMPANY).lower().strip()
+    if c == 'md_test':
+        return 'md'
+    return c
+
+
 def get_company_config(company: str = None) -> dict:
     """
     Pobierz konfigurację dla danej firmy (md, test, md_test).
-    Zwraca dict z client_id, client_secret, access_token, refresh_token, token_expires, redirect_uri.
+    Zwraca dict z client_id, client_secret, redirect_uri oraz pg_company (nazwa w Postgres).
     
     md_test używa danych MD (te same tokeny co produkcja) ale z ostrzeżeniem testowym.
     
     WAŻNE: redirect_uri jest pobierane WYŁĄCZNIE z WFIRMA_<COMPANY>_REDIRECT_URI (bez fallbacków).
+    WAŻNE: Tokeny NIE są już pobierane z ENV - używaj Postgres (pg_company).
     """
     company = (company or DEFAULT_COMPANY).lower().strip()
     if company not in SUPPORTED_COMPANIES:
@@ -85,12 +97,10 @@ def get_company_config(company: str = None) -> dict:
     
     return {
         'company': company,
+        'pg_company': _pg_company_name(company),  # nazwa firmy w Postgres dla tokenów
         'prefix': prefix,
         'client_id': os.environ.get(f'{prefix}CLIENT_ID') or CLIENT_ID,
         'client_secret': os.environ.get(f'{prefix}CLIENT_SECRET') or CLIENT_SECRET,
-        'access_token': os.environ.get(f'{prefix}ACCESS_TOKEN'),
-        'refresh_token': os.environ.get(f'{prefix}REFRESH_TOKEN'),
-        'token_expires': os.environ.get(f'{prefix}TOKEN_EXPIRES'),
         'redirect_uri': redirect_uri,  # None jeśli nie ustawiono - wymaga 500 w /auth i /callback
     }
 
@@ -390,7 +400,7 @@ def _token_fingerprint(value: str | None) -> str:
 def _send_new_refresh_token_email(company: str, refresh_token: str, refresh_expires_at: int, prefix: str):
     """
     Wysyła email z nowymi wartościami refresh tokena po wygenerowaniu.
-    Email zawiera dokładne wartości zmiennych ENV do ręcznego ustawienia na Render.
+    Token jest już zapisany w Postgres - email służy jako backup/audyt.
     """
     try:
         if not _is_make_email_configured():
@@ -400,20 +410,20 @@ def _send_new_refresh_token_email(company: str, refresh_token: str, refresh_expi
         to_email = "adminzoho@medidesk.com"
         expires_date = datetime.datetime.fromtimestamp(refresh_expires_at).strftime('%Y-%m-%d %H:%M:%S')
         
-        subject = f"[wFirma {company.upper()}] Nowy Refresh Token - ustaw w Render ENV"
+        subject = f"[wFirma {company.upper()}] Nowy Refresh Token zapisany w Postgres"
         
         body_html = f"""
 <h2>Nowy Refresh Token wFirma - {company.upper()}</h2>
-<p>Wygenerowano nowy refresh token. <strong>Ustaw poniższe wartości w Render ENV</strong>, aby token przetrwał restart serwisu.</p>
+<p>Wygenerowano i <strong>zapisano w Postgres</strong> nowy refresh token. Poniżej kopia wartości (backup).</p>
 
-<h3>Zmienne do ustawienia:</h3>
+<h3>Wartości zapisane w Postgres:</h3>
 <table border="1" cellpadding="10" style="border-collapse: collapse;">
 <tr>
-<td><strong>{prefix}REFRESH_TOKEN</strong></td>
+<td><strong>refresh_token</strong></td>
 <td style="font-family: monospace; word-break: break-all;">{refresh_token}</td>
 </tr>
 <tr>
-<td><strong>{prefix}REFRESH_TOKEN_EXPIRES</strong></td>
+<td><strong>refresh_token_expires_at</strong></td>
 <td style="font-family: monospace;">{refresh_expires_at}</td>
 </tr>
 </table>
@@ -423,10 +433,12 @@ def _send_new_refresh_token_email(company: str, refresh_token: str, refresh_expi
 <li><strong>Firma:</strong> {company.upper()}</li>
 <li><strong>Data wygaśnięcia:</strong> {expires_date}</li>
 <li><strong>Ważny przez:</strong> ~30 dni</li>
+<li><strong>Źródło:</strong> Postgres (tabela wfirma_tokens)</li>
 </ul>
 
 <p style="color: #666; font-size: 12px;">
 Wiadomość wygenerowana automatycznie po autoryzacji OAuth2 wFirma.
+Token jest trwale zapisany w bazie - ten email służy tylko jako backup/audyt.
 </p>
 """
         
@@ -465,6 +477,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
     config = get_company_config(company)
     prefix = config['prefix']
     company_name = config['company']
+    pg_company = config['pg_company']  # nazwa firmy w Postgres (md_test -> md)
     
     expires_at = int(time.time() + expires_in - 60)  # 60 sek margines
     log_prefix = f"[TOKEN SAVE] [{company_name.upper()}]"
@@ -474,11 +487,10 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
     refresh_expires_at = None
     
     if not final_refresh_token:
-        # WAŻNE: Postgres jest źródłem prawdy (bo rotacja!)
-        # ENV tylko fallback gdy Postgres pusty
+        # Jedyne źródło prawdy: Postgres (bez ENV/file fallbacks)
         try:
             from pg_storage import get_wfirma_token
-            pg_token = get_wfirma_token(company_name)
+            pg_token = get_wfirma_token(pg_company)
             if pg_token and pg_token.get('refresh_token'):
                 final_refresh_token = pg_token['refresh_token']
                 refresh_expires_at = pg_token.get('refresh_token_expires_at')
@@ -486,19 +498,6 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
         except Exception as e:
             print(f"{log_prefix} Błąd odczytu z Postgres: {e}")
             traceback.print_exc()
-        
-        # Fallback: ENV (np. przy pierwszej instalacji gdy Postgres pusty)
-        if not final_refresh_token:
-            env_refresh = (config.get('refresh_token') or "").strip()
-            env_refresh_expires = (os.environ.get(f"{prefix}REFRESH_TOKEN_EXPIRES") or "").strip()
-            if env_refresh:
-                final_refresh_token = env_refresh
-                if env_refresh_expires:
-                    try:
-                        refresh_expires_at = int(env_refresh_expires)
-                    except ValueError:
-                        print(f"[LOG] [{company_name.upper()}] REFRESH_TOKEN_EXPIRES w ENV nie jest liczbą - pomijam")
-                print(f"{log_prefix} refresh_source=env_fallback fp={_token_fingerprint(final_refresh_token)}")
     
     # Jeśli to NOWY refresh_token, ustaw nową datę ważności (30 dni)
     if refresh_token:
@@ -511,7 +510,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
     try:
         from pg_storage import save_wfirma_token
         pg_result = save_wfirma_token(
-            company=company_name,
+            company=pg_company,  # md_test zapisuje do 'md'
             access_token=access_token,
             access_token_expires_at=expires_at,
             refresh_token=final_refresh_token,
@@ -548,26 +547,27 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
             prefix=prefix
         )
 
-def refresh_access_token(forced_refresh_token=None, company=None, skip_fresh_check=False):
+def refresh_access_token(company=None, skip_fresh_check=False):
     """
-    Odśwież access_token używając refresh_token.
+    Odśwież access_token używając refresh_token z Postgres.
     
     WAŻNE:
     - Ten kod NIGDY nie generuje refresh tokena (to tylko ręczne /auth).
     - Automatycznie odświeżamy WYŁĄCZNIE access_token.
     - Używamy advisory lock w Postgres, aby po deployu (wiele workerów) uniknąć
       równoległych refreshy i nie doprowadzić do invalid_grant.
+    - Refresh token pobierany WYŁĄCZNIE z Postgres (bez ENV/file fallbacks).
     
     Args:
-        forced_refresh_token: Wymuszony refresh token
         company: Firma/zestaw danych ('md' lub 'test')
         skip_fresh_check: Jeśli True, pomija sprawdzanie czy token jest świeży (wymusza refresh)
     """
     config = get_company_config(company)
     prefix = config['prefix']
     company_name = config['company']
+    pg_company = config['pg_company']  # nazwa firmy w Postgres (md_test -> md)
 
-    lock_id = _wfirma_access_refresh_lock_id(company_name)
+    lock_id = _wfirma_access_refresh_lock_id(pg_company)  # lock per-pg_company
     advisory_lock = None
     advisory_unlock = None
     get_wfirma_token = None
@@ -584,12 +584,12 @@ def refresh_access_token(forced_refresh_token=None, company=None, skip_fresh_che
 
     try:
         log_prefix = f"[TOKEN REFRESH] [{company_name.upper()}]"
-        print(f"{log_prefix} START forced={bool(forced_refresh_token)} skip_fresh_check={skip_fresh_check}")
+        print(f"{log_prefix} START skip_fresh_check={skip_fresh_check} pg_company={pg_company}")
         # Jeśli inny worker już odświeżył token (i zapisał do Postgres) – użyj i nie rób refreshu ponownie
         now_ts = int(time.time())
         pg_tok = None
         if get_wfirma_token:
-            pg_tok = get_wfirma_token(company_name)
+            pg_tok = get_wfirma_token(pg_company)
         
         # Pomijamy sprawdzanie świeżości jeśli skip_fresh_check=True (wymuszony refresh)
         if not skip_fresh_check and pg_tok and pg_tok.get("access_token") and int(pg_tok.get("access_token_expires_at") or 0) > (now_ts + 60):
@@ -607,40 +607,17 @@ def refresh_access_token(forced_refresh_token=None, company=None, skip_fresh_che
         if skip_fresh_check:
             print(f"{log_prefix} WYMUSZONY REFRESH (skip_fresh_check=True)")
 
-        # Wybór refresh tokena (bez sekretów w logu)
+        # Wybór refresh tokena: WYŁĄCZNIE z Postgres (bez ENV/file fallbacks)
         refresh_token = None
         refresh_source = None
 
-        forced = _normalize_env_secret(forced_refresh_token)
-        if forced:
-            refresh_token = forced
-            refresh_source = "forced"
-        else:
-            # WAŻNE: Postgres jest źródłem prawdy (bo rotacja refresh tokena!)
-            # ENV tylko jako fallback gdy Postgres pusty
-            if pg_tok and pg_tok.get("refresh_token"):
-                refresh_token = _normalize_env_secret(pg_tok.get("refresh_token"))
-                refresh_source = "pg"
-            else:
-                # Fallback: ENV (np. przy pierwszej instalacji gdy Postgres pusty)
-                env_refresh = _normalize_env_secret(config.get("refresh_token"))
-                if env_refresh:
-                    refresh_token = env_refresh
-                    refresh_source = "env_fallback"
-                    print(f"{log_prefix} Używam refresh_token z ENV (Postgres pusty)")
-                elif company is None and os.path.exists(TOKEN_FILE):
-                    try:
-                        with open(TOKEN_FILE, 'r') as f:
-                            data = json.load(f)
-                        file_refresh = _normalize_env_secret(data.get('refresh_token'))
-                        if file_refresh:
-                            refresh_token = file_refresh
-                            refresh_source = "file_fallback"
-                    except Exception:
-                        pass
+        # Jedyne źródło prawdy: Postgres
+        if pg_tok and pg_tok.get("refresh_token"):
+            refresh_token = _normalize_env_secret(pg_tok.get("refresh_token"))
+            refresh_source = "pg"
 
         if not refresh_token:
-            print(f"{log_prefix} Brak refresh tokena, nie można odświeżyć sesji")
+            print(f"{log_prefix} Brak refresh tokena w Postgres - wymagana autoryzacja /auth?company={company_name}")
             return None
 
         old_refresh_fp = _token_fingerprint(refresh_token)
@@ -741,26 +718,19 @@ def is_token_valid():
 
 
 def is_token_valid_for_company(company=None):
-    """Sprawdź czy zapisany token jest ważny dla danej firmy (ENV > plik)"""
+    """Sprawdź czy zapisany token jest ważny dla danej firmy (tylko Postgres)"""
     config = get_company_config(company)
+    pg_company = config['pg_company']  # md_test -> md
     
-    # 1. Sprawdź ENV dla danej firmy (priorytet - trwałe po redeployu)
-    env_expires = config['token_expires']
-    env_access = config['access_token']
-    if env_expires and env_access:
-        try:
-            return time.time() < float(env_expires)
-        except:
-            pass
-    
-    # 2. Fallback: sprawdź plik (tylko dla domyślnej firmy - backward compatibility)
-    if company is None and os.path.exists(TOKEN_FILE):
-        try:
-            with open(TOKEN_FILE, 'r') as f:
-                token_data = json.load(f)
-            return time.time() < token_data.get('expires_at', 0)
-        except:
-            pass
+    # Jedyne źródło prawdy: Postgres
+    try:
+        from pg_storage import get_wfirma_token
+        pg_tok = get_wfirma_token(pg_company)
+        if pg_tok and pg_tok.get("access_token") and pg_tok.get("access_token_expires_at"):
+            expires_at = float(pg_tok["access_token_expires_at"])
+            return time.time() < expires_at
+    except Exception:
+        pass
     
     return False
 
@@ -777,29 +747,36 @@ def check_refresh_token_expiry_for_company(company=None):
     """
     Sprawdź ile dni zostało do wygaśnięcia refresh tokena dla danej firmy.
     Zwraca (days_remaining, warning_message) lub (None, None) jeśli brak danych.
+    Źródło danych: wyłącznie Postgres.
     """
     config = get_company_config(company)
-    prefix = config['prefix']
+    company_name = config['company']
+    pg_company = config['pg_company']  # md_test -> md
     
-    refresh_expires = os.environ.get(f'{prefix}REFRESH_TOKEN_EXPIRES')
-    if not refresh_expires:
-        # Fallback na starą zmienną (backward compatibility)
-        refresh_expires = os.environ.get('WFIRMA_REFRESH_TOKEN_EXPIRES')
+    # Jedyne źródło prawdy: Postgres
+    refresh_expires = None
+    try:
+        from pg_storage import get_wfirma_token
+        pg_tok = get_wfirma_token(pg_company)
+        if pg_tok and pg_tok.get("refresh_token_expires_at"):
+            refresh_expires = float(pg_tok["refresh_token_expires_at"])
+    except Exception:
+        pass
+    
     if not refresh_expires:
         return None, None
     
     try:
-        expires_at = float(refresh_expires)
         now = time.time()
-        seconds_remaining = expires_at - now
+        seconds_remaining = refresh_expires - now
         days_remaining = seconds_remaining / (24 * 60 * 60)
         
-        company_label = config['company'].upper()
+        company_label = company_name.upper()
         
         if days_remaining <= 0:
-            return 0, f"🚨 [{company_label}] REFRESH TOKEN WYGASŁ! Przejdź przez /auth?company={config['company']} NATYCHMIAST!"
+            return 0, f"🚨 [{company_label}] REFRESH TOKEN WYGASŁ! Przejdź przez /auth?company={company_name} NATYCHMIAST!"
         elif days_remaining <= 3:
-            return days_remaining, f"🔴 [{company_label}] PILNE! Refresh token wygasa za {days_remaining:.1f} dni! Przejdź przez /auth?company={config['company']}!"
+            return days_remaining, f"🔴 [{company_label}] PILNE! Refresh token wygasa za {days_remaining:.1f} dni! Przejdź przez /auth?company={company_name}!"
         elif days_remaining <= 7:
             return days_remaining, f"⚠️ [{company_label}] UWAGA! Refresh token wygasa za {days_remaining:.1f} dni. Zaplanuj reautoryzację."
         elif days_remaining <= 14:
@@ -816,31 +793,42 @@ def get_token_status():
 
 
 def get_token_status_for_company(company=None):
-    """Zwraca pełny status tokenów dla danej firmy (do endpointu /api/token/status)"""
+    """Zwraca pełny status tokenów dla danej firmy (do endpointu /api/token/status). Źródło: Postgres."""
     config = get_company_config(company)
-    prefix = config['prefix']
+    company_name = config['company']
+    pg_company = config['pg_company']  # md_test -> md
+    
+    # Pobierz dane z Postgres (jedyne źródło prawdy)
+    pg_tok = None
+    try:
+        from pg_storage import get_wfirma_token
+        pg_tok = get_wfirma_token(pg_company)
+    except Exception:
+        pass
     
     status = {
-        'company': config['company'],
+        'company': company_name,
+        'pg_company': pg_company,  # pokaż skąd pochodzą tokeny
+        'source': 'postgres',
         'access_token_valid': is_token_valid_for_company(company),
-        'refresh_token_exists': bool(config['refresh_token']),
+        'refresh_token_exists': bool(pg_tok and pg_tok.get('refresh_token')),
     }
     
-    # Access token
-    env_expires = config['token_expires']
-    if env_expires:
+    # Access token (z Postgres)
+    if pg_tok and pg_tok.get('access_token_expires_at'):
         try:
-            expires_at = float(env_expires)
+            expires_at = float(pg_tok['access_token_expires_at'])
             status['access_token_expires_at'] = expires_at
             status['access_token_remaining_seconds'] = max(0, int(expires_at - time.time()))
         except:
             pass
     
-    # Refresh token
+    # Refresh token (z Postgres przez check_refresh_token_expiry_for_company)
     days_remaining, warning = check_refresh_token_expiry_for_company(company)
     if days_remaining is not None:
         status['refresh_token_days_remaining'] = round(days_remaining, 1)
-        status['refresh_token_expires_at'] = os.environ.get(f'{prefix}REFRESH_TOKEN_EXPIRES')
+    if pg_tok and pg_tok.get('refresh_token_expires_at'):
+        status['refresh_token_expires_at'] = float(pg_tok['refresh_token_expires_at'])
     if warning:
         status['warning'] = warning
     
@@ -969,17 +957,26 @@ def _format_dt(ts: float) -> str:
 
 
 def _get_refresh_token_days_remaining(company: str = "md") -> tuple[float | None, float | None]:
-    """Zwraca (days_remaining, expires_at_ts) lub (None, None) jeśli brak danych."""
+    """Zwraca (days_remaining, expires_at_ts) lub (None, None) jeśli brak danych. Źródło: Postgres."""
     config = get_company_config(company)
-    prefix = config["prefix"]
-    refresh_expires = os.environ.get(f"{prefix}REFRESH_TOKEN_EXPIRES") or os.environ.get("WFIRMA_REFRESH_TOKEN_EXPIRES")
+    pg_company = config["pg_company"]  # md_test -> md
+    
+    # Jedyne źródło prawdy: Postgres
+    refresh_expires = None
+    try:
+        from pg_storage import get_wfirma_token
+        pg_tok = get_wfirma_token(pg_company)
+        if pg_tok and pg_tok.get("refresh_token_expires_at"):
+            refresh_expires = float(pg_tok["refresh_token_expires_at"])
+    except Exception:
+        pass
+    
     if not refresh_expires:
         return None, None
     try:
-        expires_at = float(refresh_expires)
         now = time.time()
-        days_remaining = (expires_at - now) / (24 * 60 * 60)
-        return days_remaining, expires_at
+        days_remaining = (refresh_expires - now) / (24 * 60 * 60)
+        return days_remaining, refresh_expires
     except Exception:
         return None, None
 
@@ -1038,7 +1035,7 @@ def _render_token_monitor_email(company: str, days_remaining: float | None, expi
         headline = "Brak danych o terminie ważności refresh tokena"
         badge = "INFO"
         color = "#0d6efd"
-        details = "Nie znaleziono zmiennej REFRESH_TOKEN_EXPIRES w ENV. System nie wie kiedy token wygaśnie."
+        details = "Brak wpisu refresh_token_expires_at w Postgres. System nie wie kiedy token wygaśnie. Przejdź /auth?company={} aby zapisać nowy token.".format(company or 'md')
     elif days_remaining <= 0:
         subject = f"[wFirma] [{company_label}] REFRESH TOKEN WYGASŁ — wymagana autoryzacja"
         headline = "Refresh token wygasł — wymagana autoryzacja"
@@ -1331,10 +1328,8 @@ def load_token(silent=False, company=None):
     """
     Wczytaj token i automatycznie odśwież access_token jeśli wygasł.
 
-    Docelowa zasada:
-    - Postgres jest źródłem prawdy (trwałe po deployu)
-    - ENV jest seed/override (manualne wklejenie po /auth)
-    - plik jest legacy/dev (tylko fallback)
+    Źródło danych: WYŁĄCZNIE Postgres.
+    os.environ jest używane tylko jako cache procesu (nie do odczytu).
     
     Args:
         silent: Czy ukrywać logi
@@ -1343,97 +1338,57 @@ def load_token(silent=False, company=None):
     config = get_company_config(company)
     prefix = config['prefix']
     company_name = config['company']
+    pg_company = config['pg_company']  # md_test -> md
     
     access_token = None
     expires_at = 0
     refresh_token = None
-    refresh_source = None
     
-    # 1) Postgres (trwałe po deployu)
+    # Jedyne źródło prawdy: Postgres
     pg_tok = None
     try:
         from pg_storage import get_wfirma_token
-        pg_tok = get_wfirma_token(company_name)
+        pg_tok = get_wfirma_token(pg_company)
     except Exception as e:
         if not silent:
-            print(f"[LOG] [{company_name.upper()}] Błąd odczytu tokena z Postgres: {e}")
+            print(f"[LOG] [{company_name.upper()}] Błąd odczytu tokena z Postgres (pg_company={pg_company}): {e}")
 
-    if pg_tok and pg_tok.get("access_token") and pg_tok.get("access_token_expires_at"):
-        try:
-            access_token = str(pg_tok["access_token"])
-            expires_at = float(pg_tok["access_token_expires_at"])
-            refresh_token = str(pg_tok.get("refresh_token") or "")
-            refresh_source = "pg"
-            if not silent:
-                print(f"[LOG] [{company_name.upper()}] Tokeny wczytane z Postgres")
-        except Exception:
-            pass
-
-    # 2) ENV jako fallback/seed (z normalizacją)
-    env_access = _normalize_env_secret(config.get('access_token'))
-    env_expires_raw = _normalize_env_secret(config.get('token_expires'))
-    env_refresh = _normalize_env_secret(config.get('refresh_token'))
-
-    # WAŻNE: Postgres jest źródłem prawdy dla refresh_token (bo rotacja!)
-    # ENV refresh_token używany TYLKO jako fallback gdy Postgres pusty
-    if not refresh_token and env_refresh:
-        refresh_token = env_refresh
-        refresh_source = "env_fallback"
-        if not silent:
-            print(f"[LOG] [{company_name.upper()}] Refresh token z ENV (fallback - Postgres pusty)")
-
-    # Access token z ENV traktuj jako fallback (np. w pierwszych minutach po /auth)
-    if env_access and env_expires_raw:
-        try:
-            env_expires = float(env_expires_raw)
-            if (not access_token) or (env_expires > float(expires_at)):
-                access_token = env_access
-                expires_at = env_expires
+    if pg_tok:
+        if pg_tok.get("access_token") and pg_tok.get("access_token_expires_at"):
+            try:
+                access_token = str(pg_tok["access_token"])
+                expires_at = float(pg_tok["access_token_expires_at"])
                 if not silent:
-                    print(f"[LOG] [{company_name.upper()}] Access token z ENV ({prefix}*)")
-        except Exception:
-            pass
-
-    # 3) Legacy plik – tylko jako ostateczny fallback
-    if not access_token and company is None and os.path.exists(TOKEN_FILE):
-        try:
-            with open(TOKEN_FILE, 'r') as f:
-                token_data = json.load(f)
-            access_token = token_data.get('access_token')
-            expires_at = token_data.get('expires_at', 0)
-            file_refresh = _normalize_env_secret(token_data.get('refresh_token'))
-            if file_refresh and not env_refresh:
-                refresh_token = file_refresh
-                refresh_source = refresh_source or "file"
-            if not silent:
-                print(f"[LOG] Tokeny wczytane z pliku")
-        except Exception as e:
-            if not silent:
-                print(f"[LOG] Błąd wczytywania z pliku: {e}")
+                    print(f"[LOG] [{company_name.upper()}] Tokeny wczytane z Postgres")
+            except Exception:
+                pass
+        if pg_tok.get("refresh_token"):
+            refresh_token = str(pg_tok["refresh_token"])
     
-    # 3. Jeśli token ważny - zwróć
+    # Jeśli token ważny - zwróć (i zapisz cache do os.environ)
     if access_token and time.time() < float(expires_at):
         remaining = int(expires_at - time.time())
         if not silent:
-            print(f"[LOG] [{config['company'].upper()}] ✓ Token ważny jeszcze {remaining} sekund")
+            print(f"[LOG] [{company_name.upper()}] ✓ Token ważny jeszcze {remaining} sekund")
         # Cache procesu (bez dotykania Render ENV)
         os.environ[f"{prefix}ACCESS_TOKEN"] = str(access_token)
         os.environ[f"{prefix}TOKEN_EXPIRES"] = str(int(float(expires_at)))
         if refresh_token:
             os.environ[f"{prefix}REFRESH_TOKEN"] = str(refresh_token)
+        if pg_tok and pg_tok.get("refresh_token_expires_at"):
+            os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(int(float(pg_tok["refresh_token_expires_at"])))
         return access_token
     
-    # 4. Token wygasł lub brak - spróbuj odświeżyć
-    refresh_token = _normalize_env_secret(refresh_token)
+    # Token wygasł lub brak - spróbuj odświeżyć (refresh_access_token pobierze refresh z Postgres)
     if refresh_token:
         if not silent:
-            print(f"[LOG] [{config['company'].upper()}] Token wygasł/brak, próba odświeżenia... (refresh_source={refresh_source})")
-        new_token = refresh_access_token(forced_refresh_token=refresh_token, company=company)
+            print(f"[LOG] [{company_name.upper()}] Token wygasł/brak, próba odświeżenia... (source=pg)")
+        new_token = refresh_access_token(company=company)
         if new_token:
             return new_token
     
     if not silent:
-        print(f"[LOG] [{config['company'].upper()}] Brak tokenu i refresh_token - wymagana autoryzacja /auth")
+        print(f"[LOG] [{company_name.upper()}] Brak tokenu w Postgres - wymagana autoryzacja /auth?company={company_name}")
     return None
 
 def require_token(f):
@@ -3950,11 +3905,32 @@ def token_refresh():
     force = request.args.get('force', '').lower() in ('true', '1', 'yes')
     
     config = get_company_config(company)
+    pg_company = config['pg_company']  # md_test -> md
     
-    print(f"[TOKEN REFRESH] Próba odświeżenia tokenu dla firmy: {company.upper()} (force={force})")
+    # Sprawdź refresh token w Postgres (jedyne źródło prawdy)
+    pg_tok = None
+    pg_error = None
+    try:
+        from pg_storage import get_wfirma_token
+        pg_tok = get_wfirma_token(pg_company)
+    except Exception as e:
+        pg_error = str(e)
+        print(f"[TOKEN REFRESH] Błąd odczytu z Postgres: {e}")
+    
+    # Jeśli Postgres nie odpowiada - 500, nie 400
+    if pg_error:
+        return jsonify({
+            'error': 'Błąd połączenia z bazą danych',
+            'details': pg_error,
+            'company': company
+        }), 500
+    
+    pg_refresh_exists = bool(pg_tok and pg_tok.get('refresh_token'))
+    
+    print(f"[TOKEN REFRESH] Próba odświeżenia tokenu dla firmy: {company.upper()} (force={force}) pg_company={pg_company}")
     print(f"[TOKEN REFRESH] Client ID exists: {bool(config['client_id'])}")
     print(f"[TOKEN REFRESH] Client Secret exists: {bool(config['client_secret'])}")
-    print(f"[TOKEN REFRESH] Refresh Token exists: {bool(config['refresh_token'])}")
+    print(f"[TOKEN REFRESH] Refresh Token exists (Postgres): {pg_refresh_exists}")
     
     if not config['client_id'] or not config['client_secret']:
         return jsonify({
@@ -3963,12 +3939,12 @@ def token_refresh():
             'company': company
         }), 400
     
-    if not config['refresh_token']:
+    if not pg_refresh_exists:
         return jsonify({
-            'error': f'Brak REFRESH_TOKEN dla firmy {company.upper()}',
-            'expected_var': f'{config["prefix"]}REFRESH_TOKEN',
+            'error': f'Brak REFRESH_TOKEN w Postgres dla firmy {company.upper()}',
             'message': f'Przejdź do /auth?company={company} żeby uzyskać nowy token',
-            'company': company
+            'company': company,
+            'pg_company': pg_company
         }), 400
     
     # Próba odświeżenia (skip_fresh_check=True gdy force=True)
