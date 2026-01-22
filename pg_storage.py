@@ -1890,6 +1890,111 @@ def count_participants_by_status(event_order_id: str) -> Dict[str, int]:
         _put_conn(pool, conn)
 
 
+def get_participants_for_event(event_id: str) -> List[Dict[str, Any]]:
+    """
+    Pobiera wszystkich uczestników dla wydarzenia (JOIN przez orders).
+    Zwraca listę dict z danymi uczestnika + event_order_id.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT p.id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
+                   p.ticket_id, p.ticket_class_id, p.status, p.data, p.created_at,
+                   o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
+                   o.status as order_status, o.payment_option_name
+            FROM participants p
+            JOIN orders o ON p.event_order_id = o.event_order_id
+            WHERE o.event_id = %s
+            ORDER BY p.created_at DESC
+            """,
+            (str(event_id),),
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] get_participants_for_event error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_event_ticket_stats(event_id: str) -> Dict[str, Any]:
+    """
+    Pobiera statystyki biletów/zamówień dla wydarzenia.
+    Zwraca dict ze statystykami: orders_total, orders_by_status, participants_total,
+    participants_by_status, revenue_paid.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        # Zamówienia wg statusu
+        cur.execute(
+            """
+            SELECT status, COUNT(*) as cnt, COALESCE(SUM(total), 0) as sum_total
+            FROM orders
+            WHERE event_id = %s
+            GROUP BY status
+            """,
+            (str(event_id),),
+        )
+        orders_rows = cur.fetchall()
+        orders_by_status = {}
+        orders_total = 0
+        revenue_paid = 0.0
+        for status, cnt, sum_total in orders_rows:
+            orders_by_status[status] = {"count": cnt, "total": float(sum_total or 0)}
+            orders_total += cnt
+            if status == "paid":
+                revenue_paid = float(sum_total or 0)
+        
+        # Uczestnicy wg statusu
+        cur.execute(
+            """
+            SELECT p.status, COUNT(*) as cnt
+            FROM participants p
+            JOIN orders o ON p.event_order_id = o.event_order_id
+            WHERE o.event_id = %s
+            GROUP BY p.status
+            """,
+            (str(event_id),),
+        )
+        participants_rows = cur.fetchall()
+        participants_by_status = {}
+        participants_total = 0
+        for status, cnt in participants_rows:
+            participants_by_status[status] = cnt
+            participants_total += cnt
+        
+        return {
+            "orders_total": orders_total,
+            "orders_by_status": orders_by_status,
+            "participants_total": participants_total,
+            "participants_by_status": participants_by_status,
+            "revenue_paid": revenue_paid,
+        }
+    except Exception as e:
+        print(f"[DB] get_event_ticket_stats error: {e}")
+        return {
+            "orders_total": 0,
+            "orders_by_status": {},
+            "participants_total": 0,
+            "participants_by_status": {},
+            "revenue_paid": 0.0,
+        }
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 # ---------------------------------------------------------------------------
 # ADMIN USERS CRUD (logowanie do panelu /admin)
 # ---------------------------------------------------------------------------

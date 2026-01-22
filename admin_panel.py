@@ -30,6 +30,9 @@ from pg_storage import (
     update_order_status,
     get_wfirma_documents,
     count_participants_by_status,
+    # Event tickets/participants stats
+    get_participants_for_event,
+    get_event_ticket_stats,
     # Mails
     mail_log_exists,
     save_mail_log,
@@ -2547,9 +2550,11 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
 
     preview_link = ""
     rules_link = ""
+    tickets_link = ""
     if event_id:
         preview_link = f'<a class="btn" href="{url_for("admin_bp.event_preview", event_id=event_id, token=token)}">Podgląd</a>'
         rules_link = f'<a class="btn" style="background:#e3f2fd;" href="{url_for("admin_bp.payment_rules_list", event_id=event_id, token=token)}">Reguły płatności</a>'
+        tickets_link = f'<a class="btn" style="background:#d1fae5;" href="{url_for("admin_bp.event_tickets", event_id=event_id, token=token)}">Bilety</a>'
 
     delete_form = ""
     if event_id:
@@ -2565,6 +2570,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
       {preview_link}
       {rules_link}
+      {tickets_link}
       {delete_form}
     </div>
 
@@ -2663,6 +2669,174 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     </script>
     """
     return _page("Edytuj wydarzenie" if not is_new else "Nowe wydarzenie", body)
+
+
+# ---------------------------------------------------------------------------
+# EVENT TICKETS / PARTICIPANTS VIEW
+# ---------------------------------------------------------------------------
+
+
+@admin_bp.route("/events/<event_id>/tickets", methods=["GET"])
+@_require_permission("events")
+def event_tickets(event_id: str):
+    """Widok biletów i uczestników dla wydarzenia."""
+    token = _require_admin_token()
+    ev = get_event(event_id)
+    if not ev:
+        abort(404, description="Nie znaleziono eventu")
+
+    # Pobierz dane
+    ticket_classes = get_ticket_classes(event_id)
+    stats = get_event_ticket_stats(event_id)
+    participants = get_participants_for_event(event_id)
+
+    # Status pill colors
+    STATUS_COLORS = {
+        "paid": ("Opłacone", "#dcfce7", "#166534"),
+        "pending_payment": ("Oczekuje", "#fef9c3", "#854d0e"),
+        "received": ("Otrzymane", "#e0f2fe", "#0369a1"),
+        "failed": ("Błąd", "#fee2e2", "#991b1b"),
+        "cancelled": ("Anulowane", "#f3f4f6", "#6b7280"),
+        "registered": ("Zarejestrowany", "#e0f2fe", "#0369a1"),
+        "emailed": ("Powiadomiony", "#dcfce7", "#166534"),
+        "pending": ("Oczekuje", "#fef9c3", "#854d0e"),
+    }
+
+    def status_pill(status: str) -> str:
+        label, bg, color = STATUS_COLORS.get(status, (status, "#f3f4f6", "#6b7280"))
+        return f'<span class="pill" style="background:{bg}; color:{color};">{label}</span>'
+
+    # Sekcja 1: Statystyki
+    orders_paid = stats["orders_by_status"].get("paid", {}).get("count", 0)
+    orders_pending = stats["orders_by_status"].get("pending_payment", {}).get("count", 0)
+    orders_received = stats["orders_by_status"].get("received", {}).get("count", 0)
+    orders_failed = stats["orders_by_status"].get("failed", {}).get("count", 0)
+    
+    participants_emailed = stats["participants_by_status"].get("emailed", 0)
+    participants_registered = stats["participants_by_status"].get("registered", 0)
+    participants_pending = stats["participants_by_status"].get("pending", 0)
+
+    stats_html = f"""
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:24px;">
+      <div class="card" style="text-align:center;">
+        <div style="font-size:32px; font-weight:700; color:#0369a1;">{stats['orders_total']}</div>
+        <div class="muted">Zamówień łącznie</div>
+        <div style="font-size:12px; margin-top:8px;">
+          {status_pill('paid')} {orders_paid} |
+          {status_pill('pending_payment')} {orders_pending} |
+          {status_pill('received')} {orders_received}
+        </div>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:32px; font-weight:700; color:#166534;">{stats['participants_total']}</div>
+        <div class="muted">Uczestników łącznie</div>
+        <div style="font-size:12px; margin-top:8px;">
+          {status_pill('emailed')} {participants_emailed} |
+          {status_pill('registered')} {participants_registered} |
+          {status_pill('pending')} {participants_pending}
+        </div>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:32px; font-weight:700; color:#059669;">{stats['revenue_paid']:.2f} PLN</div>
+        <div class="muted">Przychód (opłacone)</div>
+      </div>
+    </div>
+    """
+
+    # Sekcja 2: Klasy biletów
+    ticket_rows = []
+    for tc in ticket_classes:
+        tc_id = tc.get("ticket_class_id", "")
+        tc_name = tc.get("ticket_name", "") or tc.get("data", {}).get("name", "") or "—"
+        tc_data = tc.get("data", {})
+        tc_data_str = json.dumps(tc_data, ensure_ascii=False, indent=2) if tc_data else "{}"
+        ticket_rows.append(f"""
+            <tr>
+              <td><code>{tc_id}</code></td>
+              <td>{tc_name}</td>
+              <td><details><summary class="muted">Pokaż dane</summary><pre style="font-size:11px; max-height:200px; overflow:auto;">{tc_data_str}</pre></details></td>
+            </tr>
+        """)
+
+    tickets_html = f"""
+    <div class="card" style="margin-bottom:24px;">
+      <div style="font-weight:700; margin-bottom:12px;">Klasy biletów ({len(ticket_classes)})</div>
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <thead>
+          <tr style="background:#f8fafc;">
+            <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">ID klasy</th>
+            <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Nazwa</th>
+            <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Dane JSONB</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(ticket_rows) if ticket_rows else '<tr><td colspan="3" class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    """
+
+    # Sekcja 3: Lista uczestników
+    participant_rows = []
+    for p in participants[:200]:  # Limit do 200 dla wydajności
+        p_email = p.get("email") or p.get("purchaser_email") or "—"
+        p_name = f"{p.get('first_name') or ''} {p.get('last_name') or ''}".strip() or "—"
+        p_phone = p.get("phone") or "—"
+        p_ticket_class = p.get("ticket_class_id") or "—"
+        p_status = p.get("status") or "—"
+        p_order = p.get("event_order_id") or "—"
+        order_url = url_for('admin_bp.order_detail', order_id=p_order, token=token)
+        
+        participant_rows.append(f"""
+            <tr>
+              <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{p_email}</td>
+              <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{p_name}</td>
+              <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{p_phone}</td>
+              <td style="padding:8px; border-bottom:1px solid #f1f5f9;"><code>{p_ticket_class}</code></td>
+              <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{status_pill(p_status)}</td>
+              <td style="padding:8px; border-bottom:1px solid #f1f5f9;"><a href="{order_url}" style="color:#0369a1;">{p_order[:12]}...</a></td>
+            </tr>
+        """)
+
+    participants_html = f"""
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:12px;">Uczestnicy ({len(participants)}{' — pokazano 200' if len(participants) > 200 else ''})</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:14px; min-width:700px;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:8px; text-align:left; border-bottom:2px solid #e5e7eb;">Email</th>
+              <th style="padding:8px; text-align:left; border-bottom:2px solid #e5e7eb;">Imię Nazwisko</th>
+              <th style="padding:8px; text-align:left; border-bottom:2px solid #e5e7eb;">Telefon</th>
+              <th style="padding:8px; text-align:left; border-bottom:2px solid #e5e7eb;">Klasa biletu</th>
+              <th style="padding:8px; text-align:left; border-bottom:2px solid #e5e7eb;">Status</th>
+              <th style="padding:8px; text-align:left; border-bottom:2px solid #e5e7eb;">Zamówienie</th>
+            </tr>
+          </thead>
+          <tbody>
+            {''.join(participant_rows) if participant_rows else '<tr><td colspan="6" class="muted" style="padding:16px; text-align:center;">Brak uczestników</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    """
+
+    body = f"""
+    <div style="margin-bottom:12px;">
+      <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do eventu</a>
+      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-weight:700;">{ev.get('event_name', '')}</div>
+      <div class="muted"><code>{event_id}</code></div>
+    </div>
+
+    {stats_html}
+    {tickets_html}
+    {participants_html}
+    """
+    return _page(f"Bilety – {ev.get('event_name', '')}", body)
 
 
 # ---------------------------------------------------------------------------
