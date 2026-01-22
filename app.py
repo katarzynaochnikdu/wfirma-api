@@ -2,9 +2,10 @@
 wFirma API - Web Service dla Render
 Flask web app z OAuth 2.0 i endpointami API
 """
-from flask import Flask, request, redirect, jsonify, Response
+from flask import Flask, request, redirect, jsonify, Response, send_file
 import requests
 import json
+import os
 import os
 import time
 import re
@@ -43,6 +44,13 @@ try:
 except Exception as e:
     # Nie blokuj startu serwera, jeśli zależności panelu nie są gotowe.
     print(f"[ADMIN] Panel admin nieaktywny: {e}")
+
+# Statyczne logo Backstage
+@app.route('/backstage-logo.jpg', methods=['GET'])
+def backstage_logo():
+    """Serwuje logo Backstage."""
+    logo_path = os.path.join(os.path.dirname(__file__), 'backstage-logo.jpg')
+    return send_file(logo_path, mimetype='image/jpeg')
 
 # Konfiguracja z zmiennych środowiskowych (wFirma OAuth)
 # UWAGA: Teraz obsługujemy dwa zestawy danych: WFIRMA_MD_* i WFIRMA_TEST_*

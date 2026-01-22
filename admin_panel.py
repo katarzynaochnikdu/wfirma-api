@@ -1996,7 +1996,11 @@ def events_list():
     # Filtruj wydarzenia dla viewera
     if is_viewer:
         allowed_events = _normalize_allowed_events(current_user.get("allowed_events") if current_user else [])
-        events = [e for e in events if e.get("event_id") in allowed_events]
+        # Jeśli viewer nie ma przypisanych wydarzeń - pokaż pustą listę
+        if not allowed_events:
+            events = []
+        else:
+            events = [e for e in events if e.get("event_id") in allowed_events]
 
     def _status_pill(status: str) -> str:
         """Return styled pill for event status."""
@@ -2023,8 +2027,10 @@ def events_list():
         # Border style based on event color
         border_style = f"border-color: {event_color};" if event_color else ""
         
-        # Link do Backstage
+        # Linki do Backstage
         backstage_config_link = event_data.get('event_config_link') or ''
+        backstage_orders_link = event_data.get('event_orders_link') or ''
+        backstage_attendees_link = event_data.get('event_attendees_link') or ''
         
         # Banner HTML - show image or gradient placeholder
         if banner_url:
@@ -2036,11 +2042,15 @@ def events_list():
             else:
                 banner_html = '<div class="event-card-banner event-card-banner-placeholder"></div>'
         
-        # Backstage button
-        backstage_btn = f'''<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn backstage-btn" title="Otwórz w Zoho Backstage">
-          <img src="https://pbs.twimg.com/profile_images/960434707498680320/GlHvSjmP_400x400.jpg" alt="Backstage" style="width:16px; height:16px; border-radius:3px; vertical-align:middle; margin-right:4px;" />
-          Backstage ↗
-        </a>''' if backstage_config_link else ''
+        # Backstage buttons - 3 przyciski (jeśli istnieją linki)
+        backstage_btns = []
+        if backstage_config_link:
+            backstage_btns.append(f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn backstage-btn" style="font-size:12px; padding:6px 10px;" title="Konfiguracja w Backstage"><img src="/backstage-logo.jpg" alt="BS" style="width:14px; height:14px; border-radius:2px; vertical-align:middle; margin-right:3px;" />Konfiguracja ↗</a>')
+        if backstage_orders_link:
+            backstage_btns.append(f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn backstage-btn" style="font-size:12px; padding:6px 10px;" title="Zamówienia w Backstage"><img src="/backstage-logo.jpg" alt="BS" style="width:14px; height:14px; border-radius:2px; vertical-align:middle; margin-right:3px;" />Zamówienia ↗</a>')
+        if backstage_attendees_link:
+            backstage_btns.append(f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn backstage-btn" style="font-size:12px; padding:6px 10px;" title="Uczestnicy w Backstage"><img src="/backstage-logo.jpg" alt="BS" style="width:14px; height:14px; border-radius:2px; vertical-align:middle; margin-right:3px;" />Uczestnicy ↗</a>')
+        backstage_btn = ''.join(backstage_btns)
         
         rows.append(
             f"""
@@ -2403,7 +2413,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         backstage_html = f'''
         <div class="preview-section" style="margin-top:20px;">
           <div class="preview-section-header" style="background:linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%); color:white; display:flex; align-items:center; gap:8px;">
-            <img src="https://pbs.twimg.com/profile_images/960434707498680320/GlHvSjmP_400x400.jpg" alt="Backstage" style="width:20px; height:20px; border-radius:4px;" />
+            <img src="/backstage-logo.jpg" alt="Backstage" style="width:20px; height:20px; border-radius:4px;" />
             ZOHO BACKSTAGE
           </div>
           <div class="preview-section-body" style="padding:0;">
@@ -3447,15 +3457,22 @@ def orders_list():
     )
     
     # Filtruj zamówienia dla viewera - tylko z dozwolonych wydarzeń
-    if is_viewer and allowed_events:
-        orders = [o for o in orders if o.get("event_id") in allowed_events]
+    if is_viewer:
+        if not allowed_events:
+            # Brak przypisanych wydarzeń - pusta lista
+            orders = []
+        else:
+            orders = [o for o in orders if o.get("event_id") in allowed_events]
 
     # Pobierz listę eventów do filtrowania
     events = list_events(limit=100)
     
     # Dla viewera - tylko dozwolone wydarzenia w filtrze
-    if is_viewer and allowed_events:
-        events = [e for e in events if e.get("event_id") in allowed_events]
+    if is_viewer:
+        if not allowed_events:
+            events = []
+        else:
+            events = [e for e in events if e.get("event_id") in allowed_events]
     
     event_name_by_id = {str(e.get("event_id") or ""): (e.get("event_name") or "") for e in (events or [])}
     event_options = "".join(
@@ -3933,6 +3950,9 @@ def order_detail(order_id: str):
       @media (max-width: 900px) {{
         .order-sections {{ grid-template-columns: 1fr; }}
       }}
+      @media (max-width: 768px) {{
+        .order-breadcrumb {{ flex-direction: column; align-items: flex-start !important; }}
+      }}
       .order-section {{
         background: #fff;
         border: 1px solid var(--md-border);
@@ -4240,7 +4260,7 @@ def order_detail(order_id: str):
     <div style="width:140px; flex-shrink:0; position:sticky; top:20px; align-self:flex-start;">
       <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px; padding:12px; text-align:center;">
         <div style="margin-bottom:10px;">
-          <img src="https://pbs.twimg.com/profile_images/960434707498680320/GlHvSjmP_400x400.jpg" alt="Backstage" style="width:28px; height:28px; border-radius:6px;" />
+          <img src="/backstage-logo.jpg" alt="Backstage" style="width:28px; height:28px; border-radius:6px;" />
         </div>
         <div style="font-size:10px; font-weight:600; color:#0369a1; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">Backstage</div>
         <div style="display:flex; flex-direction:column; gap:6px;">
@@ -5304,6 +5324,15 @@ def user_new():
                     error = "Błąd podczas tworzenia konta"
     
     csrf_token = _generate_csrf_token()
+    events = list_events(limit=100)
+    events_checkbox_html = "".join(
+        f'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;">'
+        f'<input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" /> '
+        f'<span>{e.get("event_name", "")}</span> '
+        f'<code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code>'
+        f'</label>'
+        for e in events
+    ) or '<div class="muted">Brak wydarzeń</div>'
     
     body = f"""
     <style>
@@ -5402,7 +5431,7 @@ def user_new():
           <div id="events-section" class="form-group" style="display:none;">
             <label>Dostęp do wydarzeń <span style="font-weight:normal; color:#64748b;">(tylko dla roli Viewer)</span></label>
             <div style="max-height:250px; overflow-y:auto; border:1px solid var(--md-border); border-radius:8px; padding:12px; background:#fafafa;">
-              {''.join([f\'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;"><input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" /> <span>{e.get("event_name", "")}</span> <code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code></label>\' for e in list_events(limit=100)] or ['<div class="muted">Brak wydarzeń</div>'])}
+              {events_checkbox_html}
             </div>
             <div class="muted" style="margin-top:8px;">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji).</div>
           </div>
@@ -5609,6 +5638,16 @@ def user_access(user_id: int):
     csrf_token = _generate_csrf_token()
     role_value = (target_user.get("role") or "user").lower()
     full_name = f"{target_user.get('first_name','')} {target_user.get('last_name','')}".strip()
+    events = list_events(limit=100)
+    events_checkbox_html = "".join(
+        f'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;">'
+        f'<input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" '
+        f'{"checked" if e.get("event_id", "") in allowed_events_current else ""} /> '
+        f'<span>{e.get("event_name", "")}</span> '
+        f'<code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code>'
+        f'</label>'
+        for e in events
+    ) or '<div class="muted">Brak wydarzeń</div>'
 
     body = f"""
     <style>
@@ -5698,7 +5737,7 @@ def user_access(user_id: int):
           <div id="events-section-edit" class="form-group" style="display:{'block' if role_value == 'viewer' else 'none'};">
             <label>Dostęp do wydarzeń <span style="font-weight:normal; color:#64748b;">(tylko dla roli Viewer)</span></label>
             <div style="max-height:250px; overflow-y:auto; border:1px solid var(--md-border); border-radius:8px; padding:12px; background:#fafafa;">
-              {''.join([f\'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;"><input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" {"checked" if e.get("event_id", "") in allowed_events_current else ""} /> <span>{e.get("event_name", "")}</span> <code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code></label>\' for e in list_events(limit=100)] or ['<div class="muted">Brak wydarzeń</div>'])}
+              {events_checkbox_html}
             </div>
             <div class="muted" style="margin-top:8px;">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji).</div>
           </div>
