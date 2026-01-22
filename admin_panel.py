@@ -2194,7 +2194,7 @@ def events_list():
                 </div>
               </div>
                 <div class="event-card-actions">
-                {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token) + '">Edytuj</a>' if is_admin else ''}
+                {''}
                 <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
                 {backstage_btn if is_admin else ''}
                 </div>
@@ -2729,10 +2729,10 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     </div>
     
     <div class="preview-container">
-      <div class="card" style="margin-top:20px; border:2px solid {color1 or '#0065D7'}; overflow:hidden;">
-        <div style="text-align:center; padding:20px 24px 16px; background:{header_bg};">
-          <div style="font-weight:700; font-size:22px; color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.15);">{event_name}</div>
-          {'<div style="margin-top:6px; color:#e2e8f0;"><code style="font-size:12px; background:rgba(255,255,255,0.15); color:#ffffff; border:1px solid rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px;">' + event_id + '</code></div>' if not is_viewer else ''}
+      <div class="card" style="margin-top:20px; border:1px solid #e2e8f0; overflow:hidden;">
+        <div style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div style="font-weight:700; color:#0f172a;">Podsumowanie sprzedaży</div>
+          <a href="{url_for('admin_bp.event_tickets', event_id=event_id, token=token)}" class="btn btnPrimary" style="font-size:13px;">Zobacz szczegóły biletów →</a>
         </div>
         <div style="display:grid; grid-template-columns: repeat(3, 1fr); border-top:1px solid #e2e8f0;">
           <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
@@ -2751,8 +2751,18 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
             <div style="font-size:11px; color:#94a3b8; margin-top:2px;">z opłaconych</div>
           </div>
         </div>
-        <div style="padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; text-align:center;">
-          <a href="{url_for('admin_bp.event_tickets', event_id=event_id, token=token)}" class="btn btnPrimary" style="font-size:13px;">Zobacz szczegóły biletów →</a>
+      </div>
+
+      <div class="card" style="margin-top:16px; border:2px solid {color1 or '#0065D7'}; overflow:hidden;">
+        <div style="padding:16px 20px; background:{header_bg}; display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;">
+          <div></div>
+          <div style="text-align:center;">
+            <div style="font-weight:700; font-size:22px; color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.15);">{event_name}</div>
+            {'<div style="margin-top:6px; color:#e2e8f0;"><code style="font-size:12px; background:rgba(255,255,255,0.15); color:#ffffff; border:1px solid rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px;">' + event_id + '</code></div>' if not is_viewer else ''}
+          </div>
+          <div style="text-align:right;">
+            {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '" style="background:#ffffff; color:#0f172a; border:1px solid rgba(255,255,255,0.6); font-weight:700;">Sprawdź konfigurację wydarzenia</a>' if not is_viewer else ''}
+          </div>
         </div>
       </div>
       
@@ -3433,17 +3443,11 @@ def event_tickets(event_id: str):
     </div>
     """
 
-    # Sekcja 2: Klasy biletów (bez danych technicznych)
+    # Sekcja 2: Klasy biletów (tylko nazwy)
     ticket_rows = []
     for tc in ticket_classes:
-        tc_id = tc.get("ticket_class_id", "")
         tc_name = tc.get("ticket_name", "") or tc.get("data", {}).get("name", "") or "—"
-        ticket_rows.append(f"""
-            <tr>
-              <td><code>{tc_id}</code></td>
-              <td>{tc_name}</td>
-            </tr>
-        """)
+        ticket_rows.append(f"<tr><td style=\"padding:8px; border-bottom:1px solid #e5e7eb;\">{tc_name}</td></tr>")
 
     tickets_html = f"""
     <div class="card" style="margin-bottom:24px;">
@@ -3451,12 +3455,11 @@ def event_tickets(event_id: str):
       <table style="width:100%; border-collapse:collapse; font-size:14px;">
         <thead>
           <tr style="background:#f8fafc;">
-            <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">ID klasy</th>
             <th style="padding:8px; text-align:left; border-bottom:1px solid #e5e7eb;">Nazwa</th>
           </tr>
         </thead>
         <tbody>
-          {''.join(ticket_rows) if ticket_rows else '<tr><td colspan="2" class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
+          {''.join(ticket_rows) if ticket_rows else '<tr><td class="muted" style="padding:16px; text-align:center;">Brak klas biletów</td></tr>'}
         </tbody>
       </table>
     </div>
