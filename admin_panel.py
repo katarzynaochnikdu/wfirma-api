@@ -1037,7 +1037,9 @@ FIELD_DEFS: List[Dict[str, str]] = [
     {"key": "event_location_city", "label": "Miasto", "hint": "np. Warszawa", "kind": "text"},
     {"key": "event_country", "label": "Kraj", "hint": "np. Polska", "kind": "text"},
 
-    {"key": "event_date_time", "label": "Data i czas (ISO)", "hint": "np. 2026-02-05T09:00:00.000Z", "kind": "text"},
+    {"key": "event_date_time", "label": "Data i czas START (ISO)", "hint": "np. 2026-02-05T09:00:00.000Z", "kind": "text"},
+    {"key": "event_end_date_time", "label": "Data i czas KONIEC (ISO)", "hint": "np. 2026-02-06T17:00:00.000Z", "kind": "text"},
+    {"key": "event_days_count", "label": "Liczba dni (auto lub ręcznie)", "hint": "auto z dat lub wpisz ręcznie", "kind": "text"},
     {"key": "event_day", "label": "Dzień (liczba)", "hint": "np. 6", "kind": "text"},
     {"key": "event_month_number", "label": "Miesiąc (liczba)", "hint": "np. 2", "kind": "text"},
     {"key": "event_month_text", "label": "Miesiąc (tekst)", "hint": "np. luty", "kind": "text"},
@@ -2245,7 +2247,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     # Grupuj pola w sekcje logiczne
     field_sections = {
         "Podstawowe dane": ["eventId", "eventName", "md_email_kontakt", "md_mobile_kontakt", "md_email_techniczny", "md_phone_techniczny"],
-        "Szczegóły wydarzenia": ["event_day_text_1", "event_day_text_2", "event_address_text_street", "event_address_text_postcode", "event_address_text_city"],
+        "Szczegóły wydarzenia": ["event_date_time", "event_end_date_time", "event_days_count", "event_day_text_1", "event_day_text_2", "event_address_text_street", "event_address_text_postcode", "event_address_text_city"],
         "Kolory i branding": ["color_gradient_1", "color_gradient_2"],
         "Obrazy i media": ["event_mail_link_top_banner", "event_mail_link_bottom_banner", "event_logo_link", "event_logo_link_white", "event_logo_link_color"],
         "Linki Backstage": ["event_config_link", "event_orders_link", "event_attendees_link"],
@@ -2301,19 +2303,76 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         </div>
         '''
 
-    # Sekcja Backstage
+    # Sekcja Backstage (linki zewnętrzne)
     backstage_html = ""
     if backstage_config_link or backstage_orders_link or backstage_attendees_link:
+        # Ikona SVG external link
+        ext_icon = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px; vertical-align:middle;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
+        # Logo Backstage (uproszczone jako ikona)
+        backstage_logo = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#4f7cac" style="vertical-align:middle; margin-right:8px;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>'
+        
         backstage_html = f'''
-        <div style="margin-top:16px; padding:16px 20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px;">
-          <div style="font-weight:600; margin-bottom:10px; color:#0369a1;">🔗 Otwórz w Zoho Backstage</div>
+        <div style="margin-top:16px; padding:16px 20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px;">
+          <div style="font-weight:600; margin-bottom:10px; color:#475569; display:flex; align-items:center;">
+            {backstage_logo}
+            <span>Zoho Backstage</span>
+            <span style="font-weight:400; font-size:12px; color:#94a3b8; margin-left:8px;">(serwis zewnętrzny)</span>
+          </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Konfiguracja wydarzenia</a>' if backstage_config_link else ''}
-            {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Zamówienia</a>' if backstage_orders_link else ''}
-            {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Uczestnicy</a>' if backstage_attendees_link else ''}
+            {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px; background:#e2e8f0; color:#475569; border:1px solid #cbd5e1;">Konfiguracja{ext_icon}</a>' if backstage_config_link else ''}
+            {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px; background:#e2e8f0; color:#475569; border:1px solid #cbd5e1;">Zamówienia{ext_icon}</a>' if backstage_orders_link else ''}
+            {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px; background:#e2e8f0; color:#475569; border:1px solid #cbd5e1;">Uczestnicy{ext_icon}</a>' if backstage_attendees_link else ''}
           </div>
         </div>
         '''
+
+    # Sekcja Bilety (dane z naszego systemu)
+    stats = get_event_ticket_stats(event_id)
+    orders_paid = stats["orders_by_status"].get("paid", {}).get("count", 0)
+    orders_pending = stats["orders_by_status"].get("pending_payment", {}).get("count", 0)
+    participants_emailed = stats["participants_by_status"].get("emailed", 0)
+    participants_registered = stats["participants_by_status"].get("registered", 0)
+    
+    bilety_html = f'''
+    <div style="margin-top:16px; padding:16px 20px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px;">
+      <div style="font-weight:600; margin-bottom:12px; color:#065f46; display:flex; align-items:center; justify-content:space-between;">
+        <span>🎫 Bilety i uczestnicy (panel admina)</span>
+        <a href="{url_for('admin_bp.event_tickets', event_id=event_id, token=token)}" class="btn" style="font-size:12px; background:#d1fae5; color:#065f46; border:1px solid #a7f3d0;">Zobacz szczegóły →</a>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:12px;">
+        <div style="background:white; padding:12px 16px; border-radius:8px; text-align:center; border:1px solid #d1fae5;">
+          <div style="font-size:24px; font-weight:700; color:#0369a1;">{stats['orders_total']}</div>
+          <div style="font-size:12px; color:#64748b;">Zamówień</div>
+          <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{orders_paid} opłaconych</div>
+        </div>
+        <div style="background:white; padding:12px 16px; border-radius:8px; text-align:center; border:1px solid #d1fae5;">
+          <div style="font-size:24px; font-weight:700; color:#166534;">{stats['participants_total']}</div>
+          <div style="font-size:12px; color:#64748b;">Uczestników</div>
+          <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{participants_emailed} powiadomionych</div>
+        </div>
+        <div style="background:white; padding:12px 16px; border-radius:8px; text-align:center; border:1px solid #d1fae5;">
+          <div style="font-size:24px; font-weight:700; color:#059669;">{stats['revenue_paid']:.0f} PLN</div>
+          <div style="font-size:12px; color:#64748b;">Przychód</div>
+          <div style="font-size:11px; color:#94a3b8; margin-top:4px;">z opłaconych</div>
+        </div>
+      </div>
+    </div>
+    '''
+    
+    # Link do kalendarza (.ics)
+    calendar_url = url_for('event_calendar_ics', event_id=event_id, _external=True)
+    calendar_html = f'''
+    <div style="margin-top:16px; padding:14px 20px; background:#fffbeb; border:1px solid #fcd34d; border-radius:10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:24px;">📅</span>
+        <div>
+          <div style="font-weight:600; color:#92400e;">Dodaj do kalendarza</div>
+          <div style="font-size:12px; color:#a16207;">Google Calendar, Outlook, Apple Calendar</div>
+        </div>
+      </div>
+      <a href="{calendar_url}" class="btn" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-size:13px;">Pobierz .ics</a>
+    </div>
+    '''
 
     body = f"""
     <style>
@@ -2427,6 +2486,10 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
       </div>
       
       {backstage_html}
+      
+      {bilety_html}
+      
+      {calendar_html}
       
       {sections_html}
     </div>

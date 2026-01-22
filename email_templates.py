@@ -1617,6 +1617,9 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                   </td>
                 </tr>
 
+                <!-- DODAJ DO KALENDARZA -->
+                {calendar_section}
+
                 <!-- FOOTER - jasne tło, ciemny tekst -->
                 <tr>
                   <td valign="top">
@@ -1643,6 +1646,56 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
 </html>'''
 
 
+def _build_calendar_section(event_id: str, color_gradient_1: str = "#2563eb", base_url: str = "") -> str:
+    """
+    Buduje sekcję z linkiem do kalendarza (.ics).
+    
+    Args:
+        event_id: ID wydarzenia (do wygenerowania linku .ics)
+        color_gradient_1: Kolor akcentu
+        base_url: Bazowy URL aplikacji (np. https://wfirma-api.onrender.com)
+    
+    Returns:
+        HTML sekcji kalendarza lub pusty string jeśli brak event_id
+    """
+    if not event_id:
+        return ""
+    
+    # Domyślny URL jeśli nie podano
+    if not base_url:
+        base_url = "https://wfirma-api.onrender.com"
+    
+    calendar_url = f"{base_url}/api/events/{event_id}/calendar.ics"
+    
+    return f'''
+                <tr>
+                  <td style="padding: 0 24px 16px 24px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 1px solid #fcd34d; border-radius: 10px;">
+                      <tr>
+                        <td style="padding: 14px 16px;">
+                          <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="vertical-align: middle; width: 36px;">
+                                <span style="font-size: 28px;">📅</span>
+                              </td>
+                              <td style="vertical-align: middle; padding-left: 12px;">
+                                <p style="margin: 0; font-size: 15px; font-weight: 600; color: #92400e;">Dodaj do kalendarza</p>
+                                <p style="margin: 2px 0 0 0; font-size: 12px; color: #a16207;">Google Calendar, Outlook, Apple Calendar</p>
+                              </td>
+                              <td style="vertical-align: middle; text-align: right;">
+                                <a href="{calendar_url}" target="_blank" style="display: inline-block; padding: 10px 18px; background-color: {color_gradient_1}; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 600; border-radius: 6px;">
+                                  Pobierz .ics
+                                </a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>'''
+
+
 def render_participant_ticket_email(
     event_name: str,
     participant_first_name: str,
@@ -1653,6 +1706,8 @@ def render_participant_ticket_email(
     ticket_price: float,
     discount_amount: float = 0.0,
     event_config: Optional[Dict[str, Any]] = None,
+    event_id: Optional[str] = None,
+    base_url: str = "",
 ) -> str:
     """
     Renderuje email z potwierdzeniem rezerwacji dla UCZESTNIKA (nie purchasera).
@@ -1668,6 +1723,8 @@ def render_participant_ticket_email(
         ticket_price: Wartość rezerwacji (brutto)
         discount_amount: Kwota rabatu (jeśli był)
         event_config: Konfiguracja eventu
+        event_id: ID wydarzenia (do linku kalendarza)
+        base_url: Bazowy URL aplikacji (do linku kalendarza)
     
     Returns:
         Gotowy HTML email
@@ -1685,6 +1742,10 @@ def render_participant_ticket_email(
     else:
         price_formatted = format_currency(ticket_price)
     
+    # Calendar section
+    color_gradient_1 = event_config.get("color_gradient_1", "#2563eb")
+    calendar_section = _build_calendar_section(event_id, color_gradient_1, base_url)
+    
     data = {
         "event_name": event_name,
         "participant_first_name": participant_first_name or "Uczestnik",
@@ -1694,10 +1755,11 @@ def render_participant_ticket_email(
         "ticket_id": ticket_id or "-",
         "ticket_price_formatted": price_formatted,
         "discount_info": discount_info,
+        "calendar_section": calendar_section,
         "event_datetime_section": _build_event_datetime_section(event_config),
         "event_location_section": _build_event_location_section(event_config),
         # Event config
-        "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
+        "color_gradient_1": color_gradient_1,
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),

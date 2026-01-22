@@ -253,6 +253,7 @@ def send_participant_ticket_emails(
     event_order_id: str,
     event_name: str,
     event_config: Optional[Dict[str, Any]] = None,
+    event_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Wysyła emaile z biletami do WSZYSTKICH uczestników zamówienia.
@@ -262,11 +263,13 @@ def send_participant_ticket_emails(
     - cena
     - ewentualne zniżki
     - szczegóły wydarzenia
+    - link do kalendarza (.ics)
     
     Args:
         event_order_id: ID zamówienia
         event_name: Nazwa wydarzenia
         event_config: Konfiguracja wydarzenia (kolory, banery, etc.)
+        event_id: ID wydarzenia (do linku kalendarza)
     
     Returns:
         Dict z statystykami: {"sent": X, "failed": Y, "skipped": Z, "details": [...]}
@@ -388,6 +391,7 @@ def send_participant_ticket_emails(
                 ticket_price=float(ticket_price) if ticket_price else 0.0,
                 discount_amount=float(discount_amount) if discount_amount else 0.0,
                 event_config=event_config,
+                event_id=event_id,
             )
         except Exception as e:
             _log("ERROR", f"Błąd renderowania emaila uczestnika: {e}", {"ticket_id": ticket_id})
@@ -640,6 +644,7 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                 event_order_id=event_order_id,
                 event_name=event_name,
                 event_config=event_data,
+                event_id=order.get("event_id", ""),
             )
         except Exception as e:
             _log("ERROR", f"Błąd wysyłki maili do uczestników po kompletności: {e}", {"event_order_id": event_order_id})

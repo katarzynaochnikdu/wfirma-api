@@ -260,6 +260,142 @@ def api_health():
     }), (200 if ok else 503)
 
 
+@app.route('/api/events/<event_id>/calendar.ics', methods=['GET'])
+def event_calendar_ics(event_id: str):
+    """
+    Generuje plik .ics (iCalendar) dla wydarzenia.
+    Publiczny endpoint - można linkować w mailach/na stronach.
+    Obsługuje Google Calendar, Outlook, Apple Calendar.
+    
+    Jeśli event_days_count > 1, generuje osobny wpis na każdy dzień
+    (codziennie od tej samej godziny, 8h każdego dnia).
+    """
+    from pg_storage import get_event
+    
+    ev = get_event(event_id)
+    if not ev:
+        return "Nie znaleziono wydarzenia", 404
+    
+    data = ev.get("data") or {}
+    event_name = ev.get("event_name") or data.get("eventName") or "Wydarzenie"
+    
+    import datetime as dt
+    
+    def _parse_iso_datetime(s: str) -> dt.datetime | None:
+        """Parsuje datę ISO, zwraca None jeśli błąd."""
+        if not s:
+            return None
+        try:
+            clean_dt = s.replace("Z", "").split(".")[0]
+            return dt.datetime.fromisoformat(clean_dt)
+        except Exception:
+            return None
+    
+    # Data i czas START
+    event_datetime_str = data.get("event_date_time") or ""
+    first_day_start = _parse_iso_datetime(event_datetime_str)
+    if not first_day_start:
+        first_day_start = dt.datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+    
+    # Data i czas KONIEC (opcjonalne)
+    event_end_datetime_str = data.get("event_end_date_time") or ""
+    last_day_end = _parse_iso_datetime(event_end_datetime_str)
+    
+    # Liczba dni: automatycznie z dat lub ręcznie z event_days_count
+    days_count = 1
+    if last_day_end and last_day_end >= first_day_start:
+        # Policz dni z różnicy dat (włącznie z dniem startu i końca)
+        delta_days = (last_day_end.date() - first_day_start.date()).days + 1
+        days_count = max(1, min(delta_days, 14))  # 1-14 dni
+    else:
+        # Fallback: użyj ręcznego event_days_count
+        try:
+            days_count_str = data.get("event_days_count") or "1"
+            days_count = int(days_count_str)
+            if days_count < 1:
+                days_count = 1
+            if days_count > 14:
+                days_count = 14
+        except (ValueError, TypeError):
+            days_count = 1
+    
+    # Lokalizacja
+    location_parts = []
+    if data.get("event_location_place"):
+        location_parts.append(data["event_location_place"])
+    if data.get("event_location_address"):
+        location_parts.append(data["event_location_address"])
+    if data.get("event_location_city"):
+        location_parts.append(data["event_location_city"])
+    if data.get("event_country"):
+        location_parts.append(data["event_country"])
+    location = ", ".join(location_parts) if location_parts else ""
+    
+    # Godzina startu (zachowaj dla każdego dnia)
+    start_hour = first_day_start.hour
+    start_minute = first_day_start.minute
+    
+    # Format dla iCal: YYYYMMDDTHHmmssZ
+    def to_ical_dt(d: dt.datetime) -> str:
+        return d.strftime("%Y%m%dT%H%M%SZ")
+    
+    dtstamp = to_ical_dt(dt.datetime.utcnow())
+    
+    # Opis
+    base_description = data.get("event_description") or f"Wydarzenie: {event_name}"
+    
+    # Escape special characters for iCal
+    def ical_escape(s: str) -> str:
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+    
+    # Generuj VEVENT dla każdego dnia
+    vevents = []
+    for day_num in range(days_count):
+        day_start = first_day_start + dt.timedelta(days=day_num)
+        day_start = day_start.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+        day_end = day_start + dt.timedelta(hours=8)
+        
+        # Tytuł z numerem dnia (jeśli wielodniowe)
+        if days_count > 1:
+            day_title = f"{event_name} (Dzień {day_num + 1}/{days_count})"
+            day_description = f"Dzień {day_num + 1} z {days_count}. {base_description}"
+        else:
+            day_title = event_name
+            day_description = base_description
+        
+        vevent = f"""BEGIN:VEVENT
+UID:event-{event_id}-day{day_num + 1}@medidesk.pl
+DTSTAMP:{dtstamp}
+DTSTART:{to_ical_dt(day_start)}
+DTEND:{to_ical_dt(day_end)}
+SUMMARY:{ical_escape(day_title)}
+LOCATION:{ical_escape(location)}
+DESCRIPTION:{ical_escape(day_description)}
+STATUS:CONFIRMED
+END:VEVENT"""
+        vevents.append(vevent)
+    
+    # Generuj pełny .ics
+    ics_content = f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Medidesk//Events//PL
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+{chr(10).join(vevents)}
+END:VCALENDAR
+"""
+    
+    # Zwróć jako plik do pobrania
+    from flask import Response
+    return Response(
+        ics_content,
+        mimetype="text/calendar",
+        headers={
+            "Content-Disposition": f'attachment; filename="{event_id}.ics"'
+        }
+    )
+
+
 # Throttling alertów health (ochrona przed spamem, bo /api/health jest publiczne).
 _HEALTH_ALERT_LAST_SENT_AT: float = 0.0
 _HEALTH_ALERT_THROTTLE_SECONDS: int = 6 * 60 * 60  # 6h
