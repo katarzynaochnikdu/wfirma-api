@@ -5798,14 +5798,31 @@ def user_new():
     
     csrf_token = _generate_csrf_token()
     events = list_events(limit=100)
-    events_checkbox_html = "".join(
-        f'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;">'
-        f'<input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" /> '
-        f'<span>{e.get("event_name", "")}</span> '
-        f'<code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code>'
-        f'</label>'
-        for e in events
-    ) or '<div class="muted">Brak wydarzeń</div>'
+    events_checkbox_rows = []
+    for e in events:
+        eid = str(e.get("event_id") or "")
+        data = e.get("data") or {}
+        color = data.get("color_gradient_1") or "#e2e8f0"
+        city = data.get("event_location_city") or data.get("event_address_text_city") or "—"
+        name = e.get("event_name") or "—"
+        events_checkbox_rows.append(
+            f'''
+            <label class="event-card">
+              <input type="checkbox" name="allowed_events" value="{eid}" />
+              <div>
+                <div class="event-card-title">
+                  <span class="event-color-dot" style="background:{color};"></span>
+                  {name}
+                </div>
+                <div class="event-card-meta">
+                  <span>{city}</span>
+                  <code class="event-id">{eid}</code>
+                </div>
+              </div>
+            </label>
+            '''
+        )
+    events_checkbox_html = "".join(events_checkbox_rows) or '<div class="muted">Brak wydarzeń</div>'
     
     body = f"""
     <style>
@@ -5846,6 +5863,82 @@ def user_new():
         border: 1px solid var(--md-border);
         border-radius: 8px;
         font-size: 14px;
+      }}
+      .permissions-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 10px;
+      }}
+      .perm-item {{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        font-size: 13px;
+        color: #0f172a;
+      }}
+      .perm-item input {{
+        margin: 0;
+      }}
+      .events-grid-wrapper {{
+        max-height: 260px;
+        overflow-y: auto;
+        border: 1px solid var(--md-border);
+        border-radius: 10px;
+        padding: 12px;
+        background: #f8fafc;
+      }}
+      .events-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 10px;
+      }}
+      .event-card {{
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        cursor: pointer;
+      }}
+      .event-card:hover {{
+        border-color: #cbd5e1;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      }}
+      .event-card input {{
+        margin-top: 2px;
+      }}
+      .event-card-title {{
+        font-weight: 600;
+        font-size: 13px;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }}
+      .event-color-dot {{
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1px solid #e2e8f0;
+        display: inline-block;
+      }}
+      .event-card-meta {{
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 4px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }}
+      .event-id {{
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #94a3b8;
       }}
       .form-group input:focus {{
         outline: none;
@@ -5895,16 +5988,18 @@ def user_new():
 
           <div class="form-group">
             <label>Uprawnienia do kart</label>
-            <div style="display:flex; flex-wrap:wrap; gap:10px;">
-              {''.join([f'<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" name="allowed_pages" value="{k}" checked /> {label}</label>' for k, label in ADMIN_PAGE_OPTIONS])}
+            <div class="permissions-grid">
+              {''.join([f'<label class="perm-item"><input type="checkbox" name="allowed_pages" value="{k}" checked /> {label}</label>' for k, label in ADMIN_PAGE_OPTIONS])}
             </div>
             <div class="muted" style="margin-top:8px;">Admin ma pełny dostęp niezależnie od wyboru.</div>
           </div>
           
           <div id="events-section" class="form-group" style="display:none;">
             <label>Dostęp do wydarzeń <span style="font-weight:normal; color:#64748b;">(tylko dla roli Viewer)</span></label>
-            <div style="max-height:250px; overflow-y:auto; border:1px solid var(--md-border); border-radius:8px; padding:12px; background:#fafafa;">
-              {events_checkbox_html}
+            <div class="events-grid-wrapper">
+              <div class="events-grid">
+                {events_checkbox_html}
+              </div>
             </div>
             <div class="muted" style="margin-top:8px;">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji).</div>
           </div>
@@ -6112,15 +6207,32 @@ def user_access(user_id: int):
     role_value = (target_user.get("role") or "user").lower()
     full_name = f"{target_user.get('first_name','')} {target_user.get('last_name','')}".strip()
     events = list_events(limit=100)
-    events_checkbox_html = "".join(
-        f'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;">'
-        f'<input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" '
-        f'{"checked" if e.get("event_id", "") in allowed_events_current else ""} /> '
-        f'<span>{e.get("event_name", "")}</span> '
-        f'<code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code>'
-        f'</label>'
-        for e in events
-    ) or '<div class="muted">Brak wydarzeń</div>'
+    events_checkbox_rows = []
+    for e in events:
+        eid = str(e.get("event_id") or "")
+        data = e.get("data") or {}
+        color = data.get("color_gradient_1") or "#e2e8f0"
+        city = data.get("event_location_city") or data.get("event_address_text_city") or "—"
+        name = e.get("event_name") or "—"
+        checked_attr = "checked" if eid in allowed_events_current else ""
+        events_checkbox_rows.append(
+            f'''
+            <label class="event-card">
+              <input type="checkbox" name="allowed_events" value="{eid}" {checked_attr} />
+              <div>
+                <div class="event-card-title">
+                  <span class="event-color-dot" style="background:{color};"></span>
+                  {name}
+                </div>
+                <div class="event-card-meta">
+                  <span>{city}</span>
+                  <code class="event-id">{eid}</code>
+                </div>
+              </div>
+            </label>
+            '''
+        )
+    events_checkbox_html = "".join(events_checkbox_rows) or '<div class="muted">Brak wydarzeń</div>'
 
     body = f"""
     <style>
@@ -6156,6 +6268,82 @@ def user_access(user_id: int):
         border: 1px solid var(--md-border);
         border-radius: 8px;
         font-size: 14px;
+      }}
+      .permissions-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 10px;
+      }}
+      .perm-item {{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        font-size: 13px;
+        color: #0f172a;
+      }}
+      .perm-item input {{
+        margin: 0;
+      }}
+      .events-grid-wrapper {{
+        max-height: 260px;
+        overflow-y: auto;
+        border: 1px solid var(--md-border);
+        border-radius: 10px;
+        padding: 12px;
+        background: #f8fafc;
+      }}
+      .events-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 10px;
+      }}
+      .event-card {{
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        cursor: pointer;
+      }}
+      .event-card:hover {{
+        border-color: #cbd5e1;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      }}
+      .event-card input {{
+        margin-top: 2px;
+      }}
+      .event-card-title {{
+        font-weight: 600;
+        font-size: 13px;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }}
+      .event-color-dot {{
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1px solid #e2e8f0;
+        display: inline-block;
+      }}
+      .event-card-meta {{
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 4px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }}
+      .event-id {{
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #94a3b8;
       }}
       .form-group input:focus, .form-group select:focus {{
         outline: none;
@@ -6201,16 +6389,18 @@ def user_access(user_id: int):
 
           <div class="form-group">
             <label>Uprawnienia do kart</label>
-            <div style="display:flex; flex-wrap:wrap; gap:10px;">
-              {''.join([f'<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" name="allowed_pages" value="{k}" {"checked" if k in allowed_current else ""} /> {label}</label>' for k, label in ADMIN_PAGE_OPTIONS])}
+            <div class="permissions-grid">
+              {''.join([f'<label class="perm-item"><input type="checkbox" name="allowed_pages" value="{k}" {"checked" if k in allowed_current else ""} /> {label}</label>' for k, label in ADMIN_PAGE_OPTIONS])}
             </div>
             <div class="muted" style="margin-top:8px;">Admin ma pełny dostęp niezależnie od wyboru.</div>
           </div>
           
           <div id="events-section-edit" class="form-group" style="display:{'block' if role_value == 'viewer' else 'none'};">
             <label>Dostęp do wydarzeń <span style="font-weight:normal; color:#64748b;">(tylko dla roli Viewer)</span></label>
-            <div style="max-height:250px; overflow-y:auto; border:1px solid var(--md-border); border-radius:8px; padding:12px; background:#fafafa;">
-              {events_checkbox_html}
+            <div class="events-grid-wrapper">
+              <div class="events-grid">
+                {events_checkbox_html}
+              </div>
             </div>
             <div class="muted" style="margin-top:8px;">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji).</div>
           </div>
