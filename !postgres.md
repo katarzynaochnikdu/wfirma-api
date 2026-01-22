@@ -29,6 +29,9 @@ SELECT COUNT(*) FROM participants;
 SELECT COUNT(*) FROM wfirma_documents;
 SELECT COUNT(*) FROM mail_log;
 
+SELECT  FROM orders;
+SELECT  FROM participants;
+
 Wyjdz
 \q
 
