@@ -2618,6 +2618,45 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     orders_pending = stats["orders_by_status"].get("pending_payment", {}).get("count", 0)
     participants_emailed = stats["participants_by_status"].get("emailed", 0)
     participants_registered = stats["participants_by_status"].get("registered", 0)
+
+    # Kafelki z podsumowaniem (jak w widoku biletów)
+    STATUS_COLORS = {
+        "paid": ("Opłacone", "#dcfce7", "#166534"),
+        "pending_payment": ("Oczekuje", "#fef9c3", "#854d0e"),
+        "received": ("Otrzymane", "#e0f2fe", "#0369a1"),
+        "emailed": ("Powiadomiony", "#dcfce7", "#166534"),
+        "registered": ("Zarejestrowany", "#e0f2fe", "#0369a1"),
+        "pending": ("Oczekuje", "#fef9c3", "#854d0e"),
+    }
+
+    def status_pill(status: str) -> str:
+        label_s, bg, color = STATUS_COLORS.get(status, (status, "#f3f4f6", "#6b7280"))
+        return f'<span class="pill" style="background:{bg}; color:{color};">{label_s}</span>'
+
+    stats_tiles_html = f"""
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px; padding:16px 20px;">
+      <div class="card" style="text-align:center; border:1px solid #e2e8f0;">
+        <div style="font-size:32px; font-weight:700; color:#0369a1;">{stats['orders_total']}</div>
+        <div class="muted">Zamówień łącznie</div>
+        <div style="font-size:12px; margin-top:8px;">
+          {status_pill('paid')} {orders_paid} |
+          {status_pill('pending_payment')} {orders_pending}
+        </div>
+      </div>
+      <div class="card" style="text-align:center; border:1px solid #e2e8f0;">
+        <div style="font-size:32px; font-weight:700; color:#166534;">{stats['participants_total']}</div>
+        <div class="muted">Uczestników łącznie</div>
+        <div style="font-size:12px; margin-top:8px;">
+          {status_pill('emailed')} {participants_emailed} |
+          {status_pill('registered')} {participants_registered}
+        </div>
+      </div>
+      <div class="card" style="text-align:center; border:1px solid #e2e8f0;">
+        <div style="font-size:32px; font-weight:700; color:#059669;">{stats['revenue_paid']:.2f} PLN</div>
+        <div class="muted">Przychód (opłacone)</div>
+      </div>
+    </div>
+    """
     
     # Link do kalendarza (.ics) - tymczasowo ukryty
     calendar_html = ""
@@ -2681,22 +2720,6 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         word-break: break-word;
         line-height: 1.5;
       }}
-      .toggle-tech-names {{
-        display: inline-block;
-        margin-left: 12px;
-        padding: 4px 10px;
-        font-size: 12px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        cursor: pointer;
-        color: #64748b;
-        transition: all 0.2s;
-      }}
-      .toggle-tech-names:hover {{
-        background: #e2e8f0;
-        color: #334155;
-      }}
       @media (max-width: 900px) {{
         .field-row {{
           grid-template-columns: 1fr;
@@ -2705,27 +2728,12 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
       }}
     </style>
     
-    <script>
-      function toggleTechNames() {{
-        const keys = document.querySelectorAll('.field-key');
-        const btn = document.getElementById('toggleBtn');
-        const isHidden = keys[0].style.display === 'none' || keys[0].style.display === '';
-        
-        keys.forEach(key => {{
-          key.style.display = isHidden ? 'block' : 'none';
-        }});
-        
-        btn.textContent = isHidden ? '🔒 Ukryj nazwy API' : '🔓 Pokaż nazwy API';
-      }}
-    </script>
-    
     <div style="margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:10px;">
         {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">← Wróć do edycji</a>' if not is_viewer else ''}
         <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
         {'<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>' if is_viewer else ''}
       </div>
-      {'<button id="toggleBtn" onclick="toggleTechNames()" class="toggle-tech-names">🔓 Pokaż nazwy API</button>' if not is_viewer else ''}
     </div>
     
     <div class="preview-container">
@@ -2746,23 +2754,7 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         <div style="padding:16px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
           <div style="font-weight:700; color:#0f172a;">Podsumowanie sprzedaży</div>
         </div>
-        <div style="display:grid; grid-template-columns: repeat(3, 1fr); border-top:1px solid #e2e8f0;">
-          <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
-            <div style="font-size:32px; font-weight:700; color:{color1 or '#0065D7'};">{stats['orders_total']}</div>
-            <div style="font-size:13px; color:#64748b; font-weight:500;">Zamówień</div>
-            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">{orders_paid} opłaconych</div>
-          </div>
-          <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
-            <div style="font-size:32px; font-weight:700; color:#16a34a;">{stats['participants_total']}</div>
-            <div style="font-size:13px; color:#64748b; font-weight:500;">Uczestników</div>
-            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">{participants_emailed} powiadomionych</div>
-          </div>
-          <div style="padding:20px; text-align:center;">
-            <div style="font-size:32px; font-weight:700; color:#059669;">{stats['revenue_paid']:.0f}<span style="font-size:16px; font-weight:500;"> PLN</span></div>
-            <div style="font-size:13px; color:#64748b; font-weight:500;">Przychód</div>
-            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">z opłaconych</div>
-          </div>
-        </div>
+        {stats_tiles_html}
       </div>
     </div>
     """
