@@ -70,3 +70,20 @@ SELECT id, event_order_id, direction, template_key, to_email, status, created_at
 -- Webhooki Backstage
 SELECT id, dedupe_key, event_type, processed, created_at FROM backstage_webhook_events ORDER BY created_at DESC;
 SELECT id FROM backstage_webhook_events ORDER BY created_at DESC;
+
+
+-- Usuń constraint tymczasowo
+ALTER TABLE event_ticket_classes DROP CONSTRAINT event_ticket_classes_event_id_fkey;
+
+-- Zaktualizuj obie tabele
+UPDATE events SET event_id = '24311000000651079' WHERE event_id = '24311000000651000';
+UPDATE event_ticket_classes SET event_id = '24311000000651079' WHERE event_id = '24311000000651000';
+
+-- Dodaj constraint z powrotem
+ALTER TABLE event_ticket_classes ADD CONSTRAINT event_ticket_classes_event_id_fkey FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE;
+
+-- Sprawdź
+SELECT event_id, event_name FROM events;
+
+-- Sprawdź
+SELECT event_id, event_name FROM events;
