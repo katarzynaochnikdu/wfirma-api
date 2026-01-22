@@ -115,6 +115,43 @@ def _user_has_permission(user: Optional[Dict[str, Any]], permission_key: str) ->
     return permission_key in allowed
 
 
+def _is_viewer(user: Optional[Dict[str, Any]]) -> bool:
+    """Czy user ma rolę viewer (read-only)."""
+    if not user:
+        return False
+    return (user.get("role") or "").strip().lower() == "viewer"
+
+
+def _normalize_allowed_events(value: Any) -> List[str]:
+    """Normalizuje listę dozwolonych wydarzeń."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value if v]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(v) for v in parsed if v]
+        except Exception:
+            return [v.strip() for v in value.split(",") if v.strip()]
+    return []
+
+
+def _user_can_access_event(user: Optional[Dict[str, Any]], event_id: str) -> bool:
+    """Sprawdza czy user ma dostęp do wydarzenia."""
+    if not user:
+        return True  # Legacy token
+    role = (user.get("role") or "").strip().lower() or "admin"
+    if role == "admin":
+        return True  # Admin widzi wszystko
+    # Viewer/limited - sprawdź allowed_events
+    allowed = _normalize_allowed_events(user.get("allowed_events"))
+    if not allowed:
+        return False  # Brak przypisanych wydarzeń
+    return event_id in allowed
+
+
 def _first_allowed_page(user: Optional[Dict[str, Any]]) -> str:
     for key, _label in ADMIN_PAGE_OPTIONS:
         if _user_has_permission(user, key):
@@ -1951,7 +1988,15 @@ def import_run():
 @_require_permission("events")
 def events_list():
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    is_viewer = _is_viewer(current_user)
+    
     events = list_events(limit=500)
+    
+    # Filtruj wydarzenia dla viewera
+    if is_viewer:
+        allowed_events = _normalize_allowed_events(current_user.get("allowed_events") if current_user else [])
+        events = [e for e in events if e.get("event_id") in allowed_events]
 
     def _status_pill(status: str) -> str:
         """Return styled pill for event status."""
@@ -1978,6 +2023,9 @@ def events_list():
         # Border style based on event color
         border_style = f"border-color: {event_color};" if event_color else ""
         
+        # Link do Backstage
+        backstage_config_link = event_data.get('event_config_link') or ''
+        
         # Banner HTML - show image or gradient placeholder
         if banner_url:
             banner_html = f'<div class="event-card-banner"><img src="{banner_url}" alt="" loading="lazy" /></div>'
@@ -1988,6 +2036,12 @@ def events_list():
             else:
                 banner_html = '<div class="event-card-banner event-card-banner-placeholder"></div>'
         
+        # Backstage button
+        backstage_btn = f'''<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn backstage-btn" title="Otwórz w Zoho Backstage">
+          <img src="https://pbs.twimg.com/profile_images/960434707498680320/GlHvSjmP_400x400.jpg" alt="Backstage" style="width:16px; height:16px; border-radius:3px; vertical-align:middle; margin-right:4px;" />
+          Backstage ↗
+        </a>''' if backstage_config_link else ''
+        
         rows.append(
             f"""
             <div class="event-card" data-status="{status_class}" style="{border_style}">
@@ -1996,15 +2050,15 @@ def events_list():
                 <div class="event-card-header">
                   <div class="event-card-info">
                     <div class="event-card-title">{e.get('event_name','')}</div>
-                    <div class="event-card-id"><code>{e.get('event_id','')}</code></div>
                 </div>
                   <div class="event-card-status">
                     {_status_pill(status)}
                 </div>
               </div>
                 <div class="event-card-actions">
-                <a class="btn" href="{url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token)}">Edytuj</a>
+                {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=e.get('event_id',''), token=token) + '">Edytuj</a>' if not is_viewer else ''}
                 <a class="btn" href="{url_for('admin_bp.event_preview', event_id=e.get('event_id',''), token=token)}">Podgląd</a>
+                {backstage_btn}
                 </div>
               </div>
             </div>
@@ -2104,6 +2158,14 @@ def events_list():
         text-align: center;
         width: 100%;
       }}
+      .event-card-actions .backstage-btn {{
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        color: #0369a1;
+      }}
+      .event-card-actions .backstage-btn:hover {{
+        background: #e0f2fe;
+      }}
       .empty-state {{
         text-align: center;
         padding: 60px 20px;
@@ -2117,8 +2179,9 @@ def events_list():
     </style>
     
     <div class="events-toolbar">
-      <a class="btn btnPrimary" href="{url_for('admin_bp.event_new', token=token)}">+ Nowe wydarzenie</a>
-      <a class="btn" href="{url_for('admin_bp.import_page', token=token)}">Import CSV</a>
+      {'<a class="btn btnPrimary" href="' + url_for('admin_bp.event_new', token=token) + '">+ Nowe wydarzenie</a>' if not is_viewer else ''}
+      {'<a class="btn" href="' + url_for('admin_bp.import_page', token=token) + '">Import CSV</a>' if not is_viewer else ''}
+      {'<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>' if is_viewer else ''}
     </div>
     
     {f'''
@@ -2140,6 +2203,11 @@ def events_list():
 @_require_permission("events")
 def event_new():
     token = _require_admin_token()
+    
+    # Blokuj tworzenie dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tworzenia wydarzeń")
+    
     return _event_form_page(token=token, event=None, tickets=[])
 
 
@@ -2147,6 +2215,11 @@ def event_new():
 @_require_permission("events")
 def event_edit(event_id: str):
     token = _require_admin_token()
+    
+    # Viewer nie może edytować - przekieruj do podglądu
+    if _is_viewer(_get_current_admin_user()):
+        return redirect(url_for("admin_bp.event_preview", event_id=event_id, token=token))
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -2158,6 +2231,10 @@ def event_edit(event_id: str):
 @_require_permission("events")
 def event_save():
     token = _require_admin_token()
+    
+    # Blokuj edycję dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do edycji")
 
     event_id = (request.form.get("event_id") or "").strip()
     event_name = (request.form.get("event_name") or "").strip()
@@ -2225,11 +2302,16 @@ def event_save():
 @_require_permission("events")
 def event_delete(event_id: str):
     token = _require_admin_token()
+    
+    # Blokuj usuwanie dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do usuwania")
+    
     delete_event(event_id)
     return redirect(url_for("admin_bp.events_list", token=token))
 
 
-def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict[str, Any]) -> str:
+def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict[str, Any], is_viewer: bool = False) -> str:
     def _val(k: str) -> str:
         v = data.get(k)
         return (str(v).strip() if v is not None else "")
@@ -2305,61 +2387,84 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         </div>
         '''
 
-    # Sekcja Backstage (linki zewnętrzne)
+    # Sekcja Backstage (linki zewnętrzne) - format tabelkowy
     backstage_html = ""
     if backstage_config_link or backstage_orders_link or backstage_attendees_link:
-        # Ikona SVG external link
         ext_icon = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px; vertical-align:middle;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
-        # Logo Backstage (uproszczone jako ikona)
-        backstage_logo = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#4f7cac" style="vertical-align:middle; margin-right:8px;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>'
+        
+        backstage_rows = ""
+        if backstage_config_link:
+            backstage_rows += f'<tr><td style="padding:12px 16px; border-bottom:1px solid #e2e8f0;">Link konfiguracji (Backstage)</td><td style="padding:12px 16px; border-bottom:1px solid #e2e8f0;"><a href="{backstage_config_link}" target="_blank" rel="noopener" style="color:#0065D7; text-decoration:none; font-weight:500;">Otwórz link {ext_icon}</a></td></tr>'
+        if backstage_orders_link:
+            backstage_rows += f'<tr><td style="padding:12px 16px; border-bottom:1px solid #e2e8f0;">Link orders (Backstage)</td><td style="padding:12px 16px; border-bottom:1px solid #e2e8f0;"><a href="{backstage_orders_link}" target="_blank" rel="noopener" style="color:#0065D7; text-decoration:none; font-weight:500;">Otwórz link {ext_icon}</a></td></tr>'
+        if backstage_attendees_link:
+            backstage_rows += f'<tr><td style="padding:12px 16px;">Link attendees (Backstage)</td><td style="padding:12px 16px;"><a href="{backstage_attendees_link}" target="_blank" rel="noopener" style="color:#0065D7; text-decoration:none; font-weight:500;">Otwórz link {ext_icon}</a></td></tr>'
         
         backstage_html = f'''
-        <div style="margin-top:16px; padding:16px 20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px;">
-          <div style="font-weight:600; margin-bottom:10px; color:#475569; display:flex; align-items:center;">
-            {backstage_logo}
-            <span>Zoho Backstage</span>
-            <span style="font-weight:400; font-size:12px; color:#94a3b8; margin-left:8px;">(serwis zewnętrzny)</span>
+        <div class="preview-section" style="margin-top:20px;">
+          <div class="preview-section-header" style="background:linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%); color:white; display:flex; align-items:center; gap:8px;">
+            <img src="https://pbs.twimg.com/profile_images/960434707498680320/GlHvSjmP_400x400.jpg" alt="Backstage" style="width:20px; height:20px; border-radius:4px;" />
+            ZOHO BACKSTAGE
           </div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px; background:#e2e8f0; color:#475569; border:1px solid #cbd5e1;">Konfiguracja{ext_icon}</a>' if backstage_config_link else ''}
-            {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px; background:#e2e8f0; color:#475569; border:1px solid #cbd5e1;">Zamówienia{ext_icon}</a>' if backstage_orders_link else ''}
-            {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px; background:#e2e8f0; color:#475569; border:1px solid #cbd5e1;">Uczestnicy{ext_icon}</a>' if backstage_attendees_link else ''}
+          <div class="preview-section-body" style="padding:0;">
+            <table style="width:100%; border-collapse:collapse;">
+              {backstage_rows}
+            </table>
+          </div>
+        </div>
+        '''
+    
+    # Sekcja Typy biletów (konfiguracja z naszej bazy)
+    ticket_classes = get_ticket_classes(event_id)
+    ticket_classes_html = ""
+    if ticket_classes:
+        tc_rows = ""
+        for tc in ticket_classes:
+            tc_id = tc.get("ticket_class_id", "")
+            tc_name = tc.get("ticket_name", "")
+            tc_data = tc.get("data") or {}
+            tc_price = tc_data.get("ticket_price") or tc_data.get("price") or "—"
+            tc_vat = tc_data.get("vat_rate") or tc_data.get("vat") or "—"
+            tc_rows += f'''
+            <tr>
+              <td style="padding:12px 16px; border-bottom:1px solid #e2e8f0;"><code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px;">{tc_id[:20]}...</code></td>
+              <td style="padding:12px 16px; border-bottom:1px solid #e2e8f0; font-weight:500;">{tc_name}</td>
+              <td style="padding:12px 16px; border-bottom:1px solid #e2e8f0; text-align:right;">{tc_price} PLN</td>
+              <td style="padding:12px 16px; border-bottom:1px solid #e2e8f0; text-align:right;">{tc_vat}%</td>
+            </tr>
+            '''
+        ticket_classes_html = f'''
+        <div class="preview-section" style="margin-top:20px;">
+          <div class="preview-section-header" style="background:linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); color:white;">TYPY BILETÓW ({len(ticket_classes)})</div>
+          <div class="preview-section-body" style="padding:0;">
+            <table style="width:100%; border-collapse:collapse; font-size:14px;">
+              <tr style="background:#f8fafc;">
+                <th style="padding:10px 16px; text-align:left; font-weight:600; font-size:12px; color:#64748b; text-transform:uppercase;">ID</th>
+                <th style="padding:10px 16px; text-align:left; font-weight:600; font-size:12px; color:#64748b; text-transform:uppercase;">Nazwa</th>
+                <th style="padding:10px 16px; text-align:right; font-weight:600; font-size:12px; color:#64748b; text-transform:uppercase;">Cena netto</th>
+                <th style="padding:10px 16px; text-align:right; font-weight:600; font-size:12px; color:#64748b; text-transform:uppercase;">VAT</th>
+              </tr>
+              {tc_rows}
+            </table>
+          </div>
+        </div>
+        '''
+    else:
+        ticket_classes_html = '''
+        <div class="preview-section" style="margin-top:20px;">
+          <div class="preview-section-header" style="background:linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); color:white;">TYPY BILETÓW</div>
+          <div class="preview-section-body">
+            <div style="color:#94a3b8; text-align:center; padding:20px;">Brak skonfigurowanych typów biletów</div>
           </div>
         </div>
         '''
 
-    # Sekcja Bilety (dane z naszego systemu)
+    # Statystyki wydarzeń (używane w nagłówku)
     stats = get_event_ticket_stats(event_id)
     orders_paid = stats["orders_by_status"].get("paid", {}).get("count", 0)
     orders_pending = stats["orders_by_status"].get("pending_payment", {}).get("count", 0)
     participants_emailed = stats["participants_by_status"].get("emailed", 0)
     participants_registered = stats["participants_by_status"].get("registered", 0)
-    
-    bilety_html = f'''
-    <div style="margin-top:16px; padding:16px 20px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px;">
-      <div style="font-weight:600; margin-bottom:12px; color:#065f46; display:flex; align-items:center; justify-content:space-between;">
-        <span>🎫 Bilety i uczestnicy (panel admina)</span>
-        <a href="{url_for('admin_bp.event_tickets', event_id=event_id, token=token)}" class="btn" style="font-size:12px; background:#d1fae5; color:#065f46; border:1px solid #a7f3d0;">Zobacz szczegóły →</a>
-      </div>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:12px;">
-        <div style="background:white; padding:12px 16px; border-radius:8px; text-align:center; border:1px solid #d1fae5;">
-          <div style="font-size:24px; font-weight:700; color:#0369a1;">{stats['orders_total']}</div>
-          <div style="font-size:12px; color:#64748b;">Zamówień</div>
-          <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{orders_paid} opłaconych</div>
-        </div>
-        <div style="background:white; padding:12px 16px; border-radius:8px; text-align:center; border:1px solid #d1fae5;">
-          <div style="font-size:24px; font-weight:700; color:#166534;">{stats['participants_total']}</div>
-          <div style="font-size:12px; color:#64748b;">Uczestników</div>
-          <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{participants_emailed} powiadomionych</div>
-        </div>
-        <div style="background:white; padding:12px 16px; border-radius:8px; text-align:center; border:1px solid #d1fae5;">
-          <div style="font-size:24px; font-weight:700; color:#059669;">{stats['revenue_paid']:.0f} PLN</div>
-          <div style="font-size:12px; color:#64748b;">Przychód</div>
-          <div style="font-size:11px; color:#94a3b8; margin-top:4px;">z opłaconych</div>
-        </div>
-      </div>
-    </div>
-    '''
     
     # Link do kalendarza (.ics)
     calendar_url = url_for('event_calendar_ics', event_id=event_id, _external=True)
@@ -2475,21 +2580,44 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
     
     <div style="margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:10px;">
-        <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do edycji</a>
-        <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
+        {'<a class="btn" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">← Wróć do edycji</a>' if not is_viewer else ''}
+        <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
+        {'<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>' if is_viewer else ''}
       </div>
-      <button id="toggleBtn" onclick="toggleTechNames()" class="toggle-tech-names">🔓 Pokaż nazwy API</button>
+      {'<button id="toggleBtn" onclick="toggleTechNames()" class="toggle-tech-names">🔓 Pokaż nazwy API</button>' if not is_viewer else ''}
     </div>
     
     <div class="preview-container">
-      <div class="card" style="margin-top:20px;">
-        <div style="font-weight:700; font-size:20px; color:#0f172a;">{event_name}</div>
-        <div class="muted" style="margin-top:4px;"><code>{event_id}</code></div>
+      <div class="card" style="margin-top:20px; border:2px solid {color1 or '#0065D7'}; overflow:hidden;">
+        <div style="text-align:center; padding:20px 24px 16px; background:linear-gradient(135deg, {color1 or '#0065D7'}08 0%, {color1 or '#0065D7'}03 100%);">
+          <div style="font-weight:700; font-size:22px; color:#0f172a;">{event_name}</div>
+          {'<div class="muted" style="margin-top:6px;"><code style="font-size:12px;">' + event_id + '</code></div>' if not is_viewer else ''}
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); border-top:1px solid #e2e8f0;">
+          <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
+            <div style="font-size:32px; font-weight:700; color:{color1 or '#0065D7'};">{stats['orders_total']}</div>
+            <div style="font-size:13px; color:#64748b; font-weight:500;">Zamówień</div>
+            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">{orders_paid} opłaconych</div>
+          </div>
+          <div style="padding:20px; text-align:center; border-right:1px solid #e2e8f0;">
+            <div style="font-size:32px; font-weight:700; color:#16a34a;">{stats['participants_total']}</div>
+            <div style="font-size:13px; color:#64748b; font-weight:500;">Uczestników</div>
+            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">{participants_emailed} powiadomionych</div>
+          </div>
+          <div style="padding:20px; text-align:center;">
+            <div style="font-size:32px; font-weight:700; color:#059669;">{stats['revenue_paid']:.0f}<span style="font-size:16px; font-weight:500;"> PLN</span></div>
+            <div style="font-size:13px; color:#64748b; font-weight:500;">Przychód</div>
+            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">z opłaconych</div>
+          </div>
+        </div>
+        <div style="padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; text-align:center;">
+          <a href="{url_for('admin_bp.event_tickets', event_id=event_id, token=token)}" class="btn btnPrimary" style="font-size:13px;">Zobacz szczegóły biletów →</a>
+        </div>
       </div>
       
       {backstage_html}
       
-      {bilety_html}
+      {ticket_classes_html}
       
       {calendar_html}
       
@@ -2503,6 +2631,12 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
 @_require_permission("events")
 def event_preview(event_id: str):
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    
+    # Sprawdź dostęp viewera do tego wydarzenia
+    if _is_viewer(current_user) and not _user_can_access_event(current_user, event_id):
+        abort(403, description="Brak dostępu do tego wydarzenia")
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -2510,11 +2644,13 @@ def event_preview(event_id: str):
     data = ev.get("data") or {}
     if not isinstance(data, dict):
         data = {}
+    is_viewer = _is_viewer(current_user)
     return _render_event_preview(
         token=token,
         event_id=str(ev.get("event_id") or event_id),
         event_name=str(ev.get("event_name") or ""),
         data=data,
+        is_viewer=is_viewer,
     )
 
 
@@ -2548,6 +2684,51 @@ def preview_draft():
         data["eventName"] = event_name
 
     return _render_event_preview(token=token, event_id=event_id, event_name=event_name, data=data)
+
+
+def _render_ticket_classes_section(tickets: List[Dict[str, Any]]) -> str:
+    """Renderuje sekcję z typami biletów (do podglądu/edycji)."""
+    if not tickets:
+        return '''
+        <div class="card" style="margin-top:20px;">
+          <div style="font-weight:700; margin-bottom:10px; color:#7c3aed;">🎫 Typy biletów</div>
+          <div class="muted">Brak skonfigurowanych typów biletów</div>
+        </div>
+        '''
+    
+    tc_rows = ""
+    for tc in tickets:
+        tc_id = tc.get("ticket_class_id", "")
+        tc_name = tc.get("ticket_name", "")
+        tc_data = tc.get("data") or {}
+        tc_price = tc_data.get("ticket_price") or tc_data.get("price") or "—"
+        tc_vat = tc_data.get("vat_rate") or tc_data.get("vat") or "—"
+        tc_rows += f'''
+        <tr>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-size:11px;"><code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">{tc_id}</code></td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-weight:500;">{tc_name}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right;">{tc_price} PLN</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right;">{tc_vat}%</td>
+        </tr>
+        '''
+    
+    return f'''
+    <div class="card" style="margin-top:20px; border:2px solid #a855f7;">
+      <div style="font-weight:700; margin-bottom:12px; color:#7c3aed; display:flex; justify-content:space-between; align-items:center;">
+        <span>🎫 Typy biletów ({len(tickets)})</span>
+        <span style="font-size:12px; color:#94a3b8; font-weight:400;">Edycja w sekcji "Zaawansowane" ↓</span>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <tr style="background:#f8fafc;">
+          <th style="padding:8px 12px; text-align:left; font-weight:600; font-size:11px; color:#64748b; text-transform:uppercase;">ticket_class_id</th>
+          <th style="padding:8px 12px; text-align:left; font-weight:600; font-size:11px; color:#64748b; text-transform:uppercase;">Nazwa</th>
+          <th style="padding:8px 12px; text-align:right; font-weight:600; font-size:11px; color:#64748b; text-transform:uppercase;">Cena netto</th>
+          <th style="padding:8px 12px; text-align:right; font-weight:600; font-size:11px; color:#64748b; text-transform:uppercase;">VAT</th>
+        </tr>
+        {tc_rows}
+      </table>
+    </div>
+    '''
 
 
 def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[Dict[str, Any]]) -> str:
@@ -2702,6 +2883,8 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
       </div>
     </div>
     
+    {_render_ticket_classes_section(tickets) if event_id else ''}
+    
     <script>
       function updatePreview(input) {{
         const key = input.getAttribute('data-field-key');
@@ -2746,6 +2929,13 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
 def event_tickets(event_id: str):
     """Widok biletów i uczestników dla wydarzenia."""
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    is_viewer = _is_viewer(current_user)
+    
+    # Sprawdź dostęp viewera do tego wydarzenia
+    if is_viewer and not _user_can_access_event(current_user, event_id):
+        abort(403, description="Brak dostępu do tego wydarzenia")
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -2888,8 +3078,9 @@ def event_tickets(event_id: str):
 
     body = f"""
     <div style="margin-bottom:12px;">
-      <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do eventu</a>
+      <a class="btn" href="{url_for('admin_bp.event_preview' if is_viewer else 'admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do eventu</a>
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
+      {'<span class="pill" style="background:#e0f2fe; color:#0369a1; margin-left:auto;">Tryb podglądu</span>' if is_viewer else ''}
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -2917,6 +3108,13 @@ WFIRMA_DOC_TYPES = ["proforma", "normal", "proforma_bill"]
 def payment_rules_list(event_id: str):
     """Lista reguł płatności dla eventu."""
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    is_viewer = _is_viewer(current_user)
+    
+    # Sprawdź dostęp viewera do tego wydarzenia
+    if is_viewer and not _user_can_access_event(current_user, event_id):
+        abort(403, description="Brak dostępu do tego wydarzenia")
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -2960,20 +3158,14 @@ def payment_rules_list(event_id: str):
                     wFirma: {r.get('wfirma_document_type') or '—'} / seria: {r.get('wfirma_series_name') or '—'}
                   </div>
                 </div>
-                <div style="display:flex; gap:8px;">
-                  <a class="btn" href="{url_for('admin_bp.payment_rule_edit', event_id=event_id, rule_id=r.get('id'), token=token)}">Edytuj</a>
-                  <form method="post" action="{url_for('admin_bp.payment_rule_delete', event_id=event_id, rule_id=r.get('id'))}" onsubmit="return confirm('Usunąć regułę?');" style="display:inline;">
-                    <input type="hidden" name="token" value="{token}" />
-                    <button class="btn btnDanger" type="submit">Usuń</button>
-                  </form>
-                </div>
+                {'<div style="display:flex; gap:8px;"><a class="btn" href="' + url_for('admin_bp.payment_rule_edit', event_id=event_id, rule_id=r.get('id'), token=token) + '">Edytuj</a><form method="post" action="' + url_for('admin_bp.payment_rule_delete', event_id=event_id, rule_id=r.get('id')) + '" onsubmit="return confirm(\'Usunąć regułę?\');" style="display:inline;"><input type="hidden" name="token" value="' + token + '" /><button class="btn btnDanger" type="submit">Usuń</button></form></div>' if not is_viewer else ''}
               </div>
             </div>
         """)
 
     body = f"""
     <div style="margin-bottom:12px;">
-      <a class="btn" href="{url_for('admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do eventu</a>
+      <a class="btn" href="{url_for('admin_bp.event_preview' if is_viewer else 'admin_bp.event_edit', event_id=event_id, token=token)}">← Wróć do eventu</a>
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">Lista wydarzeń</a>
     </div>
 
@@ -2983,7 +3175,7 @@ def payment_rules_list(event_id: str):
     </div>
 
     <div style="margin-bottom:14px;">
-      <a class="btn btnPrimary" href="{url_for('admin_bp.payment_rule_new', event_id=event_id, token=token)}">+ Nowa reguła płatności</a>
+      {'<a class="btn btnPrimary" href="' + url_for('admin_bp.payment_rule_new', event_id=event_id, token=token) + '">+ Nowa reguła płatności</a>' if not is_viewer else '<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>'}
     </div>
 
     <div class="muted" style="margin-bottom:10px;">
@@ -3003,6 +3195,11 @@ def payment_rules_list(event_id: str):
 def payment_rule_new(event_id: str):
     """Formularz nowej reguły płatności."""
     token = _require_admin_token()
+    
+    # Blokuj dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tworzenia reguł")
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -3014,6 +3211,11 @@ def payment_rule_new(event_id: str):
 def payment_rule_edit(event_id: str, rule_id: int):
     """Formularz edycji reguły płatności."""
     token = _require_admin_token()
+    
+    # Blokuj dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        return redirect(url_for("admin_bp.payment_rules_list", event_id=event_id, token=token))
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -3028,6 +3230,11 @@ def payment_rule_edit(event_id: str, rule_id: int):
 def payment_rule_save(event_id: str):
     """Zapisuje regułę płatności."""
     token = _require_admin_token()
+    
+    # Blokuj dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do edycji reguł")
+    
     ev = get_event(event_id)
     if not ev:
         abort(404, description="Nie znaleziono eventu")
@@ -3073,6 +3280,11 @@ def payment_rule_save(event_id: str):
 def payment_rule_delete(event_id: str, rule_id: int):
     """Usuwa regułę płatności."""
     token = _require_admin_token()
+    
+    # Blokuj dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do usuwania reguł")
+    
     delete_payment_rule(rule_id)
     return redirect(url_for("admin_bp.payment_rules_list", event_id=event_id, token=token))
 
@@ -3220,6 +3432,9 @@ ORDER_STATUS_LABELS = {
 def orders_list():
     """Lista zamówień z filtrowaniem."""
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    is_viewer = _is_viewer(current_user)
+    allowed_events = _normalize_allowed_events(current_user.get("allowed_events") if current_user else []) if is_viewer else []
 
     # Filtrowanie
     status_filter = (request.args.get("status") or "").strip()
@@ -3230,9 +3445,18 @@ def orders_list():
         status=status_filter or None,
         limit=200,
     )
+    
+    # Filtruj zamówienia dla viewera - tylko z dozwolonych wydarzeń
+    if is_viewer and allowed_events:
+        orders = [o for o in orders if o.get("event_id") in allowed_events]
 
     # Pobierz listę eventów do filtrowania
     events = list_events(limit=100)
+    
+    # Dla viewera - tylko dozwolone wydarzenia w filtrze
+    if is_viewer and allowed_events:
+        events = [e for e in events if e.get("event_id") in allowed_events]
+    
     event_name_by_id = {str(e.get("event_id") or ""): (e.get("event_name") or "") for e in (events or [])}
     event_options = "".join(
         f'<option value="{e.get("event_id", "")}" {"selected" if e.get("event_id") == event_filter else ""}>{e.get("event_name", "")}</option>'
@@ -3535,14 +3759,23 @@ def orders_list():
 def order_detail(order_id: str):
     """Szczegóły zamówienia."""
     token = _require_admin_token()
+    current_user = _get_current_admin_user()
+    is_viewer = _is_viewer(current_user)
     
-    # Pobierz flash messages
+    # Pobierz flash messages - tylko te związane z tym zamówieniem (mark_paid, generate)
+    # Pomijamy komunikaty o usunięciu innych zamówień
     from flask import get_flashed_messages
-    messages = get_flashed_messages(with_categories=True)
+    all_messages = get_flashed_messages(with_categories=True)
+    messages = [(cat, msg) for cat, msg in all_messages if "zostało usunięte" not in msg]
 
     order = get_order(order_id)
     if not order:
         abort(404, description="Nie znaleziono zamówienia")
+    
+    # Sprawdź dostęp viewera do tego wydarzenia
+    event_id = order.get("event_id", "")
+    if is_viewer and not _user_can_access_event(current_user, event_id):
+        abort(403, description="Brak dostępu do tego zamówienia")
 
     status = order.get("status", "received")
     label, style = ORDER_STATUS_LABELS.get(status, ("?", ""))
@@ -3603,9 +3836,9 @@ def order_detail(order_id: str):
     is_foc_flow = total == 0 or "foc" in payment_option or "free" in payment_option
     is_stripe_flow = not is_proforma_flow and not is_foc_flow and total > 0
 
-    # Przycisk "Oznacz jako opłacone" tylko dla pending_payment (obok statusu)
+    # Przycisk "Oznacz jako opłacone" tylko dla pending_payment (obok statusu) - ukryty dla viewera
     mark_paid_form = ""
-    if status == "pending_payment":
+    if status == "pending_payment" and not is_viewer:
         proforma_info_btn = f' ({proforma_number})' if proforma_number else ''
         proforma_info_modal = f'<div style="margin-bottom:16px; padding:12px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; font-size:14px;">Proforma: <strong style="color:#0369a1;">{proforma_number}</strong> • {total:.2f} {currency}</div>' if proforma_number else ''
         mark_paid_form = f"""
@@ -3827,11 +4060,10 @@ def order_detail(order_id: str):
     <div class="order-breadcrumb" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
         <a class="btn" href="{url_for('admin_bp.orders_list', token=token)}">← Lista zamówień</a>
-        {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id else ''}
+        {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_edit', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id and not is_viewer else ''}
+        {'<a class="btn" style="margin-left:8px;" href="' + url_for('admin_bp.event_preview', event_id=event_id, token=token) + '">Wydarzenie</a>' if event_id and is_viewer else ''}
       </div>
-      <button class="btn btnDanger" type="button" onclick="document.getElementById('deleteOrderModal').style.display='flex'" style="font-size:13px;">
-        🗑 Usuń zamówienie
-      </button>
+      {'<button class="btn btnDanger" type="button" onclick="document.getElementById(&apos;deleteOrderModal&apos;).style.display=&apos;flex&apos;" style="font-size:13px;">🗑 Usuń zamówienie</button>' if not is_viewer else '<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>'}
     </div>
     
     {''.join([
@@ -3841,17 +4073,9 @@ def order_detail(order_id: str):
         for cat, msg in messages
     ])}
     
-    {f'''
-    <div style="margin-bottom:20px; padding:16px 20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px;">
-      <div style="font-weight:600; margin-bottom:10px; color:#0369a1;">🔗 Otwórz w Zoho Backstage</div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Konfiguracja wydarzenia</a>' if backstage_config_link else ''}
-        {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Zamówienia</a>' if backstage_orders_link else ''}
-        {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:13px;">Uczestnicy</a>' if backstage_attendees_link else ''}
-      </div>
-    </div>
-    ''' if (backstage_config_link or backstage_orders_link or backstage_attendees_link) else ''}
-
+    <div style="display:flex; gap:20px; align-items:flex-start;">
+    
+    <div style="flex:1; min-width:0;">
     <div class="order-header">
       <div class="order-header-info">
         <h2>Zamówienie</h2>
@@ -4010,6 +4234,26 @@ def order_detail(order_id: str):
       </div>
     </div>
     
+    </div><!-- koniec głównej treści -->
+    
+    {f'''
+    <div style="width:140px; flex-shrink:0; position:sticky; top:20px; align-self:flex-start;">
+      <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px; padding:12px; text-align:center;">
+        <div style="margin-bottom:10px;">
+          <img src="https://pbs.twimg.com/profile_images/960434707498680320/GlHvSjmP_400x400.jpg" alt="Backstage" style="width:28px; height:28px; border-radius:6px;" />
+        </div>
+        <div style="font-size:10px; font-weight:600; color:#0369a1; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">Backstage</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          {f'<a href="{backstage_config_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Konfiguracja ↗</a>' if backstage_config_link else ''}
+          {f'<a href="{backstage_orders_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Zamówienia ↗</a>' if backstage_orders_link else ''}
+          {f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn" style="font-size:11px; padding:6px 8px; width:100%; box-sizing:border-box; background:#fff; border:1px solid #bae6fd; color:#0369a1;">Uczestnicy ↗</a>' if backstage_attendees_link else ''}
+        </div>
+      </div>
+    </div>
+    ''' if (backstage_config_link or backstage_orders_link or backstage_attendees_link) else ''}
+    
+    </div><!-- koniec flex container -->
+    
     <!-- Modal: Generuj proformę -->
     <div id="genProformaModal" class="mark-paid-modal" onclick="if(event.target===this)this.style.display='none'">
       <div class="mark-paid-modal-content">
@@ -4123,6 +4367,10 @@ def order_mark_paid(order_id: str):
     5. Zmienia status na 'paid'
     """
     token = _require_admin_token()
+    
+    # Blokuj dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tej operacji")
 
     order = get_order(order_id)
     if not order:
@@ -4405,6 +4653,10 @@ def order_delete(order_id: str):
     UWAGA: Operacja nieodwracalna! Dokumenty wFirma NIE są usuwane automatycznie.
     """
     token = _require_admin_token()
+    
+    # Blokuj usuwanie dla viewera
+    if _is_viewer(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do usuwania")
     
     order = get_order(order_id)
     if not order:
@@ -4835,14 +5087,23 @@ def users_list():
     for u in users:
         status_badge = '<span class="pill pill-success">Aktywne</span>' if u.get("is_active") else '<span class="pill pill-error">Nieaktywne</span>'
         role = (u.get("role") or "user").lower()
-        role_badge = '<span class="pill pill-primary">Admin</span>' if role == "admin" else '<span class="pill pill-neutral">Użytkownik</span>'
+        if role == "admin":
+            role_badge = '<span class="pill pill-primary">Admin</span>'
+        elif role == "viewer":
+            role_badge = '<span class="pill" style="background:#e0f2fe; color:#0369a1;">Viewer</span>'
+        else:
+            role_badge = '<span class="pill pill-neutral">Użytkownik</span>'
         first_name = (u.get("first_name") or "").strip()
         last_name = (u.get("last_name") or "").strip()
         full_name = (f"{first_name} {last_name}".strip()) or "—"
         allowed = _normalize_allowed_pages(u.get("allowed_pages"))
+        allowed_events = _normalize_allowed_events(u.get("allowed_events"))
         labels = {k: v for k, v in ADMIN_PAGE_OPTIONS}
         if role == "admin":
             permissions_label = "pełny dostęp"
+        elif role == "viewer":
+            events_count = len(allowed_events)
+            permissions_label = f"{events_count} wydarzeń" if events_count else "brak wydarzeń"
         else:
             permissions_label = ", ".join([labels.get(k, k) for k in allowed]) if allowed else "brak"
         locked = ""
@@ -4999,12 +5260,13 @@ def user_new():
             last_name = (request.form.get("last_name") or "").strip()
             role = (request.form.get("role") or "user").strip().lower()
             allowed_pages = request.form.getlist("allowed_pages") or []
+            allowed_events = request.form.getlist("allowed_events") or []
 
             if not email or "@" not in email:
                 error = "Podaj prawidłowy adres email"
             elif get_admin_user_by_email(email):
                 error = "Konto z tym emailem już istnieje"
-            elif role not in ("admin", "user"):
+            elif role not in ("admin", "user", "viewer"):
                 error = "Nieprawidłowa rola użytkownika"
             else:
                 temp_password = _generate_temp_password()
@@ -5016,6 +5278,7 @@ def user_new():
                     last_name=last_name,
                     role=role,
                     allowed_pages=allowed_pages if role != "admin" else [],
+                    allowed_events=allowed_events if role == "viewer" else [],
                     must_change_password=True,
                 )
                 
@@ -5032,7 +5295,7 @@ def user_new():
                         target_email=email,
                         ip=_get_client_ip(),
                         user_agent=request.headers.get("User-Agent", "")[:500],
-                        data={"role": role, "allowed_pages": allowed_pages, "email_sent": email_ok},
+                        data={"role": role, "allowed_pages": allowed_pages, "allowed_events": allowed_events, "email_sent": email_ok},
                     )
                     success = f"Konto {email} zostało utworzone. Hasło wysłane mailem."
                     if not email_ok:
@@ -5121,8 +5384,9 @@ def user_new():
 
           <div class="form-group">
             <label for="role">Rola</label>
-            <select id="role" name="role">
+            <select id="role" name="role" onchange="toggleEventSection()">
               <option value="user" selected>Użytkownik (ograniczony dostęp)</option>
+              <option value="viewer">Viewer (tylko podgląd)</option>
               <option value="admin">Admin (pełny dostęp)</option>
             </select>
           </div>
@@ -5135,6 +5399,14 @@ def user_new():
             <div class="muted" style="margin-top:8px;">Admin ma pełny dostęp niezależnie od wyboru.</div>
           </div>
           
+          <div id="events-section" class="form-group" style="display:none;">
+            <label>Dostęp do wydarzeń <span style="font-weight:normal; color:#64748b;">(tylko dla roli Viewer)</span></label>
+            <div style="max-height:250px; overflow-y:auto; border:1px solid var(--md-border); border-radius:8px; padding:12px; background:#fafafa;">
+              {''.join([f\'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;"><input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" /> <span>{e.get("event_name", "")}</span> <code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code></label>\' for e in list_events(limit=100)] or ['<div class="muted">Brak wydarzeń</div>'])}
+            </div>
+            <div class="muted" style="margin-top:8px;">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji).</div>
+          </div>
+          
           <div class="info" style="margin-bottom:16px;">
             Hasło jest generowane automatycznie i wysyłane mailem. Po pierwszym logowaniu wymagamy zmiany hasła.
           </div>
@@ -5143,6 +5415,16 @@ def user_new():
         </form>
       </div>
     </div>
+    
+    <script>
+      function toggleEventSection() {{
+        var role = document.getElementById('role').value;
+        var section = document.getElementById('events-section');
+        section.style.display = (role === 'viewer') ? 'block' : 'none';
+      }}
+      // Uruchom przy ładowaniu strony
+      toggleEventSection();
+    </script>
     """
     return _page("Nowe konto", body)
 
@@ -5281,6 +5563,7 @@ def user_access(user_id: int):
     error = None
     success = None
     allowed_current = _normalize_allowed_pages(target_user.get("allowed_pages"))
+    allowed_events_current = _normalize_allowed_events(target_user.get("allowed_events"))
     if (target_user.get("role") or "user").lower() == "admin":
         allowed_current = [k for k, _ in ADMIN_PAGE_OPTIONS]
 
@@ -5292,8 +5575,9 @@ def user_access(user_id: int):
             last_name = (request.form.get("last_name") or "").strip()
             role = (request.form.get("role") or "user").strip().lower()
             allowed_pages = request.form.getlist("allowed_pages") or []
+            allowed_events = request.form.getlist("allowed_events") or []
 
-            if role not in ("admin", "user"):
+            if role not in ("admin", "user", "viewer"):
                 error = "Nieprawidłowa rola użytkownika"
             else:
                 ok = update_admin_user_access(
@@ -5302,6 +5586,7 @@ def user_access(user_id: int):
                     last_name=last_name,
                     role=role,
                     allowed_pages=allowed_pages if role != "admin" else [],
+                    allowed_events=allowed_events if role == "viewer" else [],
                 )
                 if ok:
                     insert_admin_audit_log(
@@ -5310,11 +5595,12 @@ def user_access(user_id: int):
                         target_email=target_user["email"],
                         ip=_get_client_ip(),
                         user_agent=request.headers.get("User-Agent", "")[:500],
-                        data={"role": role, "allowed_pages": allowed_pages},
+                        data={"role": role, "allowed_pages": allowed_pages, "allowed_events": allowed_events},
                     )
                     success = "Zapisano uprawnienia"
                     target_user = get_admin_user_by_id(user_id) or target_user
                     allowed_current = _normalize_allowed_pages(target_user.get("allowed_pages"))
+                    allowed_events_current = _normalize_allowed_events(target_user.get("allowed_events"))
                     if (target_user.get("role") or "user").lower() == "admin":
                         allowed_current = [k for k, _ in ADMIN_PAGE_OPTIONS]
                 else:
@@ -5394,8 +5680,9 @@ def user_access(user_id: int):
 
           <div class="form-group">
             <label for="role">Rola</label>
-            <select id="role" name="role">
+            <select id="role" name="role" onchange="toggleEventSectionEdit()">
               <option value="user" {'selected' if role_value == 'user' else ''}>Użytkownik (ograniczony dostęp)</option>
+              <option value="viewer" {'selected' if role_value == 'viewer' else ''}>Viewer (tylko podgląd)</option>
               <option value="admin" {'selected' if role_value == 'admin' else ''}>Admin (pełny dostęp)</option>
             </select>
           </div>
@@ -5407,11 +5694,27 @@ def user_access(user_id: int):
             </div>
             <div class="muted" style="margin-top:8px;">Admin ma pełny dostęp niezależnie od wyboru.</div>
           </div>
+          
+          <div id="events-section-edit" class="form-group" style="display:{'block' if role_value == 'viewer' else 'none'};">
+            <label>Dostęp do wydarzeń <span style="font-weight:normal; color:#64748b;">(tylko dla roli Viewer)</span></label>
+            <div style="max-height:250px; overflow-y:auto; border:1px solid var(--md-border); border-radius:8px; padding:12px; background:#fafafa;">
+              {''.join([f\'<label style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9;"><input type="checkbox" name="allowed_events" value="{e.get("event_id", "")}" {"checked" if e.get("event_id", "") in allowed_events_current else ""} /> <span>{e.get("event_name", "")}</span> <code style="font-size:11px; color:#94a3b8;">{e.get("event_id", "")}</code></label>\' for e in list_events(limit=100)] or ['<div class="muted">Brak wydarzeń</div>'])}
+            </div>
+            <div class="muted" style="margin-top:8px;">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji).</div>
+          </div>
 
           <button class="btn btnPrimary" type="submit">Zapisz</button>
         </form>
       </div>
     </div>
+    
+    <script>
+      function toggleEventSectionEdit() {{
+        var role = document.getElementById('role').value;
+        var section = document.getElementById('events-section-edit');
+        section.style.display = (role === 'viewer') ? 'block' : 'none';
+      }}
+    </script>
     """
     return _page("Uprawnienia", body)
 

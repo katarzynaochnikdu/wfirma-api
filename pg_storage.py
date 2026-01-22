@@ -347,11 +347,13 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'")
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb")
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_events JSONB NOT NULL DEFAULT '[]'::jsonb")
 
         # 1c) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
         cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
         cur.execute("UPDATE admin_users SET allowed_pages = '[]'::jsonb WHERE allowed_pages IS NULL")
         cur.execute("UPDATE admin_users SET must_change_password = FALSE WHERE must_change_password IS NULL")
+        cur.execute("UPDATE admin_users SET allowed_events = '[]'::jsonb WHERE allowed_events IS NULL")
 
         # 2) Wersja migracji
         cur.execute("SELECT 1 FROM schema_migrations WHERE version=%s", (SCHEMA_VERSION,))
@@ -2079,7 +2081,7 @@ def get_admin_user_by_email(email: str) -> Optional[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, email, first_name, last_name, password_hash, role, allowed_pages,
+            SELECT id, email, first_name, last_name, password_hash, role, allowed_pages, allowed_events,
                    must_change_password, is_active, failed_login_count, locked_until,
                    created_at, updated_at, last_login_at
             FROM admin_users
@@ -2104,7 +2106,7 @@ def get_admin_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, email, first_name, last_name, password_hash, role, allowed_pages,
+            SELECT id, email, first_name, last_name, password_hash, role, allowed_pages, allowed_events,
                    must_change_password, is_active, failed_login_count, locked_until,
                    created_at, updated_at, last_login_at
             FROM admin_users
@@ -2129,7 +2131,7 @@ def list_admin_users() -> List[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, email, first_name, last_name, role, allowed_pages, must_change_password,
+            SELECT id, email, first_name, last_name, role, allowed_pages, allowed_events, must_change_password,
                    is_active, failed_login_count, locked_until, created_at, updated_at, last_login_at
             FROM admin_users
             ORDER BY created_at ASC
@@ -2148,6 +2150,7 @@ def create_admin_user(
     last_name: Optional[str] = None,
     role: str = "admin",
     allowed_pages: Optional[List[str]] = None,
+    allowed_events: Optional[List[str]] = None,
     must_change_password: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Tworzy nowego admina. Zwraca utworzony rekord (bez password_hash)."""
@@ -2159,9 +2162,9 @@ def create_admin_user(
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            INSERT INTO admin_users (email, first_name, last_name, password_hash, role, allowed_pages, must_change_password)
-            VALUES (LOWER(%s), %s, %s, %s, %s, %s, %s)
-            RETURNING id, email, first_name, last_name, role, allowed_pages, must_change_password, is_active, created_at
+            INSERT INTO admin_users (email, first_name, last_name, password_hash, role, allowed_pages, allowed_events, must_change_password)
+            VALUES (LOWER(%s), %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, email, first_name, last_name, role, allowed_pages, allowed_events, must_change_password, is_active, created_at
             """,
             (
                 str(email).strip(),
@@ -2170,6 +2173,7 @@ def create_admin_user(
                 str(password_hash),
                 str(role or "admin"),
                 psycopg2.extras.Json(allowed_pages or []),  # type: ignore[attr-defined]
+                psycopg2.extras.Json(allowed_events or []),  # type: ignore[attr-defined]
                 bool(must_change_password),
             ),
         )
@@ -2241,6 +2245,7 @@ def update_admin_user_access(
     last_name: Optional[str],
     role: str,
     allowed_pages: Optional[List[str]],
+    allowed_events: Optional[List[str]] = None,
 ) -> bool:
     """Aktualizuje imię/nazwisko, rolę i uprawnienia użytkownika."""
     ensure_schema()
@@ -2256,6 +2261,7 @@ def update_admin_user_access(
                 last_name = %s,
                 role = %s,
                 allowed_pages = %s,
+                allowed_events = %s,
                 updated_at = NOW()
             WHERE id = %s
             """,
@@ -2264,6 +2270,7 @@ def update_admin_user_access(
                 (str(last_name).strip() if last_name else None),
                 str(role or "admin"),
                 psycopg2.extras.Json(allowed_pages or []),  # type: ignore[attr-defined]
+                psycopg2.extras.Json(allowed_events or []),  # type: ignore[attr-defined]
                 int(user_id),
             ),
         )
