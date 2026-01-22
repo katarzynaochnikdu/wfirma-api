@@ -259,16 +259,87 @@ def _send_admin_credentials_email(to_email: str, full_name: str, temp_password: 
     headline = "Reset hasła do panelu" if is_reset else "Twoje konto w panelu administracyjnym"
 
     body_html = f"""
-    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #1e293b;">
-      <h2 style="margin: 0 0 12px 0;">{headline}</h2>
-      <p>Witaj {full_name or "!"}</p>
-      <p>Poniżej masz tymczasowe hasło. Po pierwszym logowaniu system wymusi jego zmianę.</p>
-      <div style="padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin: 12px 0;">
-        <div style="font-family: monospace; font-size: 16px; letter-spacing: 0.5px;">{temp_password}</div>
-      </div>
-      <p><a href="{login_url}">Przejdź do logowania</a></p>
-      <p>Po zalogowaniu: <a href="{change_url}">Zmień hasło</a></p>
-      <p style="color:#64748b; font-size:12px; margin-top:16px;">Jeśli to nie Ty inicjujesz dostęp, zignoruj tę wiadomość.</p>
+    <div style="background:#f8fafc; padding:24px 12px; font-family: 'EuclidCircularB', Arial, sans-serif; color:#1e293b;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px; margin:0 auto; background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+        <tr>
+          <td style="background:linear-gradient(90deg,#00E09F 0%,#00A1D7 50%,#0065D7 100%); padding:22px 24px;">
+            <div style="color:#fff; font-size:18px; font-weight:700; letter-spacing:0.3px;">HALO MEDIDESK</div>
+            <div style="color:#e0f2fe; font-size:13px; margin-top:4px;">Dostęp do portalu</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px 24px;">
+            <h2 style="margin:0 0 10px 0; font-size:18px; font-weight:700; color:#0f172a;">{headline}</h2>
+            <p style="margin:0 0 10px 0; font-size:14px;">Witaj {full_name or ""}</p>
+            <p style="margin:0 0 14px 0; font-size:14px; color:#334155;">Poniżej masz tymczasowe hasło. Po pierwszym logowaniu system wymusi jego zmianę.</p>
+            <div style="padding:12px 14px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; margin:12px 0;">
+              <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:16px; letter-spacing:0.6px;">{temp_password}</div>
+            </div>
+            <div style="margin:16px 0;">
+              <a href="{login_url}" style="display:inline-block; background:#0065D7; color:#fff; text-decoration:none; padding:10px 16px; border-radius:8px; font-weight:600;">Przejdź do logowania</a>
+            </div>
+            <p style="margin:0 0 10px 0; font-size:13px;">Po zalogowaniu: <a href="{change_url}" style="color:#0065D7; text-decoration:none; font-weight:600;">Zmień hasło</a></p>
+            <p style="color:#64748b; font-size:12px; margin:16px 0 0 0;">Jeśli to nie Ty inicjujesz dostęp, zignoruj tę wiadomość.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 18px 24px;">
+            <hr style="border:none; border-top:1px solid #e2e8f0; margin:0 0 16px 0;">
+            <div style="font-size:12px; color:#475569; font-weight:600;">Serdecznie pozdrawiam,</div>
+          </td>
+        </tr>
+      </table>
+      
+      <!-- Stopka -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px; margin:12px auto 0 auto; background:transparent;">
+        <tr>
+          <td style="padding:0 8px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+              <tr>
+                <td style="padding:16px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="width:110px;" valign="top">
+                        <img style="border:1px #0074d7 solid; border-radius:50%; width:90px; height:90px; object-fit:cover;" alt="HALO MEDIDESK" src="https://raw.githubusercontent.com/adminzohomedidesk/Stopka_email/main/photos/55dfa5e8a1974e8db504ede103d9b17caa5b4c5f.png">
+                      </td>
+                      <td style="padding-left:10px;" valign="top">
+                        <div style="font-size:14px; font-weight:700; color:#0074d7;">HALO MEDIDESK</div>
+                        <div style="height:6px;"></div>
+                        <div style="width:90px; height:3px; background:#0074d7;"></div>
+                        <div style="height:8px;"></div>
+                        <a style="text-decoration:none; color:#333333; font-size:12px; font-weight:500;" href="mailto:halo@medidesk.com">
+                          <img style="max-width:18px; margin-right:5px; vertical-align:middle;" alt="halo@medidesk.com" src="https://raw.githubusercontent.com/adminzohomedidesk/Stopka_email/main/mail_mini.png">
+                          <span>halo@medidesk.com</span>
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  <div style="height:12px;"></div>
+                  <div style="font-size:11px; color:#333333;">
+                    Medidesk Sp. z o.o. <span style="color:#0074d7; font-weight:700;">|</span>
+                    ul. W. Niegolewskiego 17/2 <span style="color:#0074d7; font-weight:700;">|</span>
+                    01-570 Warszawa
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 16px 14px 16px;">
+                  <a target="_blank" href="https://adminzohomedidesk.github.io/Stopka_email/banner_akcja.html" rel="noopener noreferrer">
+                    <img style="border:0; max-width:100%; width:100%; height:auto;" alt="Medidesk" src="https://raw.githubusercontent.com/adminzohomedidesk/Stopka_email/main/banner_akcja_1.png">
+                  </a>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 16px 16px 16px; font-size:11px; color:#00cca3;">
+                  Obserwuj nas: <a style="text-decoration:none; color:#00cca3;" href="https://medidesk.pl/">medidesk.com</a> <span>|</span>
+                  <a style="text-decoration:none; color:#00cca3;" href="https://www.facebook.com/medideskpl/">Facebook</a> <span>|</span>
+                  <a style="text-decoration:none; color:#00cca3;" href="https://www.linkedin.com/company/18386183/">Linkedin</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </div>
     """
     res = _send_email_via_make(
