@@ -1374,6 +1374,53 @@ BASE_HTML = """
     /* ========== LAYOUT ========== */
     .row { display: flex; gap: 16px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-edit { display: grid; grid-template-columns: 80% 20%; gap: 16px; }
+
+    /* ========== SECTIONS (ACCORDION STYLE) ========== */
+    details.styled-section {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    details.styled-section > summary {
+      background: #f8fafc;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      color: #334155;
+      cursor: pointer;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      list-style: none;
+    }
+    details.styled-section > summary::-webkit-details-marker { display: none; }
+    details.styled-section > summary::before {
+      content: '▶';
+      font-size: 10px;
+      margin-right: 8px;
+      transition: transform 0.2s;
+      color: #64748b;
+    }
+    details.styled-section[open] > summary::before { transform: rotate(90deg); }
+    details.styled-section > .section-content { padding: 20px; }
+    
+    /* Tabela biletów w sekcji */
+    .tickets-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tickets-table th {
+      background: #f1f5f9; padding: 10px 12px; text-align: left;
+      font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;
+    }
+    .tickets-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+    .tickets-table input[type="text"] {
+      width: 100%; border: 1px solid #cbd5e1; padding: 6px 8px; border-radius: 4px; font-size: 13px;
+    }
+    .tickets-table input[type="text"]:focus {
+      border-color: var(--md-primary); outline: none; box-shadow: 0 0 0 2px rgba(3, 105, 161, 0.1);
+    }
     .content-wrapper { padding: 16px 24px; max-width: 1200px; margin: 0 auto; }
     
     /* ========== NAVIGATION ========== */
@@ -1564,10 +1611,10 @@ BASE_HTML = """
       box-shadow: 0 0 0 3px rgba(0, 101, 215, 0.1);
     }
     textarea { min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .formGrid { display: grid; grid-template-columns: 200px 1fr; gap: 8px 12px; align-items: start; }
-    .formLabel { font-size: 13px; color: var(--md-text); padding-top: 10px; font-weight: 500; word-wrap: break-word; }
+    .formGrid { display: grid; grid-template-columns: 200px 1fr; gap: 10px 14px; align-items: start; }
+    .formLabel { font-size: 13px; color: var(--md-text); padding-top: 10px; font-weight: 500; word-break: break-word; white-space: normal; }
     .formHint { display: none; }
-    .grid-edit { display: grid; grid-template-columns: 1fr 200px; gap: 16px; }
+    .grid-edit { display: grid; grid-template-columns: 80% 20%; gap: 16px; }
     input[type="text"] { word-break: break-all; }
     
     /* ========== TABLES ========== */
@@ -2348,6 +2395,10 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
         "Obrazy i media": ["event_mail_link_top_banner", "event_mail_link_bottom_banner", "event_logo_link", "event_logo_link_white", "event_logo_link_color"],
         "Linki Backstage": ["event_config_link", "event_orders_link", "event_attendees_link"],
     }
+
+    # W trybie viewera nie pokazujemy sekcji Backstage
+    if is_viewer:
+        field_sections.pop("Linki Backstage", None)
     
     def _render_field(fd: Dict[str, str]) -> str:
         k = fd["key"]
@@ -2401,7 +2452,9 @@ def _render_event_preview(token: str, event_id: str, event_name: str, data: Dict
 
     # Sekcja Backstage (linki zewnętrzne) - format tabelkowy
     backstage_html = ""
-    if backstage_config_link or backstage_orders_link or backstage_attendees_link:
+    if is_viewer:
+        backstage_html = ""
+    elif backstage_config_link or backstage_orders_link or backstage_attendees_link:
         ext_icon = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px; vertical-align:middle;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
         
         backstage_rows = ""
@@ -2900,95 +2953,126 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     </div>
 
     <div class="grid-edit">
-      <div class="card">
-        <div style="font-weight:700; margin-bottom:10px;">Dane wydarzenia</div>
+      
+      <!-- LEWA KOLUMNA: FORMULARZ -->
+      <div>
         <form id="event-form" method="post" action="{url_for('admin_bp.event_save')}">
           <input type="hidden" name="token" value="{token}" />
-          <div class="muted">event_id</div>
-          <input type="text" name="event_id" value="{event_id}" placeholder="np. 24311000000651079" {'readonly' if (not is_new) else ''} />
-          <div style="height:10px;"></div>
+          
+          <!-- SEKCJA 1: DANE WYDARZENIA -->
+          <details class="styled-section" open>
+            <summary>1. Dane wydarzenia i konfiguracja</summary>
+            <div class="section-content">
+              
+              <div class="formGrid">
+                <div class="formLabel">ID wydarzenia (Backstage)</div>
+                <div>
+                  <input type="text" name="event_id" value="{event_id}" placeholder="np. 24311000000651079" {'readonly' if (not is_new) else ''} style="font-family:monospace; background:{'#f1f5f9' if not is_new else '#fff'};" />
+                </div>
 
-          <div class="muted">event_name</div>
-          <input type="text" name="event_name" value="{event_name}" placeholder="np. Dental Practice Academy" />
-          <div style="height:10px;"></div>
+                <div class="formLabel">Nazwa wydarzenia</div>
+                <div>
+                  <input type="text" name="event_name" value="{event_name}" placeholder="np. Dental Practice Academy" style="font-weight:600;" />
+                </div>
 
-          <div class="muted">status (opcjonalnie)</div>
-          <input type="text" name="status" value="{status}" placeholder="np. w systemie" />
-          <div style="height:10px;"></div>
+                <div class="formLabel">Status (opcjonalnie)</div>
+                <div>
+                  <input type="text" name="status" value="{status}" placeholder="np. w systemie" />
+                </div>
 
-          <div class="muted">notes (opcjonalnie)</div>
-          <input type="text" name="notes" value="{notes}" placeholder="np. DPA" />
-          <div style="height:10px;"></div>
+                <div class="formLabel">Notatki (opcjonalnie)</div>
+                <div>
+                  <input type="text" name="notes" value="{notes}" placeholder="np. DPA" />
+                </div>
+              </div>
+              
+              <div style="margin: 24px 0 16px 0; border-bottom:1px solid #e2e8f0;"></div>
+              <div style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:12px; text-transform:uppercase;">Pola marketingowe</div>
 
-          <div class="muted" style="margin: 8px 0 6px 0;">Pola do wypełnienia (marketing)</div>
-          <div class="formGrid">
-            {''.join(fields_html)}
-          </div>
+              <div class="formGrid">
+                {''.join(fields_html)}
+              </div>
+            </div>
+          </details>
 
-          <div style="height:10px;"></div>
-          <div style="border:1px solid #e2e8f0; border-radius:12px; padding:12px; background:#f8fafc;">
-            <div style="font-weight:700; margin-bottom:8px;">Typy biletów (edytowalne)</div>
-            <div class="muted" style="margin-bottom:10px;">Wpisz ID z Backstage, nazwę, cenę netto i VAT. Zmiany zapiszą się razem z wydarzeniem.</div>
-            <div style="overflow:auto;">
-              <table id="ticket-classes-table" style="width:100%; border-collapse:collapse; font-size:13px;">
+          <!-- SEKCJA 2: BILETY -->
+          <details class="styled-section" open>
+            <summary>2. Konfiguracja biletów</summary>
+            <div class="section-content" style="padding:0;">
+              <div style="padding:16px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:13px; color:#64748b;">
+                Zdefiniuj typy biletów, które mają być obsługiwane. ID musi zgadzać się z tym w Backstage.
+              </div>
+              
+              <table id="ticket-classes-table" class="tickets-table">
                 <thead>
-                  <tr style="background:#eef2ff;">
-                    <th style="padding:8px; text-align:left; font-size:11px; text-transform:uppercase; color:#64748b;">ticket_class_id</th>
-                    <th style="padding:8px; text-align:left; font-size:11px; text-transform:uppercase; color:#64748b;">Nazwa</th>
-                    <th style="padding:8px; text-align:right; font-size:11px; text-transform:uppercase; color:#64748b;">Cena netto</th>
-                    <th style="padding:8px; text-align:right; font-size:11px; text-transform:uppercase; color:#64748b;">VAT</th>
-                    <th style="padding:8px; text-align:right; font-size:11px; text-transform:uppercase; color:#64748b;">Akcje</th>
+                  <tr>
+                    <th style="width:25%;">ID biletu (Backstage)</th>
+                    <th style="width:35%;">Nazwa (dla klienta)</th>
+                    <th style="width:15%; text-align:right;">Cena netto</th>
+                    <th style="width:10%; text-align:right;">VAT %</th>
+                    <th style="width:15%; text-align:center;">Akcje</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ticket_editor_rows}
                 </tbody>
               </table>
+              
+              <div style="padding:16px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; gap:12px;">
+                <button class="btn" type="button" onclick="addTicketRow()">+ Dodaj nowy bilet</button>
+                <button class="btn" type="button" onclick="syncTicketClassesJson()" style="margin-left:auto; font-size:12px; opacity:0.7;">⟳ Aktualizuj JSON</button>
+              </div>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-              <button class="btn" type="button" onclick="addTicketRow()">+ Dodaj typ</button>
-              <button class="btn" type="button" onclick="syncTicketClassesJson()">Aktualizuj JSON poniżej</button>
-            </div>
-          </div>
-
-          <div style="height:10px;"></div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn" type="submit" formaction="{url_for('admin_bp.preview_draft')}" formmethod="post">Podgląd (bez zapisu)</button>
-            <button class="btn btnPrimary" type="submit">Zapisz</button>
-          </div>
-
-          <div style="height:10px;"></div>
-          <details>
-            <summary>Zaawansowane (dla technicznych): JSON / wklejka / bilety</summary>
-            <div style="height:10px;"></div>
-            <div class="muted">data_json (pełny JSON – jeśli potrzebujesz)</div>
-            <textarea name="data_json">{data_json}</textarea>
-            <div style="height:10px;"></div>
-            <div class="muted">Szybkie wklejenie (key TAB value / key: value). Nadpisuje/uzupełnia data_json.</div>
-            <textarea name="kv_paste" placeholder="event_location_place<TAB>Regent Warsaw Hotel"></textarea>
-            <div style="height:10px;"></div>
-            <div class="muted">ticket_classes_json (lista) – opcjonalnie</div>
-            <textarea id="ticket_classes_json" name="ticket_classes_json">{ticket_classes_json}</textarea>
           </details>
+
+          <!-- SEKCJA 3: ZAAWANSOWANE -->
+          <details class="styled-section">
+            <summary>3. Zaawansowane (JSON)</summary>
+            <div class="section-content">
+              <div class="muted">Pełny obiekt JSON (edycja ręczna tylko dla technicznych):</div>
+              <textarea name="data_json" style="font-family:monospace; font-size:12px; height:150px;">{data_json}</textarea>
+              
+              <div style="height:16px;"></div>
+              
+              <div class="muted">Szybkie wklejanie (key TAB value):</div>
+              <textarea name="kv_paste" placeholder="event_location_place<TAB>Regent Warsaw Hotel" style="height:80px;"></textarea>
+              
+              <div style="height:16px;"></div>
+              
+              <div class="muted">JSON biletów (generowany automatycznie z tabeli powyżej):</div>
+              <textarea id="ticket_classes_json" name="ticket_classes_json" style="font-family:monospace; font-size:12px; height:100px; background:#f1f5f9;" readonly>{ticket_classes_json}</textarea>
+            </div>
+          </details>
+
+          <!-- AKCJE -->
+          <div style="display:flex; gap:16px; align-items:center; margin-top:24px; padding: 20px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.05); position:sticky; bottom:20px; z-index:10;">
+            <button class="btn btnPrimary" type="submit" style="padding:10px 24px; font-size:14px;">Zapisz zmiany</button>
+            <button class="btn" type="submit" formaction="{url_for('admin_bp.preview_draft')}" formmethod="post">Podgląd (bez zapisu)</button>
+            <div style="margin-left:auto; font-size:12px; color:#64748b;">
+              Ostatnia zmiana zapisuje wszystkie sekcje.
+            </div>
+          </div>
+
         </form>
       </div>
 
-      <div class="card">
-        <div style="font-weight:700; margin-bottom:10px;">Instrukcja dla marketingu</div>
-        <div class="muted">
-          1) Wypełnij pola po lewej.<br/>
-          2) Linki zawsze zaczynaj od <code>https://</code>.<br/>
-          3) Kolory wpisuj jako hex, np. <code>#269571</code>.<br/>
-          4) Kliknij <b>Podgląd (bez zapisu)</b> – sprawdzisz baner/logo/linki zanim zapiszesz.<br/>
-          <br/>
-          <span style="color:#00A1D7;">✨ Podglądy obrazów i kolorów aktualizują się na żywo!</span>
+      <!-- PRAWA KOLUMNA: INSTRUKCJA -->
+      <div class="card" style="height:fit-content; position:sticky; top:20px;">
+        <div style="font-weight:700; margin-bottom:10px; color:#334155;">Instrukcja</div>
+        <div class="muted" style="line-height:1.5;">
+          <ol style="padding-left:16px; margin:0;">
+            <li style="margin-bottom:6px;">Wypełnij <b>Dane wydarzenia</b>.</li>
+            <li style="margin-bottom:6px;">Skonfiguruj <b>Bilety</b> w tabeli.</li>
+            <li style="margin-bottom:6px;">Linki zawsze zaczynaj od <code>https://</code>.</li>
+            <li style="margin-bottom:6px;">Kolory jako hex, np. <code>#269571</code>.</li>
+          </ol>
+          <div style="margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;">
+            Użyj przycisku <b>Podgląd</b>, aby sprawdzić banery i linki przed zapisaniem.
+          </div>
         </div>
-        <div style="height:10px;"></div>
-        <div class="muted"><b>Uwaga:</b> token w URL trafia do logów. Docelowo możemy zrobić logowanie (cookie), żeby token nie był w adresie.</div>
       </div>
-    </div>
     
-    {_render_ticket_classes_section(tickets) if event_id else ''}
+    </div>
     
     <script>
       let ticketJsonManualEdit = false;
