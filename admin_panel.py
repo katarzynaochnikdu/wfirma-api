@@ -2992,6 +2992,37 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
       let ticketJsonManualEdit = false;
       let ticketTableEdited = false;
 
+      // Synchronizacja event_id ↔ eventId oraz event_name ↔ eventName
+      (function() {{
+        const eventIdMain = document.querySelector('input[name="event_id"]');
+        const eventIdField = document.querySelector('input[name="field__eventId"]');
+        const eventNameMain = document.querySelector('input[name="event_name"]');
+        const eventNameField = document.querySelector('input[name="field__eventName"]');
+        
+        // Synchronizacja event_id → eventId (główne → marketingowe)
+        if (eventIdMain && eventIdField) {{
+          eventIdMain.addEventListener('input', function() {{
+            eventIdField.value = this.value;
+          }});
+          // Synchronizacja eventId → event_id (marketingowe → główne) - tylko jeśli główne jest edytowalne
+          if (!eventIdMain.hasAttribute('readonly')) {{
+            eventIdField.addEventListener('input', function() {{
+              eventIdMain.value = this.value;
+            }});
+          }}
+        }}
+        
+        // Synchronizacja event_name → eventName
+        if (eventNameMain && eventNameField) {{
+          eventNameMain.addEventListener('input', function() {{
+            eventNameField.value = this.value;
+          }});
+          eventNameField.addEventListener('input', function() {{
+            eventNameMain.value = this.value;
+          }});
+        }}
+      }})();
+
       function updatePreview(input) {{
         const key = input.getAttribute('data-field-key');
         const kind = input.getAttribute('data-field-kind');
