@@ -4234,7 +4234,7 @@ def orders_list():
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="8" class="orders-empty">Brak zamówień spełniających kryteria</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="8" class="orders-empty"><img src="/Empty_order_list.png" alt="Brak zamówień" style="max-width:420px; width:100%; height:auto; opacity:0.9;" /></td></tr>'}
         </tbody>
       </table>
     </div>
@@ -4279,6 +4279,8 @@ def order_detail(order_id: str):
     ev = get_event(event_id) if event_id else None
     event_name = ev.get("event_name", "") if ev else ""
     event_data = (ev.get("data") if ev else {}) or {}
+    event_color_1 = event_data.get("color_gradient_1") or "#0065D7"
+    event_color_2 = event_data.get("color_gradient_2") or event_color_1
     
     # Linki do Backstage
     backstage_config_link = event_data.get("event_config_link", "") or ""
@@ -4398,18 +4400,47 @@ def order_detail(order_id: str):
         justify-content: space-between;
         align-items: center;
         padding: 24px;
-        background: #fff;
-        border: 1px solid var(--md-border);
+        background: linear-gradient(135deg, var(--event-accent) 0%, var(--event-accent-2) 100%);
+        border: 1px solid rgba(15, 23, 42, 0.08);
         border-radius: 12px;
         margin-bottom: 24px;
+        color: #fff;
+        box-shadow: 0 6px 16px rgba(2, 6, 23, 0.12);
+        position: sticky;
+        top: 12px;
+        z-index: 20;
+      }}
+      @media (max-width: 900px) {{
+        .order-header {{
+          position: static;
+        }}
       }}
       .order-header-info h2 {{
         margin: 0 0 4px 0;
         font-size: 20px;
         font-weight: 600;
+        color: #fff;
       }}
       .order-header-info code {{
         font-size: 13px;
+        color: #fff;
+        background: rgba(255,255,255,0.16);
+        border: 1px solid rgba(255,255,255,0.25);
+      }}
+      .order-header .btnPrimary {{
+        background: #fff;
+        color: var(--event-accent);
+        border: 1px solid rgba(255,255,255,0.6);
+        font-weight: 700;
+      }}
+      .order-header .btnPrimary:hover {{
+        background: #f8fafc;
+        border-color: #fff;
+      }}
+      .order-header .pill {{
+        color: #0f172a;
+        background: #fff;
+        border: 1px solid rgba(15, 23, 42, 0.08);
       }}
       .order-header-actions {{
         display: flex;
@@ -4438,12 +4469,19 @@ def order_detail(order_id: str):
         padding: 16px 20px;
         background: #f8fafc;
         border-bottom: 1px solid var(--md-border);
+        border-left: 4px solid var(--event-accent);
         font-weight: 600;
         font-size: 14px;
         color: var(--md-text);
       }}
       .order-section-body {{
         padding: 20px;
+      }}
+      .order-section {{
+        box-shadow: 0 2px 6px rgba(2, 6, 23, 0.04);
+      }}
+      .order-section:nth-child(odd) .order-section-header {{
+        background: #f8fafc;
       }}
       .order-section .kv {{
         grid-template-columns: 140px 1fr;
@@ -4460,7 +4498,7 @@ def order_detail(order_id: str):
       .order-amount {{
         font-size: 20px;
         font-weight: 700;
-        color: var(--md-primary);
+        color: var(--event-accent);
       }}
       .docs-table {{
         width: 100%;
@@ -4568,7 +4606,7 @@ def order_detail(order_id: str):
         for cat, msg in messages
     ])}
     
-    <div style="display:flex; gap:20px; align-items:flex-start;">
+    <div class="order-page" style="--event-accent:{event_color_1}; --event-accent-2:{event_color_2}; display:flex; gap:20px; align-items:flex-start;">
     
     <div style="flex:1; min-width:0;">
     <div class="order-header">
