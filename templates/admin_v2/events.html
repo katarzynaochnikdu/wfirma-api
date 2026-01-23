@@ -1,0 +1,154 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Wydarzenia{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Wydarzenia</h1>
+    <p class="page-description">Zarządzaj wydarzeniami i konferencjami</p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('admin_bp.event_new') }}" class="btn btn-primary">
+      <i data-lucide="plus"></i>
+      Nowe wydarzenie
+    </a>
+  </div>
+</div>
+
+<!-- FILTERS -->
+<div class="card filters-card">
+  <form class="filters-grid" style="grid-template-columns: 1fr 180px 180px;" method="GET">
+    <div class="filter-search">
+      <i data-lucide="search" class="search-icon"></i>
+      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj wydarzeń..." class="search-input">
+    </div>
+    <div class="filter-select">
+      <select name="status">
+        <option value="">Wszystkie statusy</option>
+        <option value="active"{% if request.args.get('status') == 'active' %} selected{% endif %}>Aktywne</option>
+        <option value="draft"{% if request.args.get('status') == 'draft' %} selected{% endif %}>Szkice</option>
+        <option value="completed"{% if request.args.get('status') == 'completed' %} selected{% endif %}>Zakończone</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-outline">Filtruj</button>
+  </form>
+</div>
+
+<!-- EVENTS GRID -->
+<div class="events-grid">
+  {% for event in events %}
+  {% set event_data = event.data or {} %}
+  {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
+  {% set event_city = event_data.get('event_location_city') or event_data.get('event_address_text_city') or '' %}
+  {% set event_date = event_data.get('event_date_start') or '' %}
+  {% set banner_url = event_data.get('event_mail_link_top_banner') or event_data.get('event_mail_link_bottom_banner') or '' %}
+  
+  <div class="event-card">
+    <div class="event-card-header">
+      <div class="event-card-gradient" style="background: linear-gradient(135deg, {{ event_color }}, hsl(195, 100%, 42%));"></div>
+      {% if event.status|lower in ['active', 'aktywne'] %}
+      <span class="event-status-badge active">Aktywne</span>
+      {% elif event.status|lower in ['draft', 'szkic'] %}
+      <span class="event-status-badge draft">Szkic</span>
+      {% else %}
+      <span class="event-status-badge completed">{{ event.status or 'Nieznany' }}</span>
+      {% endif %}
+    </div>
+    <div class="event-card-body">
+      <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
+      <p class="event-card-subtitle">{{ event_data.get('event_description', '')[:80] }}{% if event_data.get('event_description', '')|length > 80 %}...{% endif %}</p>
+      
+      <div class="event-card-meta">
+        {% if event_date %}
+        <div class="event-meta-item">
+          <i data-lucide="calendar"></i>
+          <span>{{ event_date }}</span>
+        </div>
+        {% endif %}
+        {% if event_city %}
+        <div class="event-meta-item">
+          <i data-lucide="map-pin"></i>
+          <span>{{ event_city }}</span>
+        </div>
+        {% endif %}
+      </div>
+      
+      <div class="event-card-stats">
+        <div class="event-stat">
+          <span class="event-stat-value">{{ event.order_count or 0 }}</span>
+          <span class="event-stat-label">Zamówień</span>
+        </div>
+        <div class="event-stat">
+          <span class="event-stat-value">{{ event.participant_count or 0 }}</span>
+          <span class="event-stat-label">Uczestników</span>
+        </div>
+        <div class="event-stat">
+          <span class="event-stat-value">{{ event.is_active and 'Tak' or 'Nie' }}</span>
+          <span class="event-stat-label">Aktywne</span>
+        </div>
+      </div>
+    </div>
+    <div class="event-card-footer">
+      <a href="{{ url_for('admin_bp.event_preview', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
+        <i data-lucide="eye"></i>
+        Podgląd
+      </a>
+      <a href="{{ url_for('admin_bp.event_edit', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
+        <i data-lucide="settings"></i>
+        Edytuj
+      </a>
+    </div>
+  </div>
+  {% else %}
+  <div style="grid-column: span 2; text-align: center; padding: 3rem; color: var(--muted-foreground);">
+    <img src="/Empty_list_1.jpg" alt="" style="max-width: 200px; opacity: 0.5; margin-bottom: 1rem;">
+    <p>Brak wydarzeń do wyświetlenia</p>
+    <a href="{{ url_for('admin_bp.event_new') }}" class="btn btn-primary" style="margin-top: 1rem;">
+      <i data-lucide="plus"></i>
+      Dodaj pierwsze wydarzenie
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+{% if inactive_events %}
+<!-- INACTIVE EVENTS -->
+<div style="margin-top: 2rem;">
+  <h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--muted-foreground);">Nieaktywne wydarzenia ({{ inactive_events|length }})</h2>
+  <div class="events-grid">
+    {% for event in inactive_events %}
+    {% set event_data = event.data or {} %}
+    {% set event_color = event_data.get('color_gradient_1') or 'hsl(215, 16%, 47%)' %}
+    
+    <div class="event-card" style="opacity: 0.7;">
+      <div class="event-card-header">
+        <div class="event-card-gradient" style="background: linear-gradient(135deg, {{ event_color }}, hsl(215, 16%, 57%));"></div>
+        <span class="event-status-badge completed">Nieaktywne</span>
+      </div>
+      <div class="event-card-body">
+        <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
+        <div class="event-card-stats">
+          <div class="event-stat">
+            <span class="event-stat-value">{{ event.order_count or 0 }}</span>
+            <span class="event-stat-label">Zamówień</span>
+          </div>
+          <div class="event-stat">
+            <span class="event-stat-value">{{ event.participant_count or 0 }}</span>
+            <span class="event-stat-label">Uczestników</span>
+          </div>
+        </div>
+      </div>
+      <div class="event-card-footer">
+        <a href="{{ url_for('admin_bp.event_preview', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
+          <i data-lucide="eye"></i>
+          Podgląd
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

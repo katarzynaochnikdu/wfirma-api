@@ -1,0 +1,141 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-description">Przegląd sprzedaży i statystyk wszystkich wydarzeń</p>
+  </div>
+</div>
+
+<!-- STATS GRID -->
+<div class="stats-grid">
+  <!-- Stat 1 -->
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon blue">
+        <i data-lucide="shopping-cart"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.total_orders or 0 }}</div>
+    <div class="stat-label">Wszystkie zamówienia</div>
+  </div>
+  
+  <!-- Stat 2 -->
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon green">
+        <i data-lucide="users"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.total_participants or 0 }}</div>
+    <div class="stat-label">Uczestnicy</div>
+  </div>
+  
+  <!-- Stat 3 -->
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon cyan">
+        <i data-lucide="credit-card"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.total_revenue|default('0', true) }} zł</div>
+    <div class="stat-label">Łączny przychód</div>
+  </div>
+  
+  <!-- Stat 4 -->
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon blue">
+        <i data-lucide="calendar"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.active_events or 0 }}</div>
+    <div class="stat-label">Aktywne wydarzenia</div>
+  </div>
+</div>
+
+<!-- CHARTS ROW -->
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+  <!-- Revenue Chart -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Przychód w czasie</h3>
+    </div>
+    <div class="card-content">
+      <div style="height: 240px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);">
+        [Wykres liniowy - dostępny w przyszłej wersji]
+      </div>
+    </div>
+  </div>
+  
+  <!-- Payment Methods -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Metody płatności</h3>
+    </div>
+    <div class="card-content">
+      <div style="height: 240px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);">
+        [Wykres kołowy - dostępny w przyszłej wersji]
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RECENT ORDERS -->
+<div class="card">
+  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h3 class="card-title">Ostatnie zamówienia</h3>
+    <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="btn btn-ghost" style="font-size: 0.75rem;">
+      Zobacz wszystkie
+      <i data-lucide="arrow-right"></i>
+    </a>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Wydarzenie</th>
+        <th>ID</th>
+        <th>Kupujący</th>
+        <th>Wartość</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in recent_orders %}
+      <tr>
+        <td>
+          <div class="event-cell">
+            <div class="event-dot" style="background: linear-gradient(135deg, {{ order.event_color or 'hsl(212, 100%, 42%)' }}, hsl(195, 100%, 42%));"></div>
+            <span>{{ order.event_name or 'Nieznane' }}</span>
+          </div>
+        </td>
+        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="order-link">{{ order.order_id[:12] }}...</a></td>
+        <td>{{ order.purchaser_name or order.purchaser_email or '—' }}</td>
+        <td class="font-medium">{{ order.total_price|default('0.00', true) }} zł</td>
+        <td>
+          {% if order.status == 'paid' %}
+          <span class="status-badge status-paid">Opłacone</span>
+          {% elif order.status == 'pending_payment' %}
+          <span class="status-badge status-pending">Oczekujące</span>
+          {% elif order.status == 'cancelled' %}
+          <span class="status-badge status-cancelled">Anulowane</span>
+          {% else %}
+          <span class="status-badge">{{ order.status or '—' }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          Brak zamówień do wyświetlenia
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

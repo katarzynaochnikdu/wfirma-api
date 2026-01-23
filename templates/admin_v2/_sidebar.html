@@ -1,0 +1,86 @@
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <!-- Brand gradient bar -->
+  <div class="brand-gradient-bar"></div>
+  
+  <!-- Header -->
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="url(#logo-gradient)"/>
+        <path d="M8 16L12 12L16 16L20 12L24 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M12 20L16 24L20 20" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32">
+            <stop offset="0%" stop-color="hsl(160, 82%, 44%)"/>
+            <stop offset="50%" stop-color="hsl(195, 100%, 42%)"/>
+            <stop offset="100%" stop-color="hsl(212, 100%, 42%)"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="sidebar-logo-text">
+        <p class="sidebar-title">Admin Panel V2</p>
+        <p class="sidebar-subtitle">Zarządzanie</p>
+      </div>
+    </div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()">
+      <i data-lucide="chevron-left"></i>
+    </button>
+  </div>
+
+  <!-- Main navigation -->
+  <nav class="sidebar-nav">
+    <a href="{{ url_for('admin_v2_bp.dashboard') }}" class="nav-item{% if active_page == 'dashboard' %} active{% endif %}">
+      <i data-lucide="layout-dashboard"></i>
+      <span>Dashboard</span>
+    </a>
+    {% if can_events %}
+    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="nav-item{% if active_page == 'events' %} active{% endif %}">
+      <i data-lucide="calendar"></i>
+      <span>Wydarzenia</span>
+    </a>
+    {% endif %}
+    {% if can_orders %}
+    <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="nav-item{% if active_page == 'orders' %} active{% endif %}">
+      <i data-lucide="shopping-cart"></i>
+      <span>Zamówienia</span>
+    </a>
+    {% endif %}
+    {% if can_users %}
+    <a href="{{ url_for('admin_v2_bp.users_list') }}" class="nav-item{% if active_page == 'users' %} active{% endif %}">
+      <i data-lucide="user-cog"></i>
+      <span>Konta i uprawnienia</span>
+    </a>
+    {% endif %}
+    {% if can_audit %}
+    <a href="{{ url_for('admin_v2_bp.audit_log') }}" class="nav-item{% if active_page == 'audit' %} active{% endif %}">
+      <i data-lucide="file-text"></i>
+      <span>Log audytu</span>
+    </a>
+    {% endif %}
+  </nav>
+
+  <!-- Bottom navigation -->
+  <div class="sidebar-bottom">
+    <a href="{{ url_for('admin_bp.events_list') }}" class="nav-item" title="Przejdź do starego panelu">
+      <i data-lucide="arrow-left-circle"></i>
+      <span>Stary panel</span>
+    </a>
+    <button class="nav-item nav-logout" onclick="logout()">
+      <i data-lucide="log-out"></i>
+      <span>Wyloguj</span>
+    </button>
+  </div>
+
+  <!-- User info -->
+  <div class="sidebar-user">
+    <div class="user-avatar">{{ user_initials or 'AD' }}</div>
+    <div class="user-info">
+      <p class="user-name">{{ user_name or user_email or 'Administrator' }}</p>
+      <div class="user-role">
+        <i data-lucide="shield" class="role-icon"></i>
+        <span>{{ user_role or 'admin' }}</span>
+      </div>
+    </div>
+  </div>
+</aside>

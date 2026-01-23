@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Admin{% endblock %} - Medidesk</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-v2.css') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <div class="admin-layout">
+    {% include 'admin_v2/_sidebar.html' %}
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      <div class="content-wrapper animate-fade-in">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+    
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    }
+    
+    function logout() {
+      window.location.href = '{{ url_for("admin_v2_bp.logout") }}';
+    }
+  </script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

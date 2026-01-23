@@ -1,0 +1,132 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Zamówienia{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Zamówienia</h1>
+    <p class="page-description">Zarządzaj zamówieniami na wszystkie wydarzenia</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-outline" onclick="window.print()">
+      <i data-lucide="download"></i>
+      Eksportuj
+    </button>
+  </div>
+</div>
+
+<!-- FILTERS CARD -->
+<div class="card filters-card">
+  <form class="filters-grid" method="GET">
+    <!-- Search -->
+    <div class="filter-search">
+      <i data-lucide="search" class="search-icon"></i>
+      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po ID, emailu lub nazwisku..." class="search-input">
+    </div>
+    
+    <!-- Status filter -->
+    <div class="filter-select">
+      <select name="status">
+        <option value="">Wszystkie statusy</option>
+        <option value="paid"{% if request.args.get('status') == 'paid' %} selected{% endif %}>Opłacone</option>
+        <option value="pending_payment"{% if request.args.get('status') == 'pending_payment' %} selected{% endif %}>Oczekujące</option>
+        <option value="cancelled"{% if request.args.get('status') == 'cancelled' %} selected{% endif %}>Anulowane</option>
+        <option value="failed"{% if request.args.get('status') == 'failed' %} selected{% endif %}>Błąd</option>
+      </select>
+    </div>
+    
+    <!-- Event filter -->
+    <div class="filter-select">
+      <select name="event_id">
+        <option value="">Wszystkie wydarzenia</option>
+        {% for event in events %}
+        <option value="{{ event.event_id }}"{% if request.args.get('event_id') == event.event_id %} selected{% endif %}>{{ event.event_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Filtruj</button>
+  </form>
+</div>
+
+<!-- DATA TABLE -->
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Wydarzenie</th>
+        <th>Płatność</th>
+        <th>ID</th>
+        <th>Kupujący</th>
+        <th>Uczestnicy</th>
+        <th>Wartość</th>
+        <th>Status</th>
+        <th>Data</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in orders %}
+      <tr>
+        <td>
+          <div class="event-cell">
+            <div class="event-dot" style="background: linear-gradient(135deg, {{ order.event_color or 'hsl(212, 100%, 42%)' }}, hsl(195, 100%, 42%));"></div>
+            <span>{{ order.event_name or 'Nieznane' }}</span>
+          </div>
+        </td>
+        <td>
+          {% if order.payment_flow == 'STRIPE' %}
+          <span class="payment-badge payment-online">Online</span>
+          {% elif order.payment_flow == 'PROFORMA' %}
+          <span class="payment-badge payment-proforma">Pro forma</span>
+          {% elif order.payment_flow == 'FOC' %}
+          <span class="payment-badge payment-foc">FOC</span>
+          {% else %}
+          <span class="payment-badge">{{ order.payment_flow or '—' }}</span>
+          {% endif %}
+        </td>
+        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="order-link">{{ order.order_id[:12] }}...</a></td>
+        <td>
+          <div class="buyer-cell">
+            <span class="buyer-name">{{ order.purchaser_name or '—' }}</span>
+            <span class="buyer-email">{{ order.purchaser_email or '—' }}</span>
+          </div>
+        </td>
+        <td class="text-center">{{ order.participant_count or 0 }}</td>
+        <td class="text-right font-medium">{{ order.total_price|default('0.00', true) }} zł</td>
+        <td>
+          {% if order.status == 'paid' %}
+          <span class="status-badge status-paid">Opłacone</span>
+          {% elif order.status == 'pending_payment' %}
+          <span class="status-badge status-pending">Oczekujące</span>
+          {% elif order.status == 'cancelled' %}
+          <span class="status-badge status-cancelled">Anulowane</span>
+          {% elif order.status == 'failed' %}
+          <span class="status-badge status-cancelled">Błąd</span>
+          {% elif order.status == 'received' %}
+          <span class="status-badge">Otrzymane</span>
+          {% else %}
+          <span class="status-badge">{{ order.status or '—' }}</span>
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ order.created_at[:10] if order.created_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          <img src="/Empty_order_list.png" alt="" style="max-width: 200px; opacity: 0.5; margin-bottom: 1rem;">
+          <p>Brak zamówień do wyświetlenia</p>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  {% if orders %}
+  <div class="table-footer">
+    <span class="table-info">Wyświetlono {{ orders|length }} zamówień</span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

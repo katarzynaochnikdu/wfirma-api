@@ -45,6 +45,18 @@ except Exception as e:
     # Nie blokuj startu serwera, jeśli zależności panelu nie są gotowe.
     print(f"[ADMIN] Panel admin nieaktywny: {e}")
 
+# Panel admin V2 - nowy UI (włączany przez ADMIN_V2_ENABLED=1)
+ADMIN_V2_ENABLED = os.environ.get("ADMIN_V2_ENABLED", "0").strip() == "1"
+if ADMIN_V2_ENABLED:
+    try:
+        from admin_v2_panel import admin_v2_bp
+        app.register_blueprint(admin_v2_bp, url_prefix="/admin-v2")
+        print("[ADMIN V2] Panel admin V2 aktywny pod /admin-v2")
+    except Exception as e:
+        print(f"[ADMIN V2] Panel admin V2 nieaktywny: {e}")
+else:
+    print("[ADMIN V2] Panel admin V2 wyłączony (ustaw ADMIN_V2_ENABLED=1 aby włączyć)")
+
 # Statyczne logo Backstage
 @app.route('/backstage-logo.jpg', methods=['GET'])
 def backstage_logo():

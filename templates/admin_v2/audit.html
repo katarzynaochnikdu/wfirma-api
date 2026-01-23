@@ -1,0 +1,97 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Log audytu{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Log audytu</h1>
+    <p class="page-description">Historia działań w panelu administracyjnym</p>
+  </div>
+</div>
+
+<!-- FILTERS -->
+<div class="card filters-card">
+  <form class="filters-grid" method="GET">
+    <div class="filter-search">
+      <i data-lucide="search" class="search-icon"></i>
+      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po użytkowniku lub akcji..." class="search-input">
+    </div>
+    <div class="filter-select">
+      <select name="action">
+        <option value="">Wszystkie akcje</option>
+        <option value="login"{% if request.args.get('action') == 'login' %} selected{% endif %}>Logowanie</option>
+        <option value="logout"{% if request.args.get('action') == 'logout' %} selected{% endif %}>Wylogowanie</option>
+        <option value="create"{% if request.args.get('action') == 'create' %} selected{% endif %}>Utworzenie</option>
+        <option value="update"{% if request.args.get('action') == 'update' %} selected{% endif %}>Aktualizacja</option>
+        <option value="delete"{% if request.args.get('action') == 'delete' %} selected{% endif %}>Usunięcie</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-outline">Filtruj</button>
+  </form>
+</div>
+
+<!-- DATA TABLE -->
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Data i czas</th>
+        <th>Użytkownik</th>
+        <th>Akcja</th>
+        <th>Szczegóły</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in audit_logs %}
+      <tr>
+        <td class="text-muted" style="font-family: monospace; font-size: 0.8rem;">{{ log.created_at or '—' }}</td>
+        <td>
+          <div class="buyer-cell">
+            <span class="buyer-name">{{ log.user_email or '—' }}</span>
+            <span class="buyer-email">ID: {{ log.user_id or '—' }}</span>
+          </div>
+        </td>
+        <td>
+          {% if log.action == 'login' %}
+          <span class="status-badge status-paid">Logowanie</span>
+          {% elif log.action == 'logout' %}
+          <span class="status-badge">Wylogowanie</span>
+          {% elif log.action == 'login_failed' %}
+          <span class="status-badge status-cancelled">Błąd logowania</span>
+          {% elif log.action == 'create' %}
+          <span class="status-badge status-pending">Utworzenie</span>
+          {% elif log.action == 'update' %}
+          <span class="status-badge">Aktualizacja</span>
+          {% elif log.action == 'delete' %}
+          <span class="status-badge status-cancelled">Usunięcie</span>
+          {% else %}
+          <span class="status-badge">{{ log.action or '—' }}</span>
+          {% endif %}
+        </td>
+        <td style="max-width: 300px;">
+          <span style="font-size: 0.8rem; color: var(--muted-foreground); word-break: break-word;">
+            {{ log.details[:100] if log.details else '—' }}{% if log.details and log.details|length > 100 %}...{% endif %}
+          </span>
+        </td>
+        <td class="text-muted" style="font-family: monospace; font-size: 0.75rem;">{{ log.ip_address or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          Brak wpisów w logu audytu
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  {% if audit_logs %}
+  <div class="table-footer">
+    <span class="table-info">Wyświetlono {{ audit_logs|length }} wpisów</span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

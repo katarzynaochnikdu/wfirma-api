@@ -1,0 +1,284 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Zamówienie {{ order.order_id[:12] }}...{% endblock %}
+
+{% block content %}
+<!-- BREADCRUMB -->
+<nav class="breadcrumb">
+  <a href="{{ url_for('admin_v2_bp.orders_list') }}">Zamówienia</a>
+  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+  <span>{{ order.order_id[:16] }}...</span>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+      <h1 class="page-title">Zamówienie</h1>
+      {% if order.status == 'paid' %}
+      <span class="status-badge status-paid">Opłacone</span>
+      {% elif order.status == 'pending_payment' %}
+      <span class="status-badge status-pending">Oczekujące</span>
+      {% elif order.status == 'cancelled' %}
+      <span class="status-badge status-cancelled">Anulowane</span>
+      {% else %}
+      <span class="status-badge">{{ order.status or '—' }}</span>
+      {% endif %}
+    </div>
+    <p class="page-description">{{ order.event_name or 'Wydarzenie' }} &bull; {{ order.purchaser_name or order.purchaser_email or '—' }}</p>
+  </div>
+  <div class="header-actions">
+    {% if order.wfirma_documents %}
+    <a href="{{ url_for('admin_bp.orders_list') }}?order_id={{ order.order_id }}" class="btn btn-outline" target="_blank">
+      <i data-lucide="file-text"></i>
+      Dokumenty wFirma
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="detail-grid">
+  
+  <!-- LEFT COLUMN -->
+  <div class="detail-main">
+    
+    <!-- ORDER INFO CARD -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Informacje o zamówieniu</h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">ID Zamówienia</span>
+            <span class="info-value" style="font-family: monospace; font-size: 0.8rem;">{{ order.order_id }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Data złożenia</span>
+            <span class="info-value">{{ order.created_at or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Wydarzenie</span>
+            <span class="info-value">{{ order.event_name or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Metoda płatności</span>
+            <span class="info-value">
+              {% if order.payment_flow == 'STRIPE' %}
+              <span class="payment-badge payment-online">Online (Stripe)</span>
+              {% elif order.payment_flow == 'PROFORMA' %}
+              <span class="payment-badge payment-proforma">Pro forma</span>
+              {% elif order.payment_flow == 'FOC' %}
+              <span class="payment-badge payment-foc">FOC (bezpłatne)</span>
+              {% else %}
+              <span class="payment-badge">{{ order.payment_flow or '—' }}</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Wartość zamówienia</span>
+            <span class="info-value" style="font-size: 20px; font-weight: 700; color: var(--brand-blue);">{{ order.total_price|default('0.00', true) }} zł</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Waluta</span>
+            <span class="info-value">{{ order.currency or 'PLN' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUYER INFO CARD -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Dane kupującego</h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Imię i nazwisko</span>
+            <span class="info-value">{{ order.purchaser_name or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Email</span>
+            <span class="info-value">{{ order.purchaser_email or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Telefon</span>
+            <span class="info-value">{{ order.purchaser_phone or '—' }}</span>
+          </div>
+          {% if order.company_name %}
+          <div class="info-item">
+            <span class="info-label">Firma</span>
+            <span class="info-value">{{ order.company_name }}</span>
+          </div>
+          {% endif %}
+          {% if order.company_nip %}
+          <div class="info-item">
+            <span class="info-label">NIP</span>
+            <span class="info-value">{{ order.company_nip }}</span>
+          </div>
+          {% endif %}
+          {% if order.company_address %}
+          <div class="info-item full-width">
+            <span class="info-label">Adres</span>
+            <span class="info-value">{{ order.company_address }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- PARTICIPANTS CARD -->
+    <div class="card">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="card-title">Uczestnicy ({{ participants|length }})</h3>
+      </div>
+      {% if participants %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Uczestnik</th>
+            <th>Email</th>
+            <th>Bilet</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in participants %}
+          <tr>
+            <td>
+              <div class="buyer-cell">
+                <span class="buyer-name">{{ p.first_name or '' }} {{ p.last_name or '' }}</span>
+                <span class="buyer-email">{{ p.job_title or '' }}</span>
+              </div>
+            </td>
+            <td>{{ p.email or '—' }}</td>
+            <td>{{ p.ticket_class_name or p.ticket_class_id or '—' }}</td>
+            <td>
+              {% if p.status == 'confirmed' %}
+              <span class="status-badge status-paid">Potwierdzony</span>
+              {% elif p.status == 'pending' %}
+              <span class="status-badge status-pending">Oczekuje</span>
+              {% elif p.status == 'cancelled' %}
+              <span class="status-badge status-cancelled">Anulowany</span>
+              {% else %}
+              <span class="status-badge">{{ p.status or '—' }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="card-content" style="text-align: center; color: var(--muted-foreground);">
+        Brak uczestników
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN - SIDEBAR -->
+  <div class="detail-sidebar">
+    
+    <!-- STATUS INFO -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Status zamówienia</h3>
+      </div>
+      <div class="card-content">
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <div class="info-item">
+            <span class="info-label">Obecny status</span>
+            <span class="info-value">
+              {% if order.status == 'paid' %}
+              <span class="status-badge status-paid">Opłacone</span>
+              {% elif order.status == 'pending_payment' %}
+              <span class="status-badge status-pending">Oczekujące na płatność</span>
+              {% elif order.status == 'cancelled' %}
+              <span class="status-badge status-cancelled">Anulowane</span>
+              {% elif order.status == 'failed' %}
+              <span class="status-badge status-cancelled">Błąd</span>
+              {% elif order.status == 'received' %}
+              <span class="status-badge">Otrzymane</span>
+              {% else %}
+              <span class="status-badge">{{ order.status or '—' }}</span>
+              {% endif %}
+            </span>
+          </div>
+          <p style="font-size: 0.75rem; color: var(--muted-foreground);">
+            Aby zmienić status, użyj <a href="{{ url_for('admin_bp.orders_list') }}">starego panelu</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TIMELINE (simplified) -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Historia</h3>
+      </div>
+      <div class="card-content">
+        <div class="timeline">
+          {% if order.status == 'paid' %}
+          <div class="timeline-item">
+            <div class="timeline-dot success"></div>
+            <div class="timeline-content">
+              <p class="timeline-title">Płatność potwierdzona</p>
+              <p class="timeline-time">{{ order.updated_at or order.created_at or '—' }}</p>
+            </div>
+          </div>
+          {% endif %}
+          
+          <div class="timeline-item">
+            <div class="timeline-dot info"></div>
+            <div class="timeline-content">
+              <p class="timeline-title">Zamówienie utworzone</p>
+              <p class="timeline-time">{{ order.created_at or '—' }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCUMENTS -->
+    {% if wfirma_documents %}
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Dokumenty wFirma</h3>
+      </div>
+      <div class="card-content">
+        <div class="document-list">
+          {% for doc in wfirma_documents %}
+          <div class="document-item">
+            <i data-lucide="file-text"></i>
+            <div>
+              <p class="document-name">{{ doc.doc_type or 'Dokument' }} {{ doc.number or '' }}</p>
+              <p class="document-meta">ID: {{ doc.doc_id or '—' }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- RAW DATA (debug) -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Dane techniczne</h3>
+      </div>
+      <div class="card-content">
+        <div style="font-size: 0.75rem; color: var(--muted-foreground);">
+          <p><strong>Event ID:</strong> {{ order.event_id or '—' }}</p>
+          <p><strong>Order ID:</strong> {{ order.order_id or '—' }}</p>
+          <p><strong>Payment flow:</strong> {{ order.payment_flow or '—' }}</p>
+          <p><strong>Stripe Session:</strong> {{ order.stripe_session_id[:20] if order.stripe_session_id else '—' }}...</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

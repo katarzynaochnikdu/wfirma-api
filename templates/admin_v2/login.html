@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logowanie - Medidesk Admin V2</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-v2.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--background);
+    }
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      padding: 2rem;
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .login-logo {
+      margin-bottom: 1rem;
+    }
+    .login-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--foreground);
+    }
+    .login-subtitle {
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+      margin-top: 0.25rem;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--foreground);
+    }
+    .form-input {
+      width: 100%;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      background: var(--background);
+      color: var(--foreground);
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px hsl(212, 100%, 42%, 0.1);
+    }
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+    .alert-error {
+      background: var(--destructive-bg);
+      color: var(--destructive);
+      border: 1px solid var(--destructive);
+    }
+    .alert-success {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid var(--success);
+    }
+  </style>
+</head>
+<body>
+  <div class="card login-card">
+    <div class="login-header">
+      <div class="login-logo">
+        <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="url(#logo-gradient)"/>
+          <path d="M8 16L12 12L16 16L20 12L24 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 20L16 24L20 20" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0%" stop-color="hsl(160, 82%, 44%)"/>
+              <stop offset="50%" stop-color="hsl(195, 100%, 42%)"/>
+              <stop offset="100%" stop-color="hsl(212, 100%, 42%)"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1 class="login-title">Panel Admin V2</h1>
+      <p class="login-subtitle">Zaloguj się, aby kontynuować</p>
+    </div>
+    
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    
+    {% if success %}
+    <div class="alert alert-success">{{ success }}</div>
+    {% endif %}
+    
+    <form method="POST">
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input type="email" id="email" name="email" class="form-input" required placeholder="admin@example.com" value="{{ request.form.get('email', '') }}">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" for="password">Hasło</label>
+        <input type="password" id="password" name="password" class="form-input" required placeholder="••••••••">
+      </div>
+      
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
+        Zaloguj się
+      </button>
+    </form>
+    
+    <p style="text-align: center; margin-top: 1.5rem; font-size: 0.75rem; color: var(--muted-foreground);">
+      <a href="{{ url_for('admin_bp.login') }}" style="color: var(--primary);">Przejdź do starego panelu</a>
+    </p>
+  </div>
+</body>
+</html>

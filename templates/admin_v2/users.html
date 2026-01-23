@@ -1,0 +1,130 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Konta i uprawnienia{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Konta i uprawnienia</h1>
+    <p class="page-description">Zarządzaj kontami administratorów panelu</p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('admin_bp.user_new') }}" class="btn btn-primary">
+      <i data-lucide="plus"></i>
+      Nowe konto
+    </a>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Wszystkie konta</span>
+      <span class="stat-value">{{ users|length }}</span>
+    </div>
+    <div class="stat-icon cyan">
+      <i data-lucide="users"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Aktywne</span>
+      <span class="stat-value">{{ users|selectattr('is_active')|list|length }}</span>
+    </div>
+    <div class="stat-icon green">
+      <i data-lucide="user-check"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Administratorzy</span>
+      <span class="stat-value">{{ users|selectattr('role', 'equalto', 'admin')|list|length }}</span>
+    </div>
+    <div class="stat-icon purple">
+      <i data-lucide="shield"></i>
+    </div>
+  </div>
+</div>
+
+<!-- DATA TABLE -->
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Użytkownik</th>
+        <th>Rola</th>
+        <th>Uprawnienia</th>
+        <th>Status</th>
+        <th>Ostatnie logowanie</th>
+        <th>Akcje</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td>
+          <div class="participant-cell">
+            <div class="participant-avatar">{{ user.email[:2]|upper }}</div>
+            <div class="buyer-cell">
+              <span class="buyer-name">{{ user.full_name or user.email }}</span>
+              <span class="buyer-email">{{ user.email }}</span>
+            </div>
+          </div>
+        </td>
+        <td>
+          {% if user.role == 'admin' %}
+          <span class="status-badge status-paid">Administrator</span>
+          {% elif user.role == 'viewer' %}
+          <span class="status-badge">Viewer</span>
+          {% else %}
+          <span class="status-badge">{{ user.role or '—' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set pages = user.allowed_pages or [] %}
+          {% if user.role == 'admin' %}
+          <span style="font-size: 0.75rem; color: var(--muted-foreground);">Pełny dostęp</span>
+          {% elif pages %}
+          <span style="font-size: 0.75rem; color: var(--muted-foreground);">{{ pages|join(', ') }}</span>
+          {% else %}
+          <span style="font-size: 0.75rem; color: var(--muted-foreground);">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if user.is_active %}
+          <span class="checkin-badge checkin-done">Aktywne</span>
+          {% else %}
+          <span class="checkin-badge checkin-pending">Nieaktywne</span>
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ user.last_login[:16] if user.last_login else 'Nigdy' }}</td>
+        <td>
+          <div style="display: flex; gap: 0.25rem;">
+            <a href="{{ url_for('admin_bp.user_access', user_id=user.id) }}" class="btn-icon" title="Edytuj uprawnienia">
+              <i data-lucide="settings"></i>
+            </a>
+            <a href="{{ url_for('admin_bp.user_reset_password', user_id=user.id) }}" class="btn-icon" title="Reset hasła">
+              <i data-lucide="key"></i>
+            </a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          Brak kont do wyświetlenia
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  {% if users %}
+  <div class="table-footer">
+    <span class="table-info">Wyświetlono {{ users|length }} kont</span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
