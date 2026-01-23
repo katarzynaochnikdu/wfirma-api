@@ -1,7 +1,5 @@
 import json
 import os
-import csv
-import io
 import string
 import secrets
 from functools import wraps
@@ -65,7 +63,6 @@ ADMIN_BOOTSTRAP_TOKEN = os.environ.get("ADMIN_BOOTSTRAP_TOKEN")  # tymczasowy to
 ADMIN_PAGE_OPTIONS = [
     ("events", "Wydarzenia"),
     ("orders", "Zamówienia"),
-    ("import", "Import"),
     ("users", "Konta i uprawnienia"),
     ("audit", "Log audytu"),
 ]
@@ -172,8 +169,6 @@ def _landing_url_for_user(user: Optional[Dict[str, Any]], token: Optional[str] =
         return url_for("admin_bp.events_list", token=token) if token else url_for("admin_bp.events_list")
     if key == "orders":
         return url_for("admin_bp.orders_list", token=token) if token else url_for("admin_bp.orders_list")
-    if key == "import":
-        return url_for("admin_bp.import_page", token=token) if token else url_for("admin_bp.import_page")
     if key == "users":
         return url_for("admin_bp.users_list", token=token) if token else url_for("admin_bp.users_list")
     if key == "audit":
@@ -1268,151 +1263,6 @@ def _is_hex_color(value: str) -> bool:
     return all(ch in allowed for ch in v[1:])
 
 
-def _detect_delimiter(sample: str) -> str:
-    # Prosty heurystyczny wybór dla CSV z Make (często ';')
-    if sample.count(";") >= sample.count(","):
-        return ";"
-    return ","
-
-
-def _is_pivot_format(headers: List[str]) -> bool:
-    """
-    Wykrywa czy CSV jest w formacie pivot (klucze w pierwszej kolumnie).
-    Format pivot: pierwsza kolumna to nazwy pól (np. "eventName", "eventId"),
-                  kolejne kolumny to "Rekord 1", "Rekord 2", etc.
-    Format klasyczny: nagłówki to nazwy pól (eventName,eventId,...)
-    """
-    if not headers or len(headers) < 2:
-        return False
-    
-    # Jeśli pierwsza kolumna to coś typu "key", "pole", "field" - to pivot
-    first = headers[0].lower().strip()
-    if first in ("key", "pole", "field", "klucz", ""):
-        return True
-    
-    # Jeśli druga kolumna zawiera "rekord", "record", lub jest numerem - to pivot
-    second = headers[1].lower().strip()
-    if "rekord" in second or "record" in second or second.isdigit():
-        return True
-    
-    # Jeśli pierwsza kolumna to znana nazwa pola (eventName, eventId) - to klasyczny
-    known_fields = {"eventname", "eventid", "event_id", "event_name", "id", "name"}
-    if first in known_fields:
-        return False
-    
-    # Domyślnie: jeśli dużo kolumn (>10) - prawdopodobnie klasyczny
-    return len(headers) < 10
-
-
-def _parse_classic_csv(content: bytes) -> List[Dict[str, str]]:
-    """
-    Parser dla klasycznego formatu CSV:
-      - pierwszy wiersz to nagłówki: eventName,eventId,md_email_kontakt,...
-      - kolejne wiersze to dane: Archiwum Amoz,24311000000429100,...
-    Zwraca listę rekordów (dict header->value).
-    """
-    text = content.decode("utf-8-sig", errors="replace")
-    first_line = (text.splitlines() or [""])[0]
-    delim = _detect_delimiter(first_line)
-    reader = csv.reader(io.StringIO(text), delimiter=delim)
-    rows = list(reader)
-    if not rows or len(rows) < 2:
-        return []
-
-    headers = [h.strip() for h in rows[0]]
-    records: List[Dict[str, str]] = []
-
-    for r in rows[1:]:
-        if not r or not any(cell.strip() for cell in r):
-            continue
-        rec: Dict[str, str] = {}
-        for i, h in enumerate(headers):
-            if not h:
-                continue
-            val = r[i] if i < len(r) else ""
-            rec[h] = (val or "").strip()
-        if any(v for v in rec.values()):
-            records.append(rec)
-
-    return records
-
-
-def _parse_pivot_csv(content: bytes) -> List[Dict[str, str]]:
-    """
-    Parser dla formatu 'pivot' jak Twoje CSV z Make:
-      - pierwszy wiersz to nagłówki: key;Rekord 1;Rekord 2;...
-      - kolejne wiersze: pole;v1;v2;...
-    Zwraca listę rekordów (dict key->value) o długości N (liczba kolumn rekordów).
-    """
-    text = content.decode("utf-8-sig", errors="replace")
-    first_line = (text.splitlines() or [""])[0]
-    delim = _detect_delimiter(first_line)
-    reader = csv.reader(io.StringIO(text), delimiter=delim)
-    rows = list(reader)
-    if not rows or len(rows[0]) < 2:
-        return []
-
-    # liczba rekordów = liczba kolumn - 1 (kolumna 0 to nazwa pola)
-    record_count = max(0, len(rows[0]) - 1)
-    records: List[Dict[str, str]] = [dict() for _ in range(record_count)]
-
-    for r in rows[1:]:
-        if not r:
-            continue
-        key = (r[0] or "").strip()
-        if not key:
-            continue
-        for i in range(record_count):
-            val = r[i + 1] if (i + 1) < len(r) else ""
-            records[i][key] = (val or "").strip()
-
-    # usuń rekordy całkiem puste
-    records = [rec for rec in records if any(v for v in rec.values())]
-    return records
-
-
-def _parse_events_csv(content: bytes) -> Tuple[List[Dict[str, str]], str]:
-    """
-    Automatycznie wykrywa format CSV (pivot vs klasyczny) i parsuje.
-    Zwraca (lista_rekordów, wykryty_format).
-    """
-    text = content.decode("utf-8-sig", errors="replace")
-    first_line = (text.splitlines() or [""])[0]
-    delim = _detect_delimiter(first_line)
-    
-    # Parsuj nagłówki
-    reader = csv.reader(io.StringIO(first_line), delimiter=delim)
-    headers = list(reader)[0] if first_line else []
-    
-    if _is_pivot_format(headers):
-        return _parse_pivot_csv(content), "pivot"
-    else:
-        return _parse_classic_csv(content), "classic"
-
-
-def _parse_bilety_csv(content: bytes) -> List[Dict[str, str]]:
-    """
-    Parser dla Bilety.csv (pivot) – zwraca listę rekordów:
-      {eventId, ticketClassId, ticketName, eventName}
-    """
-    records = _parse_pivot_csv(content)
-    out: List[Dict[str, str]] = []
-    for rec in records:
-        event_id = (rec.get("eventId") or "").strip()
-        ticket_class_id = (rec.get("ticketClassId") or "").strip()
-        if not event_id or not ticket_class_id:
-            continue
-        out.append(
-            {
-                "eventId": event_id,
-                "eventName": (rec.get("eventName") or "").strip(),
-                "ticketClassId": ticket_class_id,
-                "ticketName": (rec.get("ticketName") or "").strip(),
-            }
-        )
-    return out
-
-
 BASE_HTML = """
 <!doctype html>
 <html lang="pl">
@@ -1789,9 +1639,6 @@ BASE_HTML = """
         {% if can_orders %}
         <a href="{{ orders_url }}">Zamówienia</a>
         {% endif %}
-        {% if can_import %}
-        <a href="{{ import_url }}">Import</a>
-        {% endif %}
         {% if can_users %}
         <a href="{{ users_url }}">Konta i uprawnienia</a>
         {% endif %}
@@ -1832,7 +1679,6 @@ def _page(title: str, body: str, show_nav: bool = True) -> str:
     user_email = user.get("email") if user else None
     can_events = _user_has_permission(user, "events")
     can_orders = _user_has_permission(user, "orders")
-    can_import = _user_has_permission(user, "import")
     can_users = _user_has_permission(user, "users")
     can_audit = _user_has_permission(user, "audit")
     
@@ -1848,12 +1694,10 @@ def _page(title: str, body: str, show_nav: bool = True) -> str:
         logout_url=url_for("admin_bp.logout") if user else None,
         can_events=can_events,
         can_orders=can_orders,
-        can_import=can_import,
         can_users=can_users,
         can_audit=can_audit,
         events_url=url_for("admin_bp.events_list", token=token) if token else url_for("admin_bp.events_list"),
         orders_url=url_for("admin_bp.orders_list", token=token) if token else url_for("admin_bp.orders_list"),
-        import_url=url_for("admin_bp.import_page", token=token) if token else url_for("admin_bp.import_page"),
         users_url=url_for("admin_bp.users_list", token=token) if token else url_for("admin_bp.users_list"),
         audit_url=url_for("admin_bp.audit_log", token=token) if token else url_for("admin_bp.audit_log"),
     )
@@ -1864,251 +1708,6 @@ def admin_root():
     token = _require_admin_token()
     user = _get_current_admin_user()
     return redirect(_landing_url_for_user(user, token=token or None))
-
-
-@admin_bp.route("/import", methods=["GET"])
-@_require_permission("import")
-def import_page():
-    token = _require_admin_token()
-    body = f"""
-    <style>
-      .import-card {{
-        max-width: 700px;
-        background: #fff;
-        border: 1px solid var(--md-border);
-        border-radius: 12px;
-        overflow: hidden;
-      }}
-      .import-card-header {{
-        padding: 20px 24px;
-        background: #f8fafc;
-        border-bottom: 1px solid var(--md-border);
-      }}
-      .import-card-header h3 {{
-        margin: 0;
-        font-size: 18px;
-        font-weight: 600;
-      }}
-      .import-card-body {{
-        padding: 24px;
-      }}
-      .import-info {{
-        font-size: 14px;
-        color: var(--md-text);
-        line-height: 1.6;
-      }}
-      .import-info ul {{
-        margin: 12px 0;
-        padding-left: 20px;
-      }}
-      .import-info li {{
-        margin-bottom: 6px;
-      }}
-      .import-form {{
-        margin-top: 24px;
-        padding-top: 24px;
-        border-top: 1px solid var(--md-border);
-      }}
-      .file-group {{
-        margin-bottom: 20px;
-      }}
-      .file-group label {{
-        display: block;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--md-text);
-        margin-bottom: 8px;
-      }}
-      .file-group input[type="file"] {{
-        width: 100%;
-        padding: 12px;
-        border: 2px dashed var(--md-border);
-        border-radius: 8px;
-        background: #f8fafc;
-        cursor: pointer;
-        transition: all 0.15s ease;
-      }}
-      .file-group input[type="file"]:hover {{
-        border-color: var(--md-primary);
-        background: #f1f5f9;
-      }}
-      .confirm-group {{
-        margin: 24px 0;
-        padding: 16px;
-        background: #fef3c7;
-        border-radius: 8px;
-      }}
-      .confirm-group label {{
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 13px;
-        color: #92400e;
-        cursor: pointer;
-      }}
-      .confirm-group input[type="checkbox"] {{
-        width: 18px;
-        height: 18px;
-      }}
-    </style>
-
-    <div style="margin-bottom:20px;">
-      <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
-    </div>
-    
-    <div class="import-card">
-      <div class="import-card-header">
-        <h3>Import konfiguracji z CSV</h3>
-      </div>
-      <div class="import-card-body">
-        <div class="import-info">
-          <p>Wgraj pliki <code>Wydarzenia.csv</code> i <code>Bilety.csv</code>. Import wykona:</p>
-          <ul>
-            <li>Upsert eventów (po <code>eventId</code>)</li>
-            <li>Nadpisanie klas biletów dla eventów z pliku</li>
-        </ul>
-          
-          <div class="info" style="margin:16px 0;">
-            <strong>Obsługiwane formaty CSV:</strong><br/>
-          • <b>Klasyczny</b> – nagłówki w pierwszym wierszu (np. <code>eventName,eventId,...</code>)<br/>
-          • <b>Pivot</b> – klucze w pierwszej kolumnie (np. <code>key;Rekord 1;Rekord 2</code>)<br/>
-            <span class="muted">Format jest wykrywany automatycznie.</span>
-        </div>
-          
-        <div class="warn">
-            <strong>Uwaga:</strong> bilety zostaną zaimportowane tylko dla eventów, które istnieją w <code>Wydarzenia.csv</code>.
-        </div>
-      </div>
-        
-        <form method="post" action="{url_for('admin_bp.import_run')}" enctype="multipart/form-data" class="import-form">
-        <input type="hidden" name="token" value="{token}" />
-          
-          <div class="file-group">
-            <label>Wydarzenia.csv</label>
-        <input type="file" name="wydarzenia" accept=".csv" />
-          </div>
-          
-          <div class="file-group">
-            <label>Bilety.csv (opcjonalnie)</label>
-        <input type="file" name="bilety" accept=".csv" />
-          </div>
-          
-          <div class="confirm-group">
-            <label>
-              <input type="checkbox" name="confirm" value="yes" />
-              Potwierdzam import (nadpisze klasy biletów dla eventów z pliku)
-            </label>
-          </div>
-          
-          <button class="btn btnPrimary" type="submit" style="width:100%;">Importuj pliki</button>
-      </form>
-      </div>
-    </div>
-    """
-    return _page("Import CSV", body)
-
-
-@admin_bp.route("/import", methods=["POST"])
-@_require_permission("import")
-def import_run():
-    token = _require_admin_token()
-    confirm = (request.form.get("confirm") or "").strip().lower() == "yes"
-    if not confirm:
-        body = f"<div class='error'>Zaznacz potwierdzenie importu.</div><p><a class='btn' href='{url_for('admin_bp.import_page', token=token)}'>Wróć</a></p>"
-        return _page("Błąd importu", body), 400
-
-    wydarzenia_file = request.files.get("wydarzenia")
-    bilety_file = request.files.get("bilety")
-
-    if not wydarzenia_file or not wydarzenia_file.filename:
-        body = f"<div class='error'>Brak pliku Wydarzenia.csv</div><p><a class='btn' href='{url_for('admin_bp.import_page', token=token)}'>Wróć</a></p>"
-        return _page("Błąd importu", body), 400
-
-    # Automatyczne wykrywanie formatu CSV (pivot vs klasyczny)
-    wydarzenia_records, detected_format = _parse_events_csv(wydarzenia_file.read())
-    bilety_records: List[Dict[str, str]] = []
-    if bilety_file and bilety_file.filename:
-        bilety_records = _parse_bilety_csv(bilety_file.read())
-
-    # Import events
-    imported_events = 0
-    event_ids: List[str] = []
-    for rec in wydarzenia_records:
-        event_id = (rec.get("eventId") or rec.get("eventID") or rec.get("event_id") or "").strip()
-        event_name = (rec.get("eventName") or "").strip()
-        status = (rec.get("Status wprowadzenia do MAKE") or rec.get("Status") or "").strip()
-        notes = (rec.get("UWAGI") or "").strip()
-        if not event_id or not event_name:
-            continue
-
-        # dane w JSONB: wszystkie pola poza metadanymi
-        data: Dict[str, Any] = {}
-        for k, v in rec.items():
-            if k in ("Status wprowadzenia do MAKE", "UWAGI"):
-                continue
-            data[k] = v
-        # fallback
-        data.setdefault("eventId", event_id)
-        data.setdefault("eventName", event_name)
-
-        upsert_event(event_id=event_id, event_name=event_name, status=status, notes=notes, data=data)
-        imported_events += 1
-        event_ids.append(event_id)
-
-    # Import ticket classes grouped by event
-    imported_ticket_classes = 0
-    skipped_ticket_events: List[str] = []
-    if bilety_records:
-        event_id_set = set(event_ids)
-        by_event: Dict[str, List[Dict[str, Any]]] = {}
-        for r in bilety_records:
-            eid = (r.get("eventId") or "").strip()
-            if not eid:
-                continue
-            # Importuj bilety tylko dla eventów, które istnieją w Wydarzenia.csv
-            if eid not in event_id_set:
-                skipped_ticket_events.append(eid)
-                continue
-            by_event.setdefault(eid, []).append(
-                {
-                    "ticket_class_id": (r.get("ticketClassId") or "").strip(),
-                    "ticket_name": (r.get("ticketName") or "").strip(),
-                    "data": {},
-                }
-            )
-
-        for eid, classes in by_event.items():
-            replace_ticket_classes(eid, classes)
-            imported_ticket_classes += len(classes)
-
-    skipped_html = ""
-    if skipped_ticket_events:
-        uniq = sorted(set(skipped_ticket_events))
-        skipped_html = (
-            "<div class='warn' style='margin-top:12px;'>"
-            "<b>Pominięte bilety dla eventów (brak w Wydarzenia.csv):</b><br/>"
-            + " ".join(f"<code>{x}</code>" for x in uniq[:50])
-            + ("<div class='muted' style='margin-top:6px;'>… (ucięto listę)</div>" if len(uniq) > 50 else "")
-            + "</div>"
-        )
-
-    format_label = "klasyczny (nagłówki w pierwszym wierszu)" if detected_format == "classic" else "pivot (klucze w pierwszej kolumnie)"
-    
-    body = f"""
-    <div class="ok"><b>Import zakończony.</b></div>
-    <div style="height:10px;"></div>
-    <div class="card">
-      <div class="kv">
-        <div class="muted">Wykryty format CSV</div><div><code>{detected_format}</code> – {format_label}</div>
-        <div class="muted">Zaimportowane eventy</div><div><b>{imported_events}</b></div>
-        <div class="muted">Zaimportowane klasy biletów</div><div><b>{imported_ticket_classes}</b></div>
-      </div>
-    </div>
-    {skipped_html}
-    <div style="height:12px;"></div>
-    <a class="btn btnPrimary" href="{url_for('admin_bp.events_list', token=token)}">Przejdź do listy wydarzeń</a>
-    """
-    return _page("Import OK", body)
 
 
 @admin_bp.route("/events", methods=["GET"])
@@ -2337,7 +1936,6 @@ def events_list():
     
     <div class="events-toolbar">
       {'<a class="btn btnPrimary" href="' + url_for('admin_bp.event_new', token=token) + '">+ Nowe wydarzenie</a>' if is_admin else ''}
-      {'<a class="btn" href="' + url_for('admin_bp.import_page', token=token) + '">Import CSV</a>' if is_admin else ''}
       {'<span class="pill" style="background:#e0f2fe; color:#0369a1;">Tryb podglądu</span>' if is_viewer else ''}
     </div>
     
