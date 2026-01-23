@@ -2130,6 +2130,10 @@ def events_list():
         else:
             events = [e for e in events if e.get("event_id") in allowed_events]
 
+    # Podziel na aktywne i nieaktywne
+    active_events = [e for e in events if e.get("is_active", True)]
+    inactive_events = [e for e in events if not e.get("is_active", True)]
+
     def _status_pill(status: str) -> str:
         """Return styled pill for event status."""
         s = (status or "").lower()
@@ -2142,8 +2146,8 @@ def events_list():
         else:
             return f'<span class="pill">{status or "—"}</span>'
 
-    rows = []
-    for e in events:
+    def _render_event_card(e: Dict[str, Any], is_inactive: bool = False) -> str:
+        """Renderuje kartę wydarzenia."""
         status = e.get('status') or ''
         status_class = "active" if status.lower() in ("active", "aktywne") else "draft" if status.lower() in ("draft", "szkic") else "ended"
         
@@ -2154,6 +2158,8 @@ def events_list():
         
         # Border style based on event color
         border_style = f"border-color: {event_color};" if event_color else ""
+        if is_inactive:
+            border_style += " opacity: 0.7;"
         
         # Linki do Backstage
         backstage_config_link = event_data.get('event_config_link') or ''
@@ -2180,8 +2186,9 @@ def events_list():
             backstage_btns.append(f'<a href="{backstage_attendees_link}" target="_blank" rel="noopener" class="btn backstage-btn" style="font-size:12px; padding:6px 10px;" title="Uczestnicy w Backstage"><img src="/backstage-logo.jpg" alt="BS" style="width:14px; height:14px; border-radius:2px; vertical-align:middle; margin-right:3px;" />Uczestnicy ↗</a>')
         backstage_btn = ''.join(backstage_btns)
         
-        rows.append(
-            f"""
+        inactive_badge = '<span class="pill" style="background:#fef2f2; color:#991b1b; font-size:10px;">Nieaktywne</span>' if is_inactive else ''
+        
+        return f"""
             <div class="event-card" data-status="{status_class}" style="{border_style}">
               {banner_html}
               <div class="event-card-content">
@@ -2190,6 +2197,7 @@ def events_list():
                     <div class="event-card-title">{e.get('event_name','')}</div>
                 </div>
                   <div class="event-card-status">
+                    {inactive_badge}
                     {_status_pill(status)}
                 </div>
               </div>
@@ -2201,7 +2209,10 @@ def events_list():
               </div>
             </div>
             """
-        )
+
+    # Generuj karty dla aktywnych i nieaktywnych wydarzeń
+    active_rows = [_render_event_card(e, is_inactive=False) for e in active_events]
+    inactive_rows = [_render_event_card(e, is_inactive=True) for e in inactive_events]
 
     body = f"""
     <style>
@@ -2331,16 +2342,32 @@ def events_list():
     </div>
     
     {f'''
-    <div class="events-grid">
-      {''.join(rows)}
+    <div style="margin-bottom:12px; font-size:14px; color:#64748b;">
+      Aktywne wydarzenia ({len(active_events)})
     </div>
-    ''' if rows else '''
-    <div class="empty-state">
+    <div class="events-grid">
+      {''.join(active_rows)}
+    </div>
+    ''' if active_rows else '''
+    <div class="empty-state" style="padding:40px 20px;">
       <div class="empty-state-icon">📅</div>
-      <p>Brak wydarzeń</p>
+      <p>Brak aktywnych wydarzeń</p>
       <p class="muted">Dodaj pierwsze wydarzenie klikając "Nowe wydarzenie"</p>
     </div>
     '''}
+    
+    {f'''
+    <details style="margin-top:32px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+      <summary style="padding:16px 20px; cursor:pointer; font-weight:600; color:#64748b; display:flex; align-items:center; gap:8px;">
+        <span style="opacity:0.6;">📦</span> Nieaktywne wydarzenia ({len(inactive_events)})
+      </summary>
+      <div style="padding:20px; background:#f1f5f9;">
+        <div class="events-grid" style="opacity:0.8;">
+          {''.join(inactive_rows)}
+        </div>
+      </div>
+    </details>
+    ''' if inactive_rows else ''}
     """
     return _page("Wydarzenia", body)
 
@@ -2386,6 +2413,7 @@ def event_save():
     event_name = (request.form.get("event_name") or "").strip()
     status = (request.form.get("status") or "").strip()
     notes = (request.form.get("notes") or "").strip()
+    is_active = request.form.get("is_active") == "1"
 
     data_json = (request.form.get("data_json") or "").strip()
     kv_paste = (request.form.get("kv_paste") or "").strip()
@@ -2437,7 +2465,7 @@ def event_save():
                 }
             )
 
-    upsert_event(event_id=event_id, event_name=event_name, status=status, notes=notes, data=data)
+    upsert_event(event_id=event_id, event_name=event_name, status=status, notes=notes, data=data, is_active=is_active)
     if ticket_classes_json:
         replace_ticket_classes(event_id, ticket_classes)
 
@@ -2871,6 +2899,7 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     event_name = "" if is_new else (event.get("event_name") or "")
     status = "" if is_new else (event.get("status") or "")
     notes = "" if is_new else (event.get("notes") or "")
+    is_active = True if is_new else (event.get("is_active") if event.get("is_active") is not None else True)
     data = {} if is_new else (event.get("data") or {})
     if not isinstance(data, dict):
         data = {}
@@ -3271,6 +3300,15 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
                 <div class="formLabel">Notatki (opcjonalnie)</div>
                 <div>
                   <input type="text" name="notes" value="{notes}" placeholder="np. DPA" />
+                </div>
+
+                <div class="formLabel">Aktywne wydarzenie</div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:8px 16px; background:{'#dcfce7' if is_active else '#fef2f2'}; border:2px solid {'#22c55e' if is_active else '#ef4444'}; border-radius:8px;">
+                    <input type="checkbox" name="is_active" value="1" {'checked' if is_active else ''} style="width:18px; height:18px; accent-color:#22c55e;" onchange="this.parentElement.style.background=this.checked?'#dcfce7':'#fef2f2'; this.parentElement.style.borderColor=this.checked?'#22c55e':'#ef4444';" />
+                    <span style="font-weight:600; color:{'#166534' if is_active else '#991b1b'};">{'Aktywne' if is_active else 'Nieaktywne'}</span>
+                  </label>
+                  <span class="muted" style="font-size:12px;">Nieaktywne wydarzenia są ukrywane w filtrach i zamówieniach</span>
                 </div>
               </div>
               
@@ -4076,6 +4114,7 @@ def orders_list():
     # Filtrowanie
     status_filter = (request.args.get("status") or "").strip()
     event_filter = (request.args.get("event_id") or "").strip()
+    show_inactive = request.args.get("show_inactive") == "1"
 
     orders = list_orders(
         event_id=event_filter or None,
@@ -4092,14 +4131,24 @@ def orders_list():
             orders = [o for o in orders if o.get("event_id") in allowed_events]
 
     # Pobierz listę eventów do filtrowania
-    events = list_events(limit=100)
+    all_events = list_events(limit=100)
     
     # Dla viewera - tylko dozwolone wydarzenia w filtrze
     if is_viewer:
         if not allowed_events:
-            events = []
+            all_events = []
         else:
-            events = [e for e in events if e.get("event_id") in allowed_events]
+            all_events = [e for e in all_events if e.get("event_id") in allowed_events]
+    
+    # Buduj mapę aktywności wydarzeń
+    active_event_ids = set(e.get("event_id") for e in all_events if e.get("is_active", True))
+    
+    # Filtruj zamówienia z nieaktywnych wydarzeń (domyślnie ukryte)
+    if not show_inactive:
+        orders = [o for o in orders if o.get("event_id") in active_event_ids]
+    
+    # W filtrze wydarzeń pokazuj tylko aktywne (chyba że show_inactive)
+    events = all_events if show_inactive else [e for e in all_events if e.get("is_active", True)]
     
     event_meta_by_id: Dict[str, Dict[str, str]] = {}
     for e in (events or []):
@@ -4428,6 +4477,12 @@ def orders_list():
             <option value="">— wszystkie —</option>
             {event_options}
           </select>
+        </div>
+        <div class="filter-group" style="min-width:auto;">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:8px 12px; background:{'#fef2f2' if show_inactive else '#f8fafc'}; border:1px solid {'#fecaca' if show_inactive else '#e2e8f0'}; border-radius:6px; font-size:13px;">
+            <input type="checkbox" name="show_inactive" value="1" {'checked' if show_inactive else ''} onchange="this.form.submit();" style="width:16px; height:16px;" />
+            <span>Pokaż nieaktywne</span>
+          </label>
         </div>
         <div class="filter-actions">
           <button class="btn btnPrimary" type="submit">Filtruj</button>

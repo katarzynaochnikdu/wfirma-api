@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS events (
   status TEXT,
   notes TEXT,
   data JSONB NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -349,7 +350,10 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_events JSONB NOT NULL DEFAULT '[]'::jsonb")
 
-        # 1c) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
+        # 1c) Migracja events - dodanie is_active
+        cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
+
+        # 1d) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
         cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
         cur.execute("UPDATE admin_users SET allowed_pages = '[]'::jsonb WHERE allowed_pages IS NULL")
         cur.execute("UPDATE admin_users SET must_change_password = FALSE WHERE must_change_password IS NULL")
@@ -416,7 +420,7 @@ def list_events(limit: int = 200) -> List[Dict[str, Any]]:
         pool, conn = _with_conn()
         cur = _dict_cursor(conn)
         cur.execute(
-            "SELECT event_id, event_name, status, notes, data, created_at, updated_at "
+            "SELECT event_id, event_name, status, notes, data, is_active, created_at, updated_at "
             "FROM events ORDER BY updated_at DESC LIMIT %s",
             (int(limit),),
         )
@@ -434,7 +438,7 @@ def get_event(event_id: str) -> Optional[Dict[str, Any]]:
         pool, conn = _with_conn()
         cur = _dict_cursor(conn)
         cur.execute(
-            "SELECT event_id, event_name, status, notes, data, created_at, updated_at "
+            "SELECT event_id, event_name, status, notes, data, is_active, created_at, updated_at "
             "FROM events WHERE event_id=%s",
             (str(event_id),),
         )
@@ -445,7 +449,7 @@ def get_event(event_id: str) -> Optional[Dict[str, Any]]:
             _put_conn(pool, conn)
 
 
-def upsert_event(event_id: str, event_name: str, status: str, notes: str, data: Dict[str, Any]) -> Dict[str, Any]:
+def upsert_event(event_id: str, event_name: str, status: str, notes: str, data: Dict[str, Any], is_active: bool = True) -> Dict[str, Any]:
     ensure_schema()
     pool = None
     conn = None
@@ -454,13 +458,14 @@ def upsert_event(event_id: str, event_name: str, status: str, notes: str, data: 
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO events(event_id, event_name, status, notes, data)
-            VALUES(%s, %s, %s, %s, %s)
+            INSERT INTO events(event_id, event_name, status, notes, data, is_active)
+            VALUES(%s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_id) DO UPDATE SET
               event_name=EXCLUDED.event_name,
               status=EXCLUDED.status,
               notes=EXCLUDED.notes,
               data=EXCLUDED.data,
+              is_active=EXCLUDED.is_active,
               updated_at=NOW()
             """,
             (
@@ -469,10 +474,11 @@ def upsert_event(event_id: str, event_name: str, status: str, notes: str, data: 
                 (status or None),
                 (notes or None),
                 psycopg2.extras.Json(data),  # type: ignore[attr-defined]
+                bool(is_active),
             ),
         )
         ev = get_event(event_id)
-        return ev or {"event_id": event_id, "event_name": event_name, "status": status, "notes": notes, "data": data}
+        return ev or {"event_id": event_id, "event_name": event_name, "status": status, "notes": notes, "data": data, "is_active": is_active}
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
