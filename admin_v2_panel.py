@@ -215,12 +215,16 @@ def dashboard():
     # Oblicz statystyki
     total_orders = len(all_orders)
     paid_orders = [o for o in all_orders if o.get("status") == "paid"]
-    total_revenue = sum(float(o.get("total_price") or 0) for o in paid_orders)
+    total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
     
-    # Zlicz uczestników
+    # Zlicz uczestników (przez count_participants_by_status dla każdego zamówienia)
     total_participants = 0
     for o in all_orders:
-        total_participants += int(o.get("participant_count") or 0)
+        try:
+            p_counts = count_participants_by_status(o.get("event_order_id"))
+            total_participants += sum(p_counts.values()) if p_counts else 0
+        except Exception:
+            pass
     
     active_events = len([e for e in all_events if e.get("is_active", True)])
     
