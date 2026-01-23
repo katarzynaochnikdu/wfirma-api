@@ -1,0 +1,278 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Monitoring procesów{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <h1 class="page-title">Monitoring procesów</h1>
+      <span class="status-badge">{{ tasks|length }} akcji</span>
+    </div>
+    <p class="page-description" style="text-transform: capitalize;">{{ current_date }}</p>
+  </div>
+  <div class="header-actions">
+    {% if stats.can_retry > 0 %}
+    <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry_all') }}" style="margin: 0;">
+      <button type="submit" class="btn btn-outline">
+        <i data-lucide="refresh-cw"></i>
+        Ponów wszystkie ({{ stats.can_retry }})
+      </button>
+    </form>
+    {% endif %}
+    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline">
+      <i data-lucide="calendar"></i>
+      Wydarzenia
+    </a>
+  </div>
+</div>
+
+<!-- CRITICAL ALERTS -->
+{% if stats.critical > 0 or events_needing_config|length > 0 %}
+<div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-bottom: 1.5rem;">
+  {% if stats.critical > 0 %}
+  <div class="card" style="border: 1px solid var(--destructive); background: var(--destructive-bg);">
+    <div style="padding: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+      <div style="padding: 0.5rem; border-radius: var(--radius); background: hsl(0, 84%, 60%, 0.1);">
+        <i data-lucide="alert-triangle" style="width: 20px; height: 20px; color: var(--destructive);"></i>
+      </div>
+      <div style="flex: 1;">
+        <p style="font-size: 0.875rem; font-weight: 600;">
+          {{ stats.critical }} {{ 'błąd krytyczny' if stats.critical == 1 else 'błędów krytycznych' }}
+        </p>
+        <p style="font-size: 0.75rem; color: var(--muted-foreground);">
+          Wymaga natychmiastowej uwagi (np. token wFirma)
+        </p>
+      </div>
+      <a href="#critical" class="btn btn-primary btn-sm" style="gap: 0.25rem;">
+        Zobacz
+        <i data-lucide="arrow-right" style="width: 14px; height: 14px;"></i>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+  
+  {% if events_needing_config|length > 0 %}
+  <div class="card" style="border: 1px solid hsl(38, 92%, 50%); background: hsl(38, 92%, 50%, 0.05);">
+    <div style="padding: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+      <div style="padding: 0.5rem; border-radius: var(--radius); background: hsl(38, 92%, 50%, 0.1);">
+        <i data-lucide="settings" style="width: 20px; height: 20px; color: hsl(38, 92%, 50%);"></i>
+      </div>
+      <div style="flex: 1;">
+        <p style="font-size: 0.875rem; font-weight: 600;">
+          {{ events_needing_config|length }} {{ 'event' if events_needing_config|length == 1 else 'eventów' }} bez konfiguracji
+        </p>
+        <p style="font-size: 0.75rem; color: var(--muted-foreground);">
+          Brak wzoru proformy, szablonu maila
+        </p>
+      </div>
+      <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline btn-sm" style="gap: 0.25rem;">
+        Konfiguruj
+        <i data-lucide="arrow-right" style="width: 14px; height: 14px;"></i>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- STATS -->
+<div class="stats-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 24px;">
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Wszystkie</span>
+      <span class="stat-value">{{ stats.total or 0 }}</span>
+    </div>
+    <div class="stat-icon">
+      <i data-lucide="inbox"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Krytyczne</span>
+      <span class="stat-value">{{ stats.critical or 0 }}</span>
+    </div>
+    <div class="stat-icon {% if stats.critical > 0 %}red{% endif %}">
+      <i data-lucide="alert-triangle"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Błędy</span>
+      <span class="stat-value">{{ stats.errors or 0 }}</span>
+    </div>
+    <div class="stat-icon {% if stats.errors > 0 %}amber{% endif %}">
+      <i data-lucide="alert-triangle"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Ostrzeżenia</span>
+      <span class="stat-value">{{ stats.warnings or 0 }}</span>
+    </div>
+    <div class="stat-icon {% if stats.warnings > 0 %}amber{% endif %}">
+      <i data-lucide="bell"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Do ponowienia</span>
+      <span class="stat-value">{{ stats.can_retry or 0 }}</span>
+    </div>
+    <div class="stat-icon green">
+      <i data-lucide="refresh-cw"></i>
+    </div>
+  </div>
+</div>
+
+<!-- TASK LIST -->
+<div class="card">
+  <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <h3 style="font-size: 1rem; font-weight: 600;">Kolejka błędów i akcji</h3>
+      <div style="display: flex; align-items: center; gap: 1rem; font-size: 0.75rem; color: var(--muted-foreground);">
+        <span style="display: flex; align-items: center; gap: 0.25rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--destructive);"></span>
+          Krytyczne
+        </span>
+        <span style="display: flex; align-items: center; gap: 0.25rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: hsl(38, 92%, 50%);"></span>
+          Błędy
+        </span>
+        <span style="display: flex; align-items: center; gap: 0.25rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: hsl(212, 100%, 42%);"></span>
+          Ostrzeżenia
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- TABS -->
+  <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
+    <div style="display: flex; gap: 0.5rem; overflow-x: auto;">
+      <a href="{{ url_for('admin_v2_bp.work_queue') }}" class="btn btn-sm {% if not request.args.get('category') %}btn-primary{% else %}btn-outline{% endif %}">
+        <i data-lucide="inbox" style="width: 16px; height: 16px;"></i>
+        Wszystkie
+        <span class="status-badge">{{ tasks|length }}</span>
+      </a>
+      {% for category, config in categories.items() %}
+      {% set count = tasks|selectattr('category', 'equalto', category)|list|length %}
+      {% if count > 0 %}
+      <a href="{{ url_for('admin_v2_bp.work_queue', category=category) }}" class="btn btn-sm {% if request.args.get('category') == category %}btn-primary{% else %}btn-outline{% endif %}">
+        <i data-lucide="{{ config.icon }}" style="width: 16px; height: 16px;"></i>
+        {{ config.label }}
+        <span class="status-badge">{{ count }}</span>
+      </a>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  
+  <div style="padding: 1rem;">
+    {% if tasks|length == 0 %}
+    <div style="text-align: center; padding: 3rem;">
+      <i data-lucide="check-circle" style="width: 48px; height: 48px; color: var(--success); margin-bottom: 0.75rem;"></i>
+      <p style="font-weight: 600;">Wszystko działa!</p>
+      <p style="font-size: 0.875rem; color: var(--muted-foreground);">Brak błędów w tej kategorii</p>
+    </div>
+    {% else %}
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+      {% for task in tasks|sort(attribute='created_at', reverse=True) %}
+      <div class="task-card" id="{% if task.alert_level == 'critical' %}critical{% endif %}" style="
+        padding: 1rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--card);
+        {% if task.alert_level == 'critical' %}border-left: 4px solid var(--destructive);{% elif task.alert_level == 'error' %}border-left: 4px solid hsl(38, 92%, 50%);{% else %}border-left: 4px solid hsl(212, 100%, 42%);{% endif %}
+      ">
+        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+          <div style="
+            padding: 0.5rem;
+            border-radius: var(--radius);
+            {% if task.category == 'wfirma' %}background: hsl(212, 100%, 42%, 0.1); color: hsl(212, 100%, 42%);
+            {% elif task.category == 'make' %}background: hsl(280, 80%, 50%, 0.1); color: hsl(280, 80%, 50%);
+            {% elif task.category == 'stripe' %}background: hsl(160, 82%, 44%, 0.1); color: hsl(160, 82%, 44%);
+            {% elif task.category == 'database' %}background: hsl(220, 10%, 50%, 0.1); color: hsl(220, 10%, 50%);
+            {% elif task.category == 'attendee' %}background: hsl(38, 92%, 50%, 0.1); color: hsl(38, 92%, 50%);
+            {% elif task.category == 'config' %}background: hsl(350, 80%, 50%, 0.1); color: hsl(350, 80%, 50%);
+            {% endif %}
+          ">
+            {% if task.category == 'wfirma' %}<i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+            {% elif task.category == 'make' %}<i data-lucide="zap" style="width: 16px; height: 16px;"></i>
+            {% elif task.category == 'stripe' %}<i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
+            {% elif task.category == 'database' %}<i data-lucide="database" style="width: 16px; height: 16px;"></i>
+            {% elif task.category == 'attendee' %}<i data-lucide="users" style="width: 16px; height: 16px;"></i>
+            {% elif task.category == 'config' %}<i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+            {% endif %}
+          </div>
+          
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25rem;">
+              <span style="font-size: 0.875rem; font-weight: 600;">{{ task.title }}</span>
+              {% if task.is_overdue %}
+              <span class="status-badge status-cancelled" style="font-size: 0.625rem;">Zaległy</span>
+              {% endif %}
+              {% if task.retry_count > 0 %}
+              <span style="font-size: 0.625rem; color: var(--muted-foreground);">Próba {{ task.retry_count }}/{{ task.max_retries }}</span>
+              {% endif %}
+            </div>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ task.description }}</p>
+            
+            {% if task.event_name %}
+            <div style="margin-top: 0.5rem;">
+              <a href="{{ url_for('admin_v2_bp.event_room', event_id=task.event_id) }}" class="order-link" style="font-size: 0.75rem;">
+                {{ task.event_name }}
+              </a>
+            </div>
+            {% endif %}
+            
+            <div style="font-size: 0.625rem; color: var(--muted-foreground); margin-top: 0.5rem;">
+              {{ task.created_at|format_date_pl }}
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+            {% if task.can_retry and task.retry_count < task.max_retries %}
+            <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry', task_id=task.id) }}" style="margin: 0;">
+              <button type="submit" class="btn btn-outline btn-sm" style="gap: 0.25rem;">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                Ponów
+              </button>
+            </form>
+            {% endif %}
+            {% for action in task.actions %}
+            <a href="{{ action.url }}" class="btn btn-{% if action.primary %}primary{% else %}outline{% endif %} btn-sm" style="gap: 0.25rem;">
+              {{ action.label }}
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- FLOW LEGEND -->
+<div class="card" style="background: var(--muted); margin-top: 1.5rem;">
+  <div style="padding: 1rem; display: flex; align-items: center; gap: 1.5rem; font-size: 0.875rem;">
+    <span style="font-weight: 500; color: var(--muted-foreground);">Ścieżki płatności:</span>
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <span style="display: flex; align-items: center; gap: 0.375rem;">
+        <span class="status-badge" style="background: hsl(160, 82%, 44%, 0.1); color: hsl(160, 82%, 44%); border-color: hsl(160, 82%, 44%, 0.2);">FOC</span>
+        <span style="color: var(--muted-foreground);">Darmowe</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 0.375rem;">
+        <span class="status-badge" style="background: hsl(212, 100%, 42%, 0.1); color: hsl(212, 100%, 42%); border-color: hsl(212, 100%, 42%, 0.2);">PROFORMA</span>
+        <span style="color: var(--muted-foreground);">Przelew</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 0.375rem;">
+        <span class="status-badge" style="background: hsl(280, 80%, 50%, 0.1); color: hsl(280, 80%, 50%); border-color: hsl(280, 80%, 50%, 0.2);">STRIPE</span>
+        <span style="color: var(--muted-foreground);">Karta online</span>
+      </span>
+    </div>
+  </div>
+</div>
+{% endblock %}

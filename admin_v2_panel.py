@@ -134,6 +134,10 @@ def _get_common_context(user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
     """Zwraca wspólny kontekst dla wszystkich szablonów V2."""
     if user is None:
         user = _get_current_admin_user()
+    
+    # Licznik błędów do wyświetlenia w sidebarze (na razie placeholder)
+    work_queue_count = 0
+    
     return {
         "user_email": user.get("email") if user else None,
         "user_name": user.get("full_name") if user else None,
@@ -143,6 +147,7 @@ def _get_common_context(user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
         "can_orders": _user_has_permission(user, "orders"),
         "can_users": _user_has_permission(user, "users"),
         "can_audit": _user_has_permission(user, "audit"),
+        "work_queue_count": work_queue_count,
     }
 
 
@@ -754,5 +759,321 @@ def audit_log():
         "admin_v2/audit.html",
         active_page="audit",
         audit_logs=audit_logs,
+        **_get_common_context(user),
+    )
+
+
+# ---------------------------------------------------------------------------
+# WORK QUEUE (Monitoring procesów)
+# ---------------------------------------------------------------------------
+
+@admin_v2_bp.route("/work-queue", methods=["GET"])
+@_require_login
+def work_queue():
+    """Monitoring procesów - kolejka błędów i akcji."""
+    from datetime import datetime
+    
+    user = _get_current_admin_user()
+    
+    # Filtry
+    category_filter = request.args.get("category", "").strip()
+    
+    # Kategorie zadań
+    categories = {
+        "wfirma": {"label": "wFirma", "icon": "file-text"},
+        "make": {"label": "Make.com", "icon": "zap"},
+        "stripe": {"label": "Stripe", "icon": "credit-card"},
+        "database": {"label": "Baza danych", "icon": "database"},
+        "attendee": {"label": "Uczestnicy", "icon": "users"},
+        "config": {"label": "Konfiguracja", "icon": "settings"},
+    }
+    
+    # Na razie pusta lista - w przyszłości pobieranie z bazy
+    tasks = []
+    
+    # Statystyki (na razie zerowe)
+    stats = {
+        "total": 0,
+        "critical": 0,
+        "errors": 0,
+        "warnings": 0,
+        "can_retry": 0,
+    }
+    
+    # Eventy wymagające konfiguracji (sprawdź czy mają wymagane pola)
+    events_needing_config = []
+    all_events = list_events(limit=100)
+    for ev in all_events:
+        if ev.get("is_active"):
+            data = ev.get("data") or {}
+            # Sprawdź czy brakuje kluczowych pól
+            if not data.get("event_mail_link_top_banner") or not data.get("md_email_kontakt"):
+                events_needing_config.append(ev)
+    
+    # Aktualna data po polsku
+    months_pl = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
+                 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia']
+    now = datetime.now()
+    days_pl = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela']
+    current_date = f"{days_pl[now.weekday()]}, {now.day} {months_pl[now.month - 1]} {now.year}"
+    
+    return render_template(
+        "admin_v2/work_queue.html",
+        active_page="work_queue",
+        tasks=tasks,
+        stats=stats,
+        categories=categories,
+        events_needing_config=events_needing_config,
+        current_date=current_date,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/work-queue/retry-all", methods=["POST"])
+@_require_login
+def work_queue_retry_all():
+    """Ponów wszystkie możliwe do ponowienia zadania."""
+    # Placeholder - w przyszłości implementacja
+    return redirect(url_for("admin_v2_bp.work_queue"))
+
+
+@admin_v2_bp.route("/work-queue/<task_id>/retry", methods=["POST"])
+@_require_login
+def work_queue_retry(task_id: str):
+    """Ponów pojedyncze zadanie."""
+    # Placeholder - w przyszłości implementacja
+    return redirect(url_for("admin_v2_bp.work_queue"))
+
+
+# ---------------------------------------------------------------------------
+# COMMUNICATION (Historia wysyłek)
+# ---------------------------------------------------------------------------
+
+def _list_mail_logs(event_id: str = None, status: str = None, email_type: str = None, limit: int = 200):
+    """Pobiera logi wysyłek maili z bazy."""
+    from pg_storage import ensure_schema, _with_conn, _put_conn, _dict_cursor
+    
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        query = """
+            SELECT m.id, m.event_order_id, m.direction, m.template_key, m.to_email, 
+                   m.subject, m.status, m.error, m.data, m.created_at,
+                   o.event_id
+            FROM mail_log m
+            LEFT JOIN orders o ON m.event_order_id = o.event_order_id
+            WHERE 1=1
+        """
+        params = []
+        
+        if event_id:
+            query += " AND o.event_id = %s"
+            params.append(event_id)
+        
+        if status:
+            query += " AND m.status = %s"
+            params.append(status)
+        
+        if email_type:
+            query += " AND m.template_key ILIKE %s"
+            params.append(f"%{email_type}%")
+        
+        query += " ORDER BY m.created_at DESC LIMIT %s"
+        params.append(limit)
+        
+        cur.execute(query, tuple(params))
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] _list_mail_logs error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+@admin_v2_bp.route("/communication", methods=["GET"])
+@_require_permission("orders")
+def communication():
+    """Historia wysyłek i komunikacji."""
+    from datetime import datetime, timedelta
+    
+    user = _get_current_admin_user()
+    
+    # Filtry
+    status_filter = request.args.get("status", "").strip()
+    type_filter = request.args.get("type", "").strip()
+    event_filter = request.args.get("event_id", "").strip()
+    q_filter = request.args.get("q", "").strip().lower()
+    
+    # Pobierz wydarzenia do filtra
+    events = list_events(limit=100)
+    
+    # Pobierz logi maili
+    emails = _list_mail_logs(
+        event_id=event_filter or None,
+        status=status_filter or None,
+        email_type=type_filter or None,
+        limit=200
+    )
+    
+    # Dodaj nazwy wydarzeń
+    event_map = {e.get("event_id"): e.get("event_name") for e in events}
+    for email in emails:
+        email["event_name"] = event_map.get(email.get("event_id"), "")
+        # Mapuj pola
+        email["recipient"] = email.get("to_email", "")
+        email["type"] = email.get("template_key", "")
+        email["sent_at"] = email.get("created_at")
+        email["error_message"] = email.get("error", "")
+    
+    # Filtrowanie tekstowe
+    if q_filter:
+        emails = [
+            e for e in emails
+            if q_filter in (e.get("recipient") or "").lower()
+            or q_filter in (e.get("subject") or "").lower()
+        ]
+    
+    # Błędne wysyłki
+    error_emails = [e for e in emails if e.get("status") in ("failed", "error", "bounced")]
+    
+    # Statystyki
+    today = datetime.now().date()
+    sent_today = len([e for e in emails if e.get("sent_at") and e["sent_at"].date() == today])
+    delivered = len([e for e in emails if e.get("status") == "sent"])
+    errors = len(error_emails)
+    total = len(emails)
+    delivery_rate = round((delivered / total * 100) if total > 0 else 0)
+    
+    stats = {
+        "sent_today": sent_today,
+        "delivered": delivered,
+        "errors": errors,
+        "delivery_rate": delivery_rate,
+    }
+    
+    return render_template(
+        "admin_v2/communication.html",
+        active_page="communication",
+        stats=stats,
+        events=events,
+        error_emails=error_emails[:10],
+        emails=emails,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/communication/<int:email_id>/retry", methods=["POST"])
+@_require_permission("orders")
+def email_retry(email_id: int):
+    """Ponów wysyłkę emaila."""
+    # Placeholder - w przyszłości implementacja ponownej wysyłki
+    return redirect(url_for("admin_v2_bp.communication"))
+
+
+# ---------------------------------------------------------------------------
+# SETTINGS (Ustawienia)
+# ---------------------------------------------------------------------------
+
+@admin_v2_bp.route("/settings", methods=["GET"])
+@_require_login
+def settings():
+    """Strona ustawień."""
+    user = _get_current_admin_user()
+    
+    return render_template(
+        "admin_v2/settings.html",
+        active_page="settings",
+        **_get_common_context(user),
+    )
+
+
+# ---------------------------------------------------------------------------
+# EVENT ROOM (Dashboard pojedynczego wydarzenia z zakładkami)
+# ---------------------------------------------------------------------------
+
+@admin_v2_bp.route("/events/<event_id>/room", methods=["GET"])
+@_require_permission("events")
+def event_room(event_id: str):
+    """Dashboard pojedynczego wydarzenia z zakładkami."""
+    user = _get_current_admin_user()
+    
+    event = get_event(event_id)
+    if not event:
+        return redirect(url_for("admin_v2_bp.events_list"))
+    
+    # Aktywna zakładka
+    active_tab = request.args.get("tab", "sales").strip()
+    valid_tabs = ["sales", "payments", "orders", "participants", "communication", "config"]
+    if active_tab not in valid_tabs:
+        active_tab = "sales"
+    
+    # Pobierz zamówienia
+    orders = list_orders(event_id=event_id, limit=500)
+    
+    # Pobierz uczestników
+    participants = get_participants_for_event(event_id) or []
+    
+    # Pobierz logi maili dla tego wydarzenia
+    emails = _list_mail_logs(event_id=event_id, limit=100)
+    for email in emails:
+        email["recipient"] = email.get("to_email", "")
+        email["type"] = email.get("template_key", "")
+        email["sent_at"] = email.get("created_at")
+    
+    # Statystyki
+    paid_orders = [o for o in orders if o.get("status") == "paid"]
+    pending_orders = [o for o in orders if o.get("status") == "pending_payment"]
+    total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
+    pending_revenue = sum(float(o.get("total") or 0) for o in pending_orders)
+    email_errors = len([e for e in emails if e.get("status") in ("failed", "error")])
+    notified = len([p for p in participants if p.get("status") == "emailed"])
+    
+    stats = {
+        "orders": len(orders),
+        "paid": len(paid_orders),
+        "pending": len(pending_orders),
+        "participants": len(participants),
+        "revenue": total_revenue,
+        "pending_revenue": pending_revenue,
+        "email_errors": email_errors,
+        "emails_sent": len(emails),
+        "notified": notified,
+        "pending_notification": len(participants) - notified,
+        "delivery_rate": None,  # Brak danych
+    }
+    
+    # Mapuj pola zamówień dla szablonu
+    for order in orders:
+        order["buyer_first_name"] = order.get("purchaser_first_name", "")
+        order["buyer_last_name"] = order.get("purchaser_last_name", "")
+        order["buyer_email"] = order.get("purchaser_email", "")
+        order["buyer_company"] = order.get("purchaser_company", "")
+        order["order_id"] = order.get("event_order_id", "")
+        order["participants_count"] = order.get("participant_count", 1)
+    
+    # Mapuj pola uczestników dla szablonu
+    for p in participants:
+        p["ticket_name"] = p.get("ticket_class_name") or p.get("ticket_class_id") or "Bilet Standard"
+        p["is_notified"] = p.get("status") == "emailed"
+        p["company"] = ""  # Brak w danych
+    
+    # Backstage URLs (placeholder)
+    event["backstage_url"] = "#"
+    event["backstage_orders_url"] = "#"
+    event["backstage_attendees_url"] = "#"
+    
+    return render_template(
+        "admin_v2/event_room.html",
+        active_page="events",
+        event=event,
+        active_tab=active_tab,
+        stats=stats,
+        orders=orders,
+        participants=participants,
+        emails=emails,
         **_get_common_context(user),
     )

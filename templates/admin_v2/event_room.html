@@ -1,0 +1,556 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}{{ event.event_name }}{% endblock %}
+
+{% block content %}
+<!-- EVENT HEADER BANNER -->
+<div class="event-banner" style="
+  border-radius: var(--radius-lg);
+  color: white;
+  position: relative;
+  overflow: hidden;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }});
+">
+  {% if event.data.email_header_url %}
+  <div style="position: absolute; inset: 0; background-image: url('{{ event.data.email_header_url }}'); background-size: cover; background-position: center; opacity: 0.2;"></div>
+  {% endif %}
+  <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.1);"></div>
+  
+  <div style="position: relative; z-index: 10;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+      <a href="{{ url_for('admin_v2_bp.events_list') }}" style="display: inline-flex; align-items: center; gap: 0.25rem; color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.875rem;">
+        <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
+        Powrót do wydarzeń
+      </a>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div class="dropdown">
+          <button class="btn-icon" style="background: rgba(255,255,255,0.2); color: white;" data-dropdown-toggle>
+            <i data-lucide="external-link" style="width: 16px; height: 16px;"></i>
+          </button>
+          <div class="dropdown-menu">
+            <a href="{{ event.backstage_url }}" target="_blank" class="dropdown-item">Backstage - Ogólne</a>
+            <a href="{{ event.backstage_orders_url }}" target="_blank" class="dropdown-item">Backstage - Zamówienia</a>
+            <a href="{{ event.backstage_attendees_url }}" target="_blank" class="dropdown-item">Backstage - Uczestnicy</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: hsl(160, 82%, 44%);{% if event.is_active %} animation: pulse 2s infinite;{% endif %}" title="{% if event.is_active %}Wydarzenie aktywne{% else %}Nieaktywne{% endif %}"></span>
+        <h1 style="font-size: 1.25rem; font-weight: 700;">{{ event.event_name }}</h1>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem; color: rgba(255,255,255,0.7); font-size: 0.875rem;">
+        <span>{{ event.data.eventDate|format_date_pl }}</span>
+        <span>•</span>
+        <span>{{ event.data.eventCity or 'Lokalizacja nieznana' }}</span>
+        {% if event.data.eventLocation %}
+        <span>•</span>
+        <span>{{ event.data.eventLocation }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs-container" style="margin-bottom: 1rem;">
+  <div class="tabs-list" style="display: flex; gap: 0.25rem; overflow-x: auto; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='sales') }}" 
+       class="tab-trigger {% if active_tab == 'sales' %}active{% endif %}">
+      <i data-lucide="trending-up" style="width: 16px; height: 16px;"></i>
+      Sprzedaż
+    </a>
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='payments') }}" 
+       class="tab-trigger {% if active_tab == 'payments' %}active{% endif %}">
+      <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
+      Płatności
+      {% if stats.pending > 0 %}<span class="status-badge">{{ stats.pending }}</span>{% endif %}
+    </a>
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='orders') }}" 
+       class="tab-trigger {% if active_tab == 'orders' %}active{% endif %}">
+      <i data-lucide="shopping-cart" style="width: 16px; height: 16px;"></i>
+      Zamówienia
+    </a>
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='participants') }}" 
+       class="tab-trigger {% if active_tab == 'participants' %}active{% endif %}">
+      <i data-lucide="users" style="width: 16px; height: 16px;"></i>
+      Uczestnicy
+    </a>
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='communication') }}" 
+       class="tab-trigger {% if active_tab == 'communication' %}active{% endif %}">
+      <i data-lucide="mail" style="width: 16px; height: 16px;"></i>
+      Komunikacja
+      {% if stats.email_errors > 0 %}<span class="status-badge status-cancelled">{{ stats.email_errors }}</span>{% endif %}
+    </a>
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='config') }}" 
+       class="tab-trigger {% if active_tab == 'config' %}active{% endif %}">
+      <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+      Konfiguracja
+    </a>
+  </div>
+</div>
+
+<!-- TAB CONTENT -->
+<div class="tab-content">
+  {% if active_tab == 'sales' %}
+  <!-- SALES TAB -->
+  <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Zamówienia</span>
+        <span class="stat-value">{{ stats.orders or 0 }}</span>
+      </div>
+      <div class="stat-icon">
+        <i data-lucide="shopping-cart"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Opłacone</span>
+        <span class="stat-value">{{ stats.paid or 0 }}</span>
+      </div>
+      <div class="stat-icon green">
+        <i data-lucide="check-circle"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Oczekujące</span>
+        <span class="stat-value">{{ stats.pending or 0 }}</span>
+      </div>
+      <div class="stat-icon {% if stats.pending > 0 %}amber{% endif %}">
+        <i data-lucide="clock"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Uczestnicy</span>
+        <span class="stat-value">{{ stats.participants or 0 }}</span>
+      </div>
+      <div class="stat-icon cyan">
+        <i data-lucide="users"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
+    <div class="card">
+      <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+        <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="bar-chart-3" style="width: 16px; height: 16px;"></i>
+          Przychody
+        </h3>
+      </div>
+      <div style="padding: 1rem;">
+        <div style="margin-bottom: 1rem;">
+          <p style="font-size: 0.875rem; color: var(--muted-foreground);">Opłacone</p>
+          <p style="font-size: 1.5rem; font-weight: 700; color: var(--success);">{{ stats.revenue|format_currency }}</p>
+        </div>
+        <div>
+          <p style="font-size: 0.875rem; color: var(--muted-foreground);">Oczekujące</p>
+          <p style="font-size: 1.25rem; font-weight: 600; color: hsl(38, 92%, 50%);">{{ stats.pending_revenue|format_currency }}</p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+        <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i>
+          Problemy do rozwiązania
+        </h3>
+      </div>
+      <div style="padding: 1rem;">
+        {% if stats.pending > 0 %}
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; border-radius: var(--radius); background: hsl(38, 92%, 50%, 0.05); margin-bottom: 0.75rem;">
+          <span style="font-size: 0.875rem;">Nieopłacone zamówienia</span>
+          <span class="status-badge">{{ stats.pending }}</span>
+        </div>
+        {% endif %}
+        {% if stats.email_errors > 0 %}
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; border-radius: var(--radius); background: var(--destructive-bg);">
+          <span style="font-size: 0.875rem;">Błędy wysyłki</span>
+          <span class="status-badge status-cancelled">{{ stats.email_errors }}</span>
+        </div>
+        {% endif %}
+        {% if stats.pending == 0 and stats.email_errors == 0 %}
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--success);">
+          <i data-lucide="check-circle" style="width: 16px; height: 16px;"></i>
+          <span style="font-size: 0.875rem;">Brak problemów</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  
+  {% elif active_tab == 'payments' %}
+  <!-- PAYMENTS TAB - Payment Buckets -->
+  {% include 'admin_v2/_payment_buckets.html' %}
+  
+  {% elif active_tab == 'orders' %}
+  <!-- ORDERS TAB -->
+  <div class="card filters-card" style="margin-bottom: 1rem;">
+    <form class="filters-grid" method="GET">
+      <input type="hidden" name="tab" value="orders">
+      <div class="filter-search">
+        <i data-lucide="search" class="search-icon"></i>
+        <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj zamówień..." class="search-input">
+      </div>
+      <div class="filter-select">
+        <select name="status">
+          <option value="">Wszystkie statusy</option>
+          <option value="paid"{% if request.args.get('status') == 'paid' %} selected{% endif %}>Opłacone</option>
+          <option value="pending_payment"{% if request.args.get('status') == 'pending_payment' %} selected{% endif %}>Oczekujące</option>
+          <option value="cancelled"{% if request.args.get('status') == 'cancelled' %} selected{% endif %}>Anulowane</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Filtruj</button>
+      <button type="button" class="btn btn-outline" onclick="window.print()">
+        <i data-lucide="download"></i>
+        Eksport
+      </button>
+    </form>
+  </div>
+  
+  <div class="card">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Zamawiający</th>
+          <th>Kwota</th>
+          <th>Uczestnicy</th>
+          <th>Status</th>
+          <th>Data</th>
+          <th class="text-right">Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr>
+          <td>
+            <div class="buyer-cell">
+              <span class="buyer-name">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
+              {% if order.buyer_company %}<p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.buyer_company }}</p>{% endif %}
+              <span class="buyer-email">{{ order.buyer_email }}</span>
+            </div>
+          </td>
+          <td style="font-weight: 600;">{{ order.total|format_currency }}</td>
+          <td>{{ order.participants_count or 1 }}</td>
+          <td>
+            {% if order.status == 'paid' %}
+            <span class="status-badge status-paid">Opłacone</span>
+            {% elif order.status == 'pending_payment' %}
+            <span class="status-badge status-pending">Oczekuje</span>
+            {% elif order.status == 'cancelled' %}
+            <span class="status-badge status-cancelled">Anulowane</span>
+            {% else %}
+            <span class="status-badge">{{ order.status }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ order.created_at|format_date_pl }}</td>
+          <td class="text-right">
+            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="btn-icon" title="Zobacz szczegóły">
+              <i data-lucide="eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
+            Brak zamówień
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  {% elif active_tab == 'participants' %}
+  <!-- PARTICIPANTS TAB -->
+  <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Wszyscy uczestnicy</span>
+        <span class="stat-value">{{ participants|length }}</span>
+      </div>
+      <div class="stat-icon cyan">
+        <i data-lucide="users"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Powiadomieni</span>
+        <span class="stat-value">{{ stats.notified or 0 }}</span>
+      </div>
+      <div class="stat-icon green">
+        <i data-lucide="mail-check"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Oczekujący</span>
+        <span class="stat-value">{{ stats.pending_notification or 0 }}</span>
+      </div>
+      <div class="stat-icon">
+        <i data-lucide="user-plus"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div class="card filters-card" style="margin-bottom: 1rem;">
+    <form class="filters-grid" method="GET">
+      <input type="hidden" name="tab" value="participants">
+      <div class="filter-search">
+        <i data-lucide="search" class="search-icon"></i>
+        <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj uczestników..." class="search-input">
+      </div>
+      <button type="submit" class="btn btn-primary">Szukaj</button>
+      <button type="button" class="btn btn-outline">
+        <i data-lucide="mail"></i>
+        Wyślij wiadomość
+      </button>
+      <button type="button" class="btn btn-outline" onclick="window.print()">
+        <i data-lucide="download"></i>
+        Eksport
+      </button>
+    </form>
+  </div>
+  
+  <div class="card">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Uczestnik</th>
+          <th>Bilet</th>
+          <th class="text-center">Status</th>
+          <th class="text-right">Data</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in participants %}
+        <tr>
+          <td>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <div class="avatar-initials small">{{ p.first_name[:1]|upper }}{{ p.last_name[:1]|upper }}</div>
+              <div class="buyer-cell">
+                <span class="buyer-name">{{ p.first_name }} {{ p.last_name }}</span>
+                <span class="buyer-email">{{ p.email }}</span>
+                {% if p.company %}<p style="font-size: 0.625rem; color: var(--muted-foreground);">{{ p.company }}</p>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td>{{ p.ticket_name or 'Bilet Standard' }}</td>
+          <td class="text-center">
+            {% if p.is_notified %}
+            <i data-lucide="mail-check" style="width: 20px; height: 20px; color: var(--primary);" title="Powiadomiony"></i>
+            {% else %}
+            <i data-lucide="user-plus" style="width: 20px; height: 20px; color: var(--muted-foreground);" title="Niepowiadomiony"></i>
+            {% endif %}
+          </td>
+          <td class="text-right">
+            <div>
+              <p style="font-size: 0.875rem;">{{ p.created_at.strftime('%d %B') }}</p>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ p.created_at.year }}</p>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
+            Brak uczestników
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  {% elif active_tab == 'communication' %}
+  <!-- COMMUNICATION TAB -->
+  <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Wysłane</span>
+        <span class="stat-value">{{ stats.emails_sent or 0 }}</span>
+      </div>
+      <div class="stat-icon green">
+        <i data-lucide="send"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Błędy</span>
+        <span class="stat-value">{{ stats.email_errors or 0 }}</span>
+      </div>
+      <div class="stat-icon {% if stats.email_errors > 0 %}red{% endif %}">
+        <i data-lucide="alert-triangle"></i>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-content">
+        <span class="stat-label">Dostarczalność</span>
+        <span class="stat-value">{{ stats.delivery_rate or '—' }}{% if stats.delivery_rate %}%{% endif %}</span>
+      </div>
+      <div class="stat-icon">
+        <i data-lucide="check-circle"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div class="card">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600;">Historia wysyłek</h3>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Typ</th>
+          <th>Odbiorca</th>
+          <th>Temat</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for email in emails %}
+        <tr>
+          <td class="text-muted">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
+          <td><span class="status-badge" style="text-transform: capitalize;">{{ email.type }}</span></td>
+          <td>{{ email.recipient }}</td>
+          <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ email.subject }}</td>
+          <td>
+            {% if email.status == 'delivered' %}
+            <span class="status-badge status-paid">Dostarczono</span>
+            {% elif email.status == 'sent' %}
+            <span class="status-badge status-pending">Wysłano</span>
+            {% elif email.status == 'error' or email.status == 'bounced' %}
+            <span class="status-badge status-cancelled">Błąd</span>
+            {% else %}
+            <span class="status-badge">{{ email.status }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
+            Brak historii wysyłek
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  {% elif active_tab == 'config' %}
+  <!-- CONFIG TAB -->
+  <div class="card" style="margin-bottom: 1rem;">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+        Dane podstawowe
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);">
+        <div class="form-group">
+          <label class="form-label">ID wydarzenia</label>
+          <input type="text" class="form-input" value="{{ event.event_id }}" disabled>
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label">Nazwa wydarzenia</label>
+          <input type="text" class="form-input" value="{{ event.event_name }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data i godzina</label>
+          <input type="text" class="form-input" value="{{ event.data.eventDate|format_date_pl }} {{ event.data.eventTime or '' }}" disabled>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="card" style="margin-bottom: 1rem;">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="mail" style="width: 16px; height: 16px;"></i>
+        Kontakty
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
+        <div class="form-group">
+          <label class="form-label">Email kontaktowy</label>
+          <input type="text" class="form-input" value="{{ event.data.md_email_kontakt or 'eventy@medidesk.com' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Telefon kontaktowy</label>
+          <input type="text" class="form-input" value="{{ event.data.md_mobile_kontakt or '+48 729 927 389' }}" disabled>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="card">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="map-pin" style="width: 16px; height: 16px;"></i>
+        Lokalizacja
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);">
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label">Miejsce</label>
+          <input type="text" class="form-input" value="{{ event.data.eventLocation or '—' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Miasto</label>
+          <input type="text" class="form-input" value="{{ event.data.eventCity or '—' }}" disabled>
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label">Adres</label>
+          <input type="text" class="form-input" value="{{ event.data.eventAddress or '—' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Kod pocztowy</label>
+          <input type="text" class="form-input" value="{{ event.data.event_location_zip or '—' }}" disabled>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<style>
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  
+  .tab-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+  }
+  
+  .tab-trigger:hover {
+    color: var(--foreground);
+  }
+  
+  .tab-trigger.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+</style>
+{% endblock %}

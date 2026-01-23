@@ -1,0 +1,42 @@
+<!-- PAYMENT BUCKETS - Placeholder -->
+<div class="card">
+  <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+    <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="credit-card" style="width: 20px; height: 20px;"></i>
+      Płatności według statusu
+    </h3>
+  </div>
+  <div style="padding: 1.5rem;">
+    <p style="color: var(--muted-foreground); text-align: center;">
+      Sekcja analityki płatności jest w trakcie rozwoju.
+    </p>
+    
+    <!-- Simple stats -->
+    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 1.5rem;">
+      <div class="card" style="padding: 1rem; text-align: center; background: hsl(160, 82%, 44%, 0.05);">
+        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Opłacone</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: hsl(160, 82%, 44%);">{{ stats.paid or 0 }}</div>
+      </div>
+      <div class="card" style="padding: 1rem; text-align: center; background: hsl(38, 92%, 50%, 0.05);">
+        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Oczekujące</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: hsl(38, 92%, 50%);">{{ stats.pending or 0 }}</div>
+      </div>
+      <div class="card" style="padding: 1rem; text-align: center; background: hsl(212, 100%, 42%, 0.05);">
+        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Łącznie</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: var(--primary);">{{ stats.orders or 0 }}</div>
+      </div>
+    </div>
+    
+    <!-- Revenue -->
+    <div style="display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; padding: 1rem; background: var(--muted); border-radius: var(--radius);">
+      <div style="text-align: center;">
+        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Przychód zrealizowany</div>
+        <div style="font-size: 1.125rem; font-weight: 600; color: hsl(160, 82%, 44%);">{{ stats.revenue|format_currency if stats.revenue else '0,00 zł' }}</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Przychód oczekujący</div>
+        <div style="font-size: 1.125rem; font-weight: 600; color: hsl(38, 92%, 50%);">{{ stats.pending_revenue|format_currency if stats.pending_revenue else '0,00 zł' }}</div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,78 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Ustawienia{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Ustawienia</h1>
+    <p class="page-description">Zarządzaj ustawieniami panelu administracyjnego</p>
+  </div>
+</div>
+
+<!-- SETTINGS CARD -->
+<div class="card">
+  <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+    <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="settings" style="width: 20px; height: 20px;"></i>
+      Ustawienia ogólne
+    </h3>
+  </div>
+  <div style="padding: 1.5rem;">
+    <p style="color: var(--muted-foreground);">
+      Sekcja ustawień jest w trakcie rozwoju. Wkrótce będzie można tutaj konfigurować:
+    </p>
+    <ul style="list-style: disc; padding-left: 1.5rem; margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.875rem; color: var(--muted-foreground);">
+      <li>Konta użytkowników i uprawnienia</li>
+      <li>Integracje z zewnętrznymi systemami</li>
+      <li>Szablony maili</li>
+      <li>Konfigurację płatności</li>
+      <li>Log audytu</li>
+    </ul>
+  </div>
+</div>
+
+<!-- QUICK LINKS -->
+<div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-top: 1.5rem;">
+  <a href="{{ url_for('admin_v2_bp.users_list') }}" class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; text-decoration: none; color: inherit; transition: border-color 0.2s;">
+    <div style="padding: 0.75rem; border-radius: var(--radius); background: hsl(212, 100%, 42%, 0.1);">
+      <i data-lucide="users" style="width: 24px; height: 24px; color: var(--primary);"></i>
+    </div>
+    <div>
+      <h4 style="font-weight: 600; font-size: 0.875rem;">Konta i uprawnienia</h4>
+      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Zarządzaj administratorami</p>
+    </div>
+  </a>
+  
+  <a href="{{ url_for('admin_v2_bp.audit_log') }}" class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; text-decoration: none; color: inherit; transition: border-color 0.2s;">
+    <div style="padding: 0.75rem; border-radius: var(--radius); background: hsl(280, 80%, 50%, 0.1);">
+      <i data-lucide="scroll-text" style="width: 24px; height: 24px; color: hsl(280, 80%, 50%);"></i>
+    </div>
+    <div>
+      <h4 style="font-weight: 600; font-size: 0.875rem;">Log audytu</h4>
+      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Historia działań</p>
+    </div>
+  </a>
+  
+  <a href="{{ url_for('admin_v2_bp.email_designer') }}" class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; text-decoration: none; color: inherit; transition: border-color 0.2s;">
+    <div style="padding: 0.75rem; border-radius: var(--radius); background: hsl(160, 82%, 44%, 0.1);">
+      <i data-lucide="palette" style="width: 24px; height: 24px; color: hsl(160, 82%, 44%);"></i>
+    </div>
+    <div>
+      <h4 style="font-weight: 600; font-size: 0.875rem;">Szablony email</h4>
+      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Kreator wiadomości</p>
+    </div>
+  </a>
+  
+  <a href="{{ url_for('admin_v2_bp.communication') }}" class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; text-decoration: none; color: inherit; transition: border-color 0.2s;">
+    <div style="padding: 0.75rem; border-radius: var(--radius); background: hsl(38, 92%, 50%, 0.1);">
+      <i data-lucide="mail" style="width: 24px; height: 24px; color: hsl(38, 92%, 50%);"></i>
+    </div>
+    <div>
+      <h4 style="font-weight: 600; font-size: 0.875rem;">Komunikacja</h4>
+      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Historia wysyłek</p>
+    </div>
+  </a>
+</div>
+{% endblock %}

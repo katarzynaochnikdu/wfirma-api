@@ -57,6 +57,48 @@ if ADMIN_V2_ENABLED:
 else:
     print("[ADMIN V2] Panel admin V2 wyłączony (ustaw ADMIN_V2_ENABLED=1 aby włączyć)")
 
+# ---------------------------------------------------------------------------
+# JINJA2 TEMPLATE FILTERS (dla admin panel V2)
+# ---------------------------------------------------------------------------
+
+@app.template_filter('format_date_pl')
+def format_date_pl_filter(value):
+    """Formatuje datę po polsku (np. '23 stycznia 2026, 14:30')."""
+    if not value:
+        return '—'
+    try:
+        if isinstance(value, str):
+            # Próbuj sparsować ISO format
+            value = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+        
+        months_pl = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
+                     'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia']
+        
+        if hasattr(value, 'strftime'):
+            day = value.day
+            month = months_pl[value.month - 1]
+            year = value.year
+            time_str = value.strftime('%H:%M')
+            return f"{day} {month} {year}, {time_str}"
+        return str(value)
+    except Exception:
+        return str(value) if value else '—'
+
+
+@app.template_filter('format_currency')
+def format_currency_filter(value):
+    """Formatuje kwotę jako PLN (np. '1 234,56 zł')."""
+    if value is None:
+        return '0,00 zł'
+    try:
+        num = float(value)
+        # Format: 1 234,56 zł
+        formatted = f"{num:,.2f}".replace(",", " ").replace(".", ",")
+        return f"{formatted} zł"
+    except (ValueError, TypeError):
+        return '0,00 zł'
+
+
 # Statyczne logo Backstage
 @app.route('/backstage-logo.jpg', methods=['GET'])
 def backstage_logo():
