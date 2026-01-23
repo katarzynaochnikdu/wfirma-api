@@ -1,0 +1,140 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Uczestnicy{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Uczestnicy</h1>
+    <p class="page-description">Zarządzaj wszystkimi uczestnikami wydarzeń</p>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Wszyscy uczestnicy</span>
+      <span class="stat-value">{{ stats.total or 0 }}</span>
+    </div>
+    <div class="stat-icon cyan">
+      <i data-lucide="users"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Powiadomieni</span>
+      <span class="stat-value">{{ stats.emailed or 0 }}</span>
+    </div>
+    <div class="stat-icon green">
+      <i data-lucide="user-check"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Oczekujący</span>
+      <span class="stat-value">{{ stats.pending or 0 }}</span>
+    </div>
+    <div class="stat-icon purple">
+      <i data-lucide="user-plus"></i>
+    </div>
+  </div>
+</div>
+
+<!-- FILTERS -->
+<div class="card filters-card">
+  <form class="filters-grid" method="GET">
+    <div class="filter-search">
+      <i data-lucide="search" class="search-icon"></i>
+      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po imieniu, emailu..." class="search-input">
+    </div>
+    <div class="filter-select">
+      <select name="status">
+        <option value="">Wszystkie statusy</option>
+        <option value="emailed"{% if request.args.get('status') == 'emailed' %} selected{% endif %}>Powiadomieni</option>
+        <option value="registered"{% if request.args.get('status') == 'registered' %} selected{% endif %}>Zarejestrowani</option>
+        <option value="pending"{% if request.args.get('status') == 'pending' %} selected{% endif %}>Oczekujący</option>
+        <option value="cancelled"{% if request.args.get('status') == 'cancelled' %} selected{% endif %}>Anulowani</option>
+      </select>
+    </div>
+    <div class="filter-select">
+      <select name="event_id">
+        <option value="">Wszystkie wydarzenia</option>
+        {% for event in events %}
+        <option value="{{ event.event_id }}"{% if request.args.get('event_id') == event.event_id %} selected{% endif %}>{{ event.event_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filtruj</button>
+  </form>
+</div>
+
+<!-- DATA TABLE -->
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Uczestnik</th>
+        <th>Wydarzenie</th>
+        <th>Bilet</th>
+        <th>Zamówienie</th>
+        <th>Status</th>
+        <th>Data</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in participants %}
+      <tr>
+        <td>
+          <div class="buyer-cell">
+            <span class="buyer-name">{{ (p.first_name or '') ~ ' ' ~ (p.last_name or '') or '—' }}</span>
+            <span class="buyer-email">{{ p.email or '—' }}</span>
+          </div>
+        </td>
+        <td>
+          <div class="event-cell">
+            <div class="event-dot" style="background: linear-gradient(135deg, {{ p.event_color or 'hsl(212, 100%, 42%)' }}, hsl(195, 100%, 42%));"></div>
+            <span>{{ p.event_name or '—' }}</span>
+          </div>
+        </td>
+        <td>{{ p.ticket_class_id or '—' }}</td>
+        <td>
+          {% if p.event_order_id %}
+          <a href="{{ url_for('admin_v2_bp.order_detail', order_id=p.event_order_id) }}" class="order-link">{{ p.event_order_id[:12] }}...</a>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td>
+          {% if p.status == 'emailed' %}
+          <span class="status-badge status-paid">Powiadomiony</span>
+          {% elif p.status == 'registered' %}
+          <span class="status-badge status-paid">Zarejestrowany</span>
+          {% elif p.status == 'pending' %}
+          <span class="status-badge status-pending">Oczekujący</span>
+          {% elif p.status == 'cancelled' %}
+          <span class="status-badge status-cancelled">Anulowany</span>
+          {% else %}
+          <span class="status-badge">{{ p.status or '—' }}</span>
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          Brak uczestników do wyświetlenia
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  {% if participants %}
+  <div class="table-footer">
+    <span class="table-info">Wyświetlono {{ participants|length }} uczestników</span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

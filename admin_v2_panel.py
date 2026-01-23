@@ -19,6 +19,7 @@ from pg_storage import (
     list_orders,
     get_order,
     get_participants_for_order,
+    get_participants_for_event,
     get_wfirma_documents,
     count_participants_by_status,
     # Admin users
@@ -373,6 +374,73 @@ def events_list():
         active_page="events",
         events=active_events,
         inactive_events=inactive_events,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/participants", methods=["GET"])
+@_require_permission("orders")  # Reuse orders permission for participants
+def participants_list():
+    """Lista wszystkich uczestników."""
+    user = _get_current_admin_user()
+    
+    # Filtry
+    event_id_filter = request.args.get("event_id", "").strip()
+    status_filter = request.args.get("status", "").strip()
+    q_filter = request.args.get("q", "").strip().lower()
+    
+    # Pobierz wydarzenia do filtra
+    events = list_events(limit=200)
+    
+    # Pobierz uczestników - jeśli wybrany event, tylko z niego
+    all_participants = []
+    if event_id_filter:
+        all_participants = get_participants_for_event(event_id_filter) or []
+        # Dodaj event info
+        event = get_event(event_id_filter)
+        for p in all_participants:
+            p["event_name"] = event.get("event_name", "") if event else ""
+            p["event_color"] = (event.get("data") or {}).get("color_gradient_1", "") if event else ""
+    else:
+        # Pobierz z wszystkich aktywnych wydarzeń
+        for event in events:
+            if event.get("is_active", True):
+                event_participants = get_participants_for_event(event.get("event_id")) or []
+                for p in event_participants:
+                    p["event_name"] = event.get("event_name", "")
+                    p["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
+                all_participants.extend(event_participants)
+    
+    # Filtrowanie po statusie
+    if status_filter:
+        all_participants = [p for p in all_participants if p.get("status") == status_filter]
+    
+    # Filtrowanie tekstowe
+    if q_filter:
+        all_participants = [
+            p for p in all_participants
+            if q_filter in (p.get("email") or "").lower()
+            or q_filter in (p.get("first_name") or "").lower()
+            or q_filter in (p.get("last_name") or "").lower()
+        ]
+    
+    # Statystyki
+    stats = {
+        "total": len(all_participants),
+        "emailed": len([p for p in all_participants if p.get("status") == "emailed"]),
+        "registered": len([p for p in all_participants if p.get("status") == "registered"]),
+        "pending": len([p for p in all_participants if p.get("status") == "pending"]),
+    }
+    
+    # Ogranicz do 500 dla wydajności
+    all_participants = all_participants[:500]
+    
+    return render_template(
+        "admin_v2/participants.html",
+        active_page="participants",
+        participants=all_participants,
+        events=events,
+        stats=stats,
         **_get_common_context(user),
     )
 

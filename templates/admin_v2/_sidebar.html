@@ -45,6 +45,10 @@
       <i data-lucide="shopping-cart"></i>
       <span>Zamówienia</span>
     </a>
+    <a href="{{ url_for('admin_v2_bp.participants_list') }}" class="nav-item{% if active_page == 'participants' %} active{% endif %}">
+      <i data-lucide="users"></i>
+      <span>Uczestnicy</span>
+    </a>
     {% endif %}
     {% if can_users %}
     <a href="{{ url_for('admin_v2_bp.users_list') }}" class="nav-item{% if active_page == 'users' %} active{% endif %}">
