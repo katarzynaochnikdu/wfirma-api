@@ -1060,6 +1060,7 @@
 
 {% block extra_scripts %}
 <script>
+{% raw %}
 // ==================== STATE ====================
 let templateBlocks = [];
 let selectedBlockId = null;
@@ -1844,5 +1845,6 @@ function showToast(message, type = 'info') {
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
+{% endraw %}
 </script>
 {% endblock %}
