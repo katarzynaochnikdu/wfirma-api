@@ -76,25 +76,25 @@
           </div>
         </td>
         <td>
-          {% if order.payment_flow == 'STRIPE' %}
+          {% if 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
           <span class="payment-badge payment-online">Online</span>
-          {% elif order.payment_flow == 'PROFORMA' %}
+          {% elif 'pro' in (order.payment_option_name or '')|lower or 'proforma' in (order.payment_type or '')|lower %}
           <span class="payment-badge payment-proforma">Pro forma</span>
-          {% elif order.payment_flow == 'FOC' %}
+          {% elif (order.total or 0)|float == 0 %}
           <span class="payment-badge payment-foc">FOC</span>
           {% else %}
-          <span class="payment-badge">{{ order.payment_flow or '—' }}</span>
+          <span class="payment-badge">{{ order.payment_option_name or order.payment_type or '—' }}</span>
           {% endif %}
         </td>
-        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="order-link">{{ order.order_id[:12] }}...</a></td>
+        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link">{{ order.event_order_id[:12] }}...</a></td>
         <td>
           <div class="buyer-cell">
-            <span class="buyer-name">{{ order.purchaser_name or '—' }}</span>
+            <span class="buyer-name">{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or '—' }}</span>
             <span class="buyer-email">{{ order.purchaser_email or '—' }}</span>
           </div>
         </td>
         <td class="text-center">{{ order.participant_count or 0 }}</td>
-        <td class="text-right font-medium">{{ order.total_price|default('0.00', true) }} zł</td>
+        <td class="text-right font-medium">{{ order.total|default('0.00', true) }} zł</td>
         <td>
           {% if order.status == 'paid' %}
           <span class="status-badge status-paid">Opłacone</span>

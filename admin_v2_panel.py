@@ -276,9 +276,10 @@ def orders_list():
     if q_filter:
         orders = [
             o for o in orders
-            if q_filter in (o.get("order_id") or "").lower()
+            if q_filter in (o.get("event_order_id") or "").lower()
             or q_filter in (o.get("purchaser_email") or "").lower()
-            or q_filter in (o.get("purchaser_name") or "").lower()
+            or q_filter in (o.get("purchaser_first_name") or "").lower()
+            or q_filter in (o.get("purchaser_last_name") or "").lower()
         ]
     
     # Dodaj nazwy wydarzeń

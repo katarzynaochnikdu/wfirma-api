@@ -113,9 +113,9 @@
             <span>{{ order.event_name or 'Nieznane' }}</span>
           </div>
         </td>
-        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="order-link">{{ order.order_id[:12] }}...</a></td>
-        <td>{{ order.purchaser_name or order.purchaser_email or '—' }}</td>
-        <td class="font-medium">{{ order.total_price|default('0.00', true) }} zł</td>
+        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link">{{ order.event_order_id[:12] }}...</a></td>
+        <td>{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or order.purchaser_email or '—' }}</td>
+        <td class="font-medium">{{ order.total|default('0.00', true) }} zł</td>
         <td>
           {% if order.status == 'paid' %}
           <span class="status-badge status-paid">Opłacone</span>

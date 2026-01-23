@@ -1,13 +1,13 @@
 {% extends 'admin_v2/base.html' %}
 
-{% block title %}Zamówienie {{ order.order_id[:12] }}...{% endblock %}
+{% block title %}Zamówienie {{ order.event_order_id[:12] }}...{% endblock %}
 
 {% block content %}
 <!-- BREADCRUMB -->
 <nav class="breadcrumb">
   <a href="{{ url_for('admin_v2_bp.orders_list') }}">Zamówienia</a>
   <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
-  <span>{{ order.order_id[:16] }}...</span>
+  <span>{{ order.event_order_id[:16] }}...</span>
 </nav>
 
 <!-- PAGE HEADER -->
@@ -25,11 +25,11 @@
       <span class="status-badge">{{ order.status or '—' }}</span>
       {% endif %}
     </div>
-    <p class="page-description">{{ order.event_name or 'Wydarzenie' }} &bull; {{ order.purchaser_name or order.purchaser_email or '—' }}</p>
+    <p class="page-description">{{ order.event_name or 'Wydarzenie' }} &bull; {{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or order.purchaser_email or '—' }}</p>
   </div>
   <div class="header-actions">
     {% if order.wfirma_documents %}
-    <a href="{{ url_for('admin_bp.orders_list') }}?order_id={{ order.order_id }}" class="btn btn-outline" target="_blank">
+    <a href="{{ url_for('admin_bp.orders_list') }}?order_id={{ order.event_order_id }}" class="btn btn-outline" target="_blank">
       <i data-lucide="file-text"></i>
       Dokumenty wFirma
     </a>
@@ -52,7 +52,7 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="info-label">ID Zamówienia</span>
-            <span class="info-value" style="font-family: monospace; font-size: 0.8rem;">{{ order.order_id }}</span>
+            <span class="info-value" style="font-family: monospace; font-size: 0.8rem;">{{ order.event_order_id }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Data złożenia</span>
@@ -65,20 +65,20 @@
           <div class="info-item">
             <span class="info-label">Metoda płatności</span>
             <span class="info-value">
-              {% if order.payment_flow == 'STRIPE' %}
-              <span class="payment-badge payment-online">Online (Stripe)</span>
-              {% elif order.payment_flow == 'PROFORMA' %}
+              {% if 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
+              <span class="payment-badge payment-online">Online</span>
+              {% elif 'pro' in (order.payment_option_name or '')|lower or 'proforma' in (order.payment_type or '')|lower %}
               <span class="payment-badge payment-proforma">Pro forma</span>
-              {% elif order.payment_flow == 'FOC' %}
+              {% elif (order.total or 0)|float == 0 %}
               <span class="payment-badge payment-foc">FOC (bezpłatne)</span>
               {% else %}
-              <span class="payment-badge">{{ order.payment_flow or '—' }}</span>
+              <span class="payment-badge">{{ order.payment_option_name or order.payment_type or '—' }}</span>
               {% endif %}
             </span>
           </div>
           <div class="info-item">
             <span class="info-label">Wartość zamówienia</span>
-            <span class="info-value" style="font-size: 20px; font-weight: 700; color: var(--brand-blue);">{{ order.total_price|default('0.00', true) }} zł</span>
+            <span class="info-value" style="font-size: 20px; font-weight: 700; color: var(--brand-blue);">{{ order.total|default('0.00', true) }} zł</span>
           </div>
           <div class="info-item">
             <span class="info-label">Waluta</span>
@@ -97,7 +97,7 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="info-label">Imię i nazwisko</span>
-            <span class="info-value">{{ order.purchaser_name or '—' }}</span>
+            <span class="info-value">{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or '—' }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Email</span>
@@ -107,22 +107,10 @@
             <span class="info-label">Telefon</span>
             <span class="info-value">{{ order.purchaser_phone or '—' }}</span>
           </div>
-          {% if order.company_name %}
-          <div class="info-item">
-            <span class="info-label">Firma</span>
-            <span class="info-value">{{ order.company_name }}</span>
-          </div>
-          {% endif %}
-          {% if order.company_nip %}
+          {% if order.purchaser_nip %}
           <div class="info-item">
             <span class="info-label">NIP</span>
-            <span class="info-value">{{ order.company_nip }}</span>
-          </div>
-          {% endif %}
-          {% if order.company_address %}
-          <div class="info-item full-width">
-            <span class="info-label">Adres</span>
-            <span class="info-value">{{ order.company_address }}</span>
+            <span class="info-value">{{ order.purchaser_nip }}</span>
           </div>
           {% endif %}
         </div>
@@ -272,9 +260,9 @@
       <div class="card-content">
         <div style="font-size: 0.75rem; color: var(--muted-foreground);">
           <p><strong>Event ID:</strong> {{ order.event_id or '—' }}</p>
-          <p><strong>Order ID:</strong> {{ order.order_id or '—' }}</p>
-          <p><strong>Payment flow:</strong> {{ order.payment_flow or '—' }}</p>
-          <p><strong>Stripe Session:</strong> {{ order.stripe_session_id[:20] if order.stripe_session_id else '—' }}...</p>
+          <p><strong>Order ID:</strong> {{ order.event_order_id or '—' }}</p>
+          <p><strong>Opcja płatności:</strong> {{ order.payment_option_name or '—' }}</p>
+          <p><strong>Typ płatności:</strong> {{ order.payment_type or '—' }}</p>
         </div>
       </div>
     </div>
