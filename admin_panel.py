@@ -2384,6 +2384,366 @@ def event_new():
     return _event_form_page(token=token, event=None, tickets=[])
 
 
+@admin_bp.route("/events/clone", methods=["GET"])
+@_require_permission("events")
+def event_clone_page():
+    """Strona wyboru wydarzenia do sklonowania."""
+    token = _require_admin_token()
+
+    # Blokuj dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tworzenia wydarzeń")
+
+    all_events = list_events(limit=200)
+    events_list_html = ""
+    for ev in all_events:
+        ev_id = ev.get("event_id") or ""
+        ev_name = ev.get("event_name") or ""
+        ev_data = ev.get("data") or {}
+        if not isinstance(ev_data, dict):
+            ev_data = {}
+        ev_color = ev_data.get("color_gradient_1") or "#64748b"
+        ev_banner = ev_data.get("event_mail_link_top_banner") or ev_data.get("event_mail_link_bottom_banner") or ""
+        ev_is_active = ev.get("is_active", True)
+
+        safe_ev_name = (
+            ev_name.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+        banner_html = (
+            f'<img src="{ev_banner}" style="height:40px; width:80px; object-fit:cover; border-radius:4px;" onerror="this.style.display=\\\'none\\\'" />'
+            if ev_banner
+            else f'<div style="height:40px; width:80px; background:{ev_color}22; border-radius:4px;"></div>'
+        )
+
+        active_badge = "" if ev_is_active else '<span style="font-size:10px; background:#fef2f2; color:#991b1b; padding:2px 6px; border-radius:4px; margin-left:8px;">Nieaktywne</span>'
+
+        events_list_html += f'''
+        <a href="{url_for('admin_bp.event_clone_select', source_event_id=ev_id, token=token)}" class="clone-event-item" style="border-left-color:{ev_color};">
+          {banner_html}
+          <div style="flex:1;">
+            <div style="font-weight:600; color:#1e293b;">{safe_ev_name}{active_badge}</div>
+            <div style="font-size:12px; color:#64748b; font-family:monospace;">{ev_id[:20]}...</div>
+          </div>
+          <div style="color:#64748b;">→</div>
+        </a>
+        '''
+
+    body = f"""
+    <style>
+      .clone-event-item {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+        border: 1px solid #e2e8f0;
+        border-left: 6px solid #64748b;
+        border-radius: 10px;
+        background: #fff;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.15s;
+      }}
+      .clone-event-item:hover {{
+        border-color: #cbd5e1;
+        background: #f8fafc;
+      }}
+    </style>
+
+    <div style="margin-bottom:20px;">
+      <a class="btn" href="{url_for('admin_bp.event_new', token=token)}">← Wróć do nowego wydarzenia</a>
+    </div>
+    <div class="card" style="max-width:800px;">
+      <h2 style="margin:0 0 8px 0; font-size:20px;">📋 Skopiuj z istniejącego wydarzenia</h2>
+      <p class="muted" style="margin-bottom:24px;">Wybierz wydarzenie, z którego chcesz skopiować dane. Na następnej stronie wybierzesz które pola skopiować.</p>
+      {events_list_html if events_list_html else '<p class="muted">Brak wydarzeń do skopiowania.</p>'}
+    </div>
+    """
+    return _page("Klonuj wydarzenie", body)
+
+
+@admin_bp.route("/events/clone/<source_event_id>", methods=["GET"])
+@_require_permission("events")
+def event_clone_select(source_event_id: str):
+    """Strona wyboru pól do sklonowania z konkretnego wydarzenia."""
+    token = _require_admin_token()
+
+    # Blokuj dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tworzenia wydarzeń")
+
+    source_event = get_event(source_event_id)
+    if not source_event:
+        abort(404, description="Nie znaleziono wydarzenia źródłowego")
+
+    source_name = source_event.get("event_name") or ""
+    source_status = source_event.get("status") or ""
+    source_notes = source_event.get("notes") or ""
+    source_data = source_event.get("data") or {}
+    if not isinstance(source_data, dict):
+        source_data = {}
+
+    source_tickets = get_ticket_classes(source_event_id)
+
+    safe_source_name = (
+        source_name.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+    # Buduj listę pól do skopiowania (tylko wypełnione)
+    fields_html = ""
+    for fd in FIELD_DEFS:
+        k = fd["key"]
+        if k in ("eventId", "eventName"):
+            continue
+        val = source_data.get(k)
+        if val is not None and str(val).strip():
+            label = fd["label"]
+            short_val = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
+            safe_val = (
+                short_val.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            fields_html += f'''
+            <label class="clone-field-row">
+              <input type="checkbox" name="fields" value="{k}" />
+              <div class="clone-field-info">
+                <div class="clone-field-label">{label}</div>
+                <div class="clone-field-value">{safe_val}</div>
+              </div>
+            </label>
+            '''
+
+    if source_status:
+        safe_status = (
+            str(source_status).replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        fields_html += f'''
+        <label class="clone-field-row">
+          <input type="checkbox" name="fields" value="_status" />
+          <div class="clone-field-info">
+            <div class="clone-field-label">Status</div>
+            <div class="clone-field-value">{safe_status}</div>
+          </div>
+        </label>
+        '''
+
+    if source_notes:
+        safe_notes = (
+            str(source_notes).replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        fields_html += f'''
+        <label class="clone-field-row">
+          <input type="checkbox" name="fields" value="_notes" />
+          <div class="clone-field-info">
+            <div class="clone-field-label">Notatki</div>
+            <div class="clone-field-value">{safe_notes}</div>
+          </div>
+        </label>
+        '''
+
+    tickets_html = ""
+    if source_tickets:
+        tickets_count = len(source_tickets)
+        ticket_names = ", ".join([t.get("ticket_name") or "?" for t in source_tickets[:3]])
+        if tickets_count > 3:
+            ticket_names += f" (+{tickets_count - 3} więcej)"
+        tickets_html = f'''
+        <div style="margin-top:24px; padding-top:20px; border-top:2px solid #e2e8f0;">
+          <label class="clone-field-row" style="background:#faf5ff; border-color:#c084fc;">
+            <input type="checkbox" name="copy_tickets" value="1" />
+            <div class="clone-field-info">
+              <div class="clone-field-label" style="color:#7c3aed;">🎫 Skopiuj bilety (bez ID) — {tickets_count} biletów</div>
+              <div class="clone-field-value">{ticket_names}</div>
+            </div>
+          </label>
+        </div>
+        '''
+
+    body = f"""
+    <style>
+      .clone-field-row {{
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 16px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }}
+      .clone-field-row:hover {{
+        background: #f1f5f9;
+        border-color: #cbd5e1;
+      }}
+      .clone-field-row input[type="checkbox"] {{
+        width: 20px;
+        height: 20px;
+        margin-top: 2px;
+        accent-color: #4f46e5;
+      }}
+      .clone-field-info {{
+        flex: 1;
+      }}
+      .clone-field-label {{
+        font-weight: 600;
+        font-size: 14px;
+        color: #334155;
+      }}
+      .clone-field-value {{
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 2px;
+        word-break: break-all;
+      }}
+      .select-buttons {{
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }}
+      .select-buttons button {{
+        padding: 6px 12px;
+        font-size: 12px;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        cursor: pointer;
+      }}
+      .select-buttons button:hover {{
+        background: #e2e8f0;
+      }}
+    </style>
+
+    <div style="margin-bottom:20px; display:flex; gap:8px;">
+      <a class="btn" href="{url_for('admin_bp.event_clone_page', token=token)}">← Wybierz inne wydarzenie</a>
+      <a class="btn" href="{url_for('admin_bp.event_new', token=token)}">Pomiń klonowanie</a>
+    </div>
+
+    <div class="card" style="max-width:800px;">
+      <h2 style="margin:0 0 8px 0; font-size:20px;">📋 Klonuj z: {safe_source_name}</h2>
+      <p class="muted" style="margin-bottom:24px;">Zaznacz pola, które chcesz skopiować do nowego wydarzenia. Domyślnie wszystko jest odznaczone.</p>
+
+      <form method="post" action="{url_for('admin_bp.event_clone_apply', source_event_id=source_event_id)}">
+        <input type="hidden" name="token" value="{token}" />
+
+        <div class="select-buttons">
+          <button type="button" onclick="document.querySelectorAll('input[name=fields]').forEach(c => c.checked = true); const t=document.querySelector('input[name=copy_tickets]'); if (t) t.checked = true;">Zaznacz wszystkie</button>
+          <button type="button" onclick="document.querySelectorAll('input[name=fields]').forEach(c => c.checked = false); const t=document.querySelector('input[name=copy_tickets]'); if (t) t.checked = false;">Odznacz wszystkie</button>
+        </div>
+
+        {fields_html if fields_html else '<p class="muted">Brak wypełnionych pól do skopiowania.</p>'}
+
+        {tickets_html}
+
+        <div style="margin-top:24px; padding-top:20px; border-top:1px solid #e2e8f0;">
+          <button type="submit" class="btn btnPrimary" style="background:#4f46e5; font-size:16px; padding:12px 24px;">
+            Utwórz nowe wydarzenie z zaznaczonymi polami →
+          </button>
+        </div>
+      </form>
+    </div>
+    """
+    return _page(f"Klonuj: {safe_source_name}", body)
+
+
+@admin_bp.route("/events/clone/<source_event_id>/apply", methods=["POST"])
+@_require_permission("events")
+def event_clone_apply(source_event_id: str):
+    """Tworzy nowe wydarzenie z klonowanymi polami."""
+    token = _require_admin_token()
+
+    # Blokuj dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tworzenia wydarzeń")
+
+    source_event = get_event(source_event_id)
+    if not source_event:
+        abort(404, description="Nie znaleziono wydarzenia źródłowego")
+
+    source_status = source_event.get("status") or ""
+    source_notes = source_event.get("notes") or ""
+    source_data = source_event.get("data") or {}
+    if not isinstance(source_data, dict):
+        source_data = {}
+
+    selected_fields = request.form.getlist("fields")
+    copy_tickets = request.form.get("copy_tickets") == "1"
+
+    new_data: Dict[str, Any] = {}
+    new_status = ""
+    new_notes = ""
+
+    for field in selected_fields:
+        if field == "_status":
+            new_status = source_status
+        elif field == "_notes":
+            new_notes = source_notes
+        else:
+            if field in source_data:
+                new_data[field] = source_data[field]
+
+    new_tickets: List[Dict[str, Any]] = []
+    if copy_tickets:
+        source_tickets = get_ticket_classes(source_event_id)
+        for t in source_tickets:
+            new_tickets.append(
+                {
+                    "ticket_class_id": "",
+                    "ticket_name": t.get("ticket_name") or "",
+                    "data": t.get("data") or {},
+                }
+            )
+
+    session["clone_data"] = {
+        "status": new_status,
+        "notes": new_notes,
+        "data": new_data,
+        "tickets": new_tickets,
+    }
+
+    return redirect(url_for("admin_bp.event_new_with_clone", token=token))
+
+
+@admin_bp.route("/events/new-cloned", methods=["GET"])
+@_require_permission("events")
+def event_new_with_clone():
+    """Nowe wydarzenie z prefillowanymi danymi z klonowania."""
+    token = _require_admin_token()
+
+    # Blokuj dla nie-adminów
+    if not _is_admin_user(_get_current_admin_user()):
+        abort(403, description="Brak uprawnień do tworzenia wydarzeń")
+
+    clone_data = session.pop("clone_data", None)
+    if not clone_data:
+        return redirect(url_for("admin_bp.event_new", token=token))
+
+    fake_event = {
+        "event_id": "",
+        "event_name": "",
+        "status": clone_data.get("status") or "",
+        "notes": clone_data.get("notes") or "",
+        "is_active": True,
+        "data": clone_data.get("data") or {},
+    }
+    tickets = clone_data.get("tickets") or []
+
+    return _event_form_page(token=token, event=fake_event, tickets=tickets, is_cloned=True)
+
+
 @admin_bp.route("/events/<event_id>/edit", methods=["GET"])
 @_require_permission("events")
 def event_edit(event_id: str):
@@ -2893,8 +3253,13 @@ def _render_ticket_classes_section(tickets: List[Dict[str, Any]]) -> str:
     '''
 
 
-def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[Dict[str, Any]]) -> str:
-    is_new = event is None
+def _event_form_page(
+    token: str,
+    event: Optional[Dict[str, Any]],
+    tickets: List[Dict[str, Any]],
+    is_cloned: bool = False,
+) -> str:
+    is_new = event is None or is_cloned
     event_id = "" if is_new else (event.get("event_id") or "")
     event_name = "" if is_new else (event.get("event_name") or "")
     status = "" if is_new else (event.get("status") or "")
@@ -2903,40 +3268,6 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     data = {} if is_new else (event.get("data") or {})
     if not isinstance(data, dict):
         data = {}
-
-    # Dane do klonowania (tylko dla nowego wydarzenia)
-    clone_events_json = "{}"
-    clone_events_options_html = ""
-    if is_new:
-        all_events = list_events(limit=200)
-        clone_data_map: Dict[str, Any] = {}
-        clone_options = []
-        for ev in all_events:
-            ev_id = ev.get("event_id") or ""
-            ev_name = ev.get("event_name") or ""
-            ev_data = ev.get("data") or {}
-            if not isinstance(ev_data, dict):
-                ev_data = {}
-            ev_tickets = get_ticket_classes(ev_id)
-            # Przygotuj bilety bez ID (dla klonowania)
-            tickets_for_clone = []
-            for t in ev_tickets:
-                t_data = t.get("data") or {}
-                tickets_for_clone.append({
-                    "ticket_name": t.get("ticket_name") or "",
-                    "data": t_data,
-                })
-            clone_data_map[ev_id] = {
-                "event_name": ev_name,
-                "status": ev.get("status") or "",
-                "notes": ev.get("notes") or "",
-                "data": ev_data,
-                "tickets": tickets_for_clone,
-            }
-            safe_ev_name = ev_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-            clone_options.append(f'<option value="{ev_id}">{safe_ev_name}</option>')
-        clone_events_json = json.dumps(clone_data_map, ensure_ascii=False)
-        clone_events_options_html = "\n".join(clone_options)
 
     # Ticket classes -> JSON array (proste do wklejenia)
     ticket_classes_payload: List[Dict[str, Any]] = []
@@ -3078,196 +3409,26 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
         </form>
         """
 
-    # Sekcja klonowania (tylko dla nowego wydarzenia)
-    clone_section_html = ""
-    if is_new:
-        clone_section_html = f'''
-        <div class="card" style="margin-bottom:20px; border:2px solid #c7d2fe; background:linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);">
-          <div style="font-weight:700; color:#4f46e5; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-            <span style="font-size:20px;">📋</span> Klonuj z istniejącego wydarzenia
-          </div>
-          <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
-            <div style="flex:1; min-width:200px;">
-              <label style="font-size:12px; color:#64748b; display:block; margin-bottom:4px;">Wybierz wydarzenie źródłowe:</label>
-              <select id="clone-source-select" style="width:100%; padding:8px 12px; border:1px solid #c7d2fe; border-radius:6px; font-size:14px;">
-                <option value="">— wybierz wydarzenie —</option>
-                {clone_events_options_html}
-              </select>
-            </div>
-            <div style="padding-top:20px;">
-              <button type="button" id="clone-apply-btn" class="btn btnPrimary" style="background:#4f46e5;" disabled onclick="applyClone()">Skopiuj zaznaczone</button>
-            </div>
-          </div>
-          <div id="clone-fields-container" style="margin-top:16px; display:none;">
-            <div style="font-size:12px; color:#64748b; margin-bottom:8px;">Zaznacz pola do skopiowania (tylko wypełnione):</div>
-            <div id="clone-fields-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:6px; max-height:300px; overflow-y:auto; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:8px;"></div>
-            <div style="margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;">
-              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                <input type="checkbox" id="clone-tickets-checkbox" style="width:16px; height:16px;" />
-                <span style="font-weight:600; color:#7c3aed;">🎫 Skopiuj bilety (bez ID)</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <script>
-          const CLONE_EVENTS_DATA = {clone_events_json};
-          const FIELD_LABELS = {{{", ".join([f'"{fd["key"]}": "{fd["label"]}"' for fd in FIELD_DEFS])}}};
-          
-          document.getElementById('clone-source-select').addEventListener('change', function() {{
-            const sourceId = this.value;
-            const container = document.getElementById('clone-fields-container');
-            const fieldsList = document.getElementById('clone-fields-list');
-            const applyBtn = document.getElementById('clone-apply-btn');
-            const ticketsCheckbox = document.getElementById('clone-tickets-checkbox');
-            
-            if (!sourceId || !CLONE_EVENTS_DATA[sourceId]) {{
-              container.style.display = 'none';
-              applyBtn.disabled = true;
-              return;
-            }}
-            
-            const source = CLONE_EVENTS_DATA[sourceId];
-            const sourceData = source.data || {{}};
-            
-            // Buduj checkboxy tylko dla wypełnionych pól
-            let html = '';
-            for (const [key, label] of Object.entries(FIELD_LABELS)) {{
-              // Pomijamy eventId i eventName - te użytkownik wypełnia ręcznie
-              if (key === 'eventId' || key === 'eventName') continue;
-              
-              const val = sourceData[key];
-              if (val !== undefined && val !== null && String(val).trim() !== '') {{
-                const shortVal = String(val).length > 30 ? String(val).substring(0, 30) + '...' : String(val);
-                const escapedVal = shortVal.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                html += '<label style="display:flex; align-items:flex-start; gap:6px; padding:4px 8px; background:#f8fafc; border-radius:4px; cursor:pointer; font-size:13px;">' +
-                  '<input type="checkbox" class="clone-field-cb" data-field-key="' + key + '" checked style="margin-top:2px;" />' +
-                  '<span><strong>' + label + '</strong><br><span style="color:#64748b; font-size:11px;">' + escapedVal + '</span></span>' +
-                  '</label>';
-              }}
-            }}
-            
-            // Dodaj status i notatki jeśli wypełnione
-            if (source.status && String(source.status).trim()) {{
-              html += '<label style="display:flex; align-items:flex-start; gap:6px; padding:4px 8px; background:#f8fafc; border-radius:4px; cursor:pointer; font-size:13px;">' +
-                '<input type="checkbox" class="clone-field-cb" data-field-key="_status" checked style="margin-top:2px;" />' +
-                '<span><strong>Status</strong><br><span style="color:#64748b; font-size:11px;">' + source.status + '</span></span>' +
-                '</label>';
-            }}
-            if (source.notes && String(source.notes).trim()) {{
-              html += '<label style="display:flex; align-items:flex-start; gap:6px; padding:4px 8px; background:#f8fafc; border-radius:4px; cursor:pointer; font-size:13px;">' +
-                '<input type="checkbox" class="clone-field-cb" data-field-key="_notes" checked style="margin-top:2px;" />' +
-                '<span><strong>Notatki</strong><br><span style="color:#64748b; font-size:11px;">' + source.notes + '</span></span>' +
-                '</label>';
-            }}
-            
-            if (!html) {{
-              html = '<div style="color:#94a3b8; padding:12px;">Brak wypełnionych pól do skopiowania.</div>';
-            }}
-            
-            fieldsList.innerHTML = html;
-            
-            // Checkbox biletów
-            ticketsCheckbox.checked = source.tickets && source.tickets.length > 0;
-            ticketsCheckbox.disabled = !source.tickets || source.tickets.length === 0;
-            
-            container.style.display = 'block';
-            applyBtn.disabled = false;
-          }});
-          
-          function applyClone() {{
-            const sourceId = document.getElementById('clone-source-select').value;
-            if (!sourceId || !CLONE_EVENTS_DATA[sourceId]) return;
-            
-            const source = CLONE_EVENTS_DATA[sourceId];
-            const sourceData = source.data || {{}};
-            
-            // Skopiuj zaznaczone pola
-            const checkboxes = document.querySelectorAll('.clone-field-cb:checked');
-            checkboxes.forEach(cb => {{
-              const key = cb.getAttribute('data-field-key');
-              if (key === '_status') {{
-                const statusInput = document.querySelector('input[name="status"]');
-                if (statusInput) statusInput.value = source.status || '';
-              }} else if (key === '_notes') {{
-                const notesInput = document.querySelector('input[name="notes"]');
-                if (notesInput) notesInput.value = source.notes || '';
-              }} else {{
-                const val = sourceData[key];
-                if (val !== undefined && val !== null) {{
-                  const input = document.querySelector('input[name="field__' + key + '"]');
-                  if (input) {{
-                    input.value = String(val);
-                    // Wywołaj updatePreview jeśli to pole z podglądem
-                    if (typeof updatePreview === 'function') {{
-                      updatePreview(input);
-                    }}
-                  }}
-                }}
-              }}
-            }});
-            
-            // Skopiuj bilety (bez ID)
-            const ticketsCheckbox = document.getElementById('clone-tickets-checkbox');
-            if (ticketsCheckbox && ticketsCheckbox.checked && source.tickets && source.tickets.length > 0) {{
-              const tbody = document.querySelector('#ticket-classes-table tbody');
-              if (tbody) {{
-                // Wyczyść istniejące wiersze
-                tbody.innerHTML = '';
-                
-                // Dodaj bilety ze źródła (bez ID!)
-                source.tickets.forEach(t => {{
-                  const ticketName = t.ticket_name || '';
-                  const ticketData = t.data || {{}};
-                  const ticketPrice = ticketData.ticket_price || ticketData.price || '';
-                  const ticketVat = ticketData.vat_rate || ticketData.vat || '';
-                  const ticketDataJson = JSON.stringify(ticketData).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-                  
-                  const row = document.createElement('tr');
-                  row.className = 'ticket-class-row';
-                  row.innerHTML = `
-                    <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
-                      <input type="text" name="ticket_class_id" value="" placeholder="ID z Backstage" style="width:100%; font-family:monospace; font-size:12px;" />
-                    </td>
-                    <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
-                      <input type="text" name="ticket_class_name" value="${{ticketName.replace(/"/g, '&quot;')}}" placeholder="Nazwa biletu" style="width:100%;" />
-                    </td>
-                    <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
-                      <input type="text" name="ticket_class_price" value="${{ticketPrice}}" placeholder="np. 399.00" style="width:100%; text-align:right;" />
-                    </td>
-                    <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
-                      <input type="text" name="ticket_class_vat" value="${{ticketVat}}" placeholder="np. 23" style="width:100%; text-align:right;" />
-                      <input type="hidden" name="ticket_class_data_json" value="${{ticketDataJson}}" />
-                    </td>
-                    <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; width:90px;">
-                      <button type="button" class="btn btnDanger" style="padding:4px 8px; font-size:11px;" onclick="removeTicketRow(this)">Usuń</button>
-                    </td>
-                  `;
-                  tbody.appendChild(row);
-                }});
-                
-                // Zaktualizuj JSON biletów
-                if (typeof syncTicketClassesJson === 'function') {{
-                  syncTicketClassesJson();
-                }}
-              }}
-            }}
-            
-            // Pokaż komunikat
-            alert('Skopiowano wybrane pola! Pamiętaj o ustawieniu nowego ID wydarzenia i nazwy.');
-          }}
-        </script>
-        '''
+    # Przycisk klonowania (tylko dla nowego wydarzenia, nie pokazuj gdy już sklonowane)
+    clone_button_html = ""
+    if is_new and not is_cloned:
+        clone_button_html = f'<a class="btn" href="{url_for("admin_bp.event_clone_page", token=token)}" style="background:#4f46e5; color:#fff; border-color:#4f46e5;">📋 Skopiuj z innego wydarzenia</a>'
+
+    # Informacja o klonowaniu
+    cloned_info_html = ""
+    if is_cloned:
+        cloned_info_html = '<span class="pill" style="background:#eef2ff; color:#4f46e5; font-size:12px;">📋 Dane skopiowane z innego wydarzenia</span>'
 
     body = f"""
-    <div style="margin-bottom:12px;">
+    <div style="margin-bottom:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
+      {clone_button_html}
+      {cloned_info_html}
       {preview_link}
       {rules_link}
       {tickets_link}
       {delete_form}
     </div>
-
-    {clone_section_html}
 
     <div class="grid-edit">
       
