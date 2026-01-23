@@ -110,7 +110,7 @@
           <span class="status-badge">{{ order.status or '—' }}</span>
           {% endif %}
         </td>
-        <td class="text-muted">{{ order.created_at[:10] if order.created_at else '—' }}</td>
+        <td class="text-muted">{{ order.created_at.strftime('%Y-%m-%d') if order.created_at else '—' }}</td>
       </tr>
       {% else %}
       <tr>

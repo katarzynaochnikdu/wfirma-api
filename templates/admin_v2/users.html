@@ -99,7 +99,7 @@
           <span class="checkin-badge checkin-pending">Nieaktywne</span>
           {% endif %}
         </td>
-        <td class="text-muted">{{ user.last_login[:16] if user.last_login else 'Nigdy' }}</td>
+        <td class="text-muted">{{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Nigdy' }}</td>
         <td>
           <div style="display: flex; gap: 0.25rem;">
             <a href="{{ url_for('admin_bp.user_access', user_id=user.id) }}" class="btn-icon" title="Edytuj uprawnienia">

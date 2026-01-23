@@ -50,12 +50,12 @@
         <td class="text-muted" style="font-family: monospace; font-size: 0.8rem;">{{ log.created_at or '—' }}</td>
         <td>
           <div class="buyer-cell">
-            <span class="buyer-name">{{ log.user_email or '—' }}</span>
-            <span class="buyer-email">ID: {{ log.user_id or '—' }}</span>
+            <span class="buyer-name">{{ log.admin_email or '—' }}</span>
+            <span class="buyer-email">ID: {{ log.admin_user_id or '—' }}</span>
           </div>
         </td>
         <td>
-          {% if log.action == 'login' %}
+          {% if log.action == 'login_success' %}
           <span class="status-badge status-paid">Logowanie</span>
           {% elif log.action == 'logout' %}
           <span class="status-badge">Wylogowanie</span>
@@ -73,10 +73,10 @@
         </td>
         <td style="max-width: 300px;">
           <span style="font-size: 0.8rem; color: var(--muted-foreground); word-break: break-word;">
-            {{ log.details[:100] if log.details else '—' }}{% if log.details and log.details|length > 100 %}...{% endif %}
+            {{ log.target_email or '—' }}
           </span>
         </td>
-        <td class="text-muted" style="font-family: monospace; font-size: 0.75rem;">{{ log.ip_address or '—' }}</td>
+        <td class="text-muted" style="font-family: monospace; font-size: 0.75rem;">{{ log.ip or '—' }}</td>
       </tr>
       {% else %}
       <tr>
