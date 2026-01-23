@@ -1788,3 +1788,422 @@ def render_participant_ticket_email(
     }
     
     return TEMPLATE_PARTICIPANT_TICKET.format(**data)
+
+
+# =============================================================================
+# SZABLON: Przypomnienie o niedokończonej płatności (Checkout Reminder)
+# =============================================================================
+
+TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dokończ płatność – {event_name}</title>
+</head>
+<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 20px 0;">
+        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <tr>
+            <td>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                
+                <!-- TOP BANNER -->
+                <tr>
+                  <td valign="top">
+                    <a href="{url_event}" target="_blank">
+                      <img src="{event_mail_link_top_banner}" alt="{event_name}" style="display: block; width: 100%; max-width: 600px; height: auto;">
+                    </a>
+                  </td>
+                </tr>
+
+                <!-- ALERT BAR -->
+                <tr>
+                  <td style="background: linear-gradient(90deg, #F59E0B, #D97706); padding: 12px 24px;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="color: #ffffff; font-size: 14px; font-weight: bold;">
+                          ⏰ Twoja rezerwacja czeka na dokończenie
+                        </td>
+                        <td align="right" style="color: #ffffff; font-size: 13px;">
+                          Link ważny: {expires_in}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- TREŚĆ GŁÓWNA -->
+                <tr>
+                  <td valign="top" style="padding: 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td>
+                          <h2 style="font-size: 22px; margin: 0 0 16px 0; color: #1f2937;">
+                            Cześć <strong>{purchaser_first_name}</strong>!
+                          </h2>
+                          <p style="margin: 0 0 16px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
+                            Zauważyliśmy, że rozpocząłeś/aś rezerwację na wydarzenie <strong>{event_name}</strong>, 
+                            ale płatność nie została jeszcze dokończona.
+                          </p>
+                          <p style="margin: 0 0 24px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
+                            Twoja rezerwacja jest wciąż zarezerwowana — wystarczy kliknąć poniższy przycisk, 
+                            aby dokończyć płatność i potwierdzić swoje miejsce.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- PODSUMOWANIE ZAMÓWIENIA -->
+                <tr>
+                  <td style="padding: 0 24px 24px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <tr>
+                        <td style="padding: 16px;">
+                          <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Podsumowanie zamówienia
+                          </p>
+                          {tickets_summary}
+                          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+                            <tr>
+                              <td style="font-size: 16px; font-weight: 700; color: #1f2937;">Do zapłaty:</td>
+                              <td align="right" style="font-size: 20px; font-weight: 700; color: {color_gradient_1};">{total_formatted}</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- PRZYCISK CTA -->
+                <tr>
+                  <td style="padding: 0 24px 32px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td align="center">
+                          <a href="{checkout_url}" target="_blank" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); color: #ffffff; font-size: 16px; font-weight: 700; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
+                            Dokończ płatność →
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td align="center" style="padding-top: 16px;">
+                          <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                            Jeśli przycisk nie działa, skopiuj ten link:<br>
+                            <a href="{checkout_url}" style="color: {color_gradient_1}; word-break: break-all;">{checkout_url}</a>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- INFO -->
+                <tr>
+                  <td style="padding: 16px 24px; background-color: #fef3c7; border-top: 1px solid #fde68a;">
+                    <p style="margin: 0; font-size: 13px; color: #92400e;">
+                      <strong>💡 Uwaga:</strong> Link do płatności wygasa {expires_at}. 
+                      Po tym czasie będziesz musiał/a rozpocząć rezerwację od nowa.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- FOOTER -->
+                <tr>
+                  <td style="padding: 24px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="font-size: 12px; color: #64748b; line-height: 1.5;">
+                          <p style="margin: 0 0 8px 0;">Masz pytania? Napisz do nas:</p>
+                          <p style="margin: 0;"><a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: none;">{md_email_kontakt}</a></p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
+
+
+def render_checkout_reminder_email(
+    event_name: str,
+    purchaser_first_name: str,
+    purchaser_last_name: str,
+    purchaser_email: str,
+    total_gross: float,
+    checkout_url: str,
+    expires_at: str,
+    expires_in: str,
+    event_config: Optional[Dict[str, Any]] = None,
+    tickets: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """
+    Renderuje email z przypomnieniem o niedokończonej płatności.
+    
+    Args:
+        event_name: Nazwa eventu
+        purchaser_*: Dane kupującego
+        total_gross: Kwota brutto
+        checkout_url: URL do sesji Stripe
+        expires_at: Data/czas wygaśnięcia (np. "26.01.2026, 15:00")
+        expires_in: Czas do wygaśnięcia (np. "23 godziny")
+        event_config: Konfiguracja eventu
+        tickets: Lista biletów [{name, quantity, price}]
+    
+    Returns:
+        Gotowy HTML email
+    """
+    event_config = event_config or get_default_event_config()
+    tickets = tickets or []
+    
+    # Generuj podsumowanie biletów
+    tickets_summary = ""
+    if tickets:
+        ticket_lines = []
+        for t in tickets:
+            name = t.get("name", "Bilet")
+            qty = t.get("quantity", 1)
+            price = t.get("price", 0)
+            line = f'<p style="margin: 0 0 8px 0; font-size: 14px; color: #374151;">{qty}× {name} — {format_currency(price * qty)}</p>'
+            ticket_lines.append(line)
+        tickets_summary = "".join(ticket_lines)
+    else:
+        tickets_summary = '<p style="margin: 0; font-size: 14px; color: #374151;">Rezerwacja na wydarzenie</p>'
+    
+    data = {
+        "event_name": event_name,
+        "purchaser_first_name": purchaser_first_name or "Uczestniku",
+        "total_formatted": format_currency(total_gross),
+        "checkout_url": checkout_url,
+        "expires_at": expires_at,
+        "expires_in": expires_in,
+        "tickets_summary": tickets_summary,
+        # Event config
+        "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
+        "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
+        "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
+        "url_event": event_config.get("url_event", "https://medidesk.com"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+    }
+    
+    return TEMPLATE_CHECKOUT_REMINDER.format(**data)
+
+
+# =============================================================================
+# SZABLON: Nowy link po wygaśnięciu sesji (Checkout Expired - New Link)
+# =============================================================================
+
+TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nowy link do płatności – {event_name}</title>
+</head>
+<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 20px 0;">
+        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <tr>
+            <td>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                
+                <!-- TOP BANNER -->
+                <tr>
+                  <td valign="top">
+                    <a href="{url_event}" target="_blank">
+                      <img src="{event_mail_link_top_banner}" alt="{event_name}" style="display: block; width: 100%; max-width: 600px; height: auto;">
+                    </a>
+                  </td>
+                </tr>
+
+                <!-- INFO BAR -->
+                <tr>
+                  <td style="background: linear-gradient(90deg, {color_gradient_1}, {color_gradient_2}); padding: 12px 24px;">
+                    <p style="margin: 0; color: #ffffff; font-size: 14px; font-weight: bold; text-align: center;">
+                      🔄 Wygenerowaliśmy dla Ciebie nowy link do płatności
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- TREŚĆ GŁÓWNA -->
+                <tr>
+                  <td valign="top" style="padding: 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td>
+                          <h2 style="font-size: 22px; margin: 0 0 16px 0; color: #1f2937;">
+                            Cześć <strong>{purchaser_first_name}</strong>!
+                          </h2>
+                          <p style="margin: 0 0 16px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
+                            Twój poprzedni link do płatności za rezerwację na <strong>{event_name}</strong> wygasł.
+                            Nie martw się — wygenerowaliśmy dla Ciebie nowy link, abyś mógł/mogła dokończyć rezerwację.
+                          </p>
+                          <p style="margin: 0 0 24px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
+                            Twoje miejsca są nadal zarezerwowane. Kliknij poniższy przycisk, aby opłacić rezerwację.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- PODSUMOWANIE ZAMÓWIENIA -->
+                <tr>
+                  <td style="padding: 0 24px 24px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0;">
+                      <tr>
+                        <td style="padding: 16px;">
+                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="vertical-align: top; width: 40px;">
+                                <div style="width: 32px; height: 32px; background-color: #22c55e; border-radius: 50%; text-align: center; line-height: 32px; color: white; font-size: 16px;">✓</div>
+                              </td>
+                              <td style="vertical-align: top; padding-left: 12px;">
+                                <p style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #166534;">Twoja rezerwacja jest nadal aktywna</p>
+                                <p style="margin: 0; font-size: 13px; color: #15803d;">Zamówienie z dnia {original_order_date}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- KWOTA -->
+                <tr>
+                  <td style="padding: 0 24px 24px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <tr>
+                        <td style="padding: 16px;">
+                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="font-size: 14px; color: #64748b;">Kwota do zapłaty:</td>
+                              <td align="right" style="font-size: 24px; font-weight: 700; color: {color_gradient_1};">{total_formatted}</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- PRZYCISK CTA -->
+                <tr>
+                  <td style="padding: 0 24px 32px 24px; background-color: #FFFFFF;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td align="center">
+                          <a href="{new_checkout_url}" target="_blank" style="display: inline-block; padding: 18px 56px; background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); color: #ffffff; font-size: 17px; font-weight: 700; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
+                            Opłać rezerwację →
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td align="center" style="padding-top: 16px;">
+                          <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                            Nowy link ważny do: <strong>{new_expires_at}</strong>
+                          </p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td align="center" style="padding-top: 12px;">
+                          <p style="margin: 0; font-size: 11px; color: #9ca3af;">
+                            Jeśli przycisk nie działa:<br>
+                            <a href="{new_checkout_url}" style="color: {color_gradient_1}; word-break: break-all; font-size: 11px;">{new_checkout_url}</a>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- FOOTER -->
+                <tr>
+                  <td style="padding: 24px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="font-size: 12px; color: #64748b; line-height: 1.5;">
+                          <p style="margin: 0 0 8px 0;">
+                            Jeśli nie chcesz kontynuować rezerwacji, zignoruj tę wiadomość. 
+                            Twoje dane zostaną automatycznie usunięte po wygaśnięciu linku.
+                          </p>
+                          <p style="margin: 0;">
+                            Pytania? <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: none;">{md_email_kontakt}</a>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
+
+
+def render_checkout_expired_new_link_email(
+    event_name: str,
+    purchaser_first_name: str,
+    purchaser_last_name: str,
+    purchaser_email: str,
+    total_gross: float,
+    new_checkout_url: str,
+    new_expires_at: str,
+    original_order_date: str,
+    event_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Renderuje email z nowym linkiem po wygaśnięciu poprzedniej sesji.
+    
+    Args:
+        event_name: Nazwa eventu
+        purchaser_*: Dane kupującego
+        total_gross: Kwota brutto
+        new_checkout_url: Nowy URL do sesji Stripe
+        new_expires_at: Data/czas wygaśnięcia nowego linku (np. "26.01.2026, 15:00")
+        original_order_date: Data oryginalnego zamówienia (np. "23.01.2026")
+        event_config: Konfiguracja eventu
+    
+    Returns:
+        Gotowy HTML email
+    """
+    event_config = event_config or get_default_event_config()
+    
+    data = {
+        "event_name": event_name,
+        "purchaser_first_name": purchaser_first_name or "Uczestniku",
+        "total_formatted": format_currency(total_gross),
+        "new_checkout_url": new_checkout_url,
+        "new_expires_at": new_expires_at,
+        "original_order_date": original_order_date,
+        # Event config
+        "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
+        "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
+        "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
+        "url_event": event_config.get("url_event", "https://medidesk.com"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+    }
+    
+    return TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK.format(**data)
