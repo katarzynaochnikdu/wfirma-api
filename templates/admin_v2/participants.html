@@ -9,6 +9,16 @@
     <h1 class="page-title">Uczestnicy</h1>
     <p class="page-description">Zarządzaj wszystkimi uczestnikami wydarzeń</p>
   </div>
+  <div class="header-actions">
+    <button class="btn btn-outline">
+      <i data-lucide="mail"></i>
+      Wyślij wiadomość
+    </button>
+    <button class="btn btn-outline">
+      <i data-lucide="download"></i>
+      Eksportuj
+    </button>
+  </div>
 </div>
 
 <!-- STATS -->
@@ -54,7 +64,7 @@
         <option value="">Wszystkie statusy</option>
         <option value="emailed"{% if request.args.get('status') == 'emailed' %} selected{% endif %}>Powiadomieni</option>
         <option value="registered"{% if request.args.get('status') == 'registered' %} selected{% endif %}>Zarejestrowani</option>
-        <option value="pending"{% if request.args.get('status') == 'pending' %} selected{% endif %}>Oczekujący</option>
+        <option value="checked_in"{% if request.args.get('status') == 'checked_in' %} selected{% endif %}>Zameldowani</option>
         <option value="cancelled"{% if request.args.get('status') == 'cancelled' %} selected{% endif %}>Anulowani</option>
       </select>
     </div>
@@ -87,9 +97,14 @@
       {% for p in participants %}
       <tr>
         <td>
-          <div class="buyer-cell">
-            <span class="buyer-name">{{ (p.first_name or '') ~ ' ' ~ (p.last_name or '') or '—' }}</span>
-            <span class="buyer-email">{{ p.email or '—' }}</span>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div class="avatar-initials small">
+              {{ (p.first_name or '')[:1]|upper }}{{ (p.last_name or '')[:1]|upper }}
+            </div>
+            <div class="buyer-cell">
+              <span class="buyer-name">{{ (p.first_name or '') ~ ' ' ~ (p.last_name or '') or '—' }}</span>
+              <span class="buyer-email">{{ p.email or '—' }}</span>
+            </div>
           </div>
         </td>
         <td>
@@ -98,7 +113,7 @@
             <span>{{ p.event_name or '—' }}</span>
           </div>
         </td>
-        <td>{{ p.ticket_class_id or '—' }}</td>
+        <td>{{ p.ticket_class_name or p.ticket_class_id or '—' }}</td>
         <td>
           {% if p.event_order_id %}
           <a href="{{ url_for('admin_v2_bp.order_detail', order_id=p.event_order_id) }}" class="order-link">{{ p.event_order_id[:12] }}...</a>
@@ -110,16 +125,16 @@
           {% if p.status == 'emailed' %}
           <span class="status-badge status-paid">Powiadomiony</span>
           {% elif p.status == 'registered' %}
-          <span class="status-badge status-paid">Zarejestrowany</span>
-          {% elif p.status == 'pending' %}
-          <span class="status-badge status-pending">Oczekujący</span>
+          <span class="status-badge">Zarejestrowany</span>
+          {% elif p.status == 'checked_in' %}
+          <span class="status-badge status-paid">Zameldowany</span>
           {% elif p.status == 'cancelled' %}
           <span class="status-badge status-cancelled">Anulowany</span>
           {% else %}
           <span class="status-badge">{{ p.status or '—' }}</span>
           {% endif %}
         </td>
-        <td class="text-muted">{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
+        <td class="text-muted">{{ p.created_at.strftime('%d.%m.%Y') if p.created_at else '—' }}</td>
       </tr>
       {% else %}
       <tr>

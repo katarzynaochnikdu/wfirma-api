@@ -86,7 +86,7 @@
           <span class="payment-badge">{{ order.payment_option_name or order.payment_type or '—' }}</span>
           {% endif %}
         </td>
-        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link">{{ order.event_order_id[:12] }}...</a></td>
+        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link" style="display: inline-flex; align-items: center; gap: 4px;">{{ order.event_order_id[:12] }}...<i data-lucide="external-link" style="width: 12px; height: 12px;"></i></a></td>
         <td>
           <div class="buyer-cell">
             <span class="buyer-name">{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or '—' }}</span>

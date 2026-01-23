@@ -2,6 +2,10 @@
 
 {% block title %}Dashboard{% endblock %}
 
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <!-- PAGE HEADER -->
 <div class="page-header">
@@ -65,10 +69,8 @@
     <div class="card-header">
       <h3 class="card-title">Przychód w czasie</h3>
     </div>
-    <div class="card-content">
-      <div style="height: 240px;">
-        <canvas id="revenueChart"></canvas>
-      </div>
+    <div class="card-content" style="padding: 1rem;">
+      <canvas id="revenueChart" style="height: 240px; width: 100%;"></canvas>
     </div>
   </div>
   
@@ -77,10 +79,8 @@
     <div class="card-header">
       <h3 class="card-title">Metody płatności</h3>
     </div>
-    <div class="card-content">
-      <div style="height: 240px;">
-        <canvas id="paymentChart"></canvas>
-      </div>
+    <div class="card-content" style="padding: 1rem;">
+      <canvas id="paymentChart" style="height: 240px; width: 100%;"></canvas>
     </div>
   </div>
 </div>
@@ -138,64 +138,44 @@
     </tbody>
   </table>
 </div>
-
-{% endblock %}
-
-{% block extra_head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  // Dane z backendu
-  const chartData = {{ chart_data|tojson|safe if chart_data else '{}' }};
+  // Dane z backendu (przekazane przez Jinja) - z fallbackami
+  var revenueData = {{ chart_data.revenue | tojson | default('[]', true) }};
+  var revenueLabels = {{ chart_data.revenue_labels | tojson | default('[]', true) }};
+  var paymentData = {{ chart_data.payment_methods | tojson | default('{}', true) }};
   
-  // Wykres przychodu
-  const revenueCtx = document.getElementById('revenueChart');
+  // Domyślne dane jeśli brak z backendu
+  var defaultRevenueLabels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze'];
+  var defaultRevenueData = [0, 0, 0, 0, 0, 0];
+  var defaultPaymentData = { 'Online': 0, 'Proforma': 0, 'FOC': 0 };
+  
+  var finalRevenueLabels = (revenueLabels && revenueLabels.length) ? revenueLabels : defaultRevenueLabels;
+  var finalRevenueData = (revenueData && revenueData.length) ? revenueData : defaultRevenueData;
+  var finalPaymentData = (paymentData && Object.keys(paymentData).length) ? paymentData : defaultPaymentData;
+  
+  // Revenue Chart (Line)
+  var revenueCtx = document.getElementById('revenueChart');
   if (revenueCtx) {
     new Chart(revenueCtx, {
       type: 'line',
       data: {
-        labels: chartData.revenue_labels || ['Brak danych'],
+        labels: finalRevenueLabels,
         datasets: [{
           label: 'Przychód (PLN)',
-          data: chartData.revenue || [0],
+          data: finalRevenueData,
           borderColor: 'hsl(212, 100%, 42%)',
           backgroundColor: 'hsla(212, 100%, 42%, 0.1)',
+          borderWidth: 2,
           fill: true,
-          tension: 0.4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          y: { beginAtZero: true }
-        }
-      }
-    });
-  }
-  
-  // Wykres metod płatności
-  const paymentCtx = document.getElementById('paymentChart');
-  if (paymentCtx) {
-    const paymentMethods = chartData.payment_methods || {};
-    new Chart(paymentCtx, {
-      type: 'doughnut',
-      data: {
-        labels: Object.keys(paymentMethods).length ? Object.keys(paymentMethods) : ['Brak danych'],
-        datasets: [{
-          data: Object.keys(paymentMethods).length ? Object.values(paymentMethods) : [1],
-          backgroundColor: [
-            'hsl(212, 100%, 42%)',
-            'hsl(160, 82%, 44%)',
-            'hsl(280, 70%, 50%)',
-            'hsl(40, 70%, 50%)'
-          ]
+          tension: 0.4,
+          pointBackgroundColor: 'hsl(212, 100%, 42%)',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 4
         }]
       },
       options: {
@@ -203,8 +183,66 @@ document.addEventListener('DOMContentLoaded', function() {
         maintainAspectRatio: false,
         plugins: {
           legend: {
+            display: false
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              display: false
+            },
+            ticks: {
+              color: 'hsl(210, 10%, 50%)'
+            }
+          },
+          y: {
+            grid: {
+              color: 'hsla(210, 10%, 50%, 0.1)'
+            },
+            ticks: {
+              color: 'hsl(210, 10%, 50%)',
+              callback: function(value) {
+                return value.toLocaleString('pl-PL') + ' zł';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+  
+  // Payment Methods Chart (Doughnut)
+  var paymentCtx = document.getElementById('paymentChart');
+  if (paymentCtx) {
+    new Chart(paymentCtx, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(finalPaymentData),
+        datasets: [{
+          data: Object.values(finalPaymentData),
+          backgroundColor: [
+            'hsl(212, 100%, 42%)',
+            'hsl(160, 82%, 44%)',
+            'hsl(195, 100%, 42%)',
+            'hsl(280, 70%, 50%)'
+          ],
+          borderWidth: 0,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: {
             position: 'bottom',
-            labels: { boxWidth: 12 }
+            labels: {
+              padding: 16,
+              usePointStyle: true,
+              pointStyle: 'circle',
+              color: 'hsl(210, 10%, 30%)'
+            }
           }
         }
       }
