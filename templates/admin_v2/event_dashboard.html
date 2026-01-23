@@ -1,0 +1,195 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}{{ event.event_name or 'Wydarzenie' }}{% endblock %}
+
+{% block content %}
+<!-- BREADCRUMB -->
+<nav class="breadcrumb">
+  <a href="{{ url_for('admin_v2_bp.events_list') }}">Wydarzenia</a>
+  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+  <span>{{ event.event_name or 'Wydarzenie' }}</span>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ event.event_name or 'Wydarzenie' }}</h1>
+    <p class="page-description">Dashboard i statystyki wydarzenia</p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('admin_bp.event_edit', event_id=event.event_id) }}" class="btn btn-outline">
+      <i data-lucide="settings"></i>
+      Edytuj
+    </a>
+    <a href="{{ url_for('admin_bp.event_preview', event_id=event.event_id) }}" class="btn btn-primary">
+      <i data-lucide="eye"></i>
+      Podgląd
+    </a>
+  </div>
+</div>
+
+<!-- EVENT BANNER -->
+{% set event_data = event.data or {} %}
+{% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
+{% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
+
+<div class="event-banner" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});">
+  <div class="event-banner-content">
+    <span class="event-banner-label">{{ 'Aktywne' if event.is_active else 'Nieaktywne' }}</span>
+    <span class="event-banner-title">{{ event.event_name or 'Wydarzenie' }}</span>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats-grid" style="margin-top: 1.5rem;">
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon blue">
+        <i data-lucide="shopping-cart"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.total_orders or 0 }}</div>
+    <div class="stat-label">Zamówienia</div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon green">
+        <i data-lucide="users"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.total_participants or 0 }}</div>
+    <div class="stat-label">Uczestnicy</div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon cyan">
+        <i data-lucide="credit-card"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.total_revenue or '0.00' }} zł</div>
+    <div class="stat-label">Przychód</div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-header">
+      <div class="stat-icon green">
+        <i data-lucide="check-circle"></i>
+      </div>
+    </div>
+    <div class="stat-value">{{ stats.paid_orders or 0 }}</div>
+    <div class="stat-label">Opłacone</div>
+  </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="detail-grid" style="margin-top: 1.5rem;">
+  
+  <!-- LEFT - ORDERS -->
+  <div class="detail-main">
+    <div class="card">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="card-title">Ostatnie zamówienia</h3>
+        <a href="{{ url_for('admin_v2_bp.orders_list') }}?event_id={{ event.event_id }}" class="btn btn-ghost" style="font-size: 0.75rem;">
+          Zobacz wszystkie
+          <i data-lucide="arrow-right"></i>
+        </a>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Kupujący</th>
+            <th>Wartość</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in recent_orders %}
+          <tr>
+            <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link">{{ order.event_order_id[:12] }}...</a></td>
+            <td>{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or '—' }}</td>
+            <td class="font-medium">{{ order.total|default('0.00', true) }} zł</td>
+            <td>
+              {% if order.status == 'paid' %}
+              <span class="status-badge status-paid">Opłacone</span>
+              {% elif order.status == 'pending_payment' %}
+              <span class="status-badge status-pending">Oczekujące</span>
+              {% else %}
+              <span class="status-badge">{{ order.status or '—' }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+              Brak zamówień
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RIGHT - PARTICIPANTS -->
+  <div class="detail-sidebar">
+    <div class="card">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="card-title">Ostatni uczestnicy</h3>
+        <a href="{{ url_for('admin_v2_bp.participants_list') }}?event_id={{ event.event_id }}" class="btn btn-ghost" style="font-size: 0.75rem;">
+          Wszyscy
+          <i data-lucide="arrow-right"></i>
+        </a>
+      </div>
+      <div class="card-content">
+        {% for p in participants %}
+        <div class="participant-card" style="margin-bottom: 0.5rem;">
+          <div class="participant-card-left">
+            <div class="avatar-initials small">
+              {{ (p.first_name or '')[:1]|upper }}{{ (p.last_name or '')[:1]|upper }}
+            </div>
+            <div class="participant-card-info">
+              <span class="participant-card-name">{{ p.first_name or '' }} {{ p.last_name or '' }}</span>
+              <span class="participant-card-email">{{ p.email or '—' }}</span>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <p style="text-align: center; color: var(--muted-foreground); padding: 1rem;">
+          Brak uczestników
+        </p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- EVENT INFO -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Informacje</h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          {% if event_data.get('event_date_start') %}
+          <div class="info-item">
+            <span class="info-label">Data wydarzenia</span>
+            <span class="info-value">{{ event_data.get('event_date_start') }}</span>
+          </div>
+          {% endif %}
+          {% if event_data.get('event_location_city') %}
+          <div class="info-item">
+            <span class="info-label">Lokalizacja</span>
+            <span class="info-value">{{ event_data.get('event_location_city') }}</span>
+          </div>
+          {% endif %}
+          <div class="info-item">
+            <span class="info-label">Event ID</span>
+            <span class="info-value" style="font-family: monospace; font-size: 0.75rem;">{{ event.event_id }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -367,7 +367,12 @@ def order_detail(order_id: str):
     event = get_event(order.get("event_id"))
     if event:
         order["event_name"] = event.get("event_name", "")
-        order["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
+        event_data = event.get("data") or {}
+        order["event_color"] = event_data.get("color_gradient_1", "")
+        order["event_color_2"] = event_data.get("color_gradient_2", "")
+    
+    # Historia zamówienia (pusta lista - szablon ma fallback)
+    order_history = []
     
     return render_template(
         "admin_v2/order_detail.html",
@@ -375,6 +380,51 @@ def order_detail(order_id: str):
         order=order,
         participants=participants,
         wfirma_documents=wfirma_documents,
+        order_history=order_history,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/events/<event_id>/dashboard", methods=["GET"])
+@_require_permission("events")
+def event_dashboard(event_id: str):
+    """Dashboard pojedynczego wydarzenia."""
+    user = _get_current_admin_user()
+    
+    event = get_event(event_id)
+    if not event:
+        return redirect(url_for("admin_v2_bp.events_list"))
+    
+    # Pobierz zamówienia i uczestników dla tego wydarzenia
+    orders = list_orders(event_id=event_id, limit=500)
+    participants = get_participants_for_event(event_id) or []
+    
+    # Statystyki
+    total_orders = len(orders)
+    paid_orders = [o for o in orders if o.get("status") == "paid"]
+    total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
+    total_participants = len(participants)
+    
+    stats = {
+        "total_orders": total_orders,
+        "total_participants": total_participants,
+        "total_revenue": f"{total_revenue:,.2f}".replace(",", " "),
+        "paid_orders": len(paid_orders),
+    }
+    
+    # Ostatnie zamówienia
+    recent_orders = orders[:10]
+    for order in recent_orders:
+        order["event_name"] = event.get("event_name", "")
+        order["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
+    
+    return render_template(
+        "admin_v2/event_dashboard.html",
+        active_page="events",
+        event=event,
+        stats=stats,
+        recent_orders=recent_orders,
+        participants=participants[:20],
         **_get_common_context(user),
     )
 
@@ -528,9 +578,9 @@ def audit_log():
     if q_filter:
         audit_logs = [
             log for log in audit_logs
-            if q_filter in (log.get("user_email") or "").lower()
+            if q_filter in (log.get("admin_email") or "").lower()
             or q_filter in (log.get("action") or "").lower()
-            or q_filter in (log.get("details") or "").lower()
+            or q_filter in (log.get("target_email") or "").lower()
         ]
     
     return render_template(
