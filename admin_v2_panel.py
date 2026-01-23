@@ -166,11 +166,10 @@ def login():
             session["admin_user_id"] = user["id"]
             update_admin_user_last_login(user["id"])
             insert_admin_audit_log(
-                user_id=user["id"],
-                user_email=email,
-                action="login",
-                details="Login via Admin V2",
-                ip_address=request.remote_addr,
+                action="login_success",
+                admin_user_id=user["id"],
+                target_email=email,
+                ip=request.remote_addr,
             )
             return redirect(url_for("admin_v2_bp.dashboard"))
         else:
@@ -178,11 +177,10 @@ def login():
             if user:
                 increment_admin_user_failed_login(user["id"])
                 insert_admin_audit_log(
-                    user_id=user["id"],
-                    user_email=email,
                     action="login_failed",
-                    details="Failed login via Admin V2",
-                    ip_address=request.remote_addr,
+                    admin_user_id=user["id"],
+                    target_email=email,
+                    ip=request.remote_addr,
                 )
     
     return render_template("admin_v2/login.html", error=error)
@@ -194,11 +192,10 @@ def logout():
     user = _get_current_admin_user()
     if user:
         insert_admin_audit_log(
-            user_id=user["id"],
-            user_email=user.get("email"),
             action="logout",
-            details="Logout via Admin V2",
-            ip_address=request.remote_addr,
+            admin_user_id=user["id"],
+            target_email=user.get("email"),
+            ip=request.remote_addr,
         )
     session.pop("admin_user_id", None)
     return redirect(url_for("admin_v2_bp.login"))
