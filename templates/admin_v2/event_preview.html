@@ -1,0 +1,222 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Podgląd: {{ event.event_name or 'Wydarzenie' }}{% endblock %}
+
+{% block content %}
+<!-- BREADCRUMB -->
+<nav class="breadcrumb">
+  <a href="{{ url_for('admin_v2_bp.events_list') }}">Wydarzenia</a>
+  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+  <span>Podgląd</span>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ event.event_name or 'Wydarzenie' }}</h1>
+    <p class="page-description">Podgląd konfiguracji wydarzenia</p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('admin_v2_bp.event_edit', event_id=event.event_id) }}" class="btn btn-primary">
+      <i data-lucide="edit"></i>
+      Edytuj
+    </a>
+    <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=event.event_id) }}" class="btn btn-outline">
+      <i data-lucide="layout-dashboard"></i>
+      Dashboard
+    </a>
+  </div>
+</div>
+
+{% set event_data = event.data or {} %}
+{% set event_color = event_data.get('color_gradient_1') or '#2563eb' %}
+{% set event_color_2 = event_data.get('color_gradient_2') or '#1e40af' %}
+
+<!-- EVENT BANNER -->
+<div class="event-banner" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});">
+  <div class="event-banner-content">
+    <span class="event-banner-label">{{ 'Aktywne' if event.is_active else 'Nieaktywne' }}</span>
+    <span class="event-banner-title">{{ event.event_name or 'Wydarzenie' }}</span>
+  </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="detail-grid" style="margin-top: 1.5rem;">
+  
+  <!-- LEFT COLUMN -->
+  <div class="detail-main">
+    
+    <!-- BASIC INFO -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i data-lucide="info" style="width: 18px; height: 18px;"></i>
+          Podstawowe informacje
+        </h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Nazwa wydarzenia</span>
+            <span class="info-value">{{ event.event_name or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Event ID</span>
+            <span class="info-value" style="font-family: monospace;">{{ event.event_id or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Data</span>
+            <span class="info-value">{{ event_data.get('event_date_start') or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Godzina</span>
+            <span class="info-value">{{ event_data.get('event_time_text') or '—' }}</span>
+          </div>
+        </div>
+        
+        {% if event_data.get('event_description') %}
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 1rem 0;">
+        <div class="info-item">
+          <span class="info-label">Opis</span>
+          <p style="margin-top: 0.5rem; color: var(--foreground);">{{ event_data.get('event_description') }}</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- LOCATION -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i data-lucide="map-pin" style="width: 18px; height: 18px;"></i>
+          Lokalizacja
+        </h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Miejsce</span>
+            <span class="info-value">{{ event_data.get('event_location_place') or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Adres</span>
+            <span class="info-value">{{ event_data.get('event_location_address') or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Kod pocztowy</span>
+            <span class="info-value">{{ event_data.get('event_location_zip') or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Miasto</span>
+            <span class="info-value">{{ event_data.get('event_location_city') or '—' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BRANDING -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i data-lucide="palette" style="width: 18px; height: 18px;"></i>
+          Branding
+        </h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Kolory</span>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+              <div style="width: 32px; height: 32px; border-radius: 4px; background: {{ event_color }}; border: 1px solid var(--border);"></div>
+              <div style="width: 32px; height: 32px; border-radius: 4px; background: {{ event_color_2 }}; border: 1px solid var(--border);"></div>
+            </div>
+          </div>
+          <div class="info-item">
+            <span class="info-label">URL wydarzenia</span>
+            {% if event_data.get('url_event') %}
+            <a href="{{ event_data.get('url_event') }}" target="_blank" style="color: var(--primary);">{{ event_data.get('url_event') }}</a>
+            {% else %}
+            <span class="info-value">—</span>
+            {% endif %}
+          </div>
+        </div>
+        
+        {% if event_data.get('event_mail_link_top_banner') %}
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 1rem 0;">
+        <div class="info-item">
+          <span class="info-label">Baner email</span>
+          <img src="{{ event_data.get('event_mail_link_top_banner') }}" alt="Banner" 
+               style="margin-top: 0.5rem; max-width: 100%; border-radius: var(--radius); border: 1px solid var(--border);">
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="detail-sidebar">
+    
+    <!-- STATUS -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Status</h3>
+      </div>
+      <div class="card-content">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          {% if event.is_active %}
+          <span class="status-badge status-paid">Aktywne</span>
+          {% else %}
+          <span class="status-badge status-cancelled">Nieaktywne</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTACT -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i data-lucide="mail" style="width: 18px; height: 18px;"></i>
+          Kontakt
+        </h3>
+      </div>
+      <div class="card-content">
+        <div class="info-item">
+          <span class="info-label">Email kontaktowy</span>
+          <span class="info-value">{{ event_data.get('md_email_kontakt') or 'konferencje@medidesk.com' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Akcje</h3>
+      </div>
+      <div class="card-content">
+        <div class="quick-actions">
+          <a href="{{ url_for('admin_v2_bp.event_edit', event_id=event.event_id) }}" class="btn btn-primary" style="width: 100%;">
+            <i data-lucide="edit"></i>
+            Edytuj wydarzenie
+          </a>
+          <a href="{{ url_for('admin_v2_bp.orders_list') }}?event_id={{ event.event_id }}" class="btn btn-outline" style="width: 100%;">
+            <i data-lucide="shopping-cart"></i>
+            Zobacz zamówienia
+          </a>
+          <a href="{{ url_for('admin_v2_bp.participants_list') }}?event_id={{ event.event_id }}" class="btn btn-outline" style="width: 100%;">
+            <i data-lucide="users"></i>
+            Zobacz uczestników
+          </a>
+          <hr style="border: none; border-top: 1px solid var(--border); margin: 0.5rem 0;">
+          <a href="{{ url_for('admin_bp.event_edit', event_id=event.event_id) }}" class="btn btn-outline" style="width: 100%;" target="_blank">
+            <i data-lucide="external-link"></i>
+            Stary panel (zaawansowane)
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

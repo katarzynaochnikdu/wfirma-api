@@ -407,32 +407,149 @@ def email_designer():
 
 
 # ---------------------------------------------------------------------------
-# EVENT ROUTES (wrapper do starego panelu lub nowe)
+# EVENT ROUTES (nowe strony V2)
 # ---------------------------------------------------------------------------
 
 @admin_v2_bp.route("/events/new", methods=["GET", "POST"])
 @_require_permission("events")
 def event_new():
-    """Nowe wydarzenie - przekierowanie do starego panelu."""
-    # Przekieruj do starego panelu - tam jest pełna logika formularza
-    token = session.get("admin_user_id", "")
-    return redirect(url_for("admin_bp.event_new", token=token))
+    """Tworzenie nowego wydarzenia."""
+    from pg_storage import upsert_event
+    
+    user = _get_current_admin_user()
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        event_id = (request.form.get("event_id") or "").strip()
+        event_name = (request.form.get("event_name") or "").strip()
+        
+        if not event_id or not event_name:
+            error = "Wymagane: ID wydarzenia i Nazwa wydarzenia"
+        else:
+            # Sprawdź czy event_id już istnieje
+            existing = get_event(event_id)
+            if existing:
+                error = f"Wydarzenie o ID '{event_id}' już istnieje"
+            else:
+                # Zbierz dane
+                is_active = request.form.get("is_active") == "1"
+                data = {
+                    "event_date_start": request.form.get("event_date_start") or "",
+                    "event_time_text": request.form.get("event_time_text") or "",
+                    "event_description": request.form.get("event_description") or "",
+                    "event_location_place": request.form.get("event_location_place") or "",
+                    "event_location_address": request.form.get("event_location_address") or "",
+                    "event_location_zip": request.form.get("event_location_zip") or "",
+                    "event_location_city": request.form.get("event_location_city") or "",
+                    "color_gradient_1": request.form.get("color_gradient_1") or "#2563eb",
+                    "color_gradient_2": request.form.get("color_gradient_2") or "#1e40af",
+                    "event_mail_link_top_banner": request.form.get("event_mail_link_top_banner") or "",
+                    "url_event": request.form.get("url_event") or "",
+                    "md_email_kontakt": request.form.get("md_email_kontakt") or "konferencje@medidesk.com",
+                }
+                
+                try:
+                    upsert_event(event_id, event_name, status="active", notes="", data=data, is_active=is_active)
+                    return redirect(url_for("admin_v2_bp.event_dashboard", event_id=event_id))
+                except Exception as e:
+                    error = f"Błąd tworzenia wydarzenia: {e}"
+    
+    return render_template(
+        "admin_v2/event_form.html",
+        active_page="events",
+        event=None,
+        event_data=None,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
 
 
 @admin_v2_bp.route("/events/<event_id>/edit", methods=["GET", "POST"])
 @_require_permission("events")
 def event_edit(event_id: str):
-    """Edycja wydarzenia - przekierowanie do starego panelu."""
-    token = session.get("admin_user_id", "")
-    return redirect(url_for("admin_bp.event_edit", event_id=event_id, token=token))
+    """Edycja wydarzenia."""
+    from pg_storage import upsert_event
+    
+    user = _get_current_admin_user()
+    
+    event = get_event(event_id)
+    if not event:
+        return redirect(url_for("admin_v2_bp.events_list"))
+    
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        event_name = (request.form.get("event_name") or "").strip()
+        
+        if not event_name:
+            error = "Wymagane: Nazwa wydarzenia"
+        else:
+            is_active = request.form.get("is_active") == "1"
+            data = event.get("data") or {}
+            
+            # Aktualizuj dane
+            data.update({
+                "event_date_start": request.form.get("event_date_start") or "",
+                "event_time_text": request.form.get("event_time_text") or "",
+                "event_description": request.form.get("event_description") or "",
+                "event_location_place": request.form.get("event_location_place") or "",
+                "event_location_address": request.form.get("event_location_address") or "",
+                "event_location_zip": request.form.get("event_location_zip") or "",
+                "event_location_city": request.form.get("event_location_city") or "",
+                "color_gradient_1": request.form.get("color_gradient_1") or "#2563eb",
+                "color_gradient_2": request.form.get("color_gradient_2") or "#1e40af",
+                "event_mail_link_top_banner": request.form.get("event_mail_link_top_banner") or "",
+                "url_event": request.form.get("url_event") or "",
+                "md_email_kontakt": request.form.get("md_email_kontakt") or "konferencje@medidesk.com",
+            })
+            
+            try:
+                upsert_event(
+                    event_id=event_id,
+                    event_name=event_name,
+                    status=event.get("status") or "active",
+                    notes=event.get("notes") or "",
+                    data=data,
+                    is_active=is_active
+                )
+                success = "Wydarzenie zostało zaktualizowane"
+                # Odśwież dane
+                event = get_event(event_id)
+            except Exception as e:
+                error = f"Błąd aktualizacji: {e}"
+    
+    event_data = event.get("data") or {}
+    
+    return render_template(
+        "admin_v2/event_form.html",
+        active_page="events",
+        event=event,
+        event_data=event_data,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
 
 
 @admin_v2_bp.route("/events/<event_id>/preview", methods=["GET"])
 @_require_permission("events")
 def event_preview(event_id: str):
-    """Podgląd wydarzenia - przekierowanie do starego panelu."""
-    token = session.get("admin_user_id", "")
-    return redirect(url_for("admin_bp.event_preview", event_id=event_id, token=token))
+    """Podgląd wydarzenia."""
+    user = _get_current_admin_user()
+    
+    event = get_event(event_id)
+    if not event:
+        return redirect(url_for("admin_v2_bp.events_list"))
+    
+    return render_template(
+        "admin_v2/event_preview.html",
+        active_page="events",
+        event=event,
+        **_get_common_context(user),
+    )
 
 
 @admin_v2_bp.route("/events/<event_id>/dashboard", methods=["GET"])

@@ -1,0 +1,344 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}{{ 'Edytuj wydarzenie' if event else 'Nowe wydarzenie' }}{% endblock %}
+
+{% block content %}
+<!-- BREADCRUMB -->
+<nav class="breadcrumb">
+  <a href="{{ url_for('admin_v2_bp.events_list') }}">Wydarzenia</a>
+  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+  <span>{{ 'Edytuj' if event else 'Nowe wydarzenie' }}</span>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ 'Edytuj wydarzenie' if event else 'Nowe wydarzenie' }}</h1>
+    <p class="page-description">{{ 'Edytuj konfigurację wydarzenia' if event else 'Utwórz nowe wydarzenie' }}</p>
+  </div>
+  {% if event %}
+  <div class="header-actions">
+    <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=event.event_id) }}" class="btn btn-outline">
+      <i data-lucide="layout-dashboard"></i>
+      Dashboard
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-error" style="margin-bottom: 1.5rem;">
+  <i data-lucide="alert-circle"></i>
+  {{ error }}
+</div>
+{% endif %}
+
+{% if success %}
+<div class="alert alert-success" style="margin-bottom: 1.5rem;">
+  <i data-lucide="check-circle"></i>
+  {{ success }}
+</div>
+{% endif %}
+
+<form method="POST" class="event-form">
+  <div class="detail-grid">
+    
+    <!-- LEFT COLUMN - MAIN FORM -->
+    <div class="detail-main">
+      
+      <!-- BASIC INFO -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">
+            <i data-lucide="info" style="width: 18px; height: 18px;"></i>
+            Podstawowe informacje
+          </h3>
+        </div>
+        <div class="card-content">
+          <div class="form-group">
+            <label class="form-label" for="event_name">Nazwa wydarzenia *</label>
+            <input type="text" id="event_name" name="event_name" class="form-input" required
+                   value="{{ event.event_name if event else '' }}"
+                   placeholder="np. Konferencja Medidesk 2026">
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="event_id">ID wydarzenia *</label>
+            <input type="text" id="event_id" name="event_id" class="form-input" 
+                   value="{{ event.event_id if event else '' }}"
+                   placeholder="np. medidesk-2026"
+                   {% if event %}readonly{% endif %}
+                   {% if not event %}required{% endif %}>
+            <p class="form-hint">Unikalny identyfikator (bez spacji, małe litery)</p>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="event_date_start">Data rozpoczęcia</label>
+              <input type="date" id="event_date_start" name="event_date_start" class="form-input"
+                     value="{{ event_data.get('event_date_start', '') if event_data else '' }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="event_time_text">Godzina</label>
+              <input type="text" id="event_time_text" name="event_time_text" class="form-input"
+                     value="{{ event_data.get('event_time_text', '') if event_data else '' }}"
+                     placeholder="np. 09:00 - 17:00">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="event_description">Opis wydarzenia</label>
+            <textarea id="event_description" name="event_description" class="form-input" rows="4"
+                      placeholder="Krótki opis wydarzenia...">{{ event_data.get('event_description', '') if event_data else '' }}</textarea>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">
+              <input type="checkbox" name="is_active" value="1" 
+                     {% if not event or event.is_active %}checked{% endif %}>
+              Wydarzenie aktywne
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOCATION -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">
+            <i data-lucide="map-pin" style="width: 18px; height: 18px;"></i>
+            Lokalizacja
+          </h3>
+        </div>
+        <div class="card-content">
+          <div class="form-group">
+            <label class="form-label" for="event_location_place">Nazwa miejsca</label>
+            <input type="text" id="event_location_place" name="event_location_place" class="form-input"
+                   value="{{ event_data.get('event_location_place', '') if event_data else '' }}"
+                   placeholder="np. Centrum Konferencyjne">
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="event_location_address">Adres</label>
+            <input type="text" id="event_location_address" name="event_location_address" class="form-input"
+                   value="{{ event_data.get('event_location_address', '') if event_data else '' }}"
+                   placeholder="np. ul. Przykładowa 123">
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="event_location_zip">Kod pocztowy</label>
+              <input type="text" id="event_location_zip" name="event_location_zip" class="form-input"
+                     value="{{ event_data.get('event_location_zip', '') if event_data else '' }}"
+                     placeholder="00-000">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="event_location_city">Miasto</label>
+              <input type="text" id="event_location_city" name="event_location_city" class="form-input"
+                     value="{{ event_data.get('event_location_city', '') if event_data else '' }}"
+                     placeholder="Warszawa">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BRANDING -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">
+            <i data-lucide="palette" style="width: 18px; height: 18px;"></i>
+            Branding
+          </h3>
+        </div>
+        <div class="card-content">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="color_gradient_1">Kolor główny</label>
+              <input type="color" id="color_gradient_1" name="color_gradient_1" class="form-input-color"
+                     value="{{ event_data.get('color_gradient_1', '#2563eb') if event_data else '#2563eb' }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="color_gradient_2">Kolor dodatkowy</label>
+              <input type="color" id="color_gradient_2" name="color_gradient_2" class="form-input-color"
+                     value="{{ event_data.get('color_gradient_2', '#1e40af') if event_data else '#1e40af' }}">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="event_mail_link_top_banner">URL banera (email)</label>
+            <input type="url" id="event_mail_link_top_banner" name="event_mail_link_top_banner" class="form-input"
+                   value="{{ event_data.get('event_mail_link_top_banner', '') if event_data else '' }}"
+                   placeholder="https://example.com/banner.jpg">
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="url_event">URL strony wydarzenia</label>
+            <input type="url" id="url_event" name="url_event" class="form-input"
+                   value="{{ event_data.get('url_event', '') if event_data else '' }}"
+                   placeholder="https://medidesk.com/event">
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTACT -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">
+            <i data-lucide="mail" style="width: 18px; height: 18px;"></i>
+            Kontakt
+          </h3>
+        </div>
+        <div class="card-content">
+          <div class="form-group">
+            <label class="form-label" for="md_email_kontakt">Email kontaktowy</label>
+            <input type="email" id="md_email_kontakt" name="md_email_kontakt" class="form-input"
+                   value="{{ event_data.get('md_email_kontakt', 'konferencje@medidesk.com') if event_data else 'konferencje@medidesk.com' }}"
+                   placeholder="konferencje@medidesk.com">
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN - SIDEBAR -->
+    <div class="detail-sidebar">
+      
+      <!-- ACTIONS -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Akcje</h3>
+        </div>
+        <div class="card-content">
+          <div class="quick-actions">
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+              <i data-lucide="save"></i>
+              {{ 'Zapisz zmiany' if event else 'Utwórz wydarzenie' }}
+            </button>
+            <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline" style="width: 100%;">
+              <i data-lucide="x"></i>
+              Anuluj
+            </a>
+            {% if event %}
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 0.5rem 0;">
+            <a href="{{ url_for('admin_v2_bp.event_preview', event_id=event.event_id) }}" class="btn btn-outline" style="width: 100%;">
+              <i data-lucide="eye"></i>
+              Podgląd
+            </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- ADVANCED SETTINGS INFO -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Zaawansowane</h3>
+        </div>
+        <div class="card-content">
+          <p style="font-size: 0.875rem; color: var(--muted-foreground); margin-bottom: 1rem;">
+            Dla zaawansowanych ustawień (bilety, reguły płatności, klasy uczestników) użyj starego panelu.
+          </p>
+          {% if event %}
+          <a href="{{ url_for('admin_bp.event_edit', event_id=event.event_id) }}" class="btn btn-outline" style="width: 100%;" target="_blank">
+            <i data-lucide="external-link"></i>
+            Otwórz w starym panelu
+          </a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if event %}
+      <!-- EVENT INFO -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Informacje</h3>
+        </div>
+        <div class="card-content">
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">Event ID</span>
+              <span class="info-value" style="font-family: monospace; font-size: 0.75rem;">{{ event.event_id }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Status</span>
+              <span class="info-value">{{ 'Aktywne' if event.is_active else 'Nieaktywne' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</form>
+
+<style>
+.form-group {
+  margin-bottom: 1rem;
+}
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: var(--foreground);
+}
+.form-input {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(212, 100%, 42%, 0.1);
+}
+.form-input[readonly] {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.form-input-color {
+  width: 100%;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  margin-top: 0.25rem;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+textarea.form-input {
+  resize: vertical;
+  min-height: 100px;
+}
+.alert {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.alert-error {
+  background: var(--destructive-bg);
+  color: var(--destructive);
+  border: 1px solid var(--destructive);
+}
+.alert-success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+</style>
+{% endblock %}
