@@ -19,20 +19,19 @@
 
 <!-- FILTERS -->
 <div class="card filters-card">
-  <form class="filters-grid" style="grid-template-columns: 1fr 180px 180px;" method="GET">
+  <form class="filters-grid" style="grid-template-columns: 1fr 180px;" method="GET">
     <div class="filter-search">
       <i data-lucide="search" class="search-icon"></i>
       <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj wydarzeń..." class="search-input">
     </div>
     <div class="filter-select">
-      <select name="status">
+      <select name="status" onchange="this.form.submit()">
         <option value="">Wszystkie statusy</option>
         <option value="active"{% if request.args.get('status') == 'active' %} selected{% endif %}>Aktywne</option>
         <option value="draft"{% if request.args.get('status') == 'draft' %} selected{% endif %}>Szkice</option>
         <option value="completed"{% if request.args.get('status') == 'completed' %} selected{% endif %}>Zakończone</option>
       </select>
     </div>
-    <button type="submit" class="btn btn-outline">Filtruj</button>
   </form>
 </div>
 

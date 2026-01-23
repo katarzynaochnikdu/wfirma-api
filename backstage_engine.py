@@ -2826,3 +2826,384 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             "status": "error",
             "error": str(e),
         }
+
+
+# ---------------------------------------------------------------------------
+# BACKSTAGE EVENT WEBHOOK - tworzenie wydarzeń jako "draft" do zatwierdzenia
+# ---------------------------------------------------------------------------
+
+# Mapowanie kodów krajów na nazwy
+COUNTRY_CODE_TO_NAME = {
+    "PL": "Polska",
+    "DE": "Niemcy",
+    "GB": "Wielka Brytania",
+    "US": "Stany Zjednoczone",
+    "FR": "Francja",
+    "CZ": "Czechy",
+    "SK": "Słowacja",
+}
+
+# Mapowanie miesięcy na teksty polskie
+MONTH_NAMES_PL = {
+    1: ("styczeń", "stycznia"),
+    2: ("luty", "lutego"),
+    3: ("marzec", "marca"),
+    4: ("kwiecień", "kwietnia"),
+    5: ("maj", "maja"),
+    6: ("czerwiec", "czerwca"),
+    7: ("lipiec", "lipca"),
+    8: ("sierpień", "sierpnia"),
+    9: ("wrzesień", "września"),
+    10: ("październik", "października"),
+    11: ("listopad", "listopada"),
+    12: ("grudzień", "grudnia"),
+}
+
+
+def _build_backstage_image_url(resource_id: str, portal_id: str) -> str:
+    """
+    Buduje URL do obrazu Backstage z resourceId i portalId.
+    
+    Wzorzec: https://previewengine-accl.zohopublic.eu/image/BACKSTAGE/{resourceId}?cli-msg={base64}
+    """
+    import base64
+    
+    if not resource_id or not portal_id:
+        return ""
+    
+    cli_msg_data = {
+        "id": str(resource_id),
+        "module": "EventImageResource",
+        "subResourceId": int(portal_id) if portal_id.isdigit() else portal_id,
+        "type": "0",
+        "portalId": str(portal_id),
+    }
+    
+    cli_msg_json = json.dumps(cli_msg_data, separators=(',', ':'))
+    cli_msg_b64 = base64.b64encode(cli_msg_json.encode('utf-8')).decode('utf-8')
+    
+    return f"https://previewengine-accl.zohopublic.eu/image/BACKSTAGE/{resource_id}?cli-msg={cli_msg_b64}"
+
+
+def _country_code_to_name(code: str) -> str:
+    """Mapuje kod kraju (PL, DE, ...) na pełną nazwę."""
+    if not code:
+        return ""
+    return COUNTRY_CODE_TO_NAME.get(code.upper(), code)
+
+
+def _parse_iso_datetime(dt_str: str) -> Optional[datetime.datetime]:
+    """Parsuje datę ISO 8601 do obiektu datetime."""
+    if not dt_str:
+        return None
+    try:
+        # Usuń 'Z' i zamień na +00:00 dla kompatybilności
+        dt_str = dt_str.replace('Z', '+00:00')
+        # Obsłuż format z milisekundami
+        if '.' in dt_str:
+            # Python 3.6+ obsługuje fromisoformat z timezone
+            return datetime.datetime.fromisoformat(dt_str.split('.')[0])
+        return datetime.datetime.fromisoformat(dt_str.replace('+00:00', ''))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _calculate_date_fields(start_dt: Optional[datetime.datetime], end_dt: Optional[datetime.datetime]) -> Dict[str, Any]:
+    """
+    Wylicza pola pomocnicze z dat start/end.
+    
+    Zwraca dict z polami:
+    - event_day: dzień (liczba)
+    - event_month_number: miesiąc (liczba)
+    - event_month_text: nazwa miesiąca (styczeń, luty, ...)
+    - event_month_text_odmiana: odmiana (stycznia, lutego, ...)
+    - event_year: rok
+    - event_days_count: liczba dni wydarzenia
+    - event_time_text: godzina startu (HH:MM)
+    - event_day_text_1: pełna data (np. "6 lutego 2026")
+    """
+    result: Dict[str, Any] = {}
+    
+    if start_dt:
+        result["event_day"] = str(start_dt.day)
+        result["event_month_number"] = str(start_dt.month)
+        
+        month_names = MONTH_NAMES_PL.get(start_dt.month, ("", ""))
+        result["event_month_text"] = month_names[0]
+        result["event_month_text_odmiana"] = month_names[1]
+        result["event_year"] = str(start_dt.year)
+        result["event_time_text"] = start_dt.strftime("%H:%M")
+        result["event_day_text_1"] = f"{start_dt.day} {month_names[1]} {start_dt.year}"
+    
+    if start_dt and end_dt:
+        delta = end_dt.date() - start_dt.date()
+        result["event_days_count"] = str(delta.days + 1)  # +1 bo włącznie z dniem końcowym
+    elif start_dt:
+        result["event_days_count"] = "1"
+    
+    return result
+
+
+def _strip_html_tags(html: str) -> str:
+    """Usuwa tagi HTML z tekstu, zostawiając czysty tekst."""
+    import re
+    if not html:
+        return ""
+    # Usuń tagi HTML
+    clean = re.sub(r'<[^>]+>', ' ', html)
+    # Zamień wielokrotne spacje na pojedyncze
+    clean = re.sub(r'\s+', ' ', clean)
+    return clean.strip()
+
+
+def _parse_event_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parsuje payload webhooka wydarzenia z Zoho Backstage.
+    
+    Zwraca dict z polami:
+    - event_id: ID wydarzenia
+    - event_name: nazwa wydarzenia
+    - data: dict z polami do zapisania w JSONB
+    - mapped_fields: lista zmapowanych pól (do informacji)
+    """
+    mapped_fields: List[str] = []
+    data: Dict[str, Any] = {}
+    
+    # --- Podstawowe pola ---
+    event_id = str(payload.get("id") or "").strip()
+    event_name = str(payload.get("name") or "").strip()
+    
+    if not event_id:
+        raise ValueError("Brak wymaganego pola 'id' w payload")
+    
+    # eventId i eventName do data (dla spójności z panelem admina)
+    data["eventId"] = event_id
+    mapped_fields.append("eventId")
+    
+    if event_name:
+        data["eventName"] = event_name
+        mapped_fields.append("eventName")
+    
+    # --- Opis i podsumowanie ---
+    description = payload.get("description") or ""
+    if description:
+        data["event_description"] = _strip_html_tags(description)
+        mapped_fields.append("event_description")
+    
+    summary = payload.get("summary") or ""
+    if summary:
+        data["event_summary"] = summary
+        mapped_fields.append("event_summary")
+    
+    # --- Kategoria ---
+    category = payload.get("category") or ""
+    if category:
+        data["event_category"] = category
+        mapped_fields.append("event_category")
+    
+    # --- Lokalizacja ---
+    venue_name = payload.get("venue_name") or ""
+    if venue_name:
+        data["event_location_place"] = venue_name
+        mapped_fields.append("event_location_place")
+    
+    # venueTranslations[0] - miasto, adres
+    venue_translations = payload.get("venueTranslations") or []
+    if venue_translations and len(venue_translations) > 0:
+        vt = venue_translations[0]
+        
+        city = vt.get("townOrCity") or ""
+        if city:
+            data["event_location_city"] = city
+            mapped_fields.append("event_location_city")
+        
+        street = vt.get("street") or ""
+        if street:
+            data["event_location_address"] = street
+            mapped_fields.append("event_location_address")
+        
+        state = vt.get("state") or ""
+        if state:
+            data["event_location_state"] = state
+            mapped_fields.append("event_location_state")
+    
+    # venues[0] - kod pocztowy, kraj, współrzędne
+    venues = payload.get("venues") or []
+    if venues and len(venues) > 0:
+        v = venues[0]
+        
+        zipcode = v.get("zipcode") or ""
+        if zipcode:
+            data["event_location_zip"] = zipcode
+            mapped_fields.append("event_location_zip")
+        
+        country_code = v.get("country") or ""
+        if country_code:
+            data["event_country"] = _country_code_to_name(country_code)
+            mapped_fields.append("event_country")
+        
+        # Współrzędne (opcjonalne)
+        lat = v.get("latitude") or ""
+        lng = v.get("longitude") or ""
+        if lat and lng:
+            data["event_location_lat"] = lat
+            data["event_location_lng"] = lng
+            mapped_fields.extend(["event_location_lat", "event_location_lng"])
+        
+        # Google Maps link z placeId
+        place_id = v.get("placeId") or ""
+        if place_id:
+            data["event_location_google_link"] = f"https://www.google.com/maps/place/?q=place_id:{place_id}"
+            mapped_fields.append("event_location_google_link")
+    
+    # --- Daty ---
+    portal_id = str(payload.get("portal") or "")
+    timezone = payload.get("timezone") or "Europe/Warsaw"
+    data["event_timezone"] = timezone
+    mapped_fields.append("event_timezone")
+    
+    # Preferuj event.startDateTime.local jeśli dostępne
+    event_obj = payload.get("event") or {}
+    start_dt_obj = event_obj.get("startDateTime") or {}
+    end_dt_obj = event_obj.get("endDateTime") or {}
+    
+    start_local = start_dt_obj.get("local") or payload.get("startDate") or ""
+    end_local = end_dt_obj.get("local") or payload.get("endDate") or ""
+    
+    if start_local:
+        data["event_date_time"] = start_local
+        mapped_fields.append("event_date_time")
+    
+    if end_local:
+        data["event_end_date_time"] = end_local
+        mapped_fields.append("event_end_date_time")
+    
+    # Wylicz pola pomocnicze z dat
+    start_dt = _parse_iso_datetime(start_local)
+    end_dt = _parse_iso_datetime(end_local)
+    
+    date_fields = _calculate_date_fields(start_dt, end_dt)
+    for key, value in date_fields.items():
+        data[key] = value
+        mapped_fields.append(key)
+    
+    # --- Obrazy ---
+    cover_photo_id = payload.get("coverPhotoResourceId") or ""
+    if cover_photo_id and portal_id:
+        url = _build_backstage_image_url(cover_photo_id, portal_id)
+        if url:
+            data["event_mail_link_top_banner"] = url
+            mapped_fields.append("event_mail_link_top_banner")
+    
+    # Logo z eventMetas[0]
+    event_metas = payload.get("eventMetas") or []
+    if event_metas and len(event_metas) > 0:
+        logo_id = event_metas[0].get("logoResourceId") or ""
+        if logo_id and portal_id:
+            url = _build_backstage_image_url(logo_id, portal_id)
+            if url:
+                data["event_logo_link"] = url
+                mapped_fields.append("event_logo_link")
+    
+    # --- Linki Backstage ---
+    if event_id and portal_id:
+        data["event_config_link"] = f"https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/overview"
+        data["event_orders_link"] = f"https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/orders"
+        data["event_attendees_link"] = f"https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/attendees"
+        mapped_fields.extend(["event_config_link", "event_orders_link", "event_attendees_link"])
+    
+    # --- Surowe dane (do debugowania) ---
+    data["_backstage_raw_event_id"] = event_id
+    data["_backstage_portal_id"] = portal_id
+    data["_backstage_webhook_received"] = datetime.datetime.utcnow().isoformat() + "Z"
+    
+    return {
+        "event_id": event_id,
+        "event_name": event_name or f"Event {event_id}",
+        "data": data,
+        "mapped_fields": mapped_fields,
+    }
+
+
+def process_backstage_event(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Przetwarza webhook wydarzenia z Zoho Backstage.
+    
+    Tworzy lub aktualizuje wydarzenie w bazie danych ze statusem "draft" (do zatwierdzenia).
+    
+    Args:
+        payload: dane z webhooka Zoho Backstage
+        
+    Returns:
+        dict z wynikiem:
+        {
+            "status": "ok" | "error",
+            "event_id": "...",
+            "event_name": "...",
+            "action": "created" | "updated",
+            "message": "...",
+            "mapped_fields": [...],
+            "error": "..."  // tylko gdy status=error
+        }
+    """
+    _log("INFO", "========== BACKSTAGE EVENT WEBHOOK ==========")
+    _log("DEBUG", "Otrzymano payload wydarzenia", {"keys": list(payload.keys())[:20]})
+    
+    try:
+        # 1. Parsuj payload
+        parsed = _parse_event_webhook(payload)
+        event_id = parsed["event_id"]
+        event_name = parsed["event_name"]
+        data = parsed["data"]
+        mapped_fields = parsed["mapped_fields"]
+        
+        _log("INFO", f"Sparsowano wydarzenie: {event_id} - {event_name}", {
+            "mapped_fields_count": len(mapped_fields),
+        })
+        
+        # 2. Sprawdź czy wydarzenie już istnieje
+        from pg_storage import get_event, upsert_event
+        
+        existing = get_event(event_id)
+        action = "updated" if existing else "created"
+        
+        # 3. Zapisz/zaktualizuj wydarzenie ze statusem "draft"
+        upsert_event(
+            event_id=event_id,
+            event_name=event_name,
+            status="draft",  # Do zatwierdzenia
+            notes=f"Utworzono automatycznie z webhooka Backstage ({datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC)",
+            data=data,
+            is_active=True,
+        )
+        
+        _log("INFO", f"Wydarzenie {action}: {event_id}", {
+            "event_name": event_name,
+            "status": "draft",
+        })
+        
+        message = "Wydarzenie utworzone jako szkic do zatwierdzenia" if action == "created" else "Wydarzenie zaktualizowane (szkic)"
+        
+        return {
+            "status": "ok",
+            "event_id": event_id,
+            "event_name": event_name,
+            "action": action,
+            "message": message,
+            "mapped_fields": mapped_fields,
+        }
+        
+    except ValueError as e:
+        _log("ERROR", f"Błąd walidacji: {str(e)}")
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+    except Exception as e:
+        _log("ERROR", f"Wyjątek podczas przetwarzania wydarzenia: {str(e)}")
+        import traceback
+        _log("ERROR", f"Traceback: {traceback.format_exc()}")
+        return {
+            "status": "error",
+            "error": str(e),
+        }

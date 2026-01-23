@@ -2521,6 +2521,55 @@ def db_status():
 # ---------------------------------------------------------------------------
 
 
+@app.route('/api/backstage/event_create', methods=['POST'])
+@require_api_key
+def backstage_event_create():
+    """
+    Endpoint do tworzenia/aktualizacji wydarzeń z Zoho Backstage.
+    
+    Tworzy wydarzenie jako "draft" (szkic do zatwierdzenia) w panelu admina.
+    Automatycznie mapuje pola z webhooka na strukturę danych wydarzenia.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Body (JSON): payload z Backstage (pełne dane wydarzenia)
+    
+    Response:
+    {
+        "status": "ok" | "error",
+        "event_id": "...",
+        "event_name": "...",
+        "action": "created" | "updated",
+        "message": "...",
+        "mapped_fields": [...],
+        "error": "..."  // tylko gdy status=error
+    }
+    """
+    try:
+        from backstage_engine import process_backstage_event
+        
+        payload = request.get_json(silent=True)
+        if not payload:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak JSON payload w request body'
+            }), 400
+        
+        result = process_backstage_event(payload)
+        
+        if result.get('status') == 'error':
+            return jsonify(result), 400
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/backstage/order', methods=['POST'])
 @require_api_key
 def backstage_order():

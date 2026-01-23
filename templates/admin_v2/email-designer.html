@@ -1,0 +1,1848 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Email Designer{% endblock %}
+
+{% block extra_styles %}
+<style>
+    /* Email Designer Layout */
+    .email-designer-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 120px);
+        background: var(--surface-secondary);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    /* Top Toolbar */
+    .designer-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface-primary);
+    }
+
+    .toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+    }
+
+    .template-name-input {
+        max-width: 250px;
+        font-weight: 500;
+    }
+
+    .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .toolbar-separator {
+        width: 1px;
+        height: 24px;
+        background: var(--border-subtle);
+        margin: 0 8px;
+    }
+
+    /* Subject Line */
+    .subject-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface-secondary);
+    }
+
+    .subject-bar label {
+        font-size: 14px;
+        font-weight: 500;
+        white-space: nowrap;
+        color: var(--text-secondary);
+    }
+
+    .subject-bar input {
+        flex: 1;
+        font-family: monospace;
+        font-size: 14px;
+    }
+
+    /* Main Editor Area */
+    .designer-main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    /* Left Panel - Palette */
+    .palette-panel {
+        width: 256px;
+        border-right: 1px solid var(--border-subtle);
+        background: var(--surface-primary);
+        overflow-y: auto;
+        padding: 16px;
+    }
+
+    .palette-section {
+        margin-bottom: 24px;
+    }
+
+    .palette-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        padding: 0 4px;
+    }
+
+    .block-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+
+    .block-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 12px 8px;
+        border-radius: 8px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-primary);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .block-btn:hover {
+        background: var(--surface-hover);
+        border-color: var(--border-primary);
+    }
+
+    .block-btn:hover i {
+        color: var(--text-primary);
+    }
+
+    .block-btn i {
+        font-size: 20px;
+        color: var(--text-muted);
+        transition: color 0.15s ease;
+    }
+
+    .block-btn span {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-secondary);
+    }
+
+    /* Placeholder Tabs */
+    .placeholder-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 12px;
+    }
+
+    .placeholder-tab {
+        padding: 6px 10px;
+        font-size: 11px;
+        font-weight: 500;
+        border-radius: 6px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-primary);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .placeholder-tab:hover {
+        background: var(--surface-hover);
+    }
+
+    .placeholder-tab.active {
+        background: var(--surface-brand);
+        border-color: var(--border-primary);
+        color: var(--text-primary);
+    }
+
+    .placeholder-tab i {
+        font-size: 12px;
+    }
+
+    .placeholder-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .placeholder-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--surface-secondary);
+        cursor: pointer;
+        transition: background 0.15s ease;
+        font-size: 12px;
+    }
+
+    .placeholder-item:hover {
+        background: var(--surface-hover);
+    }
+
+    .placeholder-key {
+        font-family: monospace;
+        font-size: 11px;
+        color: var(--text-brand);
+    }
+
+    .placeholder-label {
+        color: var(--text-secondary);
+        font-size: 11px;
+    }
+
+    /* Center - Canvas */
+    .canvas-panel {
+        flex: 1;
+        overflow-y: auto;
+        padding: 24px;
+        background: var(--surface-secondary);
+    }
+
+    .canvas-panel.preview-mode .email-canvas {
+        pointer-events: none;
+    }
+
+    .canvas-panel.preview-mode .email-block {
+        border-color: transparent !important;
+        cursor: default !important;
+    }
+
+    .canvas-panel.preview-mode .email-block:hover {
+        border-color: transparent !important;
+    }
+
+    .email-canvas {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        overflow: hidden;
+        min-height: 400px;
+    }
+
+    .canvas-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px 40px;
+        color: var(--text-muted);
+        text-align: center;
+    }
+
+    .canvas-empty i {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.3;
+    }
+
+    .canvas-empty p {
+        margin: 4px 0;
+    }
+
+    /* Email Blocks */
+    .email-block {
+        position: relative;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+    }
+
+    .email-block:hover {
+        border-color: var(--border-primary);
+    }
+
+    .email-block.selected {
+        border-color: var(--color-primary);
+    }
+
+    /* Block Types */
+    .block-header {
+        padding: 24px;
+        text-align: center;
+    }
+
+    .block-header.gradient {
+        background: linear-gradient(135deg, #0065D7, #00A3E0);
+    }
+
+    .block-header.plain {
+        background: #f3f4f6;
+    }
+
+    .block-header img {
+        max-height: 64px;
+        max-width: 200px;
+    }
+
+    .block-header .placeholder-banner {
+        color: white;
+        font-size: 14px;
+        opacity: 0.8;
+    }
+
+    .block-header.plain .placeholder-banner {
+        color: #6b7280;
+    }
+
+    .block-text {
+        padding: 8px 24px;
+        color: #374151;
+        line-height: 1.6;
+    }
+
+    .block-text.size-sm { font-size: 12px; }
+    .block-text.size-md { font-size: 14px; }
+    .block-text.size-lg { font-size: 18px; }
+    .block-text.size-xl { font-size: 24px; }
+
+    .block-text.weight-normal { font-weight: 400; }
+    .block-text.weight-medium { font-weight: 500; }
+    .block-text.weight-bold { font-weight: 700; }
+
+    .block-text.align-left { text-align: left; }
+    .block-text.align-center { text-align: center; }
+    .block-text.align-right { text-align: right; }
+
+    .block-button {
+        padding: 16px 24px;
+        text-align: center;
+    }
+
+    .block-button a {
+        display: inline-block;
+        padding: 12px 32px;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: opacity 0.15s ease;
+    }
+
+    .block-button a:hover {
+        opacity: 0.9;
+    }
+
+    .block-button.style-primary a {
+        background: linear-gradient(135deg, #0065D7, #00A3E0);
+        color: white;
+    }
+
+    .block-button.style-secondary a {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .block-button.style-outline a {
+        background: transparent;
+        border: 2px solid #0065D7;
+        color: #0065D7;
+    }
+
+    .block-image {
+        padding: 16px 24px;
+    }
+
+    .block-image.align-left { text-align: left; }
+    .block-image.align-center { text-align: center; }
+    .block-image.align-right { text-align: right; }
+
+    .block-image img {
+        max-width: 100%;
+        border-radius: 8px;
+    }
+
+    .block-image .placeholder-image {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 200px;
+        height: 120px;
+        background: #f3f4f6;
+        border-radius: 8px;
+        color: #9ca3af;
+    }
+
+    .block-table {
+        padding: 16px 24px;
+    }
+
+    .block-table table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+
+    .block-table th,
+    .block-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .block-table th {
+        background: #f9fafb;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .block-calendar {
+        padding: 16px 24px;
+        text-align: center;
+    }
+
+    .calendar-links {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .calendar-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: opacity 0.15s ease;
+    }
+
+    .calendar-link:hover {
+        opacity: 0.8;
+    }
+
+    .calendar-link.ics {
+        background: #0065D7;
+        color: white;
+    }
+
+    .calendar-link.google {
+        background: #4285f4;
+        color: white;
+    }
+
+    .calendar-link.outlook {
+        background: #0078d4;
+        color: white;
+    }
+
+    .block-divider {
+        padding: 16px 24px;
+    }
+
+    .block-divider hr {
+        border: none;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .block-spacer {
+        background: repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 10px,
+            rgba(0, 101, 215, 0.03) 10px,
+            rgba(0, 101, 215, 0.03) 20px
+        );
+    }
+
+    .block-footer {
+        padding: 24px;
+        text-align: center;
+        font-size: 12px;
+        color: #6b7280;
+        background: #f9fafb;
+    }
+
+    .block-footer a {
+        color: #6b7280;
+        text-decoration: underline;
+    }
+
+    /* Right Panel - Editor */
+    .editor-panel {
+        width: 320px;
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-primary);
+        overflow-y: auto;
+    }
+
+    .editor-content {
+        padding: 16px;
+    }
+
+    .editor-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 24px;
+        text-align: center;
+        color: var(--text-muted);
+    }
+
+    .editor-empty p {
+        margin: 4px 0;
+        font-size: 14px;
+    }
+
+    .editor-empty p:last-child {
+        font-size: 12px;
+    }
+
+    .editor-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface-secondary);
+    }
+
+    .editor-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .editor-title i {
+        color: var(--text-brand);
+    }
+
+    .editor-actions {
+        display: flex;
+        gap: 4px;
+    }
+
+    .editor-actions button {
+        padding: 6px;
+        border-radius: 6px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.15s ease;
+    }
+
+    .editor-actions button:hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+
+    .editor-actions button:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+    }
+
+    .editor-actions button.delete:hover {
+        background: var(--color-error-light);
+        color: var(--color-error);
+    }
+
+    .editor-field {
+        margin-bottom: 16px;
+    }
+
+    .editor-field label {
+        display: block;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+    }
+
+    .editor-field input,
+    .editor-field textarea,
+    .editor-field select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        font-size: 14px;
+        background: var(--surface-primary);
+        transition: border-color 0.15s ease;
+    }
+
+    .editor-field input:focus,
+    .editor-field textarea:focus,
+    .editor-field select:focus {
+        outline: none;
+        border-color: var(--color-primary);
+    }
+
+    .editor-field textarea {
+        min-height: 120px;
+        resize: vertical;
+        font-family: inherit;
+    }
+
+    .editor-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .editor-switch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px;
+        background: var(--surface-secondary);
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+
+    .editor-switch label {
+        font-size: 13px;
+        font-weight: 500;
+        margin-bottom: 0;
+    }
+
+    /* Toggle Switch */
+    .toggle-switch {
+        position: relative;
+        width: 44px;
+        height: 24px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--surface-tertiary);
+        border-radius: 24px;
+        transition: background 0.2s ease;
+    }
+
+    .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+        background: var(--color-primary);
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+        transform: translateX(20px);
+    }
+
+    /* Color Picker */
+    .color-picker-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .color-picker-wrapper input[type="color"] {
+        width: 40px;
+        height: 40px;
+        padding: 2px;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+    .color-picker-wrapper input[type="text"] {
+        flex: 1;
+        font-family: monospace;
+    }
+
+    /* Button Group */
+    .btn-group {
+        display: flex;
+        gap: 4px;
+    }
+
+    .btn-group .btn {
+        flex: 1;
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    .btn-group .btn.active {
+        background: var(--color-primary);
+        color: white;
+        border-color: var(--color-primary);
+    }
+
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .toast {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        background: var(--surface-primary);
+        border: 1px solid var(--border-subtle);
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        animation: slideIn 0.3s ease;
+        min-width: 250px;
+    }
+
+    .toast.success {
+        border-left: 4px solid var(--color-success);
+    }
+
+    .toast.error {
+        border-left: 4px solid var(--color-error);
+    }
+
+    .toast.info {
+        border-left: 4px solid var(--color-primary);
+    }
+
+    .toast i {
+        font-size: 18px;
+    }
+
+    .toast.success i { color: var(--color-success); }
+    .toast.error i { color: var(--color-error); }
+    .toast.info i { color: var(--color-primary); }
+
+    .toast span {
+        font-size: 14px;
+        color: var(--text-primary);
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(100%);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    /* HTML Export Modal */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9998;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s ease;
+    }
+
+    .modal-overlay.visible {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .modal {
+        background: var(--surface-primary);
+        border-radius: 16px;
+        width: 90%;
+        max-width: 800px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        transform: scale(0.95);
+        transition: transform 0.2s ease;
+    }
+
+    .modal-overlay.visible .modal {
+        transform: scale(1);
+    }
+
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .modal-header h3 {
+        font-size: 18px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .modal-header h3 i {
+        color: var(--text-brand);
+    }
+
+    .modal-close {
+        padding: 8px;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.15s ease;
+    }
+
+    .modal-close:hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+
+    .modal-body {
+        flex: 1;
+        overflow: auto;
+        padding: 24px;
+    }
+
+    .modal-body pre {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 20px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1.5;
+        overflow-x: auto;
+        max-height: 400px;
+        margin: 0;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        padding: 16px 24px;
+        border-top: 1px solid var(--border-subtle);
+    }
+
+    /* Placeholder highlight in text */
+    .placeholder-highlight {
+        background: rgba(0, 101, 215, 0.1);
+        color: #0065D7;
+        padding: 2px 4px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.9em;
+    }
+
+    /* Active button state */
+    .btn.btn-ghost.active {
+        background: var(--surface-brand);
+        color: var(--text-brand);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="email-designer-container">
+    <!-- Top Toolbar -->
+    <div class="designer-toolbar">
+        <div class="toolbar-left">
+            <input type="text" id="templateName" class="form-control template-name-input" value="Nowy szablon" placeholder="Nazwa szablonu">
+            <select id="templateCategory" class="form-select" style="width: 130px;">
+                <option value="external">Zewnętrzny</option>
+                <option value="internal">Wewnętrzny</option>
+            </select>
+            <select id="templateType" class="form-select" style="width: 150px;">
+                <option value="proforma">Proforma</option>
+                <option value="invoice">Faktura</option>
+                <option value="reminder">Przypomnienie</option>
+                <option value="confirmation">Potwierdzenie</option>
+                <option value="invitation">Zaproszenie</option>
+                <option value="notification">Powiadomienie</option>
+                <option value="custom">Własny</option>
+            </select>
+        </div>
+        <div class="toolbar-right">
+            <button id="btnPreview" class="btn btn-ghost" title="Podgląd">
+                <i data-lucide="eye"></i>
+            </button>
+            <button id="btnHtml" class="btn btn-ghost" title="Eksportuj HTML">
+                <i data-lucide="code"></i>
+            </button>
+            <button id="btnJson" class="btn btn-ghost" title="Eksportuj JSON">
+                <i data-lucide="file-json"></i>
+            </button>
+            <div class="toolbar-separator"></div>
+            <button id="btnSave" class="btn btn-primary">
+                <i data-lucide="save"></i>
+                Zapisz
+            </button>
+        </div>
+    </div>
+
+    <!-- Subject Line -->
+    <div class="subject-bar">
+        <label>Temat:</label>
+        <input type="text" id="templateSubject" class="form-control" placeholder="Temat email (użyj placeholderów jak {{event_name}})">
+    </div>
+
+    <!-- Main Editor Area -->
+    <div class="designer-main">
+        <!-- Left Panel - Block Palette -->
+        <div class="palette-panel">
+            <div class="palette-section">
+                <div class="palette-title">Dodaj blok</div>
+                <div class="block-grid">
+                    <button class="block-btn" onclick="addBlock('header')" title="Nagłówek z logo i banner">
+                        <i data-lucide="panel-top"></i>
+                        <span>Nagłówek</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('text')" title="Blok tekstowy z placeholderami">
+                        <i data-lucide="type"></i>
+                        <span>Tekst</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('button')" title="Przycisk CTA">
+                        <i data-lucide="mouse-pointer-click"></i>
+                        <span>Przycisk</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('image')" title="Obrazek">
+                        <i data-lucide="image"></i>
+                        <span>Obrazek</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('table')" title="Tabela pozycji lub podsumowanie">
+                        <i data-lucide="table"></i>
+                        <span>Tabela</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('calendar-links')" title="Linki do kalendarzy">
+                        <i data-lucide="calendar-plus"></i>
+                        <span>Kalendarz</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('divider')" title="Linia separatora">
+                        <i data-lucide="minus"></i>
+                        <span>Linia</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('spacer')" title="Pusta przestrzeń">
+                        <i data-lucide="square"></i>
+                        <span>Odstęp</span>
+                    </button>
+                    <button class="block-btn" onclick="addBlock('footer')" title="Stopka email">
+                        <i data-lucide="panel-bottom"></i>
+                        <span>Stopka</span>
+                    </button>
+                </div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 16px 0;">
+
+            <div class="palette-section">
+                <div class="palette-title">Placeholdery</div>
+                <div class="placeholder-tabs" id="placeholderTabs"></div>
+                <div class="placeholder-list" id="placeholderList"></div>
+            </div>
+        </div>
+
+        <!-- Center - Canvas -->
+        <div class="canvas-panel" id="canvasPanel">
+            <div class="email-canvas" id="emailCanvas">
+                <div class="canvas-empty" id="canvasEmpty">
+                    <i data-lucide="mail"></i>
+                    <p>Dodaj bloki z panelu po lewej</p>
+                    <p style="font-size: 13px; opacity: 0.7;">aby zbudować szablon email</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Block Editor -->
+        <div class="editor-panel">
+            <div id="editorEmpty" class="editor-empty">
+                <p>Wybierz blok do edycji</p>
+                <p>lub dodaj nowy z palety</p>
+            </div>
+            <div id="editorContainer" style="display: none;">
+                <div class="editor-header">
+                    <div class="editor-title">
+                        <i id="editorIcon" data-lucide="type"></i>
+                        <span id="editorBlockType">Tekst</span>
+                    </div>
+                    <div class="editor-actions">
+                        <button id="btnMoveUp" onclick="moveBlockUp()" title="Przesuń w górę">
+                            <i data-lucide="chevron-up"></i>
+                        </button>
+                        <button id="btnMoveDown" onclick="moveBlockDown()" title="Przesuń w dół">
+                            <i data-lucide="chevron-down"></i>
+                        </button>
+                        <button class="delete" onclick="deleteBlock()" title="Usuń blok">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="editor-content" id="editorContent"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- HTML Export Modal -->
+<div class="modal-overlay" id="htmlModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3><i data-lucide="code"></i> Eksport HTML</h3>
+            <button class="modal-close" onclick="closeHtmlModal()">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <pre id="htmlOutput"></pre>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeHtmlModal()">Zamknij</button>
+            <button class="btn btn-secondary" onclick="downloadHtml()">
+                <i data-lucide="download"></i>
+                Pobierz
+            </button>
+            <button class="btn btn-primary" onclick="copyHtml()">
+                <i data-lucide="copy"></i>
+                Kopiuj
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ==================== STATE ====================
+let templateBlocks = [];
+let selectedBlockId = null;
+let isPreviewMode = false;
+let blockIdCounter = 0;
+
+const eventGradient = 'linear-gradient(135deg, #0065D7, #00A3E0)';
+
+const PLACEHOLDER_GROUPS = [
+    {
+        name: 'event',
+        label: 'Wydarzenie',
+        icon: 'calendar',
+        placeholders: [
+            { key: '{{event_name}}', label: 'Nazwa wydarzenia', example: 'Konferencja HR 2024' },
+            { key: '{{event_date}}', label: 'Data wydarzenia', example: '15.03.2024' },
+            { key: '{{event_time}}', label: 'Godzina', example: '09:00' },
+            { key: '{{event_location}}', label: 'Lokalizacja', example: 'Warszawa, Hotel Marriott' },
+            { key: '{{event_description}}', label: 'Opis', example: 'Największa konferencja HR w Polsce' },
+        ]
+    },
+    {
+        name: 'buyer',
+        label: 'Nabywca',
+        icon: 'user',
+        placeholders: [
+            { key: '{{buyer_name}}', label: 'Imię i nazwisko', example: 'Jan Kowalski' },
+            { key: '{{buyer_email}}', label: 'Email', example: 'jan@firma.pl' },
+            { key: '{{buyer_company}}', label: 'Firma', example: 'ABC Sp. z o.o.' },
+            { key: '{{buyer_nip}}', label: 'NIP', example: '1234567890' },
+        ]
+    },
+    {
+        name: 'payment',
+        label: 'Płatność',
+        icon: 'credit-card',
+        placeholders: [
+            { key: '{{proforma_number}}', label: 'Nr proformy', example: 'PRO/2024/001' },
+            { key: '{{invoice_number}}', label: 'Nr faktury', example: 'FV/2024/001' },
+            { key: '{{total_amount}}', label: 'Kwota', example: '1 500,00 zł' },
+            { key: '{{payment_deadline}}', label: 'Termin płatności', example: '22.03.2024' },
+            { key: '{{payment_url}}', label: 'Link do płatności', example: 'https://...' },
+        ]
+    },
+    {
+        name: 'branding',
+        label: 'Branding',
+        icon: 'palette',
+        placeholders: [
+            { key: '{{organizer_logo}}', label: 'Logo organizatora', example: 'https://...' },
+            { key: '{{event_banner}}', label: 'Banner wydarzenia', example: 'https://...' },
+            { key: '{{primary_color}}', label: 'Kolor główny', example: '#0065D7' },
+        ]
+    },
+    {
+        name: 'organizer',
+        label: 'Organizator',
+        icon: 'building',
+        placeholders: [
+            { key: '{{organizer_name}}', label: 'Nazwa', example: 'MediDesk Sp. z o.o.' },
+            { key: '{{organizer_email}}', label: 'Email', example: 'kontakt@medidesk.pl' },
+            { key: '{{organizer_phone}}', label: 'Telefon', example: '+48 22 123 45 67' },
+        ]
+    }
+];
+
+const BLOCK_ICONS = {
+    'header': 'panel-top',
+    'text': 'type',
+    'button': 'mouse-pointer-click',
+    'image': 'image',
+    'table': 'table',
+    'calendar-links': 'calendar-plus',
+    'divider': 'minus',
+    'spacer': 'square',
+    'footer': 'panel-bottom'
+};
+
+const BLOCK_LABELS = {
+    'header': 'Nagłówek',
+    'text': 'Tekst',
+    'button': 'Przycisk',
+    'image': 'Obrazek',
+    'table': 'Tabela',
+    'calendar-links': 'Kalendarz',
+    'divider': 'Linia',
+    'spacer': 'Odstęp',
+    'footer': 'Stopka'
+};
+
+// ==================== INITIALIZATION ====================
+document.addEventListener('DOMContentLoaded', () => {
+    initPlaceholders();
+    initToolbarButtons();
+    lucide.createIcons();
+});
+
+function initPlaceholders() {
+    const tabsContainer = document.getElementById('placeholderTabs');
+    
+    PLACEHOLDER_GROUPS.forEach((group, index) => {
+        const tab = document.createElement('button');
+        tab.className = `placeholder-tab ${index === 0 ? 'active' : ''}`;
+        tab.dataset.group = group.name;
+        tab.innerHTML = `<i data-lucide="${group.icon}"></i> ${group.label}`;
+        tab.onclick = () => selectPlaceholderGroup(group.name);
+        tabsContainer.appendChild(tab);
+    });
+
+    renderPlaceholders(PLACEHOLDER_GROUPS[0].name);
+}
+
+function initToolbarButtons() {
+    document.getElementById('btnPreview').onclick = togglePreviewMode;
+    document.getElementById('btnHtml').onclick = showHtmlModal;
+    document.getElementById('btnJson').onclick = exportJson;
+    document.getElementById('btnSave').onclick = saveTemplate;
+}
+
+// ==================== PLACEHOLDER FUNCTIONS ====================
+function selectPlaceholderGroup(groupName) {
+    document.querySelectorAll('.placeholder-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.group === groupName);
+    });
+    renderPlaceholders(groupName);
+}
+
+function renderPlaceholders(groupName) {
+    const group = PLACEHOLDER_GROUPS.find(g => g.name === groupName);
+    const container = document.getElementById('placeholderList');
+    
+    container.innerHTML = group.placeholders.map(p => `
+        <div class="placeholder-item" onclick="copyPlaceholder('${p.key}')" title="${p.example}">
+            <span class="placeholder-label">${p.label}</span>
+            <span class="placeholder-key">${p.key}</span>
+        </div>
+    `).join('');
+}
+
+function copyPlaceholder(key) {
+    navigator.clipboard.writeText(key);
+    showToast(`Skopiowano: ${key}`, 'success');
+    
+    if (selectedBlockId) {
+        const block = templateBlocks.find(b => b.id === selectedBlockId);
+        if (block && block.type === 'text') {
+            block.content.text = (block.content.text || '') + ' ' + key;
+            renderCanvas();
+            updateEditorFields();
+        }
+    }
+}
+
+// ==================== BLOCK FUNCTIONS ====================
+function addBlock(type) {
+    blockIdCounter++;
+    const newBlock = {
+        id: `block_${blockIdCounter}`,
+        type: type,
+        content: getDefaultContent(type)
+    };
+    
+    templateBlocks.push(newBlock);
+    selectedBlockId = newBlock.id;
+    
+    renderCanvas();
+    updateEditor();
+    showToast(`Dodano blok: ${BLOCK_LABELS[type]}`, 'success');
+}
+
+function getDefaultContent(type) {
+    switch (type) {
+        case 'header':
+            return { useEventGradient: true, logoUrl: '', bannerUrl: '' };
+        case 'text':
+            return { text: '', fontSize: 'md', fontWeight: 'normal', align: 'left' };
+        case 'button':
+            return { buttonText: 'Kliknij tutaj', buttonUrl: '#', buttonStyle: 'primary' };
+        case 'image':
+            return { imageUrl: '', imageAlt: '', width: '100%', align: 'center' };
+        case 'table':
+            return { tableType: 'order_items' };
+        case 'calendar-links':
+            return { showIcs: true, showGoogleCalendar: true, showOutlook: true };
+        case 'divider':
+            return { dividerColor: '#e5e7eb' };
+        case 'spacer':
+            return { height: '20px' };
+        case 'footer':
+            return { footerText: '{{organizer_name}} | {{organizer_email}}', showUnsubscribe: false };
+        default:
+            return {};
+    }
+}
+
+function selectBlock(blockId) {
+    if (isPreviewMode) return;
+    selectedBlockId = blockId;
+    renderCanvas();
+    updateEditor();
+}
+
+function deleteBlock() {
+    if (!selectedBlockId) return;
+    
+    const blockLabel = BLOCK_LABELS[templateBlocks.find(b => b.id === selectedBlockId)?.type];
+    templateBlocks = templateBlocks.filter(b => b.id !== selectedBlockId);
+    selectedBlockId = null;
+    
+    renderCanvas();
+    updateEditor();
+    showToast(`Usunięto blok: ${blockLabel}`, 'info');
+}
+
+function moveBlockUp() {
+    const index = templateBlocks.findIndex(b => b.id === selectedBlockId);
+    if (index > 0) {
+        [templateBlocks[index], templateBlocks[index - 1]] = [templateBlocks[index - 1], templateBlocks[index]];
+        renderCanvas();
+        updateMoveButtons();
+    }
+}
+
+function moveBlockDown() {
+    const index = templateBlocks.findIndex(b => b.id === selectedBlockId);
+    if (index < templateBlocks.length - 1) {
+        [templateBlocks[index], templateBlocks[index + 1]] = [templateBlocks[index + 1], templateBlocks[index]];
+        renderCanvas();
+        updateMoveButtons();
+    }
+}
+
+function updateMoveButtons() {
+    const index = templateBlocks.findIndex(b => b.id === selectedBlockId);
+    document.getElementById('btnMoveUp').disabled = index <= 0;
+    document.getElementById('btnMoveDown').disabled = index >= templateBlocks.length - 1;
+}
+
+// ==================== CANVAS RENDERING ====================
+function renderCanvas() {
+    const canvas = document.getElementById('emailCanvas');
+    const empty = document.getElementById('canvasEmpty');
+    
+    if (templateBlocks.length === 0) {
+        empty.style.display = 'flex';
+        canvas.innerHTML = '';
+        canvas.appendChild(empty);
+        return;
+    }
+    
+    empty.style.display = 'none';
+    canvas.innerHTML = templateBlocks.map(block => renderBlockHtml(block)).join('');
+    
+    canvas.querySelectorAll('.email-block').forEach(el => {
+        el.onclick = () => selectBlock(el.dataset.blockId);
+    });
+    
+    lucide.createIcons();
+}
+
+function renderBlockHtml(block) {
+    const isSelected = block.id === selectedBlockId;
+    const selectedClass = isSelected ? 'selected' : '';
+    
+    switch (block.type) {
+        case 'header':
+            const gradientClass = block.content.useEventGradient ? 'gradient' : 'plain';
+            const bannerContent = block.content.bannerUrl 
+                ? `<img src="${block.content.bannerUrl}" alt="Banner">`
+                : '<span class="placeholder-banner">[Logo / Banner wydarzenia]</span>';
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-header ${gradientClass}">${bannerContent}</div>
+            </div>`;
+            
+        case 'text':
+            const textContent = formatTextWithPlaceholders(block.content.text || '<em style="opacity: 0.5;">Kliknij, aby edytować tekst...</em>');
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-text size-${block.content.fontSize} weight-${block.content.fontWeight} align-${block.content.align}">${textContent}</div>
+            </div>`;
+            
+        case 'button':
+            const btnClass = `style-${block.content.buttonStyle}`;
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-button ${btnClass}">
+                    <a href="${block.content.buttonUrl || '#'}">${block.content.buttonText || 'Przycisk'}</a>
+                </div>
+            </div>`;
+            
+        case 'image':
+            const imgContent = block.content.imageUrl
+                ? `<img src="${block.content.imageUrl}" alt="${block.content.imageAlt || ''}" style="width: ${block.content.width || '100%'};">`
+                : '<div class="placeholder-image"><i data-lucide="image"></i></div>';
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-image align-${block.content.align || 'center'}">${imgContent}</div>
+            </div>`;
+            
+        case 'table':
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-table">
+                    <table>
+                        <thead><tr><th>Pozycja</th><th>Ilość</th><th>Cena</th></tr></thead>
+                        <tbody><tr><td>{{item_name}}</td><td>{{item_qty}}</td><td>{{item_price}}</td></tr></tbody>
+                    </table>
+                </div>
+            </div>`;
+            
+        case 'calendar-links':
+            let links = '';
+            if (block.content.showIcs) links += '<a href="#" class="calendar-link ics"><i data-lucide="calendar"></i> Pobierz .ics</a>';
+            if (block.content.showGoogleCalendar) links += '<a href="#" class="calendar-link google"><i data-lucide="calendar"></i> Google Calendar</a>';
+            if (block.content.showOutlook) links += '<a href="#" class="calendar-link outlook"><i data-lucide="calendar"></i> Outlook</a>';
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-calendar"><div class="calendar-links">${links}</div></div>
+            </div>`;
+            
+        case 'divider':
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-divider"><hr style="border-color: ${block.content.dividerColor || '#e5e7eb'};"></div>
+            </div>`;
+            
+        case 'spacer':
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-spacer" style="height: ${block.content.height || '20px'};"></div>
+            </div>`;
+            
+        case 'footer':
+            const unsubscribe = block.content.showUnsubscribe ? '<br><a href="#">Wypisz się</a>' : '';
+            return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
+                <div class="block-footer">${formatTextWithPlaceholders(block.content.footerText || '')}${unsubscribe}</div>
+            </div>`;
+            
+        default:
+            return '';
+    }
+}
+
+function formatTextWithPlaceholders(text) {
+    return text
+        .replace(/\{\{([^}]+)\}\}/g, '<span class="placeholder-highlight">{{$1}}</span>')
+        .replace(/\n/g, '<br>');
+}
+
+// ==================== EDITOR PANEL ====================
+function updateEditor() {
+    const emptyEl = document.getElementById('editorEmpty');
+    const containerEl = document.getElementById('editorContainer');
+    
+    if (!selectedBlockId) {
+        emptyEl.style.display = 'flex';
+        containerEl.style.display = 'none';
+        return;
+    }
+    
+    emptyEl.style.display = 'none';
+    containerEl.style.display = 'block';
+    
+    const block = templateBlocks.find(b => b.id === selectedBlockId);
+    if (!block) return;
+    
+    document.getElementById('editorIcon').setAttribute('data-lucide', BLOCK_ICONS[block.type]);
+    document.getElementById('editorBlockType').textContent = BLOCK_LABELS[block.type];
+    document.getElementById('editorContent').innerHTML = getEditorFieldsHtml(block);
+    
+    updateMoveButtons();
+    lucide.createIcons();
+    bindEditorHandlers(block);
+}
+
+function getEditorFieldsHtml(block) {
+    switch (block.type) {
+        case 'header':
+            return `
+                <div class="editor-switch">
+                    <label>Użyj gradientu wydarzenia</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="field_useEventGradient" ${block.content.useEventGradient ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="editor-field">
+                    <label>URL logo</label>
+                    <input type="text" id="field_logoUrl" value="${block.content.logoUrl || ''}" placeholder="https://...">
+                </div>
+                <div class="editor-field">
+                    <label>URL banner</label>
+                    <input type="text" id="field_bannerUrl" value="${block.content.bannerUrl || ''}" placeholder="https://...">
+                </div>`;
+            
+        case 'text':
+            return `
+                <div class="editor-field">
+                    <label>Treść</label>
+                    <textarea id="field_text" placeholder="Wpisz tekst lub użyj placeholderów...">${block.content.text || ''}</textarea>
+                </div>
+                <div class="editor-row">
+                    <div class="editor-field">
+                        <label>Rozmiar</label>
+                        <select id="field_fontSize">
+                            <option value="sm" ${block.content.fontSize === 'sm' ? 'selected' : ''}>Mały</option>
+                            <option value="md" ${block.content.fontSize === 'md' ? 'selected' : ''}>Średni</option>
+                            <option value="lg" ${block.content.fontSize === 'lg' ? 'selected' : ''}>Duży</option>
+                            <option value="xl" ${block.content.fontSize === 'xl' ? 'selected' : ''}>Bardzo duży</option>
+                        </select>
+                    </div>
+                    <div class="editor-field">
+                        <label>Grubość</label>
+                        <select id="field_fontWeight">
+                            <option value="normal" ${block.content.fontWeight === 'normal' ? 'selected' : ''}>Normalna</option>
+                            <option value="medium" ${block.content.fontWeight === 'medium' ? 'selected' : ''}>Średnia</option>
+                            <option value="bold" ${block.content.fontWeight === 'bold' ? 'selected' : ''}>Pogrubiona</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label>Wyrównanie</label>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary ${block.content.align === 'left' ? 'active' : ''}" onclick="setBlockField('align', 'left')"><i data-lucide="align-left"></i></button>
+                        <button class="btn btn-secondary ${block.content.align === 'center' ? 'active' : ''}" onclick="setBlockField('align', 'center')"><i data-lucide="align-center"></i></button>
+                        <button class="btn btn-secondary ${block.content.align === 'right' ? 'active' : ''}" onclick="setBlockField('align', 'right')"><i data-lucide="align-right"></i></button>
+                    </div>
+                </div>`;
+            
+        case 'button':
+            return `
+                <div class="editor-field">
+                    <label>Tekst przycisku</label>
+                    <input type="text" id="field_buttonText" value="${block.content.buttonText || ''}" placeholder="Kliknij tutaj">
+                </div>
+                <div class="editor-field">
+                    <label>URL</label>
+                    <input type="text" id="field_buttonUrl" value="${block.content.buttonUrl || ''}" placeholder="https://... lub {{payment_url}}">
+                </div>
+                <div class="editor-field">
+                    <label>Styl</label>
+                    <select id="field_buttonStyle">
+                        <option value="primary" ${block.content.buttonStyle === 'primary' ? 'selected' : ''}>Główny (gradient)</option>
+                        <option value="secondary" ${block.content.buttonStyle === 'secondary' ? 'selected' : ''}>Wtórny (szary)</option>
+                        <option value="outline" ${block.content.buttonStyle === 'outline' ? 'selected' : ''}>Outline</option>
+                    </select>
+                </div>`;
+            
+        case 'image':
+            return `
+                <div class="editor-field">
+                    <label>URL obrazka</label>
+                    <input type="text" id="field_imageUrl" value="${block.content.imageUrl || ''}" placeholder="https://...">
+                </div>
+                <div class="editor-field">
+                    <label>Tekst alternatywny</label>
+                    <input type="text" id="field_imageAlt" value="${block.content.imageAlt || ''}" placeholder="Opis obrazka">
+                </div>
+                <div class="editor-field">
+                    <label>Szerokość</label>
+                    <select id="field_width">
+                        <option value="100%" ${block.content.width === '100%' ? 'selected' : ''}>100%</option>
+                        <option value="75%" ${block.content.width === '75%' ? 'selected' : ''}>75%</option>
+                        <option value="50%" ${block.content.width === '50%' ? 'selected' : ''}>50%</option>
+                    </select>
+                </div>
+                <div class="editor-field">
+                    <label>Wyrównanie</label>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary ${block.content.align === 'left' ? 'active' : ''}" onclick="setBlockField('align', 'left')"><i data-lucide="align-left"></i></button>
+                        <button class="btn btn-secondary ${block.content.align === 'center' ? 'active' : ''}" onclick="setBlockField('align', 'center')"><i data-lucide="align-center"></i></button>
+                        <button class="btn btn-secondary ${block.content.align === 'right' ? 'active' : ''}" onclick="setBlockField('align', 'right')"><i data-lucide="align-right"></i></button>
+                    </div>
+                </div>`;
+            
+        case 'table':
+            return `
+                <div class="editor-field">
+                    <label>Typ tabeli</label>
+                    <select id="field_tableType">
+                        <option value="order_items" ${block.content.tableType === 'order_items' ? 'selected' : ''}>Pozycje zamówienia</option>
+                        <option value="payment_summary" ${block.content.tableType === 'payment_summary' ? 'selected' : ''}>Podsumowanie płatności</option>
+                        <option value="custom" ${block.content.tableType === 'custom' ? 'selected' : ''}>Własna</option>
+                    </select>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Tabela będzie generowana dynamicznie na podstawie danych zamówienia.</p>`;
+            
+        case 'calendar-links':
+            return `
+                <div class="editor-switch">
+                    <label>Plik .ics</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="field_showIcs" ${block.content.showIcs ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="editor-switch">
+                    <label>Google Calendar</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="field_showGoogleCalendar" ${block.content.showGoogleCalendar ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="editor-switch">
+                    <label>Outlook</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="field_showOutlook" ${block.content.showOutlook ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>`;
+            
+        case 'spacer':
+            return `
+                <div class="editor-field">
+                    <label>Wysokość</label>
+                    <select id="field_height">
+                        <option value="10px" ${block.content.height === '10px' ? 'selected' : ''}>10px</option>
+                        <option value="20px" ${block.content.height === '20px' ? 'selected' : ''}>20px</option>
+                        <option value="30px" ${block.content.height === '30px' ? 'selected' : ''}>30px</option>
+                        <option value="40px" ${block.content.height === '40px' ? 'selected' : ''}>40px</option>
+                        <option value="60px" ${block.content.height === '60px' ? 'selected' : ''}>60px</option>
+                    </select>
+                </div>`;
+            
+        case 'divider':
+            return `
+                <div class="editor-field">
+                    <label>Kolor linii</label>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="field_dividerColor_picker" value="${block.content.dividerColor || '#e5e7eb'}">
+                        <input type="text" id="field_dividerColor" value="${block.content.dividerColor || '#e5e7eb'}">
+                    </div>
+                </div>`;
+            
+        case 'footer':
+            return `
+                <div class="editor-field">
+                    <label>Treść stopki</label>
+                    <textarea id="field_footerText" placeholder="{{organizer_name}} | {{organizer_email}}">${block.content.footerText || ''}</textarea>
+                </div>
+                <div class="editor-switch">
+                    <label>Link wypisania</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="field_showUnsubscribe" ${block.content.showUnsubscribe ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>`;
+            
+        default:
+            return '<p style="color: var(--text-muted);">Brak opcji edycji dla tego bloku.</p>';
+    }
+}
+
+function bindEditorHandlers(block) {
+    const fieldMappings = {
+        'header': ['useEventGradient:checkbox', 'logoUrl', 'bannerUrl'],
+        'text': ['text', 'fontSize', 'fontWeight'],
+        'button': ['buttonText', 'buttonUrl', 'buttonStyle'],
+        'image': ['imageUrl', 'imageAlt', 'width'],
+        'table': ['tableType'],
+        'calendar-links': ['showIcs:checkbox', 'showGoogleCalendar:checkbox', 'showOutlook:checkbox'],
+        'spacer': ['height'],
+        'divider': ['dividerColor'],
+        'footer': ['footerText', 'showUnsubscribe:checkbox']
+    };
+    
+    const fields = fieldMappings[block.type] || [];
+    
+    fields.forEach(fieldDef => {
+        const [fieldName, fieldType] = fieldDef.includes(':') ? fieldDef.split(':') : [fieldDef, 'text'];
+        const el = document.getElementById(`field_${fieldName}`);
+        
+        if (!el) return;
+        
+        const eventType = fieldType === 'checkbox' ? 'change' : 'input';
+        el.addEventListener(eventType, (e) => {
+            const value = fieldType === 'checkbox' ? e.target.checked : e.target.value;
+            block.content[fieldName] = value;
+            renderCanvas();
+        });
+    });
+    
+    // Color picker sync
+    const colorPicker = document.getElementById('field_dividerColor_picker');
+    const colorInput = document.getElementById('field_dividerColor');
+    if (colorPicker && colorInput) {
+        colorPicker.addEventListener('input', (e) => {
+            colorInput.value = e.target.value;
+            block.content.dividerColor = e.target.value;
+            renderCanvas();
+        });
+        colorInput.addEventListener('input', (e) => {
+            colorPicker.value = e.target.value;
+            block.content.dividerColor = e.target.value;
+            renderCanvas();
+        });
+    }
+}
+
+function setBlockField(field, value) {
+    if (!selectedBlockId) return;
+    const block = templateBlocks.find(b => b.id === selectedBlockId);
+    if (!block) return;
+    
+    block.content[field] = value;
+    renderCanvas();
+    updateEditor();
+}
+
+function updateEditorFields() {
+    const block = templateBlocks.find(b => b.id === selectedBlockId);
+    if (!block) return;
+    
+    const textField = document.getElementById('field_text');
+    if (textField && block.type === 'text') {
+        textField.value = block.content.text || '';
+    }
+}
+
+// ==================== PREVIEW & EXPORT ====================
+function togglePreviewMode() {
+    isPreviewMode = !isPreviewMode;
+    const panel = document.getElementById('canvasPanel');
+    const btn = document.getElementById('btnPreview');
+    
+    panel.classList.toggle('preview-mode', isPreviewMode);
+    btn.classList.toggle('active', isPreviewMode);
+    
+    if (isPreviewMode) {
+        selectedBlockId = null;
+        renderCanvas();
+        updateEditor();
+    }
+    
+    showToast(isPreviewMode ? 'Tryb podglądu' : 'Tryb edycji', 'info');
+}
+
+function showHtmlModal() {
+    const html = generateEmailHtml();
+    document.getElementById('htmlOutput').textContent = html;
+    document.getElementById('htmlModal').classList.add('visible');
+    lucide.createIcons();
+}
+
+function closeHtmlModal() {
+    document.getElementById('htmlModal').classList.remove('visible');
+}
+
+function copyHtml() {
+    const html = generateEmailHtml();
+    navigator.clipboard.writeText(html);
+    showToast('HTML skopiowany do schowka', 'success');
+    closeHtmlModal();
+}
+
+function downloadHtml() {
+    const html = generateEmailHtml();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${document.getElementById('templateName').value || 'email-template'}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Pobrano plik HTML', 'success');
+}
+
+function generateEmailHtml() {
+    const subject = document.getElementById('templateSubject').value;
+    
+    const blocksHtml = templateBlocks.map(block => {
+        switch (block.type) {
+            case 'header':
+                const bg = block.content.useEventGradient ? eventGradient : '#f3f4f6';
+                const banner = block.content.bannerUrl 
+                    ? `<img src="${block.content.bannerUrl}" alt="Banner" style="max-height: 96px;">` 
+                    : '[Logo/Banner]';
+                return `<div style="background: ${bg}; padding: 24px; text-align: center;">${banner}</div>`;
+                
+            case 'text':
+                const fontSize = { sm: '12px', md: '14px', lg: '18px', xl: '24px' }[block.content.fontSize] || '14px';
+                const fontWeight = { normal: '400', medium: '500', bold: '700' }[block.content.fontWeight] || '400';
+                return `<div style="padding: 8px 24px; font-size: ${fontSize}; font-weight: ${fontWeight}; text-align: ${block.content.align || 'left'}; color: #374151; line-height: 1.6;">${(block.content.text || '').replace(/\n/g, '<br>')}</div>`;
+                
+            case 'button':
+                const btnStyles = {
+                    primary: 'background: linear-gradient(135deg, #0065D7, #00A3E0); color: white;',
+                    secondary: 'background: #f3f4f6; color: #374151;',
+                    outline: 'background: transparent; border: 2px solid #0065D7; color: #0065D7;'
+                };
+                return `<div style="padding: 16px 24px; text-align: center;">
+                    <a href="${block.content.buttonUrl || '#'}" style="display: inline-block; padding: 12px 32px; border-radius: 8px; font-weight: 600; text-decoration: none; ${btnStyles[block.content.buttonStyle] || btnStyles.primary}">${block.content.buttonText || 'Kliknij'}</a>
+                </div>`;
+                
+            case 'image':
+                if (!block.content.imageUrl) return '';
+                return `<div style="padding: 16px 24px; text-align: ${block.content.align || 'center'};">
+                    <img src="${block.content.imageUrl}" alt="${block.content.imageAlt || ''}" style="max-width: ${block.content.width || '100%'}; border-radius: 8px;">
+                </div>`;
+                
+            case 'table':
+                return `<div style="padding: 16px 24px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <tr style="background: #f9fafb;"><th style="padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb;">Pozycja</th><th style="padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb;">Ilość</th><th style="padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb;">Cena</th></tr>
+                        <tr><td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">{{item_name}}</td><td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">{{item_qty}}</td><td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">{{item_price}}</td></tr>
+                    </table>
+                </div>`;
+                
+            case 'calendar-links':
+                let links = '<div style="padding: 16px 24px; text-align: center;">';
+                if (block.content.showIcs) links += '<a href="{{calendar_ics_url}}" style="display: inline-block; margin: 4px; padding: 8px 16px; background: #0065D7; color: white; text-decoration: none; border-radius: 6px; font-size: 13px;">📅 Pobierz .ics</a>';
+                if (block.content.showGoogleCalendar) links += '<a href="{{calendar_google_url}}" style="display: inline-block; margin: 4px; padding: 8px 16px; background: #4285f4; color: white; text-decoration: none; border-radius: 6px; font-size: 13px;">📅 Google Calendar</a>';
+                if (block.content.showOutlook) links += '<a href="{{calendar_outlook_url}}" style="display: inline-block; margin: 4px; padding: 8px 16px; background: #0078d4; color: white; text-decoration: none; border-radius: 6px; font-size: 13px;">📅 Outlook</a>';
+                links += '</div>';
+                return links;
+                
+            case 'divider':
+                return `<div style="padding: 16px 24px;"><hr style="border: none; border-top: 1px solid ${block.content.dividerColor || '#e5e7eb'};"></div>`;
+                
+            case 'spacer':
+                return `<div style="height: ${block.content.height || '20px'};"></div>`;
+                
+            case 'footer':
+                const unsub = block.content.showUnsubscribe ? '<br><a href="{{unsubscribe_url}}" style="color: #6b7280;">Wypisz się</a>' : '';
+                return `<div style="padding: 24px; text-align: center; font-size: 12px; color: #6b7280; background: #f9fafb;">${block.content.footerText || ''}${unsub}</div>`;
+                
+            default:
+                return '';
+        }
+    }).join('\n');
+    
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f4f6;">
+    <div style="max-width: 600px; margin: 0 auto; background: white;">
+${blocksHtml}
+    </div>
+</body>
+</html>`;
+}
+
+function exportJson() {
+    const data = {
+        name: document.getElementById('templateName').value,
+        subject: document.getElementById('templateSubject').value,
+        category: document.getElementById('templateCategory').value,
+        type: document.getElementById('templateType').value,
+        blocks: templateBlocks
+    };
+    
+    const json = JSON.stringify(data, null, 2);
+    navigator.clipboard.writeText(json);
+    showToast('JSON skopiowany do schowka', 'success');
+}
+
+function saveTemplate() {
+    const data = {
+        name: document.getElementById('templateName').value,
+        subject: document.getElementById('templateSubject').value,
+        category: document.getElementById('templateCategory').value,
+        type: document.getElementById('templateType').value,
+        blocks: templateBlocks
+    };
+    
+    // TODO: Send to Flask backend via POST
+    console.log('Saving template:', data);
+    showToast('Szablon zapisany', 'success');
+}
+
+// ==================== TOAST NOTIFICATIONS ====================
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const icons = { success: 'check-circle', error: 'x-circle', info: 'info' };
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<i data-lucide="${icons[type]}"></i><span>${message}</span>`;
+    
+    container.appendChild(toast);
+    lucide.createIcons();
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideIn 0.3s ease reverse';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+</script>
+{% endblock %}
