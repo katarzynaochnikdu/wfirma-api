@@ -24,7 +24,12 @@
   </div>
 
   <script>
-    lucide.createIcons();
+    // Inicjalizuj ikony Lucide po załadowaniu DOM
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+    });
     
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('collapsed');
