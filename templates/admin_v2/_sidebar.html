@@ -62,6 +62,12 @@
       <span>Log audytu</span>
     </a>
     {% endif %}
+    {% if can_events %}
+    <a href="{{ url_for('admin_v2_bp.email_designer') }}" class="nav-item{% if active_page == 'email_designer' %} active{% endif %}">
+      <i data-lucide="mail"></i>
+      <span>Email Designer</span>
+    </a>
+    {% endif %}
   </nav>
 
   <!-- Bottom navigation -->

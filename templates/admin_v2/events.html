@@ -10,7 +10,7 @@
     <p class="page-description">Zarządzaj wydarzeniami i konferencjami</p>
   </div>
   <div class="header-actions">
-    <a href="{{ url_for('admin_bp.event_new') }}" class="btn btn-primary">
+    <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary">
       <i data-lucide="plus"></i>
       Nowe wydarzenie
     </a>
@@ -90,11 +90,11 @@
       </div>
     </div>
     <div class="event-card-footer">
-      <a href="{{ url_for('admin_bp.event_preview', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
-        <i data-lucide="eye"></i>
-        Podgląd
+      <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
+        <i data-lucide="layout-dashboard"></i>
+        Dashboard
       </a>
-      <a href="{{ url_for('admin_bp.event_edit', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
+      <a href="{{ url_for('admin_v2_bp.event_edit', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
         <i data-lucide="settings"></i>
         Edytuj
       </a>
@@ -104,7 +104,7 @@
   <div style="grid-column: span 2; text-align: center; padding: 3rem; color: var(--muted-foreground);">
     <img src="/Empty_list_1.jpg" alt="" style="max-width: 200px; opacity: 0.5; margin-bottom: 1rem;">
     <p>Brak wydarzeń do wyświetlenia</p>
-    <a href="{{ url_for('admin_bp.event_new') }}" class="btn btn-primary" style="margin-top: 1rem;">
+    <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary" style="margin-top: 1rem;">
       <i data-lucide="plus"></i>
       Dodaj pierwsze wydarzenie
     </a>
@@ -140,9 +140,9 @@
         </div>
       </div>
       <div class="event-card-footer">
-        <a href="{{ url_for('admin_bp.event_preview', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
-          <i data-lucide="eye"></i>
-          Podgląd
+        <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=event.event_id) }}" class="btn btn-outline" style="flex: 1;">
+          <i data-lucide="layout-dashboard"></i>
+          Dashboard
         </a>
       </div>
     </div>

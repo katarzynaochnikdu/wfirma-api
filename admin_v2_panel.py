@@ -385,6 +385,56 @@ def order_detail(order_id: str):
     )
 
 
+# ---------------------------------------------------------------------------
+# EMAIL DESIGNER
+# ---------------------------------------------------------------------------
+
+@admin_v2_bp.route("/email-designer", methods=["GET"])
+@_require_permission("events")
+def email_designer():
+    """Email Designer - projektowanie szablonów email."""
+    user = _get_current_admin_user()
+    
+    # Pobierz wydarzenia dla dropdowna
+    events = list_events(limit=100)
+    
+    return render_template(
+        "admin_v2/email-designer.html",
+        active_page="email_designer",
+        events=events,
+        **_get_common_context(user),
+    )
+
+
+# ---------------------------------------------------------------------------
+# EVENT ROUTES (wrapper do starego panelu lub nowe)
+# ---------------------------------------------------------------------------
+
+@admin_v2_bp.route("/events/new", methods=["GET", "POST"])
+@_require_permission("events")
+def event_new():
+    """Nowe wydarzenie - przekierowanie do starego panelu."""
+    # Przekieruj do starego panelu - tam jest pełna logika formularza
+    token = session.get("admin_user_id", "")
+    return redirect(url_for("admin_bp.event_new", token=token))
+
+
+@admin_v2_bp.route("/events/<event_id>/edit", methods=["GET", "POST"])
+@_require_permission("events")
+def event_edit(event_id: str):
+    """Edycja wydarzenia - przekierowanie do starego panelu."""
+    token = session.get("admin_user_id", "")
+    return redirect(url_for("admin_bp.event_edit", event_id=event_id, token=token))
+
+
+@admin_v2_bp.route("/events/<event_id>/preview", methods=["GET"])
+@_require_permission("events")
+def event_preview(event_id: str):
+    """Podgląd wydarzenia - przekierowanie do starego panelu."""
+    token = session.get("admin_user_id", "")
+    return redirect(url_for("admin_bp.event_preview", event_id=event_id, token=token))
+
+
 @admin_v2_bp.route("/events/<event_id>/dashboard", methods=["GET"])
 @_require_permission("events")
 def event_dashboard(event_id: str):
