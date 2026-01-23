@@ -556,20 +556,152 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         if purchaser_email_sent:
             # SUKCES - klient poinformowany
             internal_subject = f"[PAID OK] Płatność dokonana, klient poinformowany – {event_name}"
+            def _format_paid_dt(dt_value) -> Tuple[str, str]:
+                if not dt_value:
+                    return "—", ""
+                try:
+                    if hasattr(dt_value, "strftime"):
+                        return dt_value.strftime("%Y-%m-%d"), dt_value.strftime("%H:%M")
+                except Exception:
+                    pass
+                s = str(dt_value)
+                if "T" in s:
+                    date_part, time_part = s.split("T", 1)
+                elif " " in s:
+                    date_part, time_part = s.split(" ", 1)
+                else:
+                    return s[:10], ""
+                time_part = time_part.replace("Z", "")
+                time_part = time_part.split("+")[0].split(".")[0]
+                return date_part[:10], time_part[:5]
+
+            paid_dt = None
+            if order:
+                paid_dt = order.get("updated_at") or order.get("created_at")
+            paid_day, paid_time = _format_paid_dt(paid_dt)
+
+            purchaser_full_name = (
+                purchaser_name
+                or f"{purchaser_first_name} {purchaser_last_name}".strip()
+                or "(brak danych)"
+            )
+            purchaser_email_display = purchaser_email or "(brak)"
+            total_formatted = f"{total_value:.2f} {currency_value}"
+
+            banner_url = (
+                event_data.get("event_mail_link_top_banner")
+                or event_data.get("event_mail_link_bottom_banner")
+                or "https://via.placeholder.com/600x200/2563eb/ffffff?text=Event"
+            )
+            event_config_link = event_data.get("event_config_link") or ""
+            color_primary = event_data.get("color_gradient_1") or "#0065D7"
+            color_secondary = event_data.get("color_gradient_2") or color_primary
+            md_email_kontakt = event_data.get("md_email_kontakt") or "konferencje@medidesk.com"
+
+            backstage_btn_html = ""
+            if event_config_link:
+                backstage_btn_html = f'''
+                <tr>
+                  <td style="padding: 16px 20px; text-align: center;">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{event_config_link}" style="v-text-anchor:middle; height:40px; width:320px;" arcsize="10%" stroke="false" fillcolor="{color_primary}">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff; font-size:14px; font-weight:bold;">Otwórz Konfigurację w Backstage</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <a href="{event_config_link}" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: {color_primary}; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold;">Otwórz Konfigurację w Backstage</a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+                '''
+
             internal_body_html = f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2 style="color: #28a745;">✅ Płatność dokonana - klient poinformowany</h2>
-                <p><strong>Zamówienie:</strong> {event_order_id}</p>
-                <p><strong>Wydarzenie:</strong> {event_name}</p>
-                <hr>
-                <p><strong>Kupujący:</strong> {purchaser_name}</p>
-                <p><strong>Email:</strong> {purchaser_email}</p>
-                <p><strong>Kwota:</strong> {total_value} {currency_value}</p>
-                <p><strong>Checkout Session:</strong> {checkout_session_id}</p>
-                <hr>
-                <p style="color: #28a745;"><strong>✓ Email z potwierdzeniem płatności został wysłany do klienta.</strong></p>
-                <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+            <!doctype html>
+            <html lang="pl">
+            <head>
+              <meta charset="UTF-8" />
+              <title>Nowe zamówienie – {event_name}</title>
+              <!--[if mso]>
+              <style type="text/css">
+                body, table, td {{font-family: Arial, Helvetica, sans-serif !important;}}
+              </style>
+              <![endif]-->
+              <style type="text/css">
+                p, h1, h2, h3, h4, h5, h6, ul {{margin: 0;}}
+                @media screen and (max-width: 620px) {{
+                  .main-table {{ width: 100% !important; }}
+                }}
+              </style>
+            </head>
+            <body>
+              <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+                PAID: {purchaser_full_name} | {total_formatted} | {event_name}
+              </div>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;" bgcolor="#f5f5f5">
+                <tr>
+                  <td style="padding: 16px">
+                    <table border="0" width="600" cellpadding="0" cellspacing="0" class="main-table" style="width: 600px; margin: auto; max-width: 600px; font-family: Arial, sans-serif; font-size: 14px; background-color: #fff; border: 1px solid #ddd;" bgcolor="#ffffff">
+                      <tr>
+                        <td style="padding: 0; line-height: 0; background-color: {color_primary};" bgcolor="{color_primary}">
+                          <img src="{banner_url}" alt="{event_name}" width="600" style="width: 100%; max-width: 100%; display: block;">
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 20px; background-color: {color_primary}; text-align: center;" bgcolor="{color_primary}">
+                          <p style="color: #fff; font-size: 16px; font-weight: bold; margin: 0;">✓ PAID – Nowe opłacone zamówienie</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color: #fff;" bgcolor="#fff">
+                            <tr>
+                              <td width="45%" style="padding: 14px 20px; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #64748b; font-weight: 500;">Purchased By ◇</td>
+                              <td width="30%" style="padding: 14px 20px; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #64748b; font-weight: 500;">Date &amp; Time ◇</td>
+                              <td width="25%" style="padding: 14px 20px; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #64748b; font-weight: 500; text-align: right;">Amount ◇</td>
+                            </tr>
+                            <tr style="background-color: #fffbeb;" bgcolor="#fffbeb">
+                              <td style="padding: 16px 20px; border-bottom: 1px solid #fde68a; vertical-align: top;">
+                                <p style="font-size: 15px; font-weight: 600; color: #1e293b; margin: 0;">{purchaser_full_name}</p>
+                                <p style="font-size: 13px; color: #64748b; margin: 4px 0 0 0;">{purchaser_email_display}</p>
+                              </td>
+                              <td style="padding: 16px 20px; border-bottom: 1px solid #fde68a; vertical-align: top;">
+                                <p style="font-size: 15px; font-weight: 600; color: #1e293b; margin: 0;">{paid_day}</p>
+                                <p style="font-size: 13px; color: #64748b; margin: 4px 0 0 0;">{paid_time}</p>
+                              </td>
+                              <td style="padding: 16px 20px; border-bottom: 1px solid #fde68a; vertical-align: top; text-align: right;">
+                                <p style="font-size: 17px; font-weight: 700; color: #1e293b; margin: 0;">{total_formatted}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 14px 20px; background-color: #f8f9fa;" bgcolor="#f8f9fa">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="70%" style="vertical-align: top;">
+                                <p style="font-size: 11px; color: #888; margin: 0 0 2px 0;">Wydarzenie</p>
+                                <p style="font-size: 14px; font-weight: bold; color: #000; margin: 0;">{event_name}</p>
+                              </td>
+                              <td width="30%" style="vertical-align: top; text-align: right;">
+                                <p style="font-size: 11px; color: #888; margin: 0 0 2px 0;">Order ID</p>
+                                <p style="font-size: 12px; font-weight: bold; color: #666; margin: 0; font-family: monospace;">#{event_order_id}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      {backstage_btn_html}
+                      <tr>
+                        <td style="padding: 10px 20px; background-color: {color_secondary}; text-align: center;" bgcolor="{color_secondary}">
+                          <p style="color: #e2e8f0; font-size: 11px; margin: 0;">Powiadomienie wewnętrzne | {md_email_kontakt}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
             </body>
             </html>
             """

@@ -2875,6 +2875,40 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
     if not isinstance(data, dict):
         data = {}
 
+    # Dane do klonowania (tylko dla nowego wydarzenia)
+    clone_events_json = "{}"
+    clone_events_options_html = ""
+    if is_new:
+        all_events = list_events(limit=200)
+        clone_data_map: Dict[str, Any] = {}
+        clone_options = []
+        for ev in all_events:
+            ev_id = ev.get("event_id") or ""
+            ev_name = ev.get("event_name") or ""
+            ev_data = ev.get("data") or {}
+            if not isinstance(ev_data, dict):
+                ev_data = {}
+            ev_tickets = get_ticket_classes(ev_id)
+            # Przygotuj bilety bez ID (dla klonowania)
+            tickets_for_clone = []
+            for t in ev_tickets:
+                t_data = t.get("data") or {}
+                tickets_for_clone.append({
+                    "ticket_name": t.get("ticket_name") or "",
+                    "data": t_data,
+                })
+            clone_data_map[ev_id] = {
+                "event_name": ev_name,
+                "status": ev.get("status") or "",
+                "notes": ev.get("notes") or "",
+                "data": ev_data,
+                "tickets": tickets_for_clone,
+            }
+            safe_ev_name = ev_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+            clone_options.append(f'<option value="{ev_id}">{safe_ev_name}</option>')
+        clone_events_json = json.dumps(clone_data_map, ensure_ascii=False)
+        clone_events_options_html = "\n".join(clone_options)
+
     # Ticket classes -> JSON array (proste do wklejenia)
     ticket_classes_payload: List[Dict[str, Any]] = []
     for t in tickets or []:
@@ -3015,6 +3049,186 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
         </form>
         """
 
+    # Sekcja klonowania (tylko dla nowego wydarzenia)
+    clone_section_html = ""
+    if is_new:
+        clone_section_html = f'''
+        <div class="card" style="margin-bottom:20px; border:2px solid #c7d2fe; background:linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);">
+          <div style="font-weight:700; color:#4f46e5; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:20px;">📋</span> Klonuj z istniejącego wydarzenia
+          </div>
+          <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+            <div style="flex:1; min-width:200px;">
+              <label style="font-size:12px; color:#64748b; display:block; margin-bottom:4px;">Wybierz wydarzenie źródłowe:</label>
+              <select id="clone-source-select" style="width:100%; padding:8px 12px; border:1px solid #c7d2fe; border-radius:6px; font-size:14px;">
+                <option value="">— wybierz wydarzenie —</option>
+                {clone_events_options_html}
+              </select>
+            </div>
+            <div style="padding-top:20px;">
+              <button type="button" id="clone-apply-btn" class="btn btnPrimary" style="background:#4f46e5;" disabled onclick="applyClone()">Skopiuj zaznaczone</button>
+            </div>
+          </div>
+          <div id="clone-fields-container" style="margin-top:16px; display:none;">
+            <div style="font-size:12px; color:#64748b; margin-bottom:8px;">Zaznacz pola do skopiowania (tylko wypełnione):</div>
+            <div id="clone-fields-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:6px; max-height:300px; overflow-y:auto; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:8px;"></div>
+            <div style="margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="clone-tickets-checkbox" style="width:16px; height:16px;" />
+                <span style="font-weight:600; color:#7c3aed;">🎫 Skopiuj bilety (bez ID)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <script>
+          const CLONE_EVENTS_DATA = {clone_events_json};
+          const FIELD_LABELS = {{{", ".join([f'"{fd["key"]}": "{fd["label"]}"' for fd in FIELD_DEFS])}}};
+          
+          document.getElementById('clone-source-select').addEventListener('change', function() {{
+            const sourceId = this.value;
+            const container = document.getElementById('clone-fields-container');
+            const fieldsList = document.getElementById('clone-fields-list');
+            const applyBtn = document.getElementById('clone-apply-btn');
+            const ticketsCheckbox = document.getElementById('clone-tickets-checkbox');
+            
+            if (!sourceId || !CLONE_EVENTS_DATA[sourceId]) {{
+              container.style.display = 'none';
+              applyBtn.disabled = true;
+              return;
+            }}
+            
+            const source = CLONE_EVENTS_DATA[sourceId];
+            const sourceData = source.data || {{}};
+            
+            // Buduj checkboxy tylko dla wypełnionych pól
+            let html = '';
+            for (const [key, label] of Object.entries(FIELD_LABELS)) {{
+              // Pomijamy eventId i eventName - te użytkownik wypełnia ręcznie
+              if (key === 'eventId' || key === 'eventName') continue;
+              
+              const val = sourceData[key];
+              if (val !== undefined && val !== null && String(val).trim() !== '') {{
+                const shortVal = String(val).length > 30 ? String(val).substring(0, 30) + '...' : String(val);
+                const escapedVal = shortVal.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                html += '<label style="display:flex; align-items:flex-start; gap:6px; padding:4px 8px; background:#f8fafc; border-radius:4px; cursor:pointer; font-size:13px;">' +
+                  '<input type="checkbox" class="clone-field-cb" data-field-key="' + key + '" checked style="margin-top:2px;" />' +
+                  '<span><strong>' + label + '</strong><br><span style="color:#64748b; font-size:11px;">' + escapedVal + '</span></span>' +
+                  '</label>';
+              }}
+            }}
+            
+            // Dodaj status i notatki jeśli wypełnione
+            if (source.status && String(source.status).trim()) {{
+              html += '<label style="display:flex; align-items:flex-start; gap:6px; padding:4px 8px; background:#f8fafc; border-radius:4px; cursor:pointer; font-size:13px;">' +
+                '<input type="checkbox" class="clone-field-cb" data-field-key="_status" checked style="margin-top:2px;" />' +
+                '<span><strong>Status</strong><br><span style="color:#64748b; font-size:11px;">' + source.status + '</span></span>' +
+                '</label>';
+            }}
+            if (source.notes && String(source.notes).trim()) {{
+              html += '<label style="display:flex; align-items:flex-start; gap:6px; padding:4px 8px; background:#f8fafc; border-radius:4px; cursor:pointer; font-size:13px;">' +
+                '<input type="checkbox" class="clone-field-cb" data-field-key="_notes" checked style="margin-top:2px;" />' +
+                '<span><strong>Notatki</strong><br><span style="color:#64748b; font-size:11px;">' + source.notes + '</span></span>' +
+                '</label>';
+            }}
+            
+            if (!html) {{
+              html = '<div style="color:#94a3b8; padding:12px;">Brak wypełnionych pól do skopiowania.</div>';
+            }}
+            
+            fieldsList.innerHTML = html;
+            
+            // Checkbox biletów
+            ticketsCheckbox.checked = source.tickets && source.tickets.length > 0;
+            ticketsCheckbox.disabled = !source.tickets || source.tickets.length === 0;
+            
+            container.style.display = 'block';
+            applyBtn.disabled = false;
+          }});
+          
+          function applyClone() {{
+            const sourceId = document.getElementById('clone-source-select').value;
+            if (!sourceId || !CLONE_EVENTS_DATA[sourceId]) return;
+            
+            const source = CLONE_EVENTS_DATA[sourceId];
+            const sourceData = source.data || {{}};
+            
+            // Skopiuj zaznaczone pola
+            const checkboxes = document.querySelectorAll('.clone-field-cb:checked');
+            checkboxes.forEach(cb => {{
+              const key = cb.getAttribute('data-field-key');
+              if (key === '_status') {{
+                const statusInput = document.querySelector('input[name="status"]');
+                if (statusInput) statusInput.value = source.status || '';
+              }} else if (key === '_notes') {{
+                const notesInput = document.querySelector('input[name="notes"]');
+                if (notesInput) notesInput.value = source.notes || '';
+              }} else {{
+                const val = sourceData[key];
+                if (val !== undefined && val !== null) {{
+                  const input = document.querySelector('input[name="field__' + key + '"]');
+                  if (input) {{
+                    input.value = String(val);
+                    // Wywołaj updatePreview jeśli to pole z podglądem
+                    if (typeof updatePreview === 'function') {{
+                      updatePreview(input);
+                    }}
+                  }}
+                }}
+              }}
+            }});
+            
+            // Skopiuj bilety (bez ID)
+            const ticketsCheckbox = document.getElementById('clone-tickets-checkbox');
+            if (ticketsCheckbox && ticketsCheckbox.checked && source.tickets && source.tickets.length > 0) {{
+              const tbody = document.querySelector('#ticket-classes-table tbody');
+              if (tbody) {{
+                // Wyczyść istniejące wiersze
+                tbody.innerHTML = '';
+                
+                // Dodaj bilety ze źródła (bez ID!)
+                source.tickets.forEach(t => {{
+                  const ticketName = t.ticket_name || '';
+                  const ticketData = t.data || {{}};
+                  const ticketPrice = ticketData.ticket_price || ticketData.price || '';
+                  const ticketVat = ticketData.vat_rate || ticketData.vat || '';
+                  const ticketDataJson = JSON.stringify(ticketData).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                  
+                  const row = document.createElement('tr');
+                  row.className = 'ticket-class-row';
+                  row.innerHTML = `
+                    <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+                      <input type="text" name="ticket_class_id" value="" placeholder="ID z Backstage" style="width:100%; font-family:monospace; font-size:12px;" />
+                    </td>
+                    <td style="padding:8px; border-bottom:1px solid #e2e8f0;">
+                      <input type="text" name="ticket_class_name" value="${{ticketName.replace(/"/g, '&quot;')}}" placeholder="Nazwa biletu" style="width:100%;" />
+                    </td>
+                    <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+                      <input type="text" name="ticket_class_price" value="${{ticketPrice}}" placeholder="np. 399.00" style="width:100%; text-align:right;" />
+                    </td>
+                    <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">
+                      <input type="text" name="ticket_class_vat" value="${{ticketVat}}" placeholder="np. 23" style="width:100%; text-align:right;" />
+                      <input type="hidden" name="ticket_class_data_json" value="${{ticketDataJson}}" />
+                    </td>
+                    <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; width:90px;">
+                      <button type="button" class="btn btnDanger" style="padding:4px 8px; font-size:11px;" onclick="removeTicketRow(this)">Usuń</button>
+                    </td>
+                  `;
+                  tbody.appendChild(row);
+                }});
+                
+                // Zaktualizuj JSON biletów
+                if (typeof syncTicketClassesJson === 'function') {{
+                  syncTicketClassesJson();
+                }}
+              }}
+            }}
+            
+            // Pokaż komunikat
+            alert('Skopiowano wybrane pola! Pamiętaj o ustawieniu nowego ID wydarzenia i nazwy.');
+          }}
+        </script>
+        '''
+
     body = f"""
     <div style="margin-bottom:12px;">
       <a class="btn" href="{url_for('admin_bp.events_list', token=token)}">← Lista wydarzeń</a>
@@ -3023,6 +3237,8 @@ def _event_form_page(token: str, event: Optional[Dict[str, Any]], tickets: List[
       {tickets_link}
       {delete_form}
     </div>
+
+    {clone_section_html}
 
     <div class="grid-edit">
       
