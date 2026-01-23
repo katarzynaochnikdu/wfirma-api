@@ -66,8 +66,8 @@
       <h3 class="card-title">Przychód w czasie</h3>
     </div>
     <div class="card-content">
-      <div style="height: 240px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);">
-        [Wykres liniowy - dostępny w przyszłej wersji]
+      <div style="height: 240px;">
+        <canvas id="revenueChart"></canvas>
       </div>
     </div>
   </div>
@@ -78,8 +78,8 @@
       <h3 class="card-title">Metody płatności</h3>
     </div>
     <div class="card-content">
-      <div style="height: 240px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);">
-        [Wykres kołowy - dostępny w przyszłej wersji]
+      <div style="height: 240px;">
+        <canvas id="paymentChart"></canvas>
       </div>
     </div>
   </div>
@@ -138,4 +138,78 @@
     </tbody>
   </table>
 </div>
+
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Dane z backendu
+  const chartData = {{ chart_data|tojson|safe if chart_data else '{}' }};
+  
+  // Wykres przychodu
+  const revenueCtx = document.getElementById('revenueChart');
+  if (revenueCtx) {
+    new Chart(revenueCtx, {
+      type: 'line',
+      data: {
+        labels: chartData.revenue_labels || ['Brak danych'],
+        datasets: [{
+          label: 'Przychód (PLN)',
+          data: chartData.revenue || [0],
+          borderColor: 'hsl(212, 100%, 42%)',
+          backgroundColor: 'hsla(212, 100%, 42%, 0.1)',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+  
+  // Wykres metod płatności
+  const paymentCtx = document.getElementById('paymentChart');
+  if (paymentCtx) {
+    const paymentMethods = chartData.payment_methods || {};
+    new Chart(paymentCtx, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(paymentMethods).length ? Object.keys(paymentMethods) : ['Brak danych'],
+        datasets: [{
+          data: Object.keys(paymentMethods).length ? Object.values(paymentMethods) : [1],
+          backgroundColor: [
+            'hsl(212, 100%, 42%)',
+            'hsl(160, 82%, 44%)',
+            'hsl(280, 70%, 50%)',
+            'hsl(40, 70%, 50%)'
+          ]
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 12 }
+          }
+        }
+      }
+    });
+  }
+});
+</script>
 {% endblock %}

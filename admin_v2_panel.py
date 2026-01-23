@@ -246,11 +246,57 @@ def dashboard():
             order["event_name"] = event.get("event_name", "")
             order["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
     
+    # Dane do wykresów
+    from collections import defaultdict
+    from datetime import datetime
+    
+    # Przychód wg miesiąca (ostatnie 6 miesięcy)
+    revenue_by_month = defaultdict(float)
+    month_names_pl = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru']
+    
+    for o in paid_orders:
+        created = o.get("created_at")
+        if created:
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                except Exception:
+                    continue
+            month_key = f"{created.year}-{created.month:02d}"
+            revenue_by_month[month_key] += float(o.get("total") or 0)
+    
+    # Sortuj i weź ostatnie 6 miesięcy
+    sorted_months = sorted(revenue_by_month.keys())[-6:]
+    revenue_labels = []
+    revenue_values = []
+    for m in sorted_months:
+        year, month = m.split('-')
+        revenue_labels.append(month_names_pl[int(month) - 1])
+        revenue_values.append(round(revenue_by_month[m], 2))
+    
+    # Metody płatności
+    payment_methods = defaultdict(int)
+    for o in all_orders:
+        payment_type = (o.get("payment_option_name") or "Inne").strip()
+        if not payment_type:
+            payment_type = "Inne"
+        # Skróć długie nazwy
+        if len(payment_type) > 15:
+            payment_type = payment_type[:12] + "..."
+        payment_methods[payment_type] += 1
+    
+    chart_data = {
+        "revenue": revenue_values if revenue_values else [0],
+        "revenue_labels": revenue_labels if revenue_labels else ["Brak danych"],
+        "payment_methods": dict(payment_methods) if payment_methods else {"Brak": 1},
+    }
+    
     return render_template(
         "admin_v2/dashboard.html",
         active_page="dashboard",
         stats=stats,
         recent_orders=recent_orders,
+        chart_data=chart_data,
         **_get_common_context(user),
     )
 
