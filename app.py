@@ -3107,6 +3107,54 @@ def get_pending_participants_endpoint(event_order_id: str):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/participants/<int:participant_id>/status', methods=['POST'])
+def update_participant_status_api(participant_id: int):
+    """
+    Aktualizuje status uczestnika po ID.
+    Używane przez panel admina.
+    
+    Body (JSON):
+    {
+        "status": "registered|emailed|checked_in|cancelled"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "participant_id": 123,
+        "status": "emailed"
+    }
+    """
+    # Sprawdź sesję admina
+    if not session.get("admin_user_id"):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        from pg_storage import update_participant_status
+        
+        data = request.get_json(silent=True) or {}
+        new_status = data.get("status", "")
+        
+        if new_status not in ("registered", "emailed", "checked_in", "cancelled"):
+            return jsonify({"error": "Invalid status"}), 400
+        
+        success = update_participant_status(participant_id, new_status)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "participant_id": participant_id,
+                "status": new_status,
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Participant not found or update failed",
+            }), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # STRIPE INTEGRATION
 # ---------------------------------------------------------------------------

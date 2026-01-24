@@ -20,6 +20,7 @@ from pg_storage import (
     get_order,
     get_participants_for_order,
     get_participants_for_event,
+    get_participant_by_id,
     get_wfirma_documents,
     count_participants_by_status,
     # Admin users
@@ -990,6 +991,92 @@ def participants_list():
         events=events,
         stats=stats,
         total_participants=stats["total"],
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/participants/<int:participant_id>", methods=["GET"])
+@_require_permission("orders")
+def participant_detail(participant_id: int):
+    """Szczegóły uczestnika."""
+    user = _get_current_admin_user()
+    
+    # Pobierz uczestnika z danymi zamówienia i wydarzenia
+    participant = get_participant_by_id(participant_id)
+    if not participant:
+        return redirect(url_for("admin_v2_bp.participants_list"))
+    
+    # Rozpakuj dane wydarzenia
+    event_data = participant.get("event_data") or {}
+    participant["event_color"] = event_data.get("color_gradient_1", "#0065D7")
+    participant["event_color_2"] = event_data.get("color_gradient_2", "#00A1D7")
+    participant["event_date"] = event_data.get("event_date")
+    participant["event_time"] = event_data.get("event_time")
+    participant["event_location"] = event_data.get("location")
+    
+    # Rozpakuj dodatkowe dane uczestnika z JSON
+    p_data = participant.get("data") or {}
+    participant["company"] = p_data.get("company") or p_data.get("firma") or ""
+    participant["position"] = p_data.get("position") or p_data.get("stanowisko") or ""
+    participant["dietary"] = p_data.get("dietary") or p_data.get("dieta") or ""
+    participant["notes"] = p_data.get("notes") or p_data.get("uwagi") or ""
+    
+    # Mapuj nazwę biletu
+    ticket_name = participant.get("ticket_class_name") or ""
+    ticket_id = participant.get("ticket_class_id") or ""
+    if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
+        ticket_name = "Bilet Standard"
+    participant["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
+    
+    # Pobierz historię komunikacji dla uczestnika
+    from pg_storage import get_mail_log_by_email
+    emails = []
+    if participant.get("email"):
+        try:
+            emails = get_mail_log_by_email(participant["email"]) or []
+        except Exception:
+            emails = []
+    
+    # Zbuduj historię uczestnika
+    participant_history = []
+    
+    # Dodaj zdarzenie utworzenia
+    if participant.get("created_at"):
+        participant_history.append({
+            "type": "registration",
+            "title": "Rejestracja uczestnika",
+            "description": f"Uczestnik został zarejestrowany w ramach zamówienia",
+            "timestamp": participant["created_at"].strftime("%d.%m.%Y, %H:%M") if hasattr(participant["created_at"], "strftime") else str(participant["created_at"]),
+        })
+    
+    # Dodaj emaile
+    for email in emails:
+        participant_history.append({
+            "type": "email",
+            "title": email.get("email_type") or "Email",
+            "description": email.get("subject") or "",
+            "status": email.get("status"),
+            "status_label": {
+                "sent": "Wysłano",
+                "delivered": "Dostarczono",
+                "error": "Błąd",
+                "bounced": "Odrzucono",
+            }.get(email.get("status"), email.get("status")),
+            "timestamp": email.get("sent_at").strftime("%d.%m.%Y, %H:%M") if email.get("sent_at") and hasattr(email["sent_at"], "strftime") else "",
+        })
+    
+    # Sortuj historię po czasie (najnowsze na górze)
+    participant_history.sort(
+        key=lambda x: x.get("timestamp", ""),
+        reverse=True
+    )
+    
+    return render_template(
+        "admin_v2/participant_detail.html",
+        active_page="participants",
+        participant=participant,
+        participant_history=participant_history,
+        emails=emails,
         **_get_common_context(user),
     )
 

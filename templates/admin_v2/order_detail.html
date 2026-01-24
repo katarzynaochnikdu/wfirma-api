@@ -270,7 +270,7 @@
       <div class="card-content">
         {% if participants %}
           {% for p in participants %}
-          <div class="participant-card">
+          <a href="{{ url_for('admin_v2_bp.participant_detail', participant_id=p.id) }}" class="participant-card" style="text-decoration: none; color: inherit; display: flex;">
             <div class="participant-card-left">
               <div class="avatar-initials small">
                 {{ (p.first_name or '')[:1]|upper }}{{ (p.last_name or '')[:1]|upper }}
@@ -294,7 +294,7 @@
               {% endif %}
               <span class="participant-card-ticket">{{ p.ticket_class_name or p.ticket_class_id or 'Standard' }}</span>
             </div>
-          </div>
+          </a>
           {% endfor %}
         {% else %}
           <p style="text-align: center; color: var(--muted-foreground); padding: 1rem;">

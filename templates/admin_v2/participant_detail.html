@@ -1,0 +1,485 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}{{ participant.first_name }} {{ participant.last_name }} - Uczestnik{% endblock %}
+
+{% block content %}
+<!-- BREADCRUMB -->
+<nav class="breadcrumb">
+  <a href="{{ url_for('admin_v2_bp.participants_list') }}">Uczestnicy</a>
+  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+  <span>{{ participant.first_name }} {{ participant.last_name }}</span>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+      <div class="avatar-initials" style="width: 48px; height: 48px; font-size: 1.125rem;">
+        {{ (participant.first_name or '')[:1]|upper }}{{ (participant.last_name or '')[:1]|upper }}
+      </div>
+      <div>
+        <h1 class="page-title">{{ participant.first_name or '' }} {{ participant.last_name or '' }}</h1>
+        <p style="font-size: 0.875rem; color: var(--muted-foreground);">{{ participant.email or '—' }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-outline" onclick="sendEmail()">
+      <i data-lucide="send"></i>
+      Wyślij email
+    </button>
+  </div>
+</div>
+
+<!-- EVENT BANNER -->
+<div class="event-banner" style="background: linear-gradient(135deg, {{ participant.event_color or '#0065D7' }}, {{ participant.event_color_2 or '#00A1D7' }});">
+  <div class="event-banner-content">
+    <span class="event-banner-label">Wydarzenie</span>
+    <span class="event-banner-title">{{ participant.event_name or 'Nieznane wydarzenie' }}</span>
+  </div>
+  <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=participant.event_id) }}" class="event-banner-link">
+    Zobacz dashboard →
+  </a>
+</div>
+
+<!-- OPERATIONAL BAR -->
+<div class="operational-bar">
+  <!-- Status uczestnika -->
+  {% set p_status = participant.status or 'registered' %}
+  {% set status_config = {
+    'type': 'success' if p_status == 'emailed' else ('success' if p_status == 'checked_in' else ('error' if p_status == 'cancelled' else 'neutral')),
+    'icon': 'mail-check' if p_status == 'emailed' else ('user-check' if p_status == 'checked_in' else ('x-circle' if p_status == 'cancelled' else 'user')),
+    'label': 'Powiadomiony' if p_status == 'emailed' else ('Zameldowany' if p_status == 'checked_in' else ('Anulowany' if p_status == 'cancelled' else 'Zarejestrowany'))
+  } %}
+  <div class="operational-status-badge operational-status-{{ status_config.type }}">
+    <div class="operational-icon-wrapper">
+      <i data-lucide="user"></i>
+    </div>
+    <div class="operational-status-content">
+      <span class="operational-status-label">Status</span>
+      <div class="operational-status-value">
+        <i data-lucide="{{ status_config.icon }}"></i>
+        <span>{{ status_config.label }}</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Bilet -->
+  <div class="operational-status-badge operational-status-neutral">
+    <div class="operational-icon-wrapper">
+      <i data-lucide="ticket"></i>
+    </div>
+    <div class="operational-status-content">
+      <span class="operational-status-label">Bilet</span>
+      <div class="operational-status-value">
+        <span>{{ participant.ticket_name or 'Standard' }}</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Zamówienie -->
+  {% set order_status_type = 'success' if participant.order_status == 'paid' else ('warning' if participant.order_status == 'pending_payment' else 'neutral') %}
+  <div class="operational-status-badge operational-status-{{ order_status_type }}">
+    <div class="operational-icon-wrapper">
+      <i data-lucide="shopping-bag"></i>
+    </div>
+    <div class="operational-status-content">
+      <span class="operational-status-label">Zamówienie</span>
+      <div class="operational-status-value">
+        <a href="{{ url_for('admin_v2_bp.order_detail', order_id=participant.event_order_id) }}" style="color: inherit; text-decoration: none;">
+          {{ participant.event_order_id[:12] }}...
+        </a>
+      </div>
+      <span class="operational-status-detail">
+        {% if participant.order_status == 'paid' %}Opłacone{% elif participant.order_status == 'pending_payment' %}Oczekuje{% else %}{{ participant.order_status }}{% endif %}
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="detail-grid">
+  
+  <!-- LEFT COLUMN -->
+  <div class="detail-main">
+    
+    <!-- PARTICIPANT INFO CARD -->
+    <div class="card">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="card-title">Dane uczestnika</h3>
+        {% if participant.status == 'emailed' %}
+        <span class="status-badge status-paid">Powiadomiony</span>
+        {% elif participant.status == 'checked_in' %}
+        <span class="status-badge status-paid">Zameldowany</span>
+        {% elif participant.status == 'cancelled' %}
+        <span class="status-badge status-cancelled">Anulowany</span>
+        {% else %}
+        <span class="status-badge">Zarejestrowany</span>
+        {% endif %}
+      </div>
+      <div class="card-content">
+        
+        <!-- Status change block -->
+        <div class="status-change-block">
+          <label class="status-change-label">Zmień status uczestnika</label>
+          <div class="filter-select">
+            <select name="status" id="participant-status-select" style="width: 100%; max-width: 280px;" onchange="handleStatusChange(this.value)">
+              <option value="registered"{% if participant.status == 'registered' %} selected{% endif %}>Zarejestrowany</option>
+              <option value="emailed"{% if participant.status == 'emailed' %} selected{% endif %}>Powiadomiony</option>
+              <option value="checked_in"{% if participant.status == 'checked_in' %} selected{% endif %}>Zameldowany</option>
+              <option value="cancelled"{% if participant.status == 'cancelled' %} selected{% endif %}>Anulowany</option>
+            </select>
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Imię i nazwisko</span>
+            <span class="info-value">{{ participant.first_name or '' }} {{ participant.last_name or '' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Email</span>
+            <span class="info-value">
+              <a href="mailto:{{ participant.email }}" style="color: var(--primary); text-decoration: none;">
+                {{ participant.email or '—' }}
+              </a>
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Telefon</span>
+            <span class="info-value">{{ participant.phone or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Typ biletu</span>
+            <span class="info-value">{{ participant.ticket_name or 'Bilet Standard' }}</span>
+          </div>
+          {% if participant.company %}
+          <div class="info-item">
+            <span class="info-label">Firma</span>
+            <span class="info-value">{{ participant.company }}</span>
+          </div>
+          {% endif %}
+          {% if participant.position %}
+          <div class="info-item">
+            <span class="info-label">Stanowisko</span>
+            <span class="info-value">{{ participant.position }}</span>
+          </div>
+          {% endif %}
+          {% if participant.dietary %}
+          <div class="info-item">
+            <span class="info-label">Dieta</span>
+            <span class="info-value">{{ participant.dietary }}</span>
+          </div>
+          {% endif %}
+          <div class="info-item">
+            <span class="info-label">Data rejestracji</span>
+            <span class="info-value" style="display: flex; align-items: center; gap: 0.5rem;">
+              <i data-lucide="calendar" style="width: 16px; height: 16px; color: var(--muted-foreground);"></i>
+              {{ participant.created_at.strftime('%d.%m.%Y, %H:%M') if participant.created_at else '—' }}
+            </span>
+          </div>
+        </div>
+
+        {% if participant.notes %}
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+        <div class="info-item">
+          <span class="info-label">Uwagi</span>
+          <span class="info-value">{{ participant.notes }}</span>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+    <!-- ORDER INFO CARD -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="shopping-bag" style="width: 18px; height: 18px;"></i>
+          Powiązane zamówienie
+        </h3>
+      </div>
+      <div class="card-content">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">ID zamówienia</span>
+            <span class="info-value">
+              <a href="{{ url_for('admin_v2_bp.order_detail', order_id=participant.event_order_id) }}" style="color: var(--primary); text-decoration: none;">
+                {{ participant.event_order_id }}
+              </a>
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Status płatności</span>
+            <span class="info-value">
+              {% if participant.order_status == 'paid' %}
+              <span class="status-badge status-paid">Opłacone</span>
+              {% elif participant.order_status == 'pending_payment' %}
+              <span class="status-badge status-pending">Oczekuje</span>
+              {% elif participant.order_status == 'cancelled' %}
+              <span class="status-badge status-cancelled">Anulowane</span>
+              {% else %}
+              <span class="status-badge">{{ participant.order_status or '—' }}</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Metoda płatności</span>
+            <span class="info-value">{{ participant.payment_option_name or participant.payment_type or '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Wartość</span>
+            <span class="info-value">{{ participant.total|default('0.00', true) }} zł</span>
+          </div>
+        </div>
+        
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+        
+        <!-- Purchaser info -->
+        <h4 style="font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="user" style="width: 16px; height: 16px;"></i>
+          Kupujący
+        </h4>
+        <div class="buyer-info-block">
+          <div class="avatar-initials small">
+            {{ (participant.purchaser_first_name or '')[:1]|upper }}{{ (participant.purchaser_last_name or '')[:1]|upper }}
+          </div>
+          <div class="buyer-info-details">
+            <span class="buyer-info-name">{{ (participant.purchaser_first_name or '') ~ ' ' ~ (participant.purchaser_last_name or '') or '—' }}</span>
+            <span class="buyer-info-secondary">{{ participant.purchaser_email or '—' }}</span>
+          </div>
+        </div>
+        
+        {% if participant.purchaser_company %}
+        <div class="buyer-info-block" style="margin-top: 0.75rem;">
+          <div class="avatar-initials small company">
+            <i data-lucide="building-2" style="width: 16px; height: 16px;"></i>
+          </div>
+          <div class="buyer-info-details">
+            <span class="buyer-info-name">{{ participant.purchaser_company }}</span>
+            {% if participant.purchaser_nip %}
+            <span class="buyer-info-secondary">NIP: {{ participant.purchaser_nip }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN - SIDEBAR -->
+  <div class="detail-sidebar">
+    
+    <!-- TIMELINE -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="clock" style="width: 18px; height: 18px;"></i>
+          Historia uczestnika
+        </h3>
+      </div>
+      <div class="card-content">
+        <div class="timeline-v2">
+          {% for event in participant_history %}
+          <div class="timeline-v2-item">
+            <div class="timeline-v2-icon {{ event.type }}">
+              {% if event.type == 'registration' %}
+              <i data-lucide="user-plus"></i>
+              {% elif event.type == 'email' %}
+              <i data-lucide="mail"></i>
+              {% elif event.type == 'status_change' %}
+              <i data-lucide="refresh-cw"></i>
+              {% else %}
+              <i data-lucide="clock"></i>
+              {% endif %}
+            </div>
+            <div class="timeline-v2-content">
+              <div class="timeline-v2-header">
+                <p class="timeline-v2-title">{{ event.title }}</p>
+                {% if event.status %}
+                <span class="status-badge status-{{ 'paid' if event.status == 'delivered' else ('pending' if event.status == 'sent' else 'cancelled') }}">{{ event.status_label or event.status }}</span>
+                {% endif %}
+              </div>
+              {% if event.description %}
+              <p class="timeline-v2-description">{{ event.description[:60] }}{% if event.description|length > 60 %}...{% endif %}</p>
+              {% endif %}
+              <p class="timeline-v2-time">{{ event.timestamp }}</p>
+            </div>
+          </div>
+          {% else %}
+          <!-- Fallback if no history -->
+          <div class="timeline-v2-item">
+            <div class="timeline-v2-icon registration">
+              <i data-lucide="user-plus"></i>
+            </div>
+            <div class="timeline-v2-content">
+              <div class="timeline-v2-header">
+                <p class="timeline-v2-title">Rejestracja uczestnika</p>
+              </div>
+              <p class="timeline-v2-description">Uczestnik został dodany do zamówienia</p>
+              <p class="timeline-v2-time">{{ participant.created_at.strftime('%d.%m.%Y, %H:%M') if participant.created_at else '—' }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- QUICK ACTIONS -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Szybkie akcje</h3>
+      </div>
+      <div class="card-content">
+        <div class="quick-actions">
+          <button class="btn btn-outline" onclick="sendTicketEmail()">
+            <i data-lucide="ticket"></i>
+            Wyślij bilet
+          </button>
+          <button class="btn btn-outline" onclick="sendReminderEmail()">
+            <i data-lucide="mail"></i>
+            Wyślij przypomnienie
+          </button>
+          <a href="{{ url_for('admin_v2_bp.order_detail', order_id=participant.event_order_id) }}" class="btn btn-outline">
+            <i data-lucide="external-link"></i>
+            Zobacz zamówienie
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- TECHNICAL DATA -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Dane techniczne</h3>
+      </div>
+      <div class="card-content">
+        <div class="technical-data">
+          <p><strong>Participant ID:</strong> {{ participant.participant_id or '—' }}</p>
+          <p><strong>Event ID:</strong> {{ participant.event_id or '—' }}</p>
+          <p><strong>Order ID:</strong> {{ participant.event_order_id or '—' }}</p>
+          <p><strong>Ticket ID:</strong> {{ participant.ticket_id or '—' }}</p>
+          <p><strong>Ticket Class ID:</strong> {{ participant.ticket_class_id or '—' }}</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- STATUS CONFIRMATION MODAL -->
+<div id="status-confirm-modal" class="modal-backdrop hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title">Potwierdź zmianę statusu</h3>
+      <button class="modal-close" onclick="closeStatusModal()">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="status-confirm-text"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeStatusModal()">Anuluj</button>
+      <button class="btn btn-primary" id="confirm-status-btn" onclick="confirmStatusChange()">Potwierdź</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const participantId = {{ participant.participant_id }};
+  let pendingStatus = null;
+  const currentStatus = '{{ participant.status }}';
+
+  // Handle status change
+  function handleStatusChange(newStatus) {
+    if (newStatus === currentStatus) return;
+    
+    pendingStatus = newStatus;
+    
+    const statusLabels = {
+      'registered': 'Zarejestrowany',
+      'emailed': 'Powiadomiony',
+      'checked_in': 'Zameldowany',
+      'cancelled': 'Anulowany'
+    };
+    
+    const confirmText = document.getElementById('status-confirm-text');
+    confirmText.textContent = `Czy na pewno chcesz zmienić status uczestnika z "${statusLabels[currentStatus]}" na "${statusLabels[newStatus]}"?`;
+    
+    document.getElementById('status-confirm-modal').classList.remove('hidden');
+    
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  }
+
+  function closeStatusModal() {
+    document.getElementById('status-confirm-modal').classList.add('hidden');
+    document.getElementById('participant-status-select').value = currentStatus;
+    pendingStatus = null;
+  }
+
+  function confirmStatusChange() {
+    if (!pendingStatus) return;
+    
+    fetch(`/api/participants/${participantId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: pendingStatus })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast('Status uczestnika został zmieniony', 'success');
+        location.reload();
+      } else {
+        showToast('Błąd zmiany statusu: ' + (data.error || 'Nieznany błąd'), 'error');
+        closeStatusModal();
+      }
+    })
+    .catch(err => {
+      showToast('Błąd zmiany statusu', 'error');
+      closeStatusModal();
+    });
+  }
+
+  // Quick actions
+  function sendEmail() {
+    // TODO: Open email modal
+    showToast('Funkcja wysyłki email w przygotowaniu', 'info');
+  }
+
+  function sendTicketEmail() {
+    if (confirm('Czy na pewno chcesz wysłać bilet do uczestnika?')) {
+      fetch(`/api/participants/${participantId}/send-ticket`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            showToast('Bilet został wysłany', 'success');
+            location.reload();
+          } else {
+            showToast('Błąd wysyłki: ' + (data.error || 'Nieznany błąd'), 'error');
+          }
+        })
+        .catch(err => showToast('Błąd wysyłki biletu', 'error'));
+    }
+  }
+
+  function sendReminderEmail() {
+    if (confirm('Czy na pewno chcesz wysłać przypomnienie?')) {
+      showToast('Funkcja przypomnienia w przygotowaniu', 'info');
+    }
+  }
+
+  // Initialize
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  });
+</script>
+{% endblock %}

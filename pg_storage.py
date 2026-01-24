@@ -1671,6 +1671,36 @@ def mail_log_exists(event_order_id: str, template_key: str, direction: Optional[
             _put_conn(pool, conn)
 
 
+def get_mail_log_by_email(to_email: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Pobiera historię emaili wysłanych do danego adresu.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id, event_order_id, direction, template_key, to_email, subject, 
+                   status, error, data, created_at as sent_at
+            FROM mail_log
+            WHERE to_email = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (str(to_email), int(limit)),
+        )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] get_mail_log_by_email error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 # ---------------------------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------------------------
@@ -1976,6 +2006,44 @@ def get_participants_for_event(event_id: str) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"[DB] get_participants_for_event error: {e}")
         return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_participant_by_id(participant_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Pobiera szczegóły uczestnika po ID wraz z danymi zamówienia i wydarzenia.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT p.id as participant_id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
+                   p.ticket_id, p.ticket_class_id, p.status, p.data, p.created_at, p.updated_at,
+                   o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
+                   o.purchaser_company, o.purchaser_nip, o.purchaser_phone,
+                   o.status as order_status, o.payment_option_name, o.payment_type, o.total,
+                   o.created_at as order_created_at, o.paid_at,
+                   e.event_name, e.data as event_data
+            FROM participants p
+            JOIN orders o ON p.event_order_id = o.event_order_id
+            LEFT JOIN events e ON o.event_id = e.event_id
+            WHERE p.id = %s
+            """,
+            (participant_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    except Exception as e:
+        print(f"[DB] get_participant_by_id error: {e}")
+        return None
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)

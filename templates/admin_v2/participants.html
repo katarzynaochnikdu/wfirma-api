@@ -100,10 +100,10 @@
       {% for p in participants %}
       {% set event_color = p.event_color or 'hsl(212, 100%, 42%)' %}
       {% set event_color_2 = p.event_color_2 or 'hsl(195, 100%, 42%)' %}
-      <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}">
+      <tr data-participant-id="{{ p.id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}" class="clickable-row" onclick="goToParticipant(event, {{ p.id }})">
         <!-- Checkbox -->
-        <td>
-          <input type="checkbox" class="checkbox participant-checkbox" data-participant-id="{{ p.participant_id }}" onchange="updateParticipantSelection()">
+        <td onclick="event.stopPropagation();">
+          <input type="checkbox" class="checkbox participant-checkbox" data-participant-id="{{ p.id }}" onchange="updateParticipantSelection()">
         </td>
         <!-- Uczestnik z avatarem -->
         <td>
@@ -238,6 +238,15 @@ function openBulkMessageModal() {
   }
   
   openSendMessageModal(selectedParticipants, eventName);
+}
+
+// Navigate to participant detail
+function goToParticipant(event, participantId) {
+  // Don't navigate if clicking on a link or checkbox
+  if (event.target.tagName === 'A' || event.target.tagName === 'INPUT') {
+    return;
+  }
+  window.location.href = '/admin-v2/participants/' + participantId;
 }
 
 // Re-init Lucide icons
