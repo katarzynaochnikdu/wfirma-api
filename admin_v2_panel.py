@@ -1708,6 +1708,19 @@ def template_preview(template_key: str):
                 event_config=event_config,
             )
         
+        elif template_key == "proforma_sent":
+            from email_templates import render_proforma_reservation_email
+            html_content = render_proforma_reservation_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                purchaser_phone=sample_data.get("purchaser_phone", "+48 123 456 789"),
+                event_config=event_config,
+                tickets=sample_data["tickets"],
+                proforma_number="PRO/2026/03/0042",
+            )
+        
         else:
             # Dla szablonów bez dedykowanej funkcji render - pokaż placeholder
             html_content = f"""
