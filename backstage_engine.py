@@ -60,6 +60,7 @@ def _send_email_via_make(
     template_type: str = "",
     stripe_url: str = "",
     extra_data: Optional[Dict[str, Any]] = None,
+    mail_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Wysyła email przez webhook Make.com.
@@ -72,6 +73,7 @@ def _send_email_via_make(
         template_type: Typ szablonu (stripe_payment_link, etc.)
         stripe_url: URL płatności Stripe (opcjonalnie)
         extra_data: Dodatkowe dane do przekazania
+        mail_id: ID rekordu w mail_log (do callbacku mark-sent)
     
     Returns:
         Dict z status, error, etc.
@@ -83,7 +85,11 @@ def _send_email_via_make(
             "error": "Make webhook nie skonfigurowany",
         }
     
-    _log("INFO", "Wysyłam email przez Make webhook", {"to": to_email, "subject": subject})
+    _log("INFO", "Wysyłam email przez Make webhook", {"to": to_email, "subject": subject, "mail_id": mail_id})
+    
+    # Callback URL dla Make.com do potwierdzenia wysyłki (używamy istniejącego endpointu)
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://wfirma-api.onrender.com")
+    callback_url = f"{base_url}/api/email/confirm-sent"
     
     try:
         payload = {
@@ -93,6 +99,8 @@ def _send_email_via_make(
             "event_order_id": event_order_id,
             "template_type": template_type,
             "stripe_url": stripe_url,
+            "mail_id": mail_id,  # Make przekaże to w callbacku
+            "callback_url": callback_url,
             **(extra_data or {}),
         }
         
@@ -2775,12 +2783,20 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             "mail_tasks_count": len(result.get("mail_tasks", [])),
         })
 
-        # 7. Zapisz mail tasks do logu
+        # 7. Zapisz mail tasks do logu (tylko purchaser/participant - internal nie są wysyłane)
         _log("INFO", "Krok 7: Zapisywanie mail tasks...")
         for i, mt in enumerate(result.get("mail_tasks", [])):
+            direction = mt.get("direction", "purchaser")
+            # Pomijaj internal - te maile nie są wysyłane, więc nie loguj jako "queued"
+            if direction == "internal":
+                _log("DEBUG", f"Mail task {i+1} pominięty (internal - nie wysyłany)", {
+                    "template": mt.get("template"),
+                    "to": mt.get("to"),
+                })
+                continue
             save_mail_log(
                 event_order_id=event_order_id,
-                direction=mt.get("direction", "purchaser"),
+                direction=direction,
                 template_key=mt.get("template", ""),
                 to_email=mt.get("to", ""),
                 subject=mt.get("subject", ""),
@@ -2789,7 +2805,7 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             _log("DEBUG", f"Mail task {i+1} zapisany", {
                 "template": mt.get("template"),
                 "to": mt.get("to"),
-                "direction": mt.get("direction"),
+                "direction": direction,
             })
 
         # 8. Oznacz webhook jako przetworzony

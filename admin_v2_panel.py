@@ -193,10 +193,10 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
         "md_email_kontakt": event_data.get("md_email_kontakt") or "eventy@medidesk.com",
         "md_mobile_kontakt": event_data.get("md_mobile_kontakt") or "+48 729 927 389",
         
-        # Linki publiczne
-        "event_public_url": event_data.get("event_public_url") or "",
-        "success_page_url": event_data.get("success_page_url") or "",
-        "cancel_page_url": event_data.get("cancel_page_url") or "",
+        # Linki publiczne (w starej bazie: url_event, url_success, url_cancel)
+        "event_public_url": event_data.get("url_event") or event_data.get("event_public_url") or "",
+        "success_page_url": event_data.get("url_success") or event_data.get("success_page_url") or "",
+        "cancel_page_url": event_data.get("url_cancel") or event_data.get("cancel_page_url") or "",
     }
     
     # Zachowaj wszystkie oryginalne pola i nadpisz znormalizowanymi

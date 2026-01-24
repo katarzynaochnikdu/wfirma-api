@@ -1529,9 +1529,9 @@ def _backstage_attendee_incomplete_monitor_loop():
                     </html>
                     """
 
-                    # zapis do mail_log + wysyłka
+                    # 1. Zapisz do mail_log (status=queued)
                     from pg_storage import save_mail_log
-                    save_mail_log(
+                    mail_record = save_mail_log(
                         event_order_id=order_id,
                         direction="internal",
                         template_key=BACKSTAGE_ATTENDEE_INCOMPLETE_TEMPLATE,
@@ -1539,12 +1539,16 @@ def _backstage_attendee_incomplete_monitor_loop():
                         subject=subject,
                         data={"event_name": event_name, "expected": comp.get("expected"), "received": comp.get("received"), "missing_count": len(missing)},
                     )
+                    mail_id = mail_record.get("id") if mail_record else None
+                    
+                    # 2. Wyślij przez Make z mail_id (Make wywoła callback mark-sent)
                     _send_email_via_make(
                         to_email=internal_to,
                         subject=subject,
                         body_html=body_html,
                         event_order_id=order_id,
                         template_type=BACKSTAGE_ATTENDEE_INCOMPLETE_TEMPLATE,
+                        mail_id=mail_id,
                     )
 
             finally:
@@ -3951,6 +3955,8 @@ def email_confirm_sent():
         "event_order_id": "24311000000805010",
         "status": "sent" | "failed",
         "to": "email@example.com",
+        "direction": "purchaser" | "internal" | "participant" (opcjonalnie, domyślnie purchaser),
+        "mail_id": 123 (opcjonalnie - jeśli podane, aktualizuje po ID),
         "message_id": "opcjonalnie - ID z Make/SMTP",
         "error": "opcjonalnie - komunikat błędu"
     }
@@ -3961,10 +3967,12 @@ def email_confirm_sent():
         event_order_id = data.get("event_order_id")
         status = data.get("status", "sent")
         to_email = data.get("to", "")
+        direction = data.get("direction", "purchaser")
+        mail_id = data.get("mail_id")
         message_id = data.get("message_id", "")
         error = data.get("error", "")
         
-        print(f"[EMAIL CALLBACK] order={event_order_id}, status={status}, to={to_email}, message_id={message_id}")
+        print(f"[EMAIL CALLBACK] order={event_order_id}, status={status}, to={to_email}, direction={direction}, mail_id={mail_id}")
         
         if not event_order_id:
             return jsonify({
@@ -3987,29 +3995,38 @@ def email_confirm_sent():
             else:
                 status_db = status_in or "sent"
 
-            # Zaktualizuj OSTATNI rekord dla kupującego, który jest jeszcze "queued"
-            # (schemat mail_log: status=queued/sent/failed, error=TEXT)
-            cur.execute("""
-                UPDATE mail_log
-                SET status = %s,
-                    error = %s
-                WHERE id = (
-                    SELECT id
-                    FROM mail_log
-                    WHERE event_order_id = %s
-                      AND direction = 'purchaser'
-                      AND status = 'queued'
-                      AND (%s = '' OR to_email = %s)
-                    ORDER BY id DESC
-                    LIMIT 1
-                )
-            """, (
-                status_db,
-                (error or None),
-                event_order_id,
-                to_email or "",
-                to_email or "",
-            ))
+            # Aktualizuj mail_log - priorytet: mail_id > (event_order_id + direction)
+            if mail_id:
+                # Aktualizuj po mail_id (najdokładniejsze)
+                cur.execute("""
+                    UPDATE mail_log
+                    SET status = %s, error = %s
+                    WHERE id = %s AND status = 'queued'
+                """, (status_db, (error or None), int(mail_id)))
+            else:
+                # Fallback: znajdź ostatni queued rekord dla order + direction
+                cur.execute("""
+                    UPDATE mail_log
+                    SET status = %s,
+                        error = %s
+                    WHERE id = (
+                        SELECT id
+                        FROM mail_log
+                        WHERE event_order_id = %s
+                          AND direction = %s
+                          AND status = 'queued'
+                          AND (%s = '' OR to_email = %s)
+                        ORDER BY id DESC
+                        LIMIT 1
+                    )
+                """, (
+                    status_db,
+                    (error or None),
+                    event_order_id,
+                    direction,
+                    to_email or "",
+                    to_email or "",
+                ))
             
             rows_updated = cur.rowcount
             conn.commit()
