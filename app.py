@@ -2710,7 +2710,7 @@ def backstage_ticket_classes():
 # Webhook do Zoho Flow - pobieranie typów biletów
 ZOHO_FLOW_FETCH_TICKETS_WEBHOOK = os.environ.get(
     "ZOHO_FLOW_FETCH_TICKETS_WEBHOOK",
-    ""  # Ustaw w ENV na Render
+    "https://flow.zoho.eu/20101689330/flow/webhook/incoming?zapikey=1001.da7bd8d507af6cb38280e14ef6f8e18b.663769721c5063f905bf924cfbefdc98&isdebug=false"
 )
 
 
@@ -2756,6 +2756,7 @@ def api_fetch_event_tickets(event_id: str):
         
         webhook_payload = {
             "event_id": event_id,
+            "event_key": event_id,  # W Backstage event_key = event_id
             "event_name": event.get("event_name", ""),
             "callback_url": callback_url,
             "api_key": os.environ.get("MAKE_RENDER_API_KEY", ""),  # Do autoryzacji callbacku
