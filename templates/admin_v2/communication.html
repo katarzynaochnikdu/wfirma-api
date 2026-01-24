@@ -379,10 +379,6 @@
     <p class="page-description">Historia wysyłek i zarządzanie szablonami</p>
   </div>
   <div class="header-actions">
-    <a href="{{ url_for('admin_v2_bp.email_designer') }}" class="btn btn-outline">
-      <i data-lucide="palette"></i>
-      Kreator szablonów
-    </a>
     <a href="{{ url_for('admin_v2_bp.communication_export', event_id=request.args.get('event_id', '')) }}" class="btn btn-outline" id="btn-export-csv">
       <i data-lucide="download"></i>
       Eksportuj CSV
@@ -691,10 +687,6 @@
     <h2 class="templates-section-title">Szablony emaili</h2>
     <p class="templates-section-desc">Wszystkie szablony używane przez system do wysyłki wiadomości</p>
   </div>
-  <a href="{{ url_for('admin_v2_bp.email_designer') }}" class="btn btn-primary">
-    <i data-lucide="palette"></i>
-    Otwórz kreator
-  </a>
 </div>
 
 <!-- CATEGORY: PURCHASER (Kupujący) -->

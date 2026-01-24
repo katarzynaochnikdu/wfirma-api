@@ -17,60 +17,106 @@
     /* Top Toolbar */
     .designer-toolbar {
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         justify-content: space-between;
-        gap: 16px;
-        padding: 16px;
-        border-bottom: 1px solid var(--border-subtle);
-        background: var(--surface-primary);
+        gap: 1.5rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
     }
 
     .toolbar-left {
         display: flex;
-        align-items: center;
-        gap: 12px;
+        align-items: flex-end;
+        gap: 1.25rem;
         flex: 1;
     }
 
-    .template-name-input {
-        max-width: 250px;
-        font-weight: 500;
+    .toolbar-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+    }
+
+    .toolbar-label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted-foreground);
+    }
+
+    .toolbar-field .form-control,
+    .toolbar-field .form-select {
+        min-width: 180px;
+        font-size: 0.875rem;
     }
 
     .toolbar-right {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 0.75rem;
+    }
+
+    .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+    }
+
+    .toolbar-actions .btn {
+        gap: 0.375rem;
+    }
+
+    .toolbar-actions .btn span {
+        font-size: 0.8125rem;
     }
 
     .toolbar-separator {
         width: 1px;
-        height: 24px;
-        background: var(--border-subtle);
-        margin: 0 8px;
+        height: 32px;
+        background: var(--border);
+        margin: 0 0.5rem;
     }
 
     /* Subject Line */
     .subject-bar {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--border-subtle);
-        background: var(--surface-secondary);
+        gap: 1rem;
+        padding: 0.875rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
     }
 
-    .subject-bar label {
-        font-size: 14px;
-        font-weight: 500;
+    .subject-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
         white-space: nowrap;
-        color: var(--text-secondary);
+        color: var(--foreground);
     }
 
-    .subject-bar input {
+    .subject-bar .form-control {
         flex: 1;
-        font-family: monospace;
-        font-size: 14px;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-size: 0.875rem;
+        max-width: 500px;
+    }
+
+    .subject-hint {
+        font-size: 0.75rem;
+        color: var(--muted-foreground);
+        white-space: nowrap;
+    }
+
+    .subject-hint code {
+        background: var(--background);
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+        font-size: 0.6875rem;
     }
 
     /* Main Editor Area */
@@ -82,42 +128,44 @@
 
     /* Left Panel - Palette */
     .palette-panel {
-        width: 256px;
-        border-right: 1px solid var(--border-subtle);
-        background: var(--surface-primary);
+        width: 240px;
+        border-right: 1px solid var(--border);
+        background: var(--card);
         overflow-y: auto;
-        padding: 16px;
+        padding: 1rem;
+        flex-shrink: 0;
     }
 
     .palette-section {
-        margin-bottom: 24px;
+        margin-bottom: 1.5rem;
     }
 
     .palette-title {
-        font-size: 11px;
-        font-weight: 600;
+        font-size: 0.6875rem;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-muted);
-        margin-bottom: 12px;
-        padding: 0 4px;
+        letter-spacing: 0.08em;
+        color: var(--muted-foreground);
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
     }
 
     .block-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
+        gap: 0.5rem;
     }
 
     .block-btn {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 4px;
-        padding: 12px 8px;
-        border-radius: 8px;
-        border: 1px solid var(--border-subtle);
-        background: var(--surface-primary);
+        gap: 0.25rem;
+        padding: 0.75rem 0.5rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--background);
         cursor: pointer;
         transition: all 0.15s ease;
     }
@@ -218,8 +266,15 @@
     .canvas-panel {
         flex: 1;
         overflow-y: auto;
-        padding: 24px;
-        background: var(--surface-secondary);
+        padding: 2rem;
+        background: var(--muted);
+        background-image: 
+            linear-gradient(45deg, hsl(var(--muted-foreground) / 0.03) 25%, transparent 25%),
+            linear-gradient(-45deg, hsl(var(--muted-foreground) / 0.03) 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, hsl(var(--muted-foreground) / 0.03) 75%),
+            linear-gradient(-45deg, transparent 75%, hsl(var(--muted-foreground) / 0.03) 75%);
+        background-size: 20px 20px;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
     }
 
     .canvas-panel.preview-mode .email-canvas {
@@ -239,10 +294,11 @@
         max-width: 600px;
         margin: 0 auto;
         background: white;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
-        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+        border-radius: 8px;
         overflow: hidden;
-        min-height: 400px;
+        min-height: 450px;
+        border: 1px solid var(--border);
     }
 
     .canvas-empty {
@@ -250,19 +306,29 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 80px 40px;
-        color: var(--text-muted);
+        padding: 5rem 2.5rem;
+        color: var(--muted-foreground);
         text-align: center;
+        background: linear-gradient(180deg, transparent 0%, hsl(var(--primary) / 0.02) 100%);
+        min-height: 400px;
     }
 
     .canvas-empty i {
-        font-size: 48px;
-        margin-bottom: 16px;
-        opacity: 0.3;
+        width: 56px;
+        height: 56px;
+        margin-bottom: 1.25rem;
+        opacity: 0.25;
+        color: var(--primary);
     }
 
     .canvas-empty p {
-        margin: 4px 0;
+        margin: 0.25rem 0;
+        font-size: 0.9375rem;
+    }
+
+    .canvas-empty p:first-of-type {
+        font-weight: 600;
+        color: var(--foreground);
     }
 
     /* Email Blocks */
@@ -487,14 +553,15 @@
 
     /* Right Panel - Editor */
     .editor-panel {
-        width: 320px;
-        border-left: 1px solid var(--border-subtle);
-        background: var(--surface-primary);
+        width: 300px;
+        border-left: 1px solid var(--border);
+        background: var(--card);
         overflow-y: auto;
+        flex-shrink: 0;
     }
 
     .editor-content {
-        padding: 16px;
+        padding: 1rem;
     }
 
     .editor-empty {
@@ -502,39 +569,45 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 48px 24px;
+        padding: 3rem 1.5rem;
         text-align: center;
-        color: var(--text-muted);
+        color: var(--muted-foreground);
+        min-height: 200px;
     }
 
     .editor-empty p {
-        margin: 4px 0;
-        font-size: 14px;
+        margin: 0.25rem 0;
+        font-size: 0.875rem;
+    }
+
+    .editor-empty p:first-child {
+        font-weight: 600;
+        color: var(--foreground);
     }
 
     .editor-empty p:last-child {
-        font-size: 12px;
+        font-size: 0.8125rem;
     }
 
     .editor-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 16px;
-        border-bottom: 1px solid var(--border-subtle);
-        background: var(--surface-secondary);
+        padding: 0.875rem 1rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
     }
 
     .editor-title {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 0.5rem;
         font-weight: 600;
-        font-size: 14px;
+        font-size: 0.875rem;
     }
 
     .editor-title i {
-        color: var(--text-brand);
+        color: var(--primary);
     }
 
     .editor-actions {
@@ -885,51 +958,612 @@
         background: var(--surface-brand);
         color: var(--text-brand);
     }
+
+    /* Templates Badge */
+    .templates-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.25rem;
+        height: 1.25rem;
+        padding: 0 0.375rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        background: white;
+        color: var(--primary);
+        border-radius: 999px;
+        margin-left: 0.25rem;
+    }
+
+    /* Templates Panel */
+    .templates-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 900;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+
+    .templates-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .templates-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 400px;
+        max-width: 90vw;
+        height: 100vh;
+        background: var(--card);
+        box-shadow: -8px 0 32px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .templates-panel.active {
+        transform: translateX(0);
+    }
+
+    .templates-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+    }
+
+    .templates-panel-header h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .templates-panel-header h3 i {
+        width: 20px;
+        height: 20px;
+        color: var(--primary);
+    }
+
+    .templates-panel-search {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .templates-filters {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .templates-filters select {
+        flex: 1;
+        font-size: 0.8125rem;
+    }
+
+    .templates-panel-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+    }
+
+    .templates-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 3rem 1rem;
+        color: var(--muted-foreground);
+        font-size: 0.875rem;
+    }
+
+    .templates-loading i {
+        width: 24px;
+        height: 24px;
+    }
+
+    .templates-empty {
+        text-align: center;
+        padding: 3rem 1.5rem;
+        color: var(--muted-foreground);
+    }
+
+    .templates-empty i {
+        width: 48px;
+        height: 48px;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+
+    .templates-empty p {
+        margin: 0.25rem 0;
+        font-size: 0.875rem;
+    }
+
+    /* Template Card */
+    .template-card {
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        cursor: pointer;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .template-card:hover {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+    }
+
+    .template-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .template-card-name {
+        font-weight: 600;
+        font-size: 0.9375rem;
+        color: var(--foreground);
+        line-height: 1.3;
+    }
+
+    .template-card-badges {
+        display: flex;
+        gap: 0.375rem;
+        flex-shrink: 0;
+    }
+
+    .template-card-badge {
+        font-size: 0.625rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        background: var(--muted);
+        color: var(--muted-foreground);
+    }
+
+    .template-card-badge.external {
+        background: hsl(212, 100%, 95%);
+        color: hsl(212, 100%, 40%);
+    }
+
+    .template-card-badge.internal {
+        background: hsl(280, 80%, 95%);
+        color: hsl(280, 80%, 40%);
+    }
+
+    .template-card-subject {
+        font-size: 0.8125rem;
+        color: var(--muted-foreground);
+        margin-bottom: 0.75rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .template-card-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 0.75rem;
+        color: var(--muted-foreground);
+    }
+
+    .template-card-actions {
+        display: flex;
+        gap: 0.25rem;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .template-card:hover .template-card-actions {
+        opacity: 1;
+    }
+
+    .template-card-actions button {
+        padding: 0.375rem;
+        border-radius: 4px;
+        border: none;
+        background: transparent;
+        color: var(--muted-foreground);
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .template-card-actions button:hover {
+        background: var(--muted);
+        color: var(--foreground);
+    }
+
+    .template-card-actions button.delete:hover {
+        background: hsl(0, 84%, 95%);
+        color: hsl(0, 84%, 50%);
+    }
+
+    .template-card-actions button i {
+        width: 14px;
+        height: 14px;
+    }
+
+    /* Currently editing indicator */
+    .template-card.editing {
+        border-color: var(--primary);
+        background: hsl(var(--primary) / 0.05);
+    }
+
+    .template-card.editing::before {
+        content: 'Edytujesz';
+        position: absolute;
+        top: -0.5rem;
+        left: 1rem;
+        font-size: 0.625rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.125rem 0.5rem;
+        background: var(--primary);
+        color: white;
+        border-radius: 4px;
+    }
+
+    /* Toast Notifications */
+    .toast-notification {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1rem 1.25rem;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+        z-index: 2000;
+        transform: translateY(100px);
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .toast-notification.show {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    .toast-notification i {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+    }
+
+    .toast-notification span {
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .toast-success {
+        border-color: hsl(160, 82%, 44%);
+        background: hsl(160, 82%, 97%);
+    }
+
+    .toast-success i {
+        color: hsl(160, 82%, 35%);
+    }
+
+    .toast-error {
+        border-color: hsl(0, 84%, 60%);
+        background: hsl(0, 84%, 97%);
+    }
+
+    .toast-error i {
+        color: hsl(0, 84%, 50%);
+    }
+
+    .toast-info {
+        border-color: hsl(212, 100%, 50%);
+        background: hsl(212, 100%, 97%);
+    }
+
+    .toast-info i {
+        color: hsl(212, 100%, 45%);
+    }
+
+    /* Live Preview Modal */
+    .preview-modal {
+        width: 95vw;
+        max-width: 1200px;
+        height: 90vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .preview-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1.5rem;
+        background: var(--muted);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .preview-subject {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .preview-label {
+        font-weight: 600;
+        color: var(--muted-foreground);
+    }
+
+    #previewSubjectText {
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--foreground);
+    }
+
+    .preview-device-selector {
+        display: flex;
+        gap: 0.25rem;
+        background: var(--background);
+        padding: 0.25rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+    }
+
+    .device-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 32px;
+        border: none;
+        background: transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--muted-foreground);
+        transition: all 0.15s ease;
+    }
+
+    .device-btn:hover {
+        background: var(--muted);
+        color: var(--foreground);
+    }
+
+    .device-btn.active {
+        background: var(--primary);
+        color: white;
+    }
+
+    .device-btn i {
+        width: 18px;
+        height: 18px;
+    }
+
+    .preview-content {
+        flex: 1;
+        overflow: auto;
+        background: #e5e7eb;
+        display: flex;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .preview-frame-wrapper {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        transition: width 0.3s ease;
+        width: 600px;
+        height: fit-content;
+        min-height: 400px;
+    }
+
+    .preview-frame-wrapper.tablet {
+        width: 768px;
+    }
+
+    .preview-frame-wrapper.mobile {
+        width: 375px;
+    }
+
+    .preview-frame {
+        width: 100%;
+        min-height: 500px;
+        border: none;
+        background: white;
+    }
+
+    .preview-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        color: var(--muted-foreground);
+        flex: 1;
+    }
+
+    .preview-info code {
+        background: var(--muted);
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+        font-size: 0.6875rem;
+    }
+
+    /* No event selected state */
+    .preview-no-event {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        color: var(--muted-foreground);
+        text-align: center;
+    }
+
+    .preview-no-event i {
+        width: 48px;
+        height: 48px;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+
+    .preview-no-event p {
+        margin: 0.25rem 0;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header" style="margin-bottom: 1rem;">
+  <div style="display: flex; align-items: center; gap: 1rem;">
+    <a href="{{ url_for('admin_v2_bp.communication') }}" class="btn btn-ghost" style="padding: 0.5rem;">
+      <i data-lucide="arrow-left" style="width: 20px; height: 20px;"></i>
+    </a>
+    <div>
+      <h1 class="page-title" style="font-size: 1.25rem;">Kreator szablonów</h1>
+      <p class="page-description" style="font-size: 0.8125rem;">Projektuj szablony emaili z placeholderami</p>
+    </div>
+  </div>
+  <div style="display: flex; gap: 0.5rem;">
+    <button type="button" id="btnNewTemplate" class="btn btn-outline" onclick="newTemplate()">
+      <i data-lucide="file-plus"></i>
+      Nowy
+    </button>
+    <button type="button" id="btnShowTemplates" class="btn btn-primary" onclick="toggleTemplatesPanel()">
+      <i data-lucide="folder-open"></i>
+      Moje szablony
+      <span id="templatesBadge" class="templates-badge" style="display: none;">0</span>
+    </button>
+  </div>
+</div>
+
+<!-- TEMPLATES PANEL (slideout) -->
+<div id="templatesPanel" class="templates-panel">
+  <div class="templates-panel-header">
+    <h3>
+      <i data-lucide="folder-open"></i>
+      Zapisane szablony
+    </h3>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="toggleTemplatesPanel()">
+      <i data-lucide="x"></i>
+    </button>
+  </div>
+  
+  <div class="templates-panel-search">
+    <div style="position: relative;">
+      <i data-lucide="search" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--muted-foreground);"></i>
+      <input type="text" id="templatesSearch" class="form-control" placeholder="Szukaj szablonu..." style="padding-left: 2.25rem;" oninput="searchTemplates(this.value)">
+    </div>
+    <div class="templates-filters">
+      <select id="templatesFilterCategory" class="form-select form-select-sm" onchange="loadTemplates()">
+        <option value="">Wszystkie kategorie</option>
+        <option value="external">Zewnętrzne</option>
+        <option value="internal">Wewnętrzne</option>
+        <option value="custom">Własne</option>
+      </select>
+    </div>
+  </div>
+  
+  <div class="templates-panel-list" id="templatesList">
+    <div class="templates-loading">
+      <i data-lucide="loader-2" class="animate-spin"></i>
+      Ładowanie szablonów...
+    </div>
+  </div>
+</div>
+
+<!-- TEMPLATES OVERLAY -->
+<div id="templatesOverlay" class="templates-overlay" onclick="toggleTemplatesPanel()"></div>
+
 <div class="email-designer-container">
-    <!-- Top Toolbar -->
+    <!-- Top Toolbar - Metadata -->
     <div class="designer-toolbar">
         <div class="toolbar-left">
-            <input type="text" id="templateName" class="form-control template-name-input" value="Nowy szablon" placeholder="Nazwa szablonu">
-            <select id="templateCategory" class="form-select" style="width: 130px;">
-                <option value="external">Zewnętrzny</option>
-                <option value="internal">Wewnętrzny</option>
-            </select>
-            <select id="templateType" class="form-select" style="width: 150px;">
-                <option value="proforma">Proforma</option>
-                <option value="invoice">Faktura</option>
-                <option value="reminder">Przypomnienie</option>
-                <option value="confirmation">Potwierdzenie</option>
-                <option value="invitation">Zaproszenie</option>
-                <option value="notification">Powiadomienie</option>
-                <option value="custom">Własny</option>
-            </select>
+            <div class="toolbar-field">
+                <label class="toolbar-label">Nazwa szablonu</label>
+                <input type="text" id="templateName" class="form-control" value="Nowy szablon" placeholder="np. Potwierdzenie płatności">
+            </div>
+            <div class="toolbar-field">
+                <label class="toolbar-label">Kategoria</label>
+                <select id="templateCategory" class="form-select">
+                    <option value="external">Zewnętrzny (klienci)</option>
+                    <option value="internal">Wewnętrzny (zespół)</option>
+                </select>
+            </div>
+            <div class="toolbar-field">
+                <label class="toolbar-label">Typ wiadomości</label>
+                <select id="templateType" class="form-select">
+                    <option value="proforma">Proforma</option>
+                    <option value="invoice">Faktura</option>
+                    <option value="reminder">Przypomnienie</option>
+                    <option value="confirmation">Potwierdzenie</option>
+                    <option value="invitation">Zaproszenie</option>
+                    <option value="notification">Powiadomienie</option>
+                    <option value="custom">Własny</option>
+                </select>
+            </div>
         </div>
         <div class="toolbar-right">
-            <button id="btnPreview" class="btn btn-ghost" title="Podgląd">
-                <i data-lucide="eye"></i>
-            </button>
-            <button id="btnHtml" class="btn btn-ghost" title="Eksportuj HTML">
-                <i data-lucide="code"></i>
-            </button>
-            <button id="btnJson" class="btn btn-ghost" title="Eksportuj JSON">
-                <i data-lucide="file-json"></i>
-            </button>
+            <div class="toolbar-field" style="min-width: 200px;">
+                <label class="toolbar-label">Podgląd z danymi</label>
+                <select id="previewEventSelect" class="form-select" onchange="loadPreviewEventData(this.value)">
+                    <option value="">-- wybierz wydarzenie --</option>
+                    {% for event in events %}
+                    <option value="{{ event.event_id }}">{{ event.event_name|truncate(35) }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="toolbar-separator"></div>
+            <div class="toolbar-actions">
+                <button id="btnPreviewLive" class="btn btn-outline btn-sm" title="Podgląd z danymi wydarzenia" onclick="showLivePreview()">
+                    <i data-lucide="monitor-play"></i>
+                    <span>Podgląd</span>
+                </button>
+                <button id="btnHtml" class="btn btn-outline btn-sm" title="Eksportuj HTML">
+                    <i data-lucide="code"></i>
+                    <span>HTML</span>
+                </button>
+            </div>
             <div class="toolbar-separator"></div>
             <button id="btnSave" class="btn btn-primary">
                 <i data-lucide="save"></i>
-                Zapisz
+                Zapisz szablon
             </button>
         </div>
     </div>
 
     <!-- Subject Line -->
     <div class="subject-bar">
-        <label>Temat:</label>
-        <input type="text" id="templateSubject" class="form-control" placeholder="Temat email (użyj placeholderów jak {{event_name}})">
+        <label class="subject-label">
+            <i data-lucide="mail" style="width: 16px; height: 16px;"></i>
+            Temat wiadomości:
+        </label>
+        <input type="text" id="templateSubject" class="form-control" placeholder="np. Potwierdzenie rejestracji na {{event_name}}">
+        <span class="subject-hint">Użyj placeholderów: <code>{{event_name}}</code>, <code>{{buyer_name}}</code></span>
     </div>
 
     <!-- Main Editor Area -->
@@ -1054,6 +1688,53 @@
     </div>
 </div>
 
+<!-- Live Preview Modal -->
+<div class="modal-overlay" id="previewModal">
+    <div class="modal preview-modal">
+        <div class="modal-header">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i data-lucide="monitor-play" style="color: var(--primary);"></i>
+                <div>
+                    <h3 style="margin: 0; font-size: 1rem;">Podgląd emaila</h3>
+                    <span id="previewEventName" style="font-size: 0.75rem; color: var(--muted-foreground);">Wybierz wydarzenie dla danych</span>
+                </div>
+            </div>
+            <button class="modal-close" onclick="closePreviewModal()">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="preview-toolbar">
+            <div class="preview-subject">
+                <span class="preview-label">Temat:</span>
+                <span id="previewSubjectText">{{event_name}} - Potwierdzenie</span>
+            </div>
+            <div class="preview-device-selector">
+                <button class="device-btn active" onclick="setPreviewDevice('desktop')" title="Desktop">
+                    <i data-lucide="monitor"></i>
+                </button>
+                <button class="device-btn" onclick="setPreviewDevice('tablet')" title="Tablet">
+                    <i data-lucide="tablet"></i>
+                </button>
+                <button class="device-btn" onclick="setPreviewDevice('mobile')" title="Mobile">
+                    <i data-lucide="smartphone"></i>
+                </button>
+            </div>
+        </div>
+        <div class="preview-content" id="previewContent">
+            <div class="preview-frame-wrapper" id="previewFrameWrapper">
+                <iframe id="previewFrame" class="preview-frame"></iframe>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <div class="preview-info">
+                <i data-lucide="info" style="width: 14px; height: 14px;"></i>
+                <span>Placeholdery <code>{{nazwa}}</code> są zamieniane na dane wydarzenia</span>
+            </div>
+            <button class="btn btn-secondary" onclick="closePreviewModal()">Zamknij</button>
+        </div>
+    </div>
+</div>
+
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
 {% endblock %}
@@ -1151,11 +1832,317 @@ const BLOCK_LABELS = {
     'footer': 'Stopka'
 };
 
+// ==================== TEMPLATE MANAGEMENT ====================
+let currentTemplateId = {{ template_data.id if template_data else 'null' }};
+let templatesCache = [];
+let searchDebounce = null;
+
+function toggleTemplatesPanel() {
+    const panel = document.getElementById('templatesPanel');
+    const overlay = document.getElementById('templatesOverlay');
+    const isActive = panel.classList.contains('active');
+    
+    if (isActive) {
+        panel.classList.remove('active');
+        overlay.classList.remove('active');
+    } else {
+        panel.classList.add('active');
+        overlay.classList.add('active');
+        loadTemplates();
+    }
+}
+
+async function loadTemplates() {
+    const listEl = document.getElementById('templatesList');
+    const category = document.getElementById('templatesFilterCategory').value;
+    const search = document.getElementById('templatesSearch').value;
+    
+    listEl.innerHTML = '<div class="templates-loading"><i data-lucide="loader-2" class="animate-spin"></i>Ładowanie...</div>';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+    try {
+        const params = new URLSearchParams();
+        if (category) params.append('category', category);
+        if (search) params.append('search', search);
+        params.append('per_page', '50');
+        
+        const resp = await fetch('/admin-v2/api/templates?' + params.toString());
+        const data = await resp.json();
+        
+        if (data.success) {
+            templatesCache = data.templates;
+            renderTemplatesList(data.templates);
+            
+            // Update badge
+            const badge = document.getElementById('templatesBadge');
+            if (data.pagination.total > 0) {
+                badge.textContent = data.pagination.total;
+                badge.style.display = 'inline-flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        } else {
+            listEl.innerHTML = '<div class="templates-empty"><p>Błąd ładowania szablonów</p></div>';
+        }
+    } catch (err) {
+        listEl.innerHTML = '<div class="templates-empty"><p>Błąd połączenia</p></div>';
+    }
+}
+
+function renderTemplatesList(templates) {
+    const listEl = document.getElementById('templatesList');
+    
+    if (templates.length === 0) {
+        listEl.innerHTML = `
+            <div class="templates-empty">
+                <i data-lucide="file-text"></i>
+                <p><strong>Brak szablonów</strong></p>
+                <p>Utwórz pierwszy szablon i zapisz go.</p>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        return;
+    }
+    
+    let html = '';
+    for (const tpl of templates) {
+        const isEditing = tpl.id === currentTemplateId;
+        const updatedAt = new Date(tpl.updated_at).toLocaleDateString('pl-PL', {day: '2-digit', month: '2-digit', year: 'numeric'});
+        
+        html += `
+            <div class="template-card ${isEditing ? 'editing' : ''}" onclick="loadTemplate(${tpl.id})" style="position: relative;">
+                <div class="template-card-header">
+                    <div class="template-card-name">${escapeHtml(tpl.name)}</div>
+                    <div class="template-card-badges">
+                        <span class="template-card-badge ${tpl.category}">${tpl.category === 'external' ? 'Zewn.' : tpl.category === 'internal' ? 'Wewn.' : 'Własny'}</span>
+                    </div>
+                </div>
+                <div class="template-card-subject">${escapeHtml(tpl.subject || '(brak tematu)')}</div>
+                <div class="template-card-meta">
+                    <span>${updatedAt}</span>
+                    <div class="template-card-actions" onclick="event.stopPropagation()">
+                        <button type="button" onclick="duplicateTemplate(${tpl.id})" title="Duplikuj">
+                            <i data-lucide="copy"></i>
+                        </button>
+                        <button type="button" class="delete" onclick="deleteTemplate(${tpl.id}, '${escapeHtml(tpl.name)}')" title="Usuń">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    listEl.innerHTML = html;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function searchTemplates(value) {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => loadTemplates(), 300);
+}
+
+async function loadTemplate(templateId) {
+    try {
+        const resp = await fetch('/admin-v2/api/templates/' + templateId);
+        const data = await resp.json();
+        
+        if (data.success && data.template) {
+            const tpl = data.template;
+            
+            // Set metadata
+            document.getElementById('templateName').value = tpl.name || '';
+            document.getElementById('templateSubject').value = tpl.subject || '';
+            document.getElementById('templateCategory').value = tpl.category || 'custom';
+            document.getElementById('templateType').value = tpl.template_type || 'custom';
+            
+            // Load blocks
+            emailBlocks = tpl.blocks || [];
+            currentTemplateId = tpl.id;
+            
+            // Render
+            renderBlocks();
+            
+            // Close panel
+            toggleTemplatesPanel();
+            
+            // Show notification
+            showToast('Szablon załadowany', 'success');
+        } else {
+            showToast(data.error || 'Błąd ładowania szablonu', 'error');
+        }
+    } catch (err) {
+        showToast('Błąd połączenia', 'error');
+    }
+}
+
+function newTemplate() {
+    if (emailBlocks.length > 0) {
+        if (!confirm('Czy na pewno chcesz utworzyć nowy szablon? Niezapisane zmiany zostaną utracone.')) {
+            return;
+        }
+    }
+    
+    currentTemplateId = null;
+    emailBlocks = [];
+    document.getElementById('templateName').value = 'Nowy szablon';
+    document.getElementById('templateSubject').value = '';
+    document.getElementById('templateCategory').value = 'external';
+    document.getElementById('templateType').value = 'custom';
+    renderBlocks();
+    showToast('Nowy szablon utworzony', 'success');
+}
+
+async function saveTemplate() {
+    const name = document.getElementById('templateName').value.trim();
+    const subject = document.getElementById('templateSubject').value.trim();
+    const category = document.getElementById('templateCategory').value;
+    const templateType = document.getElementById('templateType').value;
+    
+    if (!name) {
+        showToast('Podaj nazwę szablonu', 'error');
+        document.getElementById('templateName').focus();
+        return;
+    }
+    
+    const payload = {
+        name: name,
+        subject: subject,
+        blocks: emailBlocks,
+        category: category,
+        template_type: templateType,
+        html_content: generatePreviewHtml(),
+    };
+    
+    try {
+        let url = '/admin-v2/api/templates';
+        let method = 'POST';
+        
+        if (currentTemplateId) {
+            url = '/admin-v2/api/templates/' + currentTemplateId;
+            method = 'PUT';
+        }
+        
+        const resp = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+            currentTemplateId = data.template_id;
+            showToast(data.message, 'success');
+            loadTemplates(); // Refresh list in background
+        } else {
+            showToast(data.error || 'Błąd zapisu', 'error');
+        }
+    } catch (err) {
+        showToast('Błąd połączenia', 'error');
+    }
+}
+
+async function duplicateTemplate(templateId) {
+    try {
+        const resp = await fetch('/admin-v2/api/templates/' + templateId + '/duplicate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+            showToast('Szablon zduplikowany', 'success');
+            loadTemplates();
+        } else {
+            showToast(data.error || 'Błąd duplikowania', 'error');
+        }
+    } catch (err) {
+        showToast('Błąd połączenia', 'error');
+    }
+}
+
+async function deleteTemplate(templateId, templateName) {
+    if (!confirm(`Czy na pewno chcesz usunąć szablon "${templateName}"?`)) {
+        return;
+    }
+    
+    try {
+        const resp = await fetch('/admin-v2/api/templates/' + templateId, {
+            method: 'DELETE',
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+            if (currentTemplateId === templateId) {
+                currentTemplateId = null;
+            }
+            showToast('Szablon usunięty', 'success');
+            loadTemplates();
+        } else {
+            showToast(data.error || 'Błąd usuwania', 'error');
+        }
+    } catch (err) {
+        showToast('Błąd połączenia', 'error');
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = 'info') {
+    // Remove existing toasts
+    document.querySelectorAll('.toast-notification').forEach(t => t.remove());
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification toast-' + type;
+    toast.innerHTML = `
+        <i data-lucide="${type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info'}"></i>
+        <span>${message}</span>
+    `;
+    document.body.appendChild(toast);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
     initPlaceholders();
     initToolbarButtons();
     lucide.createIcons();
+    
+    // Load template if specified
+    {% if template_data %}
+    currentTemplateId = {{ template_data.id }};
+    document.getElementById('templateName').value = {{ template_data.name|tojson }};
+    document.getElementById('templateSubject').value = {{ template_data.subject|tojson if template_data.subject else '""' }};
+    document.getElementById('templateCategory').value = {{ template_data.category|tojson }};
+    document.getElementById('templateType').value = {{ template_data.template_type|tojson }};
+    emailBlocks = {{ template_data.blocks|tojson }};
+    renderBlocks();
+    {% endif %}
+    
+    // Load templates count for badge
+    fetch('/admin-v2/api/templates?per_page=1')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.pagination.total > 0) {
+                document.getElementById('templatesBadge').textContent = data.pagination.total;
+                document.getElementById('templatesBadge').style.display = 'inline-flex';
+            }
+        })
+        .catch(() => {});
 });
 
 function initPlaceholders() {
@@ -1174,9 +2161,7 @@ function initPlaceholders() {
 }
 
 function initToolbarButtons() {
-    document.getElementById('btnPreview').onclick = togglePreviewMode;
     document.getElementById('btnHtml').onclick = showHtmlModal;
-    document.getElementById('btnJson').onclick = exportJson;
     document.getElementById('btnSave').onclick = saveTemplate;
 }
 
@@ -1340,9 +2325,17 @@ function renderBlockHtml(block) {
     switch (block.type) {
         case 'header':
             const gradientClass = block.content.useEventGradient ? 'gradient' : 'plain';
-            const bannerContent = block.content.bannerUrl 
-                ? `<img src="${block.content.bannerUrl}" alt="Banner">`
-                : '<span class="placeholder-banner">[Logo / Banner wydarzenia]</span>';
+            let bannerContent;
+            if (block.content.bannerUrl) {
+                // Jeśli to placeholder, pokaż informację
+                if (block.content.bannerUrl === '{{email_header_url}}') {
+                    bannerContent = '<span class="placeholder-banner" style="font-size: 0.75rem;"><i data-lucide="image" style="width: 20px; height: 20px;"></i><br>{{email_header_url}}<br><small style="opacity: 0.7;">Header z wydarzenia</small></span>';
+                } else {
+                    bannerContent = `<img src="${block.content.bannerUrl}" alt="Banner" style="max-height: 96px;">`;
+                }
+            } else {
+                bannerContent = '<span class="placeholder-banner">[Kliknij aby ustawić banner]</span>';
+            }
             return `<div class="email-block ${selectedClass}" data-block-id="${block.id}">
                 <div class="block-header ${gradientClass}">${bannerContent}</div>
             </div>`;
@@ -1452,13 +2445,23 @@ function getEditorFieldsHtml(block) {
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                <div class="editor-field">
-                    <label>URL logo</label>
-                    <input type="text" id="field_logoUrl" value="${block.content.logoUrl || ''}" placeholder="https://...">
+                <div class="editor-hint" style="margin-bottom: 0.75rem;">
+                    <i data-lucide="info" style="width: 14px; height: 14px; opacity: 0.5;"></i>
+                    <span style="font-size: 0.75rem; color: var(--muted-foreground);">
+                        Kolory gradientu <code>{{color_gradient_1}}</code> i <code>{{color_gradient_2}}</code> będą pobrane z wydarzenia
+                    </span>
                 </div>
                 <div class="editor-field">
-                    <label>URL banner</label>
-                    <input type="text" id="field_bannerUrl" value="${block.content.bannerUrl || ''}" placeholder="https://...">
+                    <label>URL banner/nagłówka</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="field_bannerUrl" value="${block.content.bannerUrl || ''}" placeholder="https://... lub użyj przycisku →" style="flex: 1;">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="insertEventHeaderPlaceholder()" title="Użyj headera z wydarzenia">
+                            <i data-lucide="image"></i>
+                        </button>
+                    </div>
+                    <span class="field-hint" style="font-size: 0.7rem; color: var(--muted-foreground); margin-top: 0.25rem; display: block;">
+                        Kliknij przycisk aby użyć <code>{{email_header_url}}</code> z wydarzenia
+                    </span>
                 </div>`;
             
         case 'text':
@@ -1619,6 +2622,15 @@ function getEditorFieldsHtml(block) {
     }
 }
 
+function insertEventHeaderPlaceholder() {
+    const field = document.getElementById('field_bannerUrl');
+    if (field) {
+        field.value = '{{email_header_url}}';
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        showToast('Wstawiono placeholder headera wydarzenia', 'success');
+    }
+}
+
 function bindEditorHandlers(block) {
     const fieldMappings = {
         'header': ['useEventGradient:checkbox', 'logoUrl', 'bannerUrl'],
@@ -1686,13 +2698,160 @@ function updateEditorFields() {
 }
 
 // ==================== PREVIEW & EXPORT ====================
+let previewEventData = null;
+let currentPreviewDevice = 'desktop';
+
+async function loadPreviewEventData(eventId) {
+    if (!eventId) {
+        previewEventData = null;
+        return;
+    }
+    
+    try {
+        const resp = await fetch('/admin-v2/api/events/' + eventId + '/preview-data');
+        const data = await resp.json();
+        
+        if (data.success) {
+            previewEventData = data.preview_data;
+            document.getElementById('previewEventName').textContent = data.event_name;
+            showToast(`Dane wydarzenia "${data.event_name}" załadowane`, 'success');
+        } else {
+            showToast(data.error || 'Błąd ładowania danych', 'error');
+        }
+    } catch (err) {
+        showToast('Błąd połączenia', 'error');
+    }
+}
+
+function showLivePreview() {
+    const modal = document.getElementById('previewModal');
+    modal.classList.add('visible');
+    
+    // Generate HTML and substitute placeholders
+    const html = generateEmailHtml();
+    const subject = document.getElementById('templateSubject').value;
+    
+    // Substitute placeholders
+    const processedHtml = substitutePlaceholders(html);
+    const processedSubject = substitutePlaceholders(subject);
+    
+    document.getElementById('previewSubjectText').textContent = processedSubject || '(brak tematu)';
+    
+    // Render in iframe
+    const iframe = document.getElementById('previewFrame');
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body { 
+                    margin: 0; 
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                    line-height: 1.6;
+                }
+            </style>
+        </head>
+        <body>${processedHtml}</body>
+        </html>
+    `);
+    doc.close();
+    
+    // Adjust iframe height to content
+    setTimeout(() => {
+        try {
+            iframe.style.height = (doc.body.scrollHeight + 20) + 'px';
+        } catch (e) {}
+    }, 100);
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function substitutePlaceholders(text) {
+    if (!text) return text;
+    
+    // Default values if no event selected
+    const defaults = {
+        // Branding / nagłówek
+        color_gradient_1: '#0065D7',
+        color_gradient_2: '#00A3E0',
+        email_header_url: 'https://via.placeholder.com/600x120/0065D7/ffffff?text=Header+wydarzenia',
+        event_logo_url: '',
+        
+        // Wydarzenie
+        event_name: 'Nazwa wydarzenia',
+        event_date: '15.03.2026',
+        event_time: '09:00',
+        event_location: 'Lokalizacja wydarzenia',
+        event_city: 'Warszawa',
+        event_address: 'ul. Przykładowa 1',
+        event_description: 'Opis wydarzenia...',
+        event_public_url: 'https://example.com/event',
+        
+        // Nabywca
+        buyer_name: 'Jan Kowalski',
+        buyer_email: 'jan.kowalski@example.com',
+        buyer_company: 'Firma Przykładowa',
+        
+        // Uczestnik
+        participant_name: 'Anna Nowak',
+        participant_email: 'anna.nowak@example.com',
+        ticket_name: 'Bilet Standard',
+        
+        // Zamówienie / płatność
+        order_id: 'ORD-2026-001',
+        order_total: '499.00 PLN',
+        payment_url: 'https://checkout.stripe.com/pay/xxx',
+        
+        // Kontakt / organizator
+        contact_email: 'kontakt@example.com',
+        contact_phone: '+48 123 456 789',
+        organizer_name: 'Medidesk',
+        
+        // Daty
+        current_date: new Date().toLocaleDateString('pl-PL'),
+        current_year: new Date().getFullYear().toString(),
+    };
+    
+    // Use event data if loaded, otherwise defaults
+    const data = previewEventData || defaults;
+    
+    // Replace all {{placeholder}} patterns
+    return text.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+        const value = data[key] || defaults[key];
+        // Jeśli wartość to pusty string i to jest URL obrazka, zwróć placeholder
+        if (!value && (key.includes('url') || key.includes('logo') || key.includes('header'))) {
+            return ''; // Pusty string - img onerror schowa element
+        }
+        return value || match;
+    });
+}
+
+function closePreviewModal() {
+    document.getElementById('previewModal').classList.remove('visible');
+}
+
+function setPreviewDevice(device) {
+    currentPreviewDevice = device;
+    const wrapper = document.getElementById('previewFrameWrapper');
+    
+    wrapper.classList.remove('desktop', 'tablet', 'mobile');
+    wrapper.classList.add(device);
+    
+    document.querySelectorAll('.device-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.closest('.device-btn').classList.add('active');
+}
+
 function togglePreviewMode() {
     isPreviewMode = !isPreviewMode;
     const panel = document.getElementById('canvasPanel');
-    const btn = document.getElementById('btnPreview');
     
     panel.classList.toggle('preview-mode', isPreviewMode);
-    btn.classList.toggle('active', isPreviewMode);
     
     if (isPreviewMode) {
         selectedBlockId = null;
@@ -1700,7 +2859,7 @@ function togglePreviewMode() {
         updateEditor();
     }
     
-    showToast(isPreviewMode ? 'Tryb podglądu' : 'Tryb edycji', 'info');
+    showToast(isPreviewMode ? 'Tryb podglądu (edytor)' : 'Tryb edycji', 'info');
 }
 
 function showHtmlModal() {
@@ -1739,10 +2898,16 @@ function generateEmailHtml() {
     const blocksHtml = templateBlocks.map(block => {
         switch (block.type) {
             case 'header':
-                const bg = block.content.useEventGradient ? eventGradient : '#f3f4f6';
-                const banner = block.content.bannerUrl 
-                    ? `<img src="${block.content.bannerUrl}" alt="Banner" style="max-height: 96px;">` 
-                    : '[Logo/Banner]';
+                // Używamy placeholderów dla kolorów - będą podstawione przy podglądzie
+                const bg = block.content.useEventGradient 
+                    ? 'linear-gradient(135deg, {{color_gradient_1}}, {{color_gradient_2}})' 
+                    : '#f3f4f6';
+                // Banner - jeśli nie podano URL, użyj placeholdera z wydarzenia
+                let bannerSrc = block.content.bannerUrl;
+                if (!bannerSrc || bannerSrc === '{{email_header_url}}') {
+                    bannerSrc = '{{email_header_url}}';
+                }
+                const banner = `<img src="${bannerSrc}" alt="Banner" style="max-height: 120px; max-width: 100%;" onerror="this.style.display='none'">`;
                 return `<div style="background: ${bg}; padding: 24px; text-align: center;">${banner}</div>`;
                 
             case 'text':

@@ -484,6 +484,30 @@
   <!-- CONFIG TAB -->
   <div id="tab-config" class="tab-panel {% if active_tab == 'config' %}active{% endif %}">
   
+  <!-- AKCJE -->
+  <div class="card" style="margin-bottom: 1rem; background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}10, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}10);">
+    <div style="padding: 1rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h3 style="font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.25rem;">Zarządzanie wydarzeniem</h3>
+          <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Edytuj konfigurację lub pobierz aktualne dane z Backstage</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" id="sync-backstage-btn" onclick="syncFromBackstage()" class="btn btn-outline">
+            <i data-lucide="cloud-download"></i>
+            Pobierz z Backstage
+          </button>
+          <a href="{{ url_for('admin_v2_bp.event_edit', event_id=event.event_id) }}" class="btn btn-primary">
+            <i data-lucide="pencil"></i>
+            Edytuj wydarzenie
+          </a>
+        </div>
+      </div>
+      <!-- Status synchronizacji -->
+      <div id="sync-status" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius);"></div>
+    </div>
+  </div>
+  
   <!-- Basic Data -->
   <div class="card" style="margin-bottom: 1rem;">
     <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
@@ -1561,6 +1585,49 @@
       font-size: 1.25rem;
     }
   }
+  
+  /* Modal styles */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .modal-content {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    width: 90%;
+  }
+  
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .compare-row-changed {
+    background: hsl(160, 82%, 97%);
+  }
+  
+  .compare-row-same {
+    opacity: 0.6;
+  }
+  
+  .compare-row-changed td,
+  .compare-row-same td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
 </style>
 {% endblock %}
 
@@ -1578,6 +1645,205 @@ document.addEventListener('DOMContentLoaded', function() {
   // Sticky header scroll handling
   initStickyHeader();
 });
+
+// ===== SYNC FROM BACKSTAGE =====
+let backstagePreviewData = null;
+
+async function syncFromBackstage() {
+  const btn = document.getElementById('sync-backstage-btn');
+  const statusDiv = document.getElementById('sync-status');
+  
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Pobieranie...';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  
+  statusDiv.style.display = 'block';
+  statusDiv.style.background = 'hsl(212, 100%, 97%)';
+  statusDiv.style.border = '1px solid hsl(212, 100%, 85%)';
+  statusDiv.innerHTML = 'Pobieranie danych z Backstage API...';
+  
+  try {
+    const resp = await fetch('/admin-v2/events/{{ event.event_id }}/sync-backstage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success && data.mode === 'preview') {
+      backstagePreviewData = data;
+      showCompareModal(data);
+      statusDiv.style.display = 'none';
+    } else {
+      statusDiv.style.background = 'hsl(0, 84%, 95%)';
+      statusDiv.style.border = '1px solid hsl(0, 84%, 80%)';
+      statusDiv.innerHTML = '<strong>Błąd:</strong> ' + (data.error || 'Nieznany błąd');
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="cloud-download"></i> Pobierz z Backstage';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+  } catch (err) {
+    statusDiv.style.background = 'hsl(0, 84%, 95%)';
+    statusDiv.style.border = '1px solid hsl(0, 84%, 80%)';
+    statusDiv.innerHTML = '<strong>Błąd połączenia:</strong> ' + err.message;
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="cloud-download"></i> Pobierz z Backstage';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
+
+function showCompareModal(data) {
+  const oldModal = document.getElementById('backstage-compare-modal');
+  if (oldModal) oldModal.remove();
+  
+  const changesCount = data.changes.filter(c => c.has_change).length;
+  
+  let changesHtml = '';
+  for (const change of data.changes) {
+    const truncate = (str, len = 80) => {
+      if (!str || typeof str !== 'string') return str || '';
+      return str.length > len ? str.substring(0, len) + '...' : str;
+    };
+    
+    const rowClass = change.has_change ? 'compare-row-changed' : 'compare-row-same';
+    const checked = change.selected ? 'checked' : '';
+    const disabled = !change.has_change ? 'disabled' : '';
+    
+    changesHtml += `
+      <tr class="${rowClass}">
+        <td style="width: 30px; text-align: center;">
+          <input type="checkbox" name="field_${change.key}" value="${change.key}" ${checked} ${disabled} style="width: 16px; height: 16px;">
+        </td>
+        <td style="font-weight: 500; white-space: nowrap;">${change.label}</td>
+        <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis;">${truncate(change.current) || '<em style="color: var(--muted-foreground);">(puste)</em>'}</td>
+        <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; ${change.has_change ? 'color: hsl(160, 82%, 30%); font-weight: 500;' : ''}">${truncate(change.new) || '<em style="color: var(--muted-foreground);">(puste)</em>'}</td>
+      </tr>
+    `;
+  }
+  
+  let ticketsHtml = '';
+  if (data.ticket_classes && data.ticket_classes.length > 0) {
+    ticketsHtml = `
+      <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" id="save_tickets" checked style="width: 16px; height: 16px;">
+          <strong>Zapisz ${data.ticket_classes.length} klas biletów</strong>
+        </label>
+        <ul style="margin: 0.5rem 0 0 1.5rem; font-size: 0.875rem; color: var(--muted-foreground);">
+          ${data.ticket_classes.map(tc => `<li>${tc.ticket_name} - ${tc.price} ${tc.currency}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+  
+  const modal = document.createElement('div');
+  modal.id = 'backstage-compare-modal';
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow: auto;">
+      <div class="modal-header">
+        <h2 style="display: flex; align-items: center; gap: 0.5rem; font-size: 1.125rem; font-weight: 600;">
+          <i data-lucide="git-compare" style="width: 24px; height: 24px;"></i>
+          Dane z Backstage
+        </h2>
+        <button type="button" onclick="closeCompareModal()" class="btn btn-ghost" style="padding: 0.5rem;">
+          <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem;">
+        <p style="margin-bottom: 1rem; color: var(--muted-foreground);">
+          Pobrano dla: <strong>${data.event_name || '(brak nazwy)'}</strong><br>
+          <span style="color: hsl(160, 82%, 35%);">${changesCount} zmian</span> do zatwierdzenia.
+        </p>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+            <thead>
+              <tr style="background: var(--muted);">
+                <th style="padding: 0.5rem; text-align: left;"></th>
+                <th style="padding: 0.5rem; text-align: left;">Pole</th>
+                <th style="padding: 0.5rem; text-align: left;">Obecna wartość</th>
+                <th style="padding: 0.5rem; text-align: left;">Z Backstage</th>
+              </tr>
+            </thead>
+            <tbody>${changesHtml}</tbody>
+          </table>
+        </div>
+        ${ticketsHtml}
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.5rem; border-top: 1px solid var(--border); background: var(--muted);">
+        <button type="button" onclick="closeCompareModal()" class="btn btn-outline">Anuluj</button>
+        <button type="button" onclick="selectAllChanges()" class="btn btn-outline">Zaznacz wszystko</button>
+        <button type="button" id="apply-backstage-btn" onclick="applyBackstageChanges()" class="btn btn-primary">
+          <i data-lucide="check"></i> Zastosuj wybrane
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeCompareModal() {
+  const modal = document.getElementById('backstage-compare-modal');
+  if (modal) modal.remove();
+}
+
+function selectAllChanges() {
+  document.querySelectorAll('#backstage-compare-modal input[type="checkbox"]:not(:disabled)').forEach(cb => cb.checked = true);
+}
+
+async function applyBackstageChanges() {
+  if (!backstagePreviewData) return;
+  
+  const btn = document.getElementById('apply-backstage-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Zapisywanie...';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  
+  const checkboxes = document.querySelectorAll('#backstage-compare-modal input[type="checkbox"][name^="field_"]:checked');
+  const selectedKeys = Array.from(checkboxes).map(cb => cb.value);
+  const ticketsCheckbox = document.getElementById('save_tickets');
+  const saveTickets = ticketsCheckbox ? ticketsCheckbox.checked : false;
+  
+  try {
+    const resp = await fetch('/admin-v2/events/{{ event.event_id }}/apply-backstage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selected_keys: selectedKeys,
+        new_data: backstagePreviewData.new_data,
+        event_name: backstagePreviewData.event_name,
+        save_tickets: saveTickets,
+        ticket_classes: backstagePreviewData.ticket_classes,
+      }),
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      closeCompareModal();
+      const statusDiv = document.getElementById('sync-status');
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = 'hsl(160, 82%, 95%)';
+      statusDiv.style.border = '1px solid hsl(160, 82%, 44%)';
+      statusDiv.innerHTML = '<strong>' + data.message + '</strong> - odświeżanie strony...';
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="check"></i> Zastosuj wybrane';
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+  } catch (err) {
+    alert('Błąd połączenia: ' + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="check"></i> Zastosuj wybrane';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
 
 // ===== STICKY HEADER SCROLL =====
 function initStickyHeader() {

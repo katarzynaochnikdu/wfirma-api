@@ -304,6 +304,31 @@ CREATE TABLE IF NOT EXISTS dashboard_cache (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------------------
+-- EMAIL TEMPLATES (szablony emaili - kreator)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_templates (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  subject TEXT,
+  category TEXT NOT NULL DEFAULT 'custom',
+  template_type TEXT NOT NULL DEFAULT 'custom',
+  blocks JSONB NOT NULL DEFAULT '[]',
+  html_content TEXT,
+  is_system BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  event_id TEXT REFERENCES events(event_id) ON DELETE SET NULL,
+  created_by BIGINT REFERENCES admin_users(id) ON DELETE SET NULL,
+  updated_by BIGINT REFERENCES admin_users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_templates_category ON email_templates(category);
+CREATE INDEX IF NOT EXISTS idx_email_templates_type ON email_templates(template_type);
+CREATE INDEX IF NOT EXISTS idx_email_templates_event ON email_templates(event_id);
+CREATE INDEX IF NOT EXISTS idx_email_templates_active ON email_templates(is_active);
 """
 
 
@@ -3028,3 +3053,343 @@ def set_cached_stats(key: str, value: Dict[str, Any], ttl_minutes: int = 5) -> b
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
 
+
+# ---------------------------------------------------------------------------
+# EMAIL TEMPLATES CRUD
+# ---------------------------------------------------------------------------
+
+
+def list_email_templates(
+    category: str = None,
+    template_type: str = None,
+    event_id: str = None,
+    search: str = None,
+    include_inactive: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """
+    Lista szablonów emaili z filtrowaniem.
+    
+    Args:
+        category: Filtr po kategorii (external/internal/custom)
+        template_type: Filtr po typie (proforma/invoice/reminder/etc)
+        event_id: Filtr po wydarzeniu
+        search: Szukaj w nazwie i temacie
+        include_inactive: Czy uwzględniać nieaktywne
+        limit: Limit wyników
+        offset: Offset (paginacja)
+    
+    Returns:
+        Lista szablonów
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        conditions = []
+        params = []
+        
+        if not include_inactive:
+            conditions.append("is_active = TRUE")
+        
+        if category:
+            conditions.append("category = %s")
+            params.append(category)
+        
+        if template_type:
+            conditions.append("template_type = %s")
+            params.append(template_type)
+        
+        if event_id:
+            conditions.append("(event_id = %s OR event_id IS NULL)")
+            params.append(event_id)
+        
+        if search:
+            conditions.append("(name ILIKE %s OR subject ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        params.extend([limit, offset])
+        
+        cur.execute(
+            f"""
+            SELECT 
+                id, name, subject, category, template_type, 
+                is_system, is_active, event_id,
+                created_by, updated_by, created_at, updated_at
+            FROM email_templates
+            WHERE {where_clause}
+            ORDER BY updated_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        )
+        
+        return [dict(row) for row in cur.fetchall()]
+        
+    except Exception as e:
+        print(f"[DB] list_email_templates error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_email_template(template_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Pobiera pojedynczy szablon z pełnymi danymi (włącznie z blocks).
+    
+    Args:
+        template_id: ID szablonu
+    
+    Returns:
+        Szablon lub None
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        cur.execute(
+            """
+            SELECT 
+                t.*,
+                u1.email as created_by_email,
+                u2.email as updated_by_email
+            FROM email_templates t
+            LEFT JOIN admin_users u1 ON t.created_by = u1.id
+            LEFT JOIN admin_users u2 ON t.updated_by = u2.id
+            WHERE t.id = %s
+            """,
+            (template_id,),
+        )
+        
+        row = cur.fetchone()
+        return dict(row) if row else None
+        
+    except Exception as e:
+        print(f"[DB] get_email_template error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def save_email_template(
+    name: str,
+    subject: str,
+    blocks: List[Dict[str, Any]],
+    category: str = "custom",
+    template_type: str = "custom",
+    html_content: str = None,
+    event_id: str = None,
+    admin_user_id: int = None,
+    template_id: int = None,
+) -> Optional[int]:
+    """
+    Zapisuje lub aktualizuje szablon.
+    
+    Args:
+        name: Nazwa szablonu
+        subject: Temat emaila
+        blocks: Lista bloków (JSON)
+        category: Kategoria (external/internal/custom)
+        template_type: Typ (proforma/invoice/reminder/etc)
+        html_content: Wyrenderowany HTML (opcjonalnie)
+        event_id: Powiązane wydarzenie (opcjonalnie)
+        admin_user_id: ID użytkownika (dla audytu)
+        template_id: ID do aktualizacji (None = nowy)
+    
+    Returns:
+        ID szablonu lub None przy błędzie
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        if template_id:
+            # UPDATE
+            cur.execute(
+                """
+                UPDATE email_templates
+                SET name = %s, subject = %s, blocks = %s, category = %s, 
+                    template_type = %s, html_content = %s, event_id = %s,
+                    updated_by = %s, updated_at = NOW()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    name, subject, psycopg2.extras.Json(blocks),
+                    category, template_type, html_content, event_id,
+                    admin_user_id, template_id,
+                ),
+            )
+        else:
+            # INSERT
+            cur.execute(
+                """
+                INSERT INTO email_templates 
+                (name, subject, blocks, category, template_type, html_content, 
+                 event_id, created_by, updated_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    name, subject, psycopg2.extras.Json(blocks),
+                    category, template_type, html_content, event_id,
+                    admin_user_id, admin_user_id,
+                ),
+            )
+        
+        row = cur.fetchone()
+        return row["id"] if row else None
+        
+    except Exception as e:
+        print(f"[DB] save_email_template error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def delete_email_template(template_id: int, soft_delete: bool = True) -> bool:
+    """
+    Usuwa szablon (domyślnie soft delete - ustawia is_active=FALSE).
+    
+    Args:
+        template_id: ID szablonu
+        soft_delete: Czy tylko dezaktywować (True) czy usunąć fizycznie (False)
+    
+    Returns:
+        True jeśli sukces
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        if soft_delete:
+            cur.execute(
+                "UPDATE email_templates SET is_active = FALSE, updated_at = NOW() WHERE id = %s",
+                (template_id,),
+            )
+        else:
+            cur.execute("DELETE FROM email_templates WHERE id = %s AND is_system = FALSE", (template_id,))
+        
+        return cur.rowcount > 0
+        
+    except Exception as e:
+        print(f"[DB] delete_email_template error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def duplicate_email_template(template_id: int, new_name: str = None, admin_user_id: int = None) -> Optional[int]:
+    """
+    Duplikuje szablon.
+    
+    Args:
+        template_id: ID szablonu do skopiowania
+        new_name: Nowa nazwa (domyślnie "Kopia - [nazwa]")
+        admin_user_id: ID użytkownika
+    
+    Returns:
+        ID nowego szablonu lub None
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        # Pobierz oryginał
+        cur.execute("SELECT * FROM email_templates WHERE id = %s", (template_id,))
+        original = cur.fetchone()
+        
+        if not original:
+            return None
+        
+        # Generuj nazwę
+        name = new_name or f"Kopia - {original['name']}"
+        
+        # Wstaw kopię
+        cur.execute(
+            """
+            INSERT INTO email_templates 
+            (name, subject, blocks, category, template_type, html_content, 
+             event_id, is_system, created_by, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)
+            RETURNING id
+            """,
+            (
+                name, original["subject"], psycopg2.extras.Json(original["blocks"]),
+                original["category"], original["template_type"], original["html_content"],
+                original["event_id"], admin_user_id, admin_user_id,
+            ),
+        )
+        
+        row = cur.fetchone()
+        return row["id"] if row else None
+        
+    except Exception as e:
+        print(f"[DB] duplicate_email_template error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def count_email_templates(
+    category: str = None,
+    template_type: str = None,
+    include_inactive: bool = False,
+) -> int:
+    """Zlicza szablony."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        conditions = []
+        params = []
+        
+        if not include_inactive:
+            conditions.append("is_active = TRUE")
+        
+        if category:
+            conditions.append("category = %s")
+            params.append(category)
+        
+        if template_type:
+            conditions.append("template_type = %s")
+            params.append(template_type)
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        cur.execute(f"SELECT COUNT(*) as cnt FROM email_templates WHERE {where_clause}", tuple(params))
+        row = cur.fetchone()
+        return row["cnt"] if row else 0
+        
+    except Exception as e:
+        print(f"[DB] count_email_templates error: {e}")
+        return 0
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)

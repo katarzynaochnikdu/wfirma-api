@@ -1167,12 +1167,368 @@ def email_designer():
     # Pobierz wydarzenia dla dropdowna
     events = list_events(limit=100)
     
+    # Pobierz ID szablonu do edycji (jeśli podano)
+    template_id = request.args.get("template_id", type=int)
+    template_data = None
+    
+    if template_id:
+        from pg_storage import get_email_template
+        template_data = get_email_template(template_id)
+    
     return render_template(
         "admin_v2/email-designer.html",
         active_page="email_designer",
         events=events,
+        template_data=template_data,
         **_get_common_context(user),
     )
+
+
+# ---------------------------------------------------------------------------
+# EMAIL TEMPLATES API
+# ---------------------------------------------------------------------------
+
+
+@admin_v2_bp.route("/api/templates", methods=["GET"])
+@_require_permission("events")
+def api_templates_list():
+    """API: Lista szablonów emaili."""
+    from flask import jsonify
+    from pg_storage import list_email_templates, count_email_templates
+    
+    category = request.args.get("category")
+    template_type = request.args.get("type")
+    event_id = request.args.get("event_id")
+    search = request.args.get("search")
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    
+    offset = (page - 1) * per_page
+    
+    templates = list_email_templates(
+        category=category,
+        template_type=template_type,
+        event_id=event_id,
+        search=search,
+        limit=per_page,
+        offset=offset,
+    )
+    
+    total = count_email_templates(category=category, template_type=template_type)
+    
+    return jsonify({
+        "success": True,
+        "templates": templates,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "pages": (total + per_page - 1) // per_page,
+        },
+    })
+
+
+@admin_v2_bp.route("/api/templates/<int:template_id>", methods=["GET"])
+@_require_permission("events")
+def api_template_get(template_id: int):
+    """API: Pobierz szablon."""
+    from flask import jsonify
+    from pg_storage import get_email_template
+    
+    template = get_email_template(template_id)
+    
+    if not template:
+        return jsonify({"success": False, "error": "Szablon nie istnieje"}), 404
+    
+    return jsonify({
+        "success": True,
+        "template": template,
+    })
+
+
+@admin_v2_bp.route("/api/templates", methods=["POST"])
+@_require_permission("events")
+def api_template_create():
+    """API: Utwórz nowy szablon."""
+    from flask import jsonify
+    from pg_storage import save_email_template
+    
+    user = _get_current_admin_user()
+    data = request.get_json() or {}
+    
+    name = data.get("name", "").strip()
+    subject = data.get("subject", "").strip()
+    blocks = data.get("blocks", [])
+    category = data.get("category", "custom")
+    template_type = data.get("template_type", "custom")
+    html_content = data.get("html_content")
+    event_id = data.get("event_id") or None
+    
+    if not name:
+        return jsonify({"success": False, "error": "Nazwa szablonu jest wymagana"}), 400
+    
+    template_id = save_email_template(
+        name=name,
+        subject=subject,
+        blocks=blocks,
+        category=category,
+        template_type=template_type,
+        html_content=html_content,
+        event_id=event_id,
+        admin_user_id=user.get("id") if user else None,
+    )
+    
+    if not template_id:
+        return jsonify({"success": False, "error": "Błąd zapisu szablonu"}), 500
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="template_created",
+        admin_user_id=user.get("id") if user else None,
+        target_id=str(template_id),
+        extra={"name": name, "category": category, "type": template_type},
+        ip=request.remote_addr,
+    )
+    
+    return jsonify({
+        "success": True,
+        "template_id": template_id,
+        "message": f"Szablon '{name}' został utworzony",
+    })
+
+
+@admin_v2_bp.route("/api/templates/<int:template_id>", methods=["PUT"])
+@_require_permission("events")
+def api_template_update(template_id: int):
+    """API: Aktualizuj szablon."""
+    from flask import jsonify
+    from pg_storage import save_email_template, get_email_template
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy istnieje
+    existing = get_email_template(template_id)
+    if not existing:
+        return jsonify({"success": False, "error": "Szablon nie istnieje"}), 404
+    
+    # Nie pozwól edytować szablonów systemowych
+    if existing.get("is_system"):
+        return jsonify({"success": False, "error": "Nie można edytować szablonów systemowych"}), 403
+    
+    data = request.get_json() or {}
+    
+    name = data.get("name", existing["name"]).strip()
+    subject = data.get("subject", existing["subject"]).strip()
+    blocks = data.get("blocks", existing["blocks"])
+    category = data.get("category", existing["category"])
+    template_type = data.get("template_type", existing["template_type"])
+    html_content = data.get("html_content", existing.get("html_content"))
+    event_id = data.get("event_id", existing.get("event_id"))
+    
+    if not name:
+        return jsonify({"success": False, "error": "Nazwa szablonu jest wymagana"}), 400
+    
+    result_id = save_email_template(
+        name=name,
+        subject=subject,
+        blocks=blocks,
+        category=category,
+        template_type=template_type,
+        html_content=html_content,
+        event_id=event_id,
+        admin_user_id=user.get("id") if user else None,
+        template_id=template_id,
+    )
+    
+    if not result_id:
+        return jsonify({"success": False, "error": "Błąd aktualizacji szablonu"}), 500
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="template_updated",
+        admin_user_id=user.get("id") if user else None,
+        target_id=str(template_id),
+        extra={"name": name},
+        ip=request.remote_addr,
+    )
+    
+    return jsonify({
+        "success": True,
+        "template_id": template_id,
+        "message": f"Szablon '{name}' został zaktualizowany",
+    })
+
+
+@admin_v2_bp.route("/api/templates/<int:template_id>", methods=["DELETE"])
+@_require_permission("events")
+def api_template_delete(template_id: int):
+    """API: Usuń szablon."""
+    from flask import jsonify
+    from pg_storage import delete_email_template, get_email_template
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy istnieje
+    existing = get_email_template(template_id)
+    if not existing:
+        return jsonify({"success": False, "error": "Szablon nie istnieje"}), 404
+    
+    # Nie pozwól usuwać szablonów systemowych
+    if existing.get("is_system"):
+        return jsonify({"success": False, "error": "Nie można usunąć szablonów systemowych"}), 403
+    
+    success = delete_email_template(template_id)
+    
+    if not success:
+        return jsonify({"success": False, "error": "Błąd usuwania szablonu"}), 500
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="template_deleted",
+        admin_user_id=user.get("id") if user else None,
+        target_id=str(template_id),
+        extra={"name": existing.get("name")},
+        ip=request.remote_addr,
+    )
+    
+    return jsonify({
+        "success": True,
+        "message": f"Szablon '{existing.get('name')}' został usunięty",
+    })
+
+
+@admin_v2_bp.route("/api/templates/<int:template_id>/duplicate", methods=["POST"])
+@_require_permission("events")
+def api_template_duplicate(template_id: int):
+    """API: Duplikuj szablon."""
+    from flask import jsonify
+    from pg_storage import duplicate_email_template, get_email_template
+    
+    user = _get_current_admin_user()
+    data = request.get_json() or {}
+    new_name = data.get("name")
+    
+    # Sprawdź czy istnieje
+    existing = get_email_template(template_id)
+    if not existing:
+        return jsonify({"success": False, "error": "Szablon nie istnieje"}), 404
+    
+    new_id = duplicate_email_template(
+        template_id=template_id,
+        new_name=new_name,
+        admin_user_id=user.get("id") if user else None,
+    )
+    
+    if not new_id:
+        return jsonify({"success": False, "error": "Błąd duplikowania szablonu"}), 500
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="template_duplicated",
+        admin_user_id=user.get("id") if user else None,
+        target_id=str(new_id),
+        extra={"source_id": template_id, "source_name": existing.get("name")},
+        ip=request.remote_addr,
+    )
+    
+    return jsonify({
+        "success": True,
+        "template_id": new_id,
+        "message": f"Szablon został zduplikowany",
+    })
+
+
+@admin_v2_bp.route("/api/events/<event_id>/preview-data", methods=["GET"])
+@_require_permission("events")
+def api_event_preview_data(event_id: str):
+    """API: Pobiera dane wydarzenia do podglądu szablonu emaila."""
+    from flask import jsonify
+    from pg_storage import get_participants_for_event
+    
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"success": False, "error": "Wydarzenie nie istnieje"}), 404
+    
+    event_data = event.get("data") or {}
+    
+    # Pobierz przykładowego uczestnika (jeśli istnieje)
+    participants = get_participants_for_event(event_id, limit=1)
+    sample_participant = participants[0] if participants else {}
+    
+    # Pobierz przykładowe zamówienie
+    orders = list_orders(event_id=event_id, limit=1)
+    sample_order = orders[0] if orders else {}
+    
+    # Przygotuj dane do podstawienia placeholderów
+    preview_data = {
+        # Wydarzenie
+        "event_name": event.get("event_name", "Nazwa wydarzenia"),
+        "event_date": event_data.get("eventDate") or event_data.get("event_date") or "2026-03-15",
+        "event_time": event_data.get("eventTime") or event_data.get("event_time") or "09:00",
+        "event_end_date": event_data.get("event_end_date") or "",
+        "event_end_time": event_data.get("event_end_time") or "",
+        "event_location": event_data.get("eventLocation") or event_data.get("location") or event_data.get("venue_name") or "Lokalizacja wydarzenia",
+        "event_city": event_data.get("eventCity") or event_data.get("venue_city") or "Warszawa",
+        "event_address": event_data.get("eventAddress") or event_data.get("venue_street") or "ul. Przykładowa 1",
+        "event_description": event_data.get("event_description") or event_data.get("eventDescription") or "",
+        
+        # Linki wydarzenia
+        "event_public_url": event_data.get("event_public_url") or event_data.get("backstage_website_url") or "https://example.com/event",
+        "success_page_url": event_data.get("success_page_url") or "https://example.com/success",
+        "cancel_page_url": event_data.get("cancel_page_url") or "https://example.com/cancel",
+        
+        # Branding
+        "event_logo_url": event_data.get("event_logo_url") or "",
+        "email_header_url": event_data.get("email_header_url") or "",
+        "color_gradient_1": event_data.get("color_gradient_1") or "#0065D7",
+        "color_gradient_2": event_data.get("color_gradient_2") or "#00A3E0",
+        
+        # Kontakt
+        "contact_email": event_data.get("md_email_kontakt") or "kontakt@example.com",
+        "contact_phone": event_data.get("md_mobile_kontakt") or "+48 123 456 789",
+        
+        # Nabywca (z przykładowego zamówienia)
+        "buyer_name": sample_order.get("purchaser_name") or "Jan Kowalski",
+        "buyer_email": sample_order.get("purchaser_email") or "jan.kowalski@example.com",
+        "buyer_phone": sample_order.get("purchaser_phone") or "+48 123 456 789",
+        "buyer_company": sample_order.get("purchaser_company") or "Firma Przykładowa Sp. z o.o.",
+        "buyer_nip": sample_order.get("purchaser_nip") or "1234567890",
+        "buyer_address": sample_order.get("purchaser_address") or "ul. Firmowa 10, 00-001 Warszawa",
+        
+        # Uczestnik (z przykładowego uczestnika)
+        "participant_name": f"{sample_participant.get('first_name', 'Anna')} {sample_participant.get('last_name', 'Nowak')}",
+        "participant_first_name": sample_participant.get("first_name") or "Anna",
+        "participant_last_name": sample_participant.get("last_name") or "Nowak",
+        "participant_email": sample_participant.get("email") or "anna.nowak@example.com",
+        "participant_company": sample_participant.get("company") or "Firma Uczestnika",
+        "participant_position": sample_participant.get("position") or "Specjalista",
+        "ticket_name": sample_participant.get("ticket_name") or "Bilet Standard",
+        "ticket_code": sample_participant.get("ticket_code") or "TICKET-123456",
+        
+        # Płatność
+        "order_id": sample_order.get("event_order_id") or "ORD-2026-001",
+        "order_total": f"{float(sample_order.get('total') or 499.00):.2f} PLN",
+        "payment_status": sample_order.get("status") or "paid",
+        "payment_url": sample_order.get("checkout_url") or "https://checkout.stripe.com/pay/xxx",
+        
+        # Organizator
+        "organizer_name": "Medidesk",
+        "organizer_address": "ul. Organizatora 5, 00-001 Warszawa",
+        "organizer_email": event_data.get("md_email_kontakt") or "kontakt@medidesk.pl",
+        "organizer_phone": event_data.get("md_mobile_kontakt") or "+48 123 456 789",
+        "organizer_website": "https://medidesk.pl",
+        
+        # Daty formatowane
+        "current_date": "24.01.2026",
+        "current_year": "2026",
+    }
+    
+    return jsonify({
+        "success": True,
+        "event_id": event_id,
+        "event_name": event.get("event_name"),
+        "preview_data": preview_data,
+    })
 
 
 # ---------------------------------------------------------------------------
