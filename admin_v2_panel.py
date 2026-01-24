@@ -1510,93 +1510,111 @@ def api_event_preview_data(event_id: str):
     from flask import jsonify
     from pg_storage import get_participants_for_event
     
-    event = get_event(event_id)
-    if not event:
-        return jsonify({"success": False, "error": "Wydarzenie nie istnieje"}), 404
-    
-    event_data = event.get("data") or {}
-    
-    # Pobierz przykładowego uczestnika (jeśli istnieje)
     try:
-        all_participants = get_participants_for_event(event_id)
-        sample_participant = all_participants[0] if all_participants else {}
-    except Exception:
-        sample_participant = {}
-    
-    # Pobierz przykładowe zamówienie
-    orders = list_orders(event_id=event_id, limit=1)
-    sample_order = orders[0] if orders else {}
-    
-    # Przygotuj dane do podstawienia placeholderów
-    preview_data = {
-        # Wydarzenie
-        "event_name": event.get("event_name", "Nazwa wydarzenia"),
-        "event_date": event_data.get("eventDate") or event_data.get("event_date") or "2026-03-15",
-        "event_time": event_data.get("eventTime") or event_data.get("event_time") or "09:00",
-        "event_end_date": event_data.get("event_end_date") or "",
-        "event_end_time": event_data.get("event_end_time") or "",
-        "event_location": event_data.get("event_location_place") or event_data.get("eventLocation") or event_data.get("location") or "Lokalizacja wydarzenia",
-        "event_city": event_data.get("event_location_city") or event_data.get("eventCity") or "Warszawa",
-        "event_address": event_data.get("event_location_address") or event_data.get("eventAddress") or "ul. Przykładowa 1",
-        "event_description": event_data.get("event_description") or event_data.get("eventDescription") or "",
+        event = get_event(event_id)
+        if not event:
+            return jsonify({"success": False, "error": "Wydarzenie nie istnieje"}), 404
         
-        # Linki wydarzenia
-        "event_public_url": event_data.get("event_public_url") or event_data.get("backstage_website_url") or "https://example.com/event",
-        "success_page_url": event_data.get("success_page_url") or "https://example.com/success",
-        "cancel_page_url": event_data.get("cancel_page_url") or "https://example.com/cancel",
+        event_data = event.get("data") or {}
         
-        # Branding
-        "event_logo_url": event_data.get("event_logo_url") or "",
-        "email_header_url": event_data.get("email_header_url") or "",
-        "color_gradient_1": event_data.get("color_gradient_1") or "#0065D7",
-        "color_gradient_2": event_data.get("color_gradient_2") or "#00A3E0",
+        # Pobierz przykładowego uczestnika (jeśli istnieje)
+        try:
+            all_participants = get_participants_for_event(event_id)
+            sample_participant = all_participants[0] if all_participants else {}
+        except Exception:
+            sample_participant = {}
         
-        # Kontakt
-        "contact_email": event_data.get("md_email_kontakt") or "kontakt@example.com",
-        "contact_phone": event_data.get("md_mobile_kontakt") or "+48 123 456 789",
+        # Pobierz przykładowe zamówienie
+        try:
+            orders = list_orders(event_id=event_id, limit=1)
+            sample_order = orders[0] if orders else {}
+        except Exception:
+            sample_order = {}
         
-        # Nabywca (z przykładowego zamówienia)
-        "buyer_name": sample_order.get("purchaser_name") or "Jan Kowalski",
-        "buyer_email": sample_order.get("purchaser_email") or "jan.kowalski@example.com",
-        "buyer_phone": sample_order.get("purchaser_phone") or "+48 123 456 789",
-        "buyer_company": sample_order.get("purchaser_company") or "Firma Przykładowa Sp. z o.o.",
-        "buyer_nip": sample_order.get("purchaser_nip") or "1234567890",
-        "buyer_address": sample_order.get("purchaser_address") or "ul. Firmowa 10, 00-001 Warszawa",
+        # Bezpieczne parsowanie total
+        def safe_float(val, default=0.0):
+            if val is None or val == "":
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
         
-        # Uczestnik (z przykładowego uczestnika)
-        "participant_name": f"{sample_participant.get('first_name', 'Anna')} {sample_participant.get('last_name', 'Nowak')}",
-        "participant_first_name": sample_participant.get("first_name") or "Anna",
-        "participant_last_name": sample_participant.get("last_name") or "Nowak",
-        "participant_email": sample_participant.get("email") or "anna.nowak@example.com",
-        "participant_company": sample_participant.get("company") or "Firma Uczestnika",
-        "participant_position": sample_participant.get("position") or "Specjalista",
-        "ticket_name": sample_participant.get("ticket_name") or "Bilet Standard",
-        "ticket_code": sample_participant.get("ticket_code") or "TICKET-123456",
+        # Przygotuj dane do podstawienia placeholderów
+        preview_data = {
+            # Wydarzenie
+            "event_name": event.get("event_name", "Nazwa wydarzenia"),
+            "event_date": event_data.get("eventDate") or event_data.get("event_date") or "2026-03-15",
+            "event_time": event_data.get("eventTime") or event_data.get("event_time") or "09:00",
+            "event_end_date": event_data.get("event_end_date") or "",
+            "event_end_time": event_data.get("event_end_time") or "",
+            "event_location": event_data.get("event_location_place") or event_data.get("eventLocation") or event_data.get("location") or "Lokalizacja wydarzenia",
+            "event_city": event_data.get("event_location_city") or event_data.get("eventCity") or "Warszawa",
+            "event_address": event_data.get("event_location_address") or event_data.get("eventAddress") or "ul. Przykładowa 1",
+            "event_description": event_data.get("event_description") or event_data.get("eventDescription") or "",
+            
+            # Linki wydarzenia
+            "event_public_url": event_data.get("event_public_url") or event_data.get("backstage_website_url") or "https://example.com/event",
+            "success_page_url": event_data.get("success_page_url") or "https://example.com/success",
+            "cancel_page_url": event_data.get("cancel_page_url") or "https://example.com/cancel",
+            
+            # Branding
+            "event_logo_url": event_data.get("event_logo_url") or "",
+            "email_header_url": event_data.get("email_header_url") or "",
+            "color_gradient_1": event_data.get("color_gradient_1") or "#0065D7",
+            "color_gradient_2": event_data.get("color_gradient_2") or "#00A3E0",
+            
+            # Kontakt
+            "contact_email": event_data.get("md_email_kontakt") or "kontakt@example.com",
+            "contact_phone": event_data.get("md_mobile_kontakt") or "+48 123 456 789",
+            
+            # Nabywca (z przykładowego zamówienia)
+            "buyer_name": sample_order.get("purchaser_name") or "Jan Kowalski",
+            "buyer_email": sample_order.get("purchaser_email") or "jan.kowalski@example.com",
+            "buyer_phone": sample_order.get("purchaser_phone") or "+48 123 456 789",
+            "buyer_company": sample_order.get("purchaser_company") or "Firma Przykładowa Sp. z o.o.",
+            "buyer_nip": sample_order.get("purchaser_nip") or "1234567890",
+            "buyer_address": sample_order.get("purchaser_address") or "ul. Firmowa 10, 00-001 Warszawa",
+            
+            # Uczestnik (z przykładowego uczestnika)
+            "participant_name": f"{sample_participant.get('first_name', 'Anna')} {sample_participant.get('last_name', 'Nowak')}",
+            "participant_first_name": sample_participant.get("first_name") or "Anna",
+            "participant_last_name": sample_participant.get("last_name") or "Nowak",
+            "participant_email": sample_participant.get("email") or "anna.nowak@example.com",
+            "participant_company": sample_participant.get("company") or "Firma Uczestnika",
+            "participant_position": sample_participant.get("position") or "Specjalista",
+            "ticket_name": sample_participant.get("ticket_name") or "Bilet Standard",
+            "ticket_code": sample_participant.get("ticket_code") or "TICKET-123456",
+            
+            # Płatność
+            "order_id": sample_order.get("event_order_id") or "ORD-2026-001",
+            "order_total": f"{safe_float(sample_order.get('total'), 499.00):.2f} PLN",
+            "payment_status": sample_order.get("status") or "paid",
+            "payment_url": sample_order.get("checkout_url") or "https://checkout.stripe.com/pay/xxx",
+            
+            # Organizator
+            "organizer_name": "Medidesk",
+            "organizer_address": "ul. Organizatora 5, 00-001 Warszawa",
+            "organizer_email": event_data.get("md_email_kontakt") or "kontakt@medidesk.pl",
+            "organizer_phone": event_data.get("md_mobile_kontakt") or "+48 123 456 789",
+            "organizer_website": "https://medidesk.pl",
+            
+            # Daty formatowane
+            "current_date": "24.01.2026",
+            "current_year": "2026",
+        }
         
-        # Płatność
-        "order_id": sample_order.get("event_order_id") or "ORD-2026-001",
-        "order_total": f"{float(sample_order.get('total') or 499.00):.2f} PLN",
-        "payment_status": sample_order.get("status") or "paid",
-        "payment_url": sample_order.get("checkout_url") or "https://checkout.stripe.com/pay/xxx",
-        
-        # Organizator
-        "organizer_name": "Medidesk",
-        "organizer_address": "ul. Organizatora 5, 00-001 Warszawa",
-        "organizer_email": event_data.get("md_email_kontakt") or "kontakt@medidesk.pl",
-        "organizer_phone": event_data.get("md_mobile_kontakt") or "+48 123 456 789",
-        "organizer_website": "https://medidesk.pl",
-        
-        # Daty formatowane
-        "current_date": "24.01.2026",
-        "current_year": "2026",
-    }
-    
-    return jsonify({
-        "success": True,
-        "event_id": event_id,
-        "event_name": event.get("event_name"),
-        "preview_data": preview_data,
-    })
+        return jsonify({
+            "success": True,
+            "event_id": event_id,
+            "event_name": event.get("event_name"),
+            "preview_data": preview_data,
+        })
+    except Exception as e:
+        import traceback
+        print(f"[PREVIEW-DATA ERROR] {event_id}: {e}")
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
