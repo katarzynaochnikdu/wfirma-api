@@ -829,13 +829,18 @@ def work_queue():
     
     # Eventy wymagające konfiguracji (sprawdź czy mają wymagane pola)
     events_needing_config = []
-    all_events = list_events(limit=100)
-    for ev in all_events:
-        if ev.get("is_active"):
-            data = ev.get("data") or {}
-            # Sprawdź czy brakuje kluczowych pól
-            if not data.get("event_mail_link_top_banner") or not data.get("md_email_kontakt"):
-                events_needing_config.append(ev)
+    try:
+        all_events = list_events(limit=100)
+        for ev in all_events:
+            if ev.get("is_active"):
+                data = ev.get("data") or {}
+                # Sprawdź czy brakuje kluczowych pól
+                if not data.get("event_mail_link_top_banner") or not data.get("md_email_kontakt"):
+                    events_needing_config.append(ev)
+    except Exception as e:
+        # Jeśli baza danych jest niedostępna, kontynuuj z pustą listą
+        print(f"[work_queue] Error fetching events: {e}")
+        all_events = []
     
     # Aktualna data po polsku
     months_pl = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',

@@ -1315,7 +1315,19 @@ function renderCanvas() {
     canvas.innerHTML = templateBlocks.map(block => renderBlockHtml(block)).join('');
     
     canvas.querySelectorAll('.email-block').forEach(el => {
-        el.onclick = () => selectBlock(el.dataset.blockId);
+        el.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectBlock(el.dataset.blockId);
+        };
+    });
+    
+    // Prevent default on all links inside canvas (preview only)
+    canvas.querySelectorAll('a').forEach(link => {
+        link.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
     });
     
     lucide.createIcons();
@@ -1823,9 +1835,11 @@ function saveTemplate() {
         blocks: templateBlocks
     };
     
-    // TODO: Send to Flask backend via POST
+    // Demo mode - pokazuj JSON w konsoli
     console.log('Saving template:', data);
-    showToast('Szablon zapisany', 'success');
+    showToast('Demo: Szablon wyeksportowany do konsoli (F12)', 'info');
+    
+    // Możesz użyć przycisku "Eksportuj HTML" lub "Eksportuj JSON" aby skopiować szablon
 }
 
 // ==================== TOAST NOTIFICATIONS ====================
