@@ -3304,10 +3304,13 @@ def save_email_template(
             )
         
         row = cur.fetchone()
+        conn.commit()
         return row["id"] if row else None
         
     except Exception as e:
         print(f"[DB] save_email_template error: {e}")
+        if conn:
+            conn.rollback()
         return None
     finally:
         if pool is not None and conn is not None:
