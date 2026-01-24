@@ -47,9 +47,9 @@
     {% set event_data = event.data or {} %}
     {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
     {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
-    {% set event_city = event_data.get('event_location_city') or event_data.get('event_address_text_city') or event_data.get('eventCity') or '' %}
-    {% set event_date = event_data.get('event_date_start') or event_data.get('eventDate') or '' %}
-    {% set banner_url = event_data.get('email_header_url') or event_data.get('event_mail_link_top_banner') or '' %}
+    {% set event_city = event_data.get('event_location_city') or event_data.get('event_address_text_city') or event_data.get('eventCity') or event_data.get('city') or '' %}
+    {% set event_date = event_data.get('event_date_start') or event_data.get('eventDate') or event_data.get('start_date') or event_data.get('date') or event_data.get('event_start_date') or '' %}
+    {% set banner_url = event_data.get('email_header_url') or event_data.get('event_mail_link_top_banner') or event_data.get('banner_url') or '' %}
     {% set tagline = event_data.get('event_tagline') or event_data.get('tagline') or event_data.get('event_motto') or '' %}
     
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
@@ -312,7 +312,7 @@
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
-  padding-top: 0.75rem;
+  padding-top: 1rem;
   padding-bottom: 0.75rem;
   margin-top: 1rem;
   border-top: 1px solid var(--border);
@@ -323,17 +323,19 @@
 }
 
 .event-stat-value {
-  font-size: 1.25rem;
-  line-height: 1.75rem;
+  font-size: 2rem;
+  line-height: 1.2;
   font-weight: 700;
+  color: var(--foreground);
 }
 
 .event-stat-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   line-height: 1rem;
   color: var(--muted-foreground);
   text-transform: uppercase;
-  letter-spacing: 0.025em;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
 }
 
 /* === GRID === */
