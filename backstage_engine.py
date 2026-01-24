@@ -599,20 +599,24 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                     event_config=event_data,
                     tickets=tickets_for_email,
                 )
+                # 1. Najpierw zapisz do mail_log żeby mieć mail_id
+                mail_record = save_mail_log(
+                    event_order_id=event_order_id,
+                    direction="purchaser",
+                    template_key=TEMPLATE_REGISTRATION_CONFIRMATION,
+                    to_email=purchaser_email,
+                    subject=subject,
+                    data={"event_name": event_name, "flow": FLOW_FOC},
+                )
+                mail_id = mail_record.get("id") if mail_record else None
+                # 2. Wyślij z mail_id
                 res = _send_email_via_make(
                     to_email=purchaser_email,
                     subject=subject,
                     body_html=body_html,
                     event_order_id=event_order_id,
                     template_type="foc_confirmation",
-                )
-                save_mail_log(
-                    event_order_id=event_order_id,
-                    direction="purchaser",
-                    template_key=TEMPLATE_REGISTRATION_CONFIRMATION,
-                    to_email=purchaser_email,
-                    subject=subject,
-                    data={"event_name": event_name, "flow": FLOW_FOC, "sent_via_make": bool(res.get("success"))},
+                    mail_id=mail_id,
                 )
                 sent["purchaser"] = bool(res.get("success"))
         elif flow == FLOW_PROFORMA:
@@ -628,20 +632,24 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                     tickets=tickets_for_email,
                     proforma_number=None,
                 )
+                # 1. Najpierw zapisz do mail_log żeby mieć mail_id
+                mail_record = save_mail_log(
+                    event_order_id=event_order_id,
+                    direction="purchaser",
+                    template_key=TEMPLATE_PROFORMA_SENT,
+                    to_email=purchaser_email,
+                    subject=subject,
+                    data={"event_name": event_name, "flow": FLOW_PROFORMA},
+                )
+                mail_id = mail_record.get("id") if mail_record else None
+                # 2. Wyślij z mail_id
                 res = _send_email_via_make(
                     to_email=purchaser_email,
                     subject=subject,
                     body_html=body_html,
                     event_order_id=event_order_id,
                     template_type="proforma_reservation",
-                )
-                save_mail_log(
-                    event_order_id=event_order_id,
-                    direction="purchaser",
-                    template_key=TEMPLATE_PROFORMA_SENT,
-                    to_email=purchaser_email,
-                    subject=subject,
-                    data={"event_name": event_name, "flow": FLOW_PROFORMA, "sent_via_make": bool(res.get("success"))},
+                    mail_id=mail_id,
                 )
                 sent["purchaser"] = bool(res.get("success"))
 
@@ -2408,7 +2416,25 @@ def _handle_stripe_flow(
         
         subject = f"Link do płatności – {event_name}"
         
-        # Próbuj wysłać przez Make webhook (preferowane)
+        # 1. Najpierw zapisz do mail_log żeby mieć mail_id
+        mail_record = save_mail_log(
+            event_order_id=event_order_id,
+            direction="purchaser",
+            template_key=TEMPLATE_STRIPE_PAYMENT_LINK,
+            to_email=purchaser_email,
+            subject=subject,
+            data={
+                "event_name": event_name,
+                "flow": FLOW_STRIPE,
+                "total": total,
+                "currency": currency,
+                "stripe_url": stripe_url or "",
+            },
+        )
+        mail_id = mail_record.get("id") if mail_record else None
+        _log("DEBUG", "STRIPE FLOW: Mail log zapisany", {"mail_id": mail_id})
+        
+        # 2. Wyślij przez Make webhook z mail_id (preferowane)
         if _is_make_email_configured():
             _log("INFO", "STRIPE FLOW: Używam Make webhook do wysyłki email")
             result = _send_email_via_make(
@@ -2425,6 +2451,7 @@ def _handle_stripe_flow(
                     "currency": currency,
                     "purchaser_nip": purchaser_nip,
                 },
+                mail_id=mail_id,  # Przekaż mail_id do callbacku
             )
             email_method = "make_webhook"
         # Fallback na SMTP jeśli Make nie skonfigurowany
@@ -2466,27 +2493,8 @@ def _handle_stripe_flow(
     elif not purchaser_email:
         _log("WARN", "STRIPE FLOW: Brak email kupującego - email nie wysłany")
 
-    # Mail task do zapisania w bazie (dla historii)
-    if purchaser_email:
-        mail_tasks.append(_build_mail_task(
-            template_key=TEMPLATE_STRIPE_PAYMENT_LINK,
-            to_email=purchaser_email,
-            subject=f"Link do płatności – {event_name}",
-            data={
-                "event_order_id": event_order_id,
-                "event_name": event_name,
-                "purchaser_name": f"{purchaser_first_name} {purchaser_last_name}".strip(),
-                "purchaser_email": purchaser_email,
-                "total": total,
-                "currency": currency,
-                "purchaser_nip": purchaser_nip,
-                "stripe_url": stripe_url or "",
-                "email_sent": email_sent,
-                "email_error": email_error,
-                **event_data,
-            },
-            direction="purchaser",
-        ))
+    # UWAGA: Mail purchaser już zapisany do mail_log przed wysyłką (z mail_id)
+    # Nie dodajemy do mail_tasks żeby uniknąć duplikatu
 
     # Mail wewnętrzny (info o zamówieniu, nie error)
     internal_email = event_data.get("md_email_techniczny") or event_data.get("md_email_kontakt") or BACKSTAGE_EVENT_INFO_EMAIL
