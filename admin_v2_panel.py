@@ -381,6 +381,14 @@ def order_detail(order_id: str):
     # Pobierz uczestników
     participants = get_participants_for_order(order_id) or []
     
+    # Mapuj nazwy biletów (nie pokazuj długich ID numerycznych)
+    for p in participants:
+        ticket_name = p.get("ticket_class_name") or ""
+        ticket_id = p.get("ticket_class_id") or ""
+        if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
+            ticket_name = "Bilet Standard"
+        p["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
+    
     # Pobierz dokumenty wFirma
     wfirma_documents = get_wfirma_documents(order_id) or []
     

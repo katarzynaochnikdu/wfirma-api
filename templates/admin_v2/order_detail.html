@@ -196,7 +196,7 @@
               {% else %}
               <span class="status-badge">{{ p.status or '—' }}</span>
               {% endif %}
-              <span class="participant-card-ticket">{{ p.ticket_class_name or p.ticket_class_id or 'Standard' }}</span>
+              <span class="participant-card-ticket">{{ p.ticket_name or 'Bilet Standard' }}</span>
             </div>
           </div>
           {% endfor %}
