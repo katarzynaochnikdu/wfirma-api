@@ -2047,9 +2047,6 @@ async function loadTemplate(templateId) {
         
         if (data.success && data.template) {
             const tpl = data.template;
-            // #region agent log
-            fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H1',location:'email-designer.html:2042',message:'loadTemplate success',data:{templateId:tpl.id,blocksLen:Array.isArray(tpl.blocks)?tpl.blocks.length:null,hasRenderBlocks:typeof renderBlocks !== 'undefined'},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion agent log
             
             // Set metadata
             document.getElementById('templateName').value = tpl.name || '';
@@ -2058,11 +2055,12 @@ async function loadTemplate(templateId) {
             document.getElementById('templateType').value = tpl.template_type || 'custom';
             
             // Load blocks
-            emailBlocks = tpl.blocks || [];
+            templateBlocks = tpl.blocks || [];
             currentTemplateId = tpl.id;
             
             // Render
-            renderBlocks();
+            renderCanvas();
+            updateEditor();
             
             // Close panel
             toggleTemplatesPanel();
@@ -2078,19 +2076,21 @@ async function loadTemplate(templateId) {
 }
 
 function newTemplate() {
-    if (emailBlocks.length > 0) {
+    if (templateBlocks.length > 0) {
         if (!confirm('Czy na pewno chcesz utworzyć nowy szablon? Niezapisane zmiany zostaną utracone.')) {
             return;
         }
     }
     
     currentTemplateId = null;
-    emailBlocks = [];
+    templateBlocks = [];
+    selectedBlockId = null;
     document.getElementById('templateName').value = 'Nowy szablon';
     document.getElementById('templateSubject').value = '';
     document.getElementById('templateCategory').value = 'external';
     document.getElementById('templateType').value = 'custom';
-    renderBlocks();
+    renderCanvas();
+    updateEditor();
     showToast('Nowy szablon utworzony', 'success');
 }
 
@@ -2099,9 +2099,6 @@ async function saveTemplate() {
     const subject = document.getElementById('templateSubject').value.trim();
     const category = document.getElementById('templateCategory').value;
     const templateType = document.getElementById('templateType').value;
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H2',location:'email-designer.html:2096',message:'saveTemplate (api) called',data:{currentTemplateId:currentTemplateId,category:category,templateType:templateType,templateBlocksLen:Array.isArray(templateBlocks)?templateBlocks.length:null,hasEmailBlocks:typeof emailBlocks !== 'undefined',emailBlocksLen:typeof emailBlocks !== 'undefined' && Array.isArray(emailBlocks)?emailBlocks.length:null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
     
     if (!name) {
         showToast('Podaj nazwę szablonu', 'error');
@@ -2112,7 +2109,7 @@ async function saveTemplate() {
     const payload = {
         name: name,
         subject: subject,
-        blocks: emailBlocks,
+        blocks: templateBlocks,
         category: category,
         template_type: templateType,
         html_content: generatePreviewHtml(),
@@ -2222,9 +2219,6 @@ function showToast(message, type = 'info') {
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H1',location:'email-designer.html:2217',message:'DOMContentLoaded init',data:{currentTemplateId:currentTemplateId,hasRenderBlocks:typeof renderBlocks !== 'undefined',templateBlocksLen:Array.isArray(templateBlocks)?templateBlocks.length:null,hasEmailBlocks:typeof emailBlocks !== 'undefined'},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
     initPlaceholders();
     initToolbarButtons();
     lucide.createIcons();
@@ -2317,9 +2311,6 @@ function addBlock(type) {
     
     templateBlocks.push(newBlock);
     selectedBlockId = newBlock.id;
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H3',location:'email-designer.html:2306',message:'addBlock',data:{type:type,templateBlocksLen:templateBlocks.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
     
     renderCanvas();
     updateEditor();
@@ -2397,16 +2388,23 @@ function updateMoveButtons() {
 // ==================== CANVAS RENDERING ====================
 function renderCanvas() {
     const canvas = document.getElementById('emailCanvas');
-    const empty = document.getElementById('canvasEmpty');
+    let empty = document.getElementById('canvasEmpty');
     
     if (templateBlocks.length === 0) {
-        empty.style.display = 'flex';
+        // Recreate empty placeholder if needed
+        if (!empty) {
+            empty = document.createElement('div');
+            empty.className = 'canvas-empty';
+            empty.id = 'canvasEmpty';
+            empty.innerHTML = '<i data-lucide="mail"></i><p class="canvas-empty-title">Dodaj bloki z panelu po lewej</p><p class="canvas-empty-subtitle">aby zbudować szablon email</p>';
+        }
         canvas.innerHTML = '';
+        empty.style.display = 'flex';
         canvas.appendChild(empty);
+        if (typeof lucide !== 'undefined') lucide.createIcons();
         return;
     }
     
-    empty.style.display = 'none';
     canvas.innerHTML = templateBlocks.map(block => renderBlockHtml(block)).join('');
     
     canvas.querySelectorAll('.email-block').forEach(el => {
@@ -3109,24 +3107,7 @@ function exportJson() {
     showToast('JSON skopiowany do schowka', 'success');
 }
 
-function saveTemplate() {
-    const data = {
-        name: document.getElementById('templateName').value,
-        subject: document.getElementById('templateSubject').value,
-        category: document.getElementById('templateCategory').value,
-        type: document.getElementById('templateType').value,
-        blocks: templateBlocks
-    };
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H2',location:'email-designer.html:3111',message:'saveTemplate (demo) called',data:{templateBlocksLen:Array.isArray(templateBlocks)?templateBlocks.length:null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
-    
-    // Demo mode - pokazuj JSON w konsoli
-    console.log('Saving template:', data);
-    showToast('Demo: Szablon wyeksportowany do konsoli (F12)', 'info');
-    
-    // Możesz użyć przycisku "Eksportuj HTML" lub "Eksportuj JSON" aby skopiować szablon
-}
+// saveTemplate is defined above as async function - this duplicate was removed
 
 // ==================== TOAST NOTIFICATIONS ====================
 function showToast(message, type = 'info') {
