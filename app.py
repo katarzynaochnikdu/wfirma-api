@@ -3160,6 +3160,117 @@ def update_participant_status_api(participant_id: int):
 
 
 # ---------------------------------------------------------------------------
+# ORDER STATUS CHANGES (API)
+# ---------------------------------------------------------------------------
+
+ZOHO_FLOW_ORDER_CANCEL_WEBHOOK = "https://flow.zoho.eu/20101689330/flow/webhook/incoming?zapikey=1001.aa6aef3799c7e535d8338b7a98b2ea12.9dee6ba3ef5763bce1f3bba145a0261f&isdebug=false"
+
+
+@app.route('/api/orders/<event_order_id>/cancel', methods=['POST'])
+def api_cancel_order(event_order_id: str):
+    """
+    Anuluje zamówienie i wysyła webhook do Zoho Flow.
+    
+    Wymaga aktywnej sesji admin (sprawdza session['admin_v2_user']).
+    
+    Response:
+    {
+        "success": true,
+        "event_order_id": "...",
+        "status": "cancelled",
+        "webhook_sent": true
+    }
+    """
+    try:
+        from pg_storage import get_order, update_order_status, get_event
+        
+        # Sprawdź czy użytkownik jest zalogowany jako admin
+        admin_user = session.get("admin_v2_user")
+        if not admin_user:
+            return jsonify({"success": False, "error": "Wymagane zalogowanie"}), 401
+        
+        # Pobierz zamówienie
+        order = get_order(event_order_id)
+        if not order:
+            return jsonify({"success": False, "error": "Zamówienie nie znalezione"}), 404
+        
+        # Sprawdź czy można anulować
+        current_status = order.get("status", "")
+        if current_status in ("cancelled", "refunded"):
+            return jsonify({"success": False, "error": f"Zamówienie już ma status: {current_status}"}), 400
+        
+        # Zaktualizuj status
+        updated = update_order_status(event_order_id, "cancelled")
+        if not updated:
+            return jsonify({"success": False, "error": "Nie udało się zaktualizować statusu"}), 500
+        
+        # Pobierz dane eventu
+        event_name = "Nieznane wydarzenie"
+        try:
+            event = get_event(order.get("event_id", ""))
+            if event:
+                event_name = event.get("event_name", event_name)
+        except Exception:
+            pass
+        
+        # Wyślij webhook do Zoho Flow
+        webhook_sent = False
+        webhook_error = None
+        try:
+            webhook_payload = {
+                "order_id": event_order_id,
+                "cancel_reason": "na życzenie",
+                "event_order_id": event_order_id,
+                "event_id": order.get("event_id", ""),
+                "event_name": event_name,
+                "purchaser_email": order.get("purchaser_email", ""),
+                "purchaser_first_name": order.get("purchaser_first_name", ""),
+                "purchaser_last_name": order.get("purchaser_last_name", ""),
+                "purchaser_phone": order.get("purchaser_phone", ""),
+                "total": float(order.get("total") or 0),
+            }
+            
+            resp = requests.post(
+                ZOHO_FLOW_ORDER_CANCEL_WEBHOOK,
+                json=webhook_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10,
+            )
+            webhook_sent = resp.status_code in (200, 201, 202)
+            if not webhook_sent:
+                webhook_error = f"HTTP {resp.status_code}: {resp.text[:100]}"
+            print(f"[ORDER CANCEL] Webhook sent to Zoho Flow: {webhook_sent}, order={event_order_id}")
+        except Exception as e:
+            webhook_error = str(e)
+            print(f"[ORDER CANCEL] Webhook error: {e}")
+        
+        # Zapisz audit log
+        try:
+            from pg_storage import insert_admin_audit_log
+            insert_admin_audit_log(
+                action="order_cancelled",
+                admin_user_id=admin_user.get("id"),
+                target_id=event_order_id,
+                extra={"webhook_sent": webhook_sent, "webhook_error": webhook_error},
+                ip=request.remote_addr,
+            )
+        except Exception as audit_err:
+            print(f"[ORDER CANCEL] Audit log error: {audit_err}")
+        
+        return jsonify({
+            "success": True,
+            "event_order_id": event_order_id,
+            "status": "cancelled",
+            "webhook_sent": webhook_sent,
+            "webhook_error": webhook_error,
+        }), 200
+        
+    except Exception as e:
+        print(f"[ORDER CANCEL] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # STRIPE INTEGRATION
 # ---------------------------------------------------------------------------
 
