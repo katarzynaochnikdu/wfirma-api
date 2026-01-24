@@ -716,38 +716,29 @@
     padding: 1.5rem 1.5rem 0 1.5rem;
   }
   
-  /* Compact sticky header - smooth transitions */
+  /* Compact sticky header - ukryty domyślnie */
   .event-sticky-header {
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
     border-radius: 12px;
-    margin-bottom: 1rem;
     color: white;
-    /* Smooth hide/show */
-    max-height: 0;
-    opacity: 0;
-    overflow: hidden;
-    padding: 0 1rem;
-    margin-bottom: 0;
-    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease, margin 0.25s ease;
-  }
-  
-  .sticky-header-wrapper.scrolled .event-sticky-header {
-    max-height: 60px;
-    opacity: 1;
-    padding: 0.75rem 1rem;
     margin-bottom: 1rem;
   }
   
-  /* Banner scrolled state - ukryj z animacją */
+  /* Gdy scrolled: pokaż compact, ukryj banner */
+  .sticky-header-wrapper.scrolled .event-sticky-header {
+    display: flex;
+  }
+  
   .sticky-header-wrapper.scrolled .event-header-banner {
-    max-height: 0 !important;
-    min-height: 0 !important;
-    opacity: 0;
-    margin-bottom: 0;
-    padding: 0;
+    display: none;
+  }
+  
+  /* Zapobiegaj layout shift - wrapper ma stałą minimalną zawartość */
+  .sticky-header-wrapper.scrolled {
+    padding-bottom: 0;
   }
   
   .sticky-back-btn,
@@ -1087,9 +1078,6 @@
     overflow: hidden;
     margin-bottom: 1rem;
     min-height: 140px;
-    max-height: 300px;
-    opacity: 1;
-    transition: max-height 0.3s ease, min-height 0.3s ease, opacity 0.25s ease, margin 0.3s ease, padding 0.3s ease;
   }
   
   .event-header-bg {
@@ -1598,50 +1586,32 @@ function initStickyHeader() {
   
   if (!wrapper || !banner) return;
   
-  // Hysteresis - różne progi dla show/hide żeby nie migotało
-  var showThreshold = 100;  // scroll down - pokaż compact po 100px
-  var hideThreshold = 40;   // scroll up - wróć do banner gdy < 40px
-  var isScrolled = false;
-  var ticking = false;
+  // Użyj IntersectionObserver - stabilniejszy niż scroll events
+  // Obserwuj "sentinel" element na górze strony
+  var sentinel = document.createElement('div');
+  sentinel.style.cssText = 'position: absolute; top: 120px; height: 1px; width: 1px; pointer-events: none;';
+  document.body.insertBefore(sentinel, document.body.firstChild);
   
-  function handleScroll() {
-    var scrollY = window.scrollY;
-    
-    if (!isScrolled && scrollY > showThreshold) {
-      // Przełącz na compact
-      isScrolled = true;
-      wrapper.classList.add('scrolled');
-    } else if (isScrolled && scrollY < hideThreshold) {
-      // Wróć do pełnego bannera
-      isScrolled = false;
-      wrapper.classList.remove('scrolled');
-    }
-  }
-  
-  // Throttle scroll events z requestAnimationFrame
-  function onScroll() {
-    if (!ticking) {
-      requestAnimationFrame(function() {
-        handleScroll();
-        ticking = false;
-      });
-      ticking = true;
-    }
-  }
-  
-  // Listen for scroll
-  window.addEventListener('scroll', onScroll, { passive: true });
-  
-  // Check initial state
-  handleScroll();
-  
-  // Re-init icons after state change
-  var observer = new MutationObserver(function() {
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
-    }
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      // Gdy sentinel wyjdzie z viewport (scrolled past) - pokaż compact
+      if (!entry.isIntersecting) {
+        wrapper.classList.add('scrolled');
+      } else {
+        wrapper.classList.remove('scrolled');
+      }
+      
+      // Re-init icons po zmianie
+      if (typeof lucide !== 'undefined') {
+        requestAnimationFrame(function() { lucide.createIcons(); });
+      }
+    });
+  }, {
+    threshold: 0,
+    rootMargin: '0px'
   });
-  observer.observe(wrapper, { attributes: true, attributeFilter: ['class'] });
+  
+  observer.observe(sentinel);
 }
 
 // Tab switching without page reload
