@@ -80,13 +80,25 @@ input[type="color"].form-input {
     <h1 class="page-title">{{ 'Edytuj wydarzenie' if event else 'Nowe wydarzenie' }}</h1>
     <p class="page-description">{{ event.event_name if event else 'Wypełnij dane nowego wydarzenia' }}</p>
   </div>
-  <div class="page-actions">
+  <div class="page-actions" style="display: flex; gap: 0.5rem;">
+    {% if event %}
+    <button type="button" class="btn btn-outline" onclick="syncFromBackstage()" id="sync-btn">
+      <i data-lucide="refresh-cw"></i>
+      Pobierz z Backstage
+    </button>
+    {% endif %}
     <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline">
       <i data-lucide="arrow-left"></i>
       Powrót
     </a>
   </div>
 </div>
+
+{% if event %}
+<!-- SYNC STATUS -->
+<div id="sync-status" style="display: none; margin-bottom: 1rem; padding: 1rem; border-radius: var(--radius);">
+</div>
+{% endif %}
 
 {% if error %}
 <div class="alert alert-error" style="margin-bottom: 1rem; padding: 1rem; border-radius: var(--radius); background: hsl(0, 84%, 95%); border: 1px solid hsl(0, 84%, 80%); color: hsl(0, 84%, 30%);">
@@ -364,6 +376,77 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 {% if event %}
+async function syncFromBackstage() {
+  const btn = document.getElementById('sync-btn');
+  const statusDiv = document.getElementById('sync-status');
+  
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Synchronizacja...';
+  
+  statusDiv.style.display = 'block';
+  statusDiv.style.background = 'hsl(212, 100%, 97%)';
+  statusDiv.style.border = '1px solid hsl(212, 100%, 85%)';
+  statusDiv.innerHTML = '<i data-lucide="loader-2" class="animate-spin" style="width: 16px; height: 16px;"></i> Pobieranie danych z Backstage API...';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  
+  try {
+    const resp = await fetch('/admin-v2/events/{{ event.event_id }}/sync-backstage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      statusDiv.style.background = 'hsl(160, 82%, 95%)';
+      statusDiv.style.border = '1px solid hsl(160, 82%, 44%)';
+      statusDiv.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+          <i data-lucide="check-circle" style="width: 20px; height: 20px; color: hsl(160, 82%, 35%);"></i>
+          <div>
+            <strong style="color: hsl(160, 82%, 25%);">Zsynchronizowano pomyślnie!</strong>
+            <ul style="margin: 0.5rem 0 0 0; padding-left: 1.25rem; color: hsl(160, 82%, 30%); font-size: 0.875rem;">
+              <li>Nazwa: ${data.event_name || '(brak)'}</li>
+              <li>Lokalizacja: ${data.venue || '(brak)'}</li>
+              <li>Adres: ${data.location || '(brak)'}</li>
+              <li>Klasy biletów: ${data.ticket_classes_count || 0}</li>
+            </ul>
+            <p style="margin: 0.75rem 0 0 0; font-size: 0.875rem; color: hsl(160, 82%, 35%);">Odświeżanie strony...</p>
+          </div>
+        </div>
+      `;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      setTimeout(() => window.location.reload(), 2000);
+    } else {
+      statusDiv.style.background = 'hsl(0, 84%, 95%)';
+      statusDiv.style.border = '1px solid hsl(0, 84%, 80%)';
+      statusDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: hsl(0, 84%, 40%);">
+          <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
+          <span><strong>Błąd synchronizacji:</strong> ${data.error || 'Nieznany błąd'}</span>
+        </div>
+      `;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="refresh-cw"></i> Pobierz z Backstage';
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+  } catch (err) {
+    statusDiv.style.background = 'hsl(0, 84%, 95%)';
+    statusDiv.style.border = '1px solid hsl(0, 84%, 80%)';
+    statusDiv.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 0.5rem; color: hsl(0, 84%, 40%);">
+        <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
+        <span><strong>Błąd połączenia:</strong> ${err.message || 'Sprawdź połączenie internetowe'}</span>
+      </div>
+    `;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="refresh-cw"></i> Pobierz z Backstage';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
+
 async function fetchTicketTypes() {
   const btn = document.getElementById('fetchTicketsBtn');
   const status = document.getElementById('ticketsStatus');

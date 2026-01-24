@@ -514,6 +514,12 @@
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
           </button>
+          {% if order.status == 'paid' %}
+          <button class="btn btn-outline btn-refund-outline" onclick="refundOrder()" title="Zwrot płatności Stripe">
+            <i data-lucide="rotate-ccw"></i>
+            Zwrot płatności
+          </button>
+          {% endif %}
           <button class="btn btn-outline btn-danger-outline" onclick="deleteOrder()" title="Usuń zamówienie (nieodwracalne)">
             <i data-lucide="trash-2"></i>
             Usuń zamówienie
@@ -698,6 +704,30 @@
     }
   }
 
+  function refundOrder() {
+    if (confirm('Czy na pewno chcesz wykonać ZWROT płatności?\n\nPieniądze zostaną zwrócone na konto klienta przez Stripe.\nTa operacja jest nieodwracalna.')) {
+      const reason = prompt('Podaj powód zwrotu (opcjonalnie):', 'requested_by_customer');
+      
+      const formData = new FormData();
+      formData.append('reason', reason || 'requested_by_customer');
+      
+      fetch(`/admin-v2/orders/${orderId}/refund`, { 
+        method: 'POST',
+        body: formData
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            showToast(data.message || 'Zwrot zrealizowany', 'success');
+            location.reload();
+          } else {
+            showToast(data.error || 'Błąd zwrotu', 'error');
+          }
+        })
+        .catch(err => showToast('Błąd zwrotu: ' + err, 'error'));
+    }
+  }
+
   function deleteOrder() {
     if (confirm('UWAGA: Czy na pewno chcesz USUNĄĆ to zamówienie?\n\nTa operacja jest NIEODWRACALNA!\nZostaną usunięte wszystkie dane: zamówienie, uczestnicy, historia emaili.')) {
       if (confirm('Ostatnie ostrzeżenie: Potwierdź usunięcie zamówienia ' + orderId)) {
@@ -871,6 +901,15 @@
     .status-destructive-label {
       display: none;
     }
+  }
+
+  /* Refund button (Zwrot) */
+  .btn-refund-outline {
+    border-color: #f59e0b !important;
+    color: #f59e0b !important;
+  }
+  .btn-refund-outline:hover {
+    background: #fffbeb !important;
   }
 
   /* Danger button (Usuń) */

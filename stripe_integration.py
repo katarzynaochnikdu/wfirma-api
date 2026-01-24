@@ -23,6 +23,7 @@ from pg_storage import (
     save_wfirma_document,
     save_mail_log,
     get_event,
+    save_error_task,
 )
 
 
@@ -50,6 +51,41 @@ RENDER_EMAIL_KEY_SEND_REQUEST = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", 
 # Inicjalizacja Stripe (domyślnie produkcja)
 if stripe and STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
+
+
+def _save_stripe_error_to_queue(
+    title: str,
+    description: str,
+    event_order_id: str = "",
+    severity: str = "error",
+    can_retry: bool = True,
+    error_data: dict = None,
+) -> None:
+    """
+    Zapisuje błąd Stripe do Work Queue (error_queue).
+    
+    Args:
+        title: Tytuł błędu
+        description: Szczegółowy opis
+        event_order_id: ID zamówienia
+        severity: Poziom ważności (critical, error, warning)
+        can_retry: Czy można ponowić
+        error_data: Dodatkowe dane
+    """
+    try:
+        save_error_task(
+            category="stripe",
+            severity=severity,
+            title=title[:200] if title else "Stripe Error",
+            description=description[:1000] if description else "",
+            event_order_id=event_order_id or None,
+            error_data=error_data or {},
+            can_retry=can_retry,
+            max_retries=3 if can_retry else 0,
+        )
+        print(f"[STRIPE] Błąd zapisany do Work Queue: {title}")
+    except Exception as e:
+        print(f"[STRIPE] Nie udało się zapisać błędu do Work Queue: {e}")
 
 
 def _send_email_via_make_stripe(
@@ -540,6 +576,19 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             purchaser_email_error = result.get("error", "Nieznany błąd")
             print(f"[STRIPE] BŁĄD wysyłki emaila do kupującego: {purchaser_email_error}")
+            # Zapisz błąd do Work Queue
+            _save_stripe_error_to_queue(
+                title=f"Błąd wysyłki emaila do kupującego: {event_name}",
+                description=f"Nie udało się wysłać emaila potwierdzenia płatności do {purchaser_email}. Błąd: {purchaser_email_error}",
+                event_order_id=event_order_id,
+                severity="error",
+                can_retry=True,
+                error_data={
+                    "email_type": "payment_confirmation",
+                    "to_email": purchaser_email,
+                    "error": purchaser_email_error,
+                },
+            )
     elif purchaser_email and skip_purchaser_email:
         print(f"[STRIPE] skip purchaser email (recovery_mode) | to={purchaser_email}")
     

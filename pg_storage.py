@@ -268,6 +268,42 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_admin_audit_log_user_id ON admin_audit_log(admin_user_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action ON admin_audit_log(action);
+
+-- ---------------------------------------------------------------------------
+-- ERROR QUEUE (Work Queue - zarządzanie błędami i retry)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS error_queue (
+  id BIGSERIAL PRIMARY KEY,
+  category TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  event_order_id TEXT,
+  event_id TEXT,
+  error_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  can_retry BOOLEAN DEFAULT TRUE,
+  retry_count INTEGER DEFAULT 0,
+  max_retries INTEGER DEFAULT 3,
+  last_retry_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_error_queue_category ON error_queue(category);
+CREATE INDEX IF NOT EXISTS idx_error_queue_severity ON error_queue(severity);
+CREATE INDEX IF NOT EXISTS idx_error_queue_resolved ON error_queue(resolved_at);
+CREATE INDEX IF NOT EXISTS idx_error_queue_created ON error_queue(created_at);
+
+-- ---------------------------------------------------------------------------
+-- DASHBOARD CACHE (cache statystyk)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS dashboard_cache (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
@@ -349,6 +385,8 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb")
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
         cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS allowed_events JSONB NOT NULL DEFAULT '[]'::jsonb")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS password_reset_token TEXT")
+        cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ")
 
         # 1c) Migracja events - dodanie is_active
         cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
@@ -2508,6 +2546,484 @@ def list_admin_audit_log(limit: int = 100) -> List[Dict[str, Any]]:
             (int(limit),),
         )
         return [dict(r) for r in (cur.fetchall() or [])]
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# ERROR QUEUE (Work Queue) - CRUD
+# ---------------------------------------------------------------------------
+
+
+def save_error_task(
+    category: str,
+    severity: str,
+    title: str,
+    description: str = "",
+    event_order_id: Optional[str] = None,
+    event_id: Optional[str] = None,
+    error_data: Optional[Dict[str, Any]] = None,
+    can_retry: bool = True,
+    max_retries: int = 3,
+) -> Optional[int]:
+    """
+    Zapisuje nowe zadanie błędu do error_queue.
+    
+    Args:
+        category: Kategoria błędu (wfirma, make, stripe, database, attendee, config)
+        severity: Poziom ważności (critical, error, warning)
+        title: Tytuł błędu
+        description: Szczegółowy opis
+        event_order_id: ID zamówienia (opcjonalnie)
+        event_id: ID wydarzenia (opcjonalnie)
+        error_data: Dodatkowe dane w JSON
+        can_retry: Czy można ponowić
+        max_retries: Maksymalna liczba prób
+    
+    Returns:
+        ID utworzonego zadania lub None
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO error_queue (category, severity, title, description, event_order_id, 
+                                     event_id, error_data, can_retry, max_retries)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                str(category),
+                str(severity),
+                str(title),
+                str(description) if description else None,
+                str(event_order_id) if event_order_id else None,
+                str(event_id) if event_id else None,
+                psycopg2.extras.Json(error_data or {}),
+                bool(can_retry),
+                int(max_retries),
+            ),
+        )
+        row = cur.fetchone()
+        task_id = row[0] if row else None
+        print(f"[DB] save_error_task: id={task_id}, category={category}, severity={severity}, title={title}")
+        return task_id
+    except Exception as e:
+        print(f"[DB] save_error_task error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def list_error_tasks(
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    resolved: bool = False,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    """
+    Lista zadań błędów z error_queue.
+    
+    Args:
+        category: Filtr kategorii (opcjonalnie)
+        severity: Filtr poziomu ważności (opcjonalnie)
+        resolved: True = tylko rozwiązane, False = tylko nierozwiązane
+        limit: Maksymalna liczba wyników
+    
+    Returns:
+        Lista zadań
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        query = """
+            SELECT id, category, severity, title, description, event_order_id, event_id,
+                   error_data, can_retry, retry_count, max_retries, last_retry_at,
+                   resolved_at, created_at, updated_at
+            FROM error_queue
+            WHERE 1=1
+        """
+        params = []
+        
+        if resolved:
+            query += " AND resolved_at IS NOT NULL"
+        else:
+            query += " AND resolved_at IS NULL"
+        
+        if category:
+            query += " AND category = %s"
+            params.append(str(category))
+        
+        if severity:
+            query += " AND severity = %s"
+            params.append(str(severity))
+        
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(int(limit))
+        
+        cur.execute(query, tuple(params))
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] list_error_tasks error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_error_task(task_id: int) -> Optional[Dict[str, Any]]:
+    """Pobiera pojedyncze zadanie błędu po ID."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id, category, severity, title, description, event_order_id, event_id,
+                   error_data, can_retry, retry_count, max_retries, last_retry_at,
+                   resolved_at, created_at, updated_at
+            FROM error_queue
+            WHERE id = %s
+            """,
+            (int(task_id),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[DB] get_error_task error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def retry_error_task(task_id: int) -> Dict[str, Any]:
+    """
+    Oznacza zadanie jako ponowione (zwiększa retry_count, aktualizuje last_retry_at).
+    
+    Returns:
+        Dict z success, error, task
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        # Pobierz zadanie
+        cur.execute(
+            """
+            SELECT id, category, severity, title, can_retry, retry_count, max_retries, resolved_at
+            FROM error_queue
+            WHERE id = %s
+            """,
+            (int(task_id),),
+        )
+        row = cur.fetchone()
+        
+        if not row:
+            return {"success": False, "error": "Zadanie nie istnieje"}
+        
+        task = dict(row)
+        
+        if task.get("resolved_at"):
+            return {"success": False, "error": "Zadanie jest już rozwiązane"}
+        
+        if not task.get("can_retry"):
+            return {"success": False, "error": "Zadanie nie może być ponowione"}
+        
+        if task.get("retry_count", 0) >= task.get("max_retries", 3):
+            return {"success": False, "error": "Przekroczono maksymalną liczbę prób"}
+        
+        # Zwiększ retry_count i aktualizuj last_retry_at
+        cur.execute(
+            """
+            UPDATE error_queue
+            SET retry_count = retry_count + 1,
+                last_retry_at = NOW(),
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id, retry_count
+            """,
+            (int(task_id),),
+        )
+        updated = cur.fetchone()
+        
+        print(f"[DB] retry_error_task: id={task_id}, new_retry_count={updated['retry_count'] if updated else '?'}")
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "retry_count": updated["retry_count"] if updated else task.get("retry_count", 0) + 1,
+        }
+    except Exception as e:
+        print(f"[DB] retry_error_task error: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def resolve_error_task(task_id: int) -> bool:
+    """
+    Oznacza zadanie jako rozwiązane (ustawia resolved_at).
+    
+    Returns:
+        True jeśli sukces
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE error_queue
+            SET resolved_at = NOW(),
+                updated_at = NOW()
+            WHERE id = %s AND resolved_at IS NULL
+            """,
+            (int(task_id),),
+        )
+        success = cur.rowcount > 0
+        print(f"[DB] resolve_error_task: id={task_id}, success={success}")
+        return success
+    except Exception as e:
+        print(f"[DB] resolve_error_task error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_error_queue_stats() -> Dict[str, int]:
+    """
+    Zwraca statystyki error_queue.
+    
+    Returns:
+        Dict z total, critical, errors, warnings, can_retry
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        # Total nierozwiązanych
+        cur.execute("SELECT COUNT(*) FROM error_queue WHERE resolved_at IS NULL")
+        total = cur.fetchone()[0] or 0
+        
+        # Krytyczne
+        cur.execute("SELECT COUNT(*) FROM error_queue WHERE resolved_at IS NULL AND severity = 'critical'")
+        critical = cur.fetchone()[0] or 0
+        
+        # Błędy
+        cur.execute("SELECT COUNT(*) FROM error_queue WHERE resolved_at IS NULL AND severity = 'error'")
+        errors = cur.fetchone()[0] or 0
+        
+        # Ostrzeżenia
+        cur.execute("SELECT COUNT(*) FROM error_queue WHERE resolved_at IS NULL AND severity = 'warning'")
+        warnings = cur.fetchone()[0] or 0
+        
+        # Możliwe do ponowienia
+        cur.execute("""
+            SELECT COUNT(*) FROM error_queue 
+            WHERE resolved_at IS NULL 
+              AND can_retry = TRUE 
+              AND retry_count < max_retries
+        """)
+        can_retry = cur.fetchone()[0] or 0
+        
+        return {
+            "total": total,
+            "critical": critical,
+            "errors": errors,
+            "warnings": warnings,
+            "can_retry": can_retry,
+        }
+    except Exception as e:
+        print(f"[DB] get_error_queue_stats error: {e}")
+        return {"total": 0, "critical": 0, "errors": 0, "warnings": 0, "can_retry": 0}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# STRIPE SESSIONS - dodatkowa funkcja
+# ---------------------------------------------------------------------------
+
+
+def get_stripe_session_by_order_id(event_order_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Pobiera najnowszą sesję Stripe dla danego zamówienia.
+    
+    Args:
+        event_order_id: ID zamówienia
+    
+    Returns:
+        Dict z danymi sesji lub None
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id, event_order_id, checkout_session_id, payment_intent_id,
+                   status, amount_total, currency, url, raw, created_at, updated_at
+            FROM stripe_sessions
+            WHERE event_order_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (str(event_order_id),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[DB] get_stripe_session_by_order_id error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# MAIL LOG - dodatkowa funkcja
+# ---------------------------------------------------------------------------
+
+
+def update_mail_task_status(mail_id: int, status: str, error: Optional[str] = None) -> bool:
+    """
+    Aktualizuje status maila w mail_log.
+    
+    Args:
+        mail_id: ID maila
+        status: Nowy status (sent, failed, queued)
+        error: Komunikat błędu (opcjonalnie)
+    
+    Returns:
+        True jeśli sukces
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE mail_log
+            SET status = %s, error = %s
+            WHERE id = %s
+            """,
+            (str(status), error, int(mail_id)),
+        )
+        success = cur.rowcount > 0
+        print(f"[DB] update_mail_task_status: id={mail_id}, status={status}, success={success}")
+        return success
+    except Exception as e:
+        print(f"[DB] update_mail_task_status error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# DASHBOARD CACHE
+# ---------------------------------------------------------------------------
+
+
+def get_cached_stats(key: str) -> Optional[Dict[str, Any]]:
+    """
+    Pobiera wartość z cache dashboardu.
+    
+    Args:
+        key: Klucz cache
+    
+    Returns:
+        Wartość z cache lub None jeśli wygasł/nie istnieje
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT value FROM dashboard_cache
+            WHERE key = %s AND expires_at > NOW()
+            """,
+            (str(key),),
+        )
+        row = cur.fetchone()
+        if row:
+            return row["value"]
+        return None
+    except Exception as e:
+        print(f"[DB] get_cached_stats error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def set_cached_stats(key: str, value: Dict[str, Any], ttl_minutes: int = 5) -> bool:
+    """
+    Zapisuje wartość do cache dashboardu.
+    
+    Args:
+        key: Klucz cache
+        value: Wartość do zapisania
+        ttl_minutes: Czas życia w minutach
+    
+    Returns:
+        True jeśli sukces
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO dashboard_cache (key, value, expires_at)
+            VALUES (%s, %s, NOW() + (%s * INTERVAL '1 minute'))
+            ON CONFLICT (key)
+            DO UPDATE SET value = EXCLUDED.value, expires_at = NOW() + (%s * INTERVAL '1 minute')
+            """,
+            (
+                str(key),
+                psycopg2.extras.Json(value),
+                int(ttl_minutes),
+                int(ttl_minutes),
+            ),
+        )
+        return True
+    except Exception as e:
+        print(f"[DB] set_cached_stats error: {e}")
+        return False
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)

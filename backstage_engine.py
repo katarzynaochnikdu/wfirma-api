@@ -7,6 +7,7 @@ import json
 import datetime
 import os
 import requests
+import traceback
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -160,9 +161,13 @@ def _send_error_notification(
     # Kompatybilność wsteczna (w kodzie były wywołania z event_name/extra_context)
     event_name: str = "",
     extra_context: Optional[Dict[str, Any]] = None,
+    # Nowe parametry dla Work Queue
+    severity: str = "error",
+    category: str = "backstage",
+    can_retry: bool = False,
 ) -> None:
     """
-    Wysyła email wewnętrzny o błędzie.
+    Wysyła email wewnętrzny o błędzie i zapisuje do Work Queue.
     
     Args:
         error_type: Typ błędu (np. "EVENT_NOT_FOUND", "TICKET_NOT_FOUND", "EMAIL_ERROR")
@@ -170,7 +175,33 @@ def _send_error_notification(
         event_order_id: ID zamówienia
         event_id: ID wydarzenia
         extra_data: Dodatkowe dane do wyświetlenia
+        severity: Poziom ważności (critical, error, warning)
+        category: Kategoria błędu (backstage, wfirma, stripe, make, etc.)
+        can_retry: Czy można ponowić operację
     """
+    # Zapisz do Work Queue (error_queue)
+    try:
+        from pg_storage import save_error_task
+        error_data_for_queue = {
+            "error_type": error_type,
+            "error_message": error_message[:1000] if error_message else "",
+            **(extra_data or {}),
+        }
+        save_error_task(
+            category=category,
+            severity=severity,
+            title=f"{error_type}: {error_message[:100]}" if error_message else error_type,
+            description=error_message,
+            event_order_id=event_order_id or None,
+            event_id=event_id or None,
+            error_data=error_data_for_queue,
+            can_retry=can_retry,
+            max_retries=3 if can_retry else 0,
+        )
+        _log("INFO", f"Błąd zapisany do Work Queue: {error_type}")
+    except Exception as eq_error:
+        _log("ERROR", f"Nie udało się zapisać błędu do Work Queue: {eq_error}")
+    
     if not BACKSTAGE_TECHNICAL_INFO_EMAIL:
         _log("WARN", f"Brak BACKSTAGE_TECHNICAL_INFO_EMAIL - nie wysłano powiadomienia o błędzie: {error_type}")
         return
@@ -2529,6 +2560,208 @@ def _handle_stripe_flow(
         "email_error": email_error,
         "mail_tasks": mail_tasks,
     }
+
+
+# ---------------------------------------------------------------------------
+# ASYNC WEBHOOK PROCESSING (queue + worker)
+# ---------------------------------------------------------------------------
+
+
+def queue_webhook_processing(webhook_id: int, event_order_id: str) -> bool:
+    """
+    Dodaje webhook do kolejki do przetworzenia.
+    Używamy prostego mechanizmu przez UPDATE status w DB.
+    
+    Args:
+        webhook_id: ID webhooka w tabeli backstage_webhook_events
+        event_order_id: ID zamówienia
+    
+    Returns:
+        True jeśli sukces
+    """
+    from pg_storage import _with_conn, _put_conn
+    
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE backstage_webhook_events
+            SET processed_status = 'queued'
+            WHERE id = %s
+        """, (int(webhook_id),))
+        success = cur.rowcount > 0
+        _log("INFO", f"Webhook queued for processing: webhook_id={webhook_id}, order_id={event_order_id}, success={success}")
+        return success
+    except Exception as e:
+        _log("ERROR", f"Error queueing webhook: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def process_queued_webhooks(limit: int = 10) -> Dict[str, Any]:
+    """
+    Przetwarza webhooки z kolejki (status='queued').
+    Można uruchomić jako cron job co 1 minutę lub background task.
+    
+    Args:
+        limit: Maksymalna liczba webhooków do przetworzenia w jednym wywołaniu
+    
+    Returns:
+        Dict z processed, failed, errors
+    """
+    from pg_storage import _with_conn, _put_conn, _dict_cursor, save_error_task
+    
+    pool = None
+    conn = None
+    processed = 0
+    failed = 0
+    errors = []
+    
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        # Pobierz webhooки do przetworzenia
+        cur.execute("""
+            SELECT id, event_order_id, payload
+            FROM backstage_webhook_events
+            WHERE processed_status = 'queued'
+            ORDER BY received_at ASC
+            LIMIT %s
+        """, (int(limit),))
+        
+        webhooks = cur.fetchall()
+        _log("INFO", f"Found {len(webhooks)} webhooks to process")
+        
+        for webhook in webhooks:
+            webhook_id = webhook['id']
+            event_order_id = webhook.get('event_order_id', '')
+            
+            try:
+                # Zmień status na 'processing'
+                cur.execute("""
+                    UPDATE backstage_webhook_events
+                    SET processed_status = 'processing'
+                    WHERE id = %s
+                """, (webhook_id,))
+                
+                _log("INFO", f"Processing webhook {webhook_id} for order {event_order_id}")
+                
+                # Przetwórz webhook (wywołaj istniejącą logikę)
+                payload = webhook.get('payload') or {}
+                if isinstance(payload, str):
+                    import json
+                    payload = json.loads(payload)
+                
+                result = process_backstage_order(payload)
+                
+                if result.get("status") == "ok":
+                    # Oznacz jako przetworzone
+                    cur.execute("""
+                        UPDATE backstage_webhook_events
+                        SET processed_status = 'processed',
+                            processed_at = NOW()
+                        WHERE id = %s
+                    """, (webhook_id,))
+                    processed += 1
+                    _log("INFO", f"Webhook {webhook_id} processed successfully")
+                else:
+                    # Oznacz jako failed
+                    error_msg = result.get("error", "Unknown error")
+                    cur.execute("""
+                        UPDATE backstage_webhook_events
+                        SET processed_status = 'failed',
+                            error = %s,
+                            processed_at = NOW()
+                        WHERE id = %s
+                    """, (error_msg, webhook_id))
+                    failed += 1
+                    errors.append(f"Webhook {webhook_id}: {error_msg}")
+                    _log("ERROR", f"Webhook {webhook_id} failed: {error_msg}")
+                    
+            except Exception as e:
+                error_msg = str(e)
+                # Zapisz błąd
+                cur.execute("""
+                    UPDATE backstage_webhook_events
+                    SET processed_status = 'failed',
+                        error = %s,
+                        processed_at = NOW()
+                    WHERE id = %s
+                """, (error_msg, webhook_id))
+                failed += 1
+                errors.append(f"Webhook {webhook_id}: {error_msg}")
+                
+                # Loguj do error_queue
+                try:
+                    save_error_task(
+                        category="backstage",
+                        severity="error",
+                        title=f"Błąd przetwarzania webhooka {webhook_id}",
+                        description=error_msg,
+                        event_order_id=event_order_id,
+                        error_data={"webhook_id": webhook_id, "stack": traceback.format_exc()},
+                        can_retry=True,
+                    )
+                except Exception:
+                    pass
+                
+                _log("ERROR", f"Exception processing webhook {webhook_id}: {e}")
+        
+        return {
+            "processed": processed,
+            "failed": failed,
+            "errors": errors[:10],  # Ogranicz liczbę błędów
+            "total_found": len(webhooks),
+        }
+        
+    except Exception as e:
+        _log("ERROR", f"Error in process_queued_webhooks: {e}")
+        return {
+            "processed": processed,
+            "failed": failed,
+            "errors": [str(e)],
+            "total_found": 0,
+        }
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_webhook_queue_stats() -> Dict[str, int]:
+    """
+    Zwraca statystyki kolejki webhooków.
+    
+    Returns:
+        Dict z queued, processing, processed, failed
+    """
+    from pg_storage import _with_conn, _put_conn
+    
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        stats = {}
+        for status in ['queued', 'processing', 'processed', 'failed', 'received']:
+            cur.execute("""
+                SELECT COUNT(*) FROM backstage_webhook_events
+                WHERE processed_status = %s
+            """, (status,))
+            stats[status] = cur.fetchone()[0] or 0
+        
+        return stats
+    except Exception as e:
+        _log("ERROR", f"Error getting webhook queue stats: {e}")
+        return {"queued": 0, "processing": 0, "processed": 0, "failed": 0, "received": 0}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
 
 
 # ---------------------------------------------------------------------------

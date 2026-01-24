@@ -35,6 +35,14 @@ from pg_storage import (
 
 admin_v2_bp = Blueprint("admin_v2_bp", __name__, template_folder="templates")
 
+# ---------------------------------------------------------------------------
+# CONFIGURATION (ENV)
+# ---------------------------------------------------------------------------
+
+# Zoho Flow webhook do synchronizacji wydarzeń
+ZOHO_FLOW_EVENT_UPDATE_WEBHOOK = os.environ.get("ZOHO_FLOW_EVENT_UPDATE_WEBHOOK", "")
+if not ZOHO_FLOW_EVENT_UPDATE_WEBHOOK:
+    print("[ADMIN_V2] WARNING: ZOHO_FLOW_EVENT_UPDATE_WEBHOOK nie jest skonfigurowany")
 
 # ---------------------------------------------------------------------------
 # HELPERS - reuse logic from admin_panel.py
@@ -266,39 +274,213 @@ def logout():
     return redirect(url_for("admin_v2_bp.login"))
 
 
+@admin_v2_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    """Strona 'zapomniałem hasła' - generuje token resetujący."""
+    import uuid
+    from datetime import datetime, timedelta
+    from pg_storage import _with_conn, _put_conn
+    
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        
+        if email:
+            user = get_admin_user_by_email(email)
+            
+            if user:
+                # Generuj token
+                token = str(uuid.uuid4())
+                expires = datetime.utcnow() + timedelta(hours=1)
+                
+                # Zapisz token w DB
+                pool = None
+                conn = None
+                try:
+                    pool, conn = _with_conn()
+                    cur = conn.cursor()
+                    cur.execute("""
+                        UPDATE admin_users
+                        SET password_reset_token = %s,
+                            password_reset_expires = %s
+                        WHERE id = %s
+                    """, (token, expires, user['id']))
+                    
+                    # Audit log
+                    insert_admin_audit_log(
+                        action="password_reset_requested",
+                        admin_user_id=user['id'],
+                        target_email=email,
+                        ip=request.remote_addr,
+                    )
+                    
+                    # Wyślij email z linkiem (jeśli Make jest skonfigurowany)
+                    try:
+                        from backstage_engine import _send_email_via_make
+                        reset_url = f"{request.host_url}admin-v2/reset-password?token={token}"
+                        
+                        email_html = f"""
+                        <html>
+                        <body style="font-family: Arial, sans-serif; padding: 20px;">
+                            <h2 style="color: #0065D7;">Reset hasła - Medidesk Admin Panel</h2>
+                            <p>Otrzymaliśmy prośbę o reset hasła dla Twojego konta.</p>
+                            <p>Kliknij poniższy link, aby ustawić nowe hasło:</p>
+                            <p><a href="{reset_url}" style="display: inline-block; padding: 12px 24px; background-color: #0065D7; color: #fff; text-decoration: none; border-radius: 6px;">Ustaw nowe hasło</a></p>
+                            <p><small>Link wygasa za 1 godzinę.</small></p>
+                            <hr>
+                            <p style="color: #666; font-size: 12px;">Jeśli nie prosiłeś o reset hasła, zignoruj ten email.</p>
+                        </body>
+                        </html>
+                        """
+                        
+                        _send_email_via_make(
+                            to_email=email,
+                            subject="Reset hasła - Medidesk Admin Panel",
+                            body_html=email_html,
+                            template_type="password_reset",
+                        )
+                    except Exception as e:
+                        print(f"[FORGOT_PASSWORD] Błąd wysyłki emaila: {e}")
+                        # Kontynuuj mimo błędu wysyłki
+                    
+                finally:
+                    if pool is not None and conn is not None:
+                        _put_conn(pool, conn)
+        
+        # Zawsze pokazuj sukces (nie ujawniaj czy email istnieje)
+        return render_template("admin_v2/forgot_password_sent.html")
+    
+    return render_template("admin_v2/forgot_password.html")
+
+
+@admin_v2_bp.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    """Strona resetowania hasła z tokenem."""
+    from werkzeug.security import generate_password_hash
+    from pg_storage import _with_conn, _put_conn
+    
+    token = request.args.get("token") or request.form.get("token")
+    error = None
+    success = None
+    
+    if not token:
+        return redirect(url_for("admin_v2_bp.login"))
+    
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        
+        if not password or len(password) < 8:
+            error = "Hasło musi mieć co najmniej 8 znaków"
+        elif password != password2:
+            error = "Hasła nie są identyczne"
+        else:
+            # Sprawdź token
+            pool = None
+            conn = None
+            try:
+                pool, conn = _with_conn()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT id, email FROM admin_users
+                    WHERE password_reset_token = %s
+                      AND password_reset_expires > NOW()
+                """, (token,))
+                
+                user = cur.fetchone()
+                if not user:
+                    error = "Token wygasł lub jest nieprawidłowy. Spróbuj ponownie."
+                else:
+                    user_id, user_email = user
+                    
+                    # Zmień hasło
+                    password_hash = generate_password_hash(password)
+                    cur.execute("""
+                        UPDATE admin_users
+                        SET password_hash = %s,
+                            password_reset_token = NULL,
+                            password_reset_expires = NULL,
+                            failed_login_count = 0,
+                            locked_until = NULL,
+                            updated_at = NOW()
+                        WHERE id = %s
+                    """, (password_hash, user_id))
+                    
+                    # Audit log
+                    insert_admin_audit_log(
+                        action="password_reset_completed",
+                        admin_user_id=user_id,
+                        target_email=user_email,
+                        ip=request.remote_addr,
+                    )
+                    
+                    success = True
+            finally:
+                if pool is not None and conn is not None:
+                    _put_conn(pool, conn)
+    
+    if success:
+        return redirect(url_for("admin_v2_bp.login") + "?reset=success")
+    
+    return render_template("admin_v2/reset_password.html", token=token, error=error)
+
+
 @admin_v2_bp.route("/", methods=["GET"])
 @admin_v2_bp.route("/dashboard", methods=["GET"])
 @_require_login
 def dashboard():
-    """Dashboard z podsumowaniem."""
+    """Dashboard z podsumowaniem (z cache'em dla statystyk)."""
+    from pg_storage import get_cached_stats, set_cached_stats
+    
     user = _get_current_admin_user()
     
-    # Pobierz statystyki
-    all_orders = list_orders(limit=500)
-    all_events = list_events(limit=100)
+    # Sprawdź cache statystyk (5 minut TTL)
+    cached = get_cached_stats("dashboard_main_stats")
     
-    # Oblicz statystyki
-    total_orders = len(all_orders)
-    paid_orders = [o for o in all_orders if o.get("status") == "paid"]
-    total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
-    
-    # Zlicz uczestników (przez count_participants_by_status dla każdego zamówienia)
-    total_participants = 0
-    for o in all_orders:
-        try:
-            p_counts = count_participants_by_status(o.get("event_order_id"))
-            total_participants += sum(p_counts.values()) if p_counts else 0
-        except Exception:
-            pass
-    
-    active_events = len([e for e in all_events if e.get("is_active", True)])
-    
-    stats = {
-        "total_orders": total_orders,
-        "total_participants": total_participants,
-        "total_revenue": f"{total_revenue:,.2f}".replace(",", " "),
-        "active_events": active_events,
-    }
+    if cached:
+        stats = cached.get("stats", {})
+        all_orders = cached.get("all_orders", [])
+        all_events = cached.get("all_events", [])
+        paid_orders = cached.get("paid_orders", [])
+        print("[DASHBOARD] Using cached stats")
+    else:
+        print("[DASHBOARD] Computing fresh stats...")
+        
+        # Pobierz statystyki
+        all_orders = list_orders(limit=500)
+        all_events = list_events(limit=100)
+        
+        # Oblicz statystyki
+        total_orders = len(all_orders)
+        paid_orders = [o for o in all_orders if o.get("status") == "paid"]
+        total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
+        
+        # Zlicz uczestników (przez count_participants_by_status dla każdego zamówienia)
+        total_participants = 0
+        for o in all_orders:
+            try:
+                p_counts = count_participants_by_status(o.get("event_order_id"))
+                total_participants += sum(p_counts.values()) if p_counts else 0
+            except Exception:
+                pass
+        
+        active_events = len([e for e in all_events if e.get("is_active", True)])
+        
+        stats = {
+            "total_orders": total_orders,
+            "total_participants": total_participants,
+            "total_revenue": f"{total_revenue:,.2f}".replace(",", " "),
+            "active_events": active_events,
+        }
+        
+        # Zapisz do cache (5 minut)
+        # Uwaga: nie cachujemy pełnych obiektów zamówień/eventów, tylko minimalne dane
+        cache_data = {
+            "stats": stats,
+            "all_orders": all_orders[:100],  # Ogranicz dla cache
+            "all_events": all_events[:50],
+            "paid_orders": paid_orders[:100],
+        }
+        set_cached_stats("dashboard_main_stats", cache_data, ttl_minutes=5)
     
     # Ostatnie zamówienia
     recent_orders = all_orders[:5]
@@ -615,19 +797,248 @@ def order_update_status(order_id: str):
 @admin_v2_bp.route("/orders/<order_id>/send-reminder", methods=["POST"])
 @_require_permission("orders")
 def order_send_reminder(order_id: str):
-    """Wysyła przypomnienie o płatności (placeholder)."""
+    """Wysyła przypomnienie o płatności."""
     from flask import jsonify
-    # TODO: Integracja z Make/email
-    return jsonify({"success": True, "message": "Przypomnienie zostanie wysłane"})
+    from datetime import datetime, timedelta
+    from pg_storage import get_stripe_session_by_order_id, save_mail_log
+    from backstage_engine import _send_email_via_make
+    from email_templates import render_checkout_reminder_email
+    
+    user = _get_current_admin_user()
+    order = get_order(order_id)
+    
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź status (tylko pending_payment lub received)
+    if order.get("status") not in ["pending_payment", "received"]:
+        return jsonify({"success": False, "error": "Zamówienie nie oczekuje na płatność"}), 400
+    
+    # Pobierz wydarzenie
+    event = get_event(order.get("event_id"))
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    # Pobierz sesję Stripe (jeśli istnieje)
+    stripe_session = get_stripe_session_by_order_id(order_id)
+    if not stripe_session or not stripe_session.get("url"):
+        return jsonify({"success": False, "error": "Brak linku do płatności Stripe"}), 400
+    
+    # Sprawdź czy link nie wygasł
+    session_created = stripe_session.get("created_at")
+    if session_created:
+        try:
+            if hasattr(session_created, "tzinfo") and session_created.tzinfo:
+                # aware datetime
+                now = datetime.now(session_created.tzinfo)
+            else:
+                now = datetime.now()
+            expires_at = session_created + timedelta(hours=24)
+            if now > expires_at:
+                return jsonify({"success": False, "error": "Link do płatności wygasł. Należy utworzyć nową sesję Stripe."}), 400
+            time_left = expires_at - now
+            hours_left = int(time_left.total_seconds() / 3600)
+            expires_in = f"{hours_left} godzin" if hours_left > 1 else "mniej niż godzina"
+            expires_at_str = expires_at.strftime("%d.%m.%Y, %H:%M")
+        except Exception as e:
+            print(f"[order_send_reminder] Błąd obliczania expires_at: {e}")
+            expires_in = "24 godziny"
+            expires_at_str = "wkrótce"
+    else:
+        expires_in = "24 godziny"
+        expires_at_str = "wkrótce"
+    
+    # Pobierz email kupującego
+    purchaser_email = order.get("purchaser_email")
+    if not purchaser_email:
+        return jsonify({"success": False, "error": "Brak adresu email kupującego"}), 400
+    
+    # Renderuj email
+    event_config = event.get("data") or {}
+    try:
+        total_value = float(order.get("total", 0) or 0)
+    except Exception:
+        total_value = 0.0
+    
+    try:
+        html = render_checkout_reminder_email(
+            event_name=event.get("event_name", "Wydarzenie"),
+            purchaser_first_name=order.get("purchaser_first_name", ""),
+            purchaser_last_name=order.get("purchaser_last_name", ""),
+            purchaser_email=purchaser_email,
+            total_gross=total_value,
+            checkout_url=stripe_session.get("url"),
+            expires_at=expires_at_str,
+            expires_in=expires_in,
+            event_config=event_config,
+        )
+    except Exception as e:
+        print(f"[order_send_reminder] Błąd renderowania emaila: {e}")
+        return jsonify({"success": False, "error": f"Błąd generowania emaila: {e}"}), 500
+    
+    subject = f"Przypomnienie o płatności - {event.get('event_name', 'Wydarzenie')}"
+    
+    # Zapisz w mail_log
+    mail_id = save_mail_log(
+        event_order_id=order_id,
+        direction="purchaser",
+        template_key="checkout_reminder",
+        to_email=purchaser_email,
+        subject=subject,
+        status="queued",
+    )
+    
+    # Wyślij przez Make
+    result = _send_email_via_make(
+        to_email=purchaser_email,
+        subject=subject,
+        body_html=html,
+        event_order_id=order_id,
+        template_type="checkout_reminder",
+        mail_id=mail_id,
+    )
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="order_reminder_sent",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={"to_email": purchaser_email, "success": result.get("success")},
+        ip=request.remote_addr,
+    )
+    
+    if result.get("success"):
+        return jsonify({"success": True, "message": "Przypomnienie zostało wysłane"})
+    else:
+        return jsonify({"success": False, "error": result.get("error", "Błąd wysyłki")}), 500
 
 
 @admin_v2_bp.route("/orders/<order_id>/resend-ticket", methods=["POST"])
 @_require_permission("orders")
 def order_resend_ticket(order_id: str):
-    """Ponownie wysyła bilet (placeholder)."""
+    """Ponownie wysyła bilety do wszystkich uczestników zamówienia."""
     from flask import jsonify
-    # TODO: Integracja z Make/email
-    return jsonify({"success": True, "message": "Bilet zostanie ponownie wysłany"})
+    from pg_storage import get_participants_for_order, save_mail_log
+    from backstage_engine import _send_email_via_make
+    from email_templates import render_participant_ticket_email
+    
+    user = _get_current_admin_user()
+    order = get_order(order_id)
+    
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź status (tylko paid)
+    if order.get("status") != "paid":
+        return jsonify({"success": False, "error": "Zamówienie nie jest opłacone"}), 400
+    
+    # Pobierz wydarzenie
+    event = get_event(order.get("event_id"))
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    # Pobierz uczestników
+    participants = get_participants_for_order(order_id)
+    if not participants:
+        return jsonify({"success": False, "error": "Brak uczestników w zamówieniu"}), 404
+    
+    event_config = event.get("data") or {}
+    event_name = event.get("event_name", "Wydarzenie")
+    event_id = order.get("event_id", "")
+    
+    sent_count = 0
+    failed_count = 0
+    errors = []
+    
+    # Wyślij bilet dla każdego uczestnika
+    for participant in participants:
+        participant_email = participant.get("email")
+        if not participant_email:
+            failed_count += 1
+            errors.append(f"Brak emaila dla uczestnika {participant.get('first_name', '')} {participant.get('last_name', '')}")
+            continue
+        
+        # Pobierz dane biletu
+        ticket_name = participant.get("ticket_class_name") or participant.get("ticket_name") or "Bilet Standard"
+        ticket_id = participant.get("ticket_id", "")
+        
+        # Oblicz cenę biletu (średnia z zamówienia jeśli nie ma szczegółów)
+        try:
+            participant_data = participant.get("data") or {}
+            ticket_price = float(participant_data.get("price", 0) or 0)
+            if not ticket_price and len(participants) > 0:
+                total = float(order.get("total", 0) or 0)
+                ticket_price = total / len(participants)
+        except Exception:
+            ticket_price = 0.0
+        
+        # Renderuj email z biletem
+        try:
+            html = render_participant_ticket_email(
+                event_name=event_name,
+                participant_first_name=participant.get("first_name", ""),
+                participant_last_name=participant.get("last_name", ""),
+                participant_email=participant_email,
+                ticket_name=ticket_name,
+                ticket_id=ticket_id,
+                ticket_price=ticket_price,
+                event_config=event_config,
+                event_id=event_id,
+            )
+        except Exception as e:
+            print(f"[order_resend_ticket] Błąd renderowania emaila: {e}")
+            failed_count += 1
+            errors.append(f"Błąd generowania emaila dla {participant_email}: {e}")
+            continue
+        
+        subject = f"Twój bilet na {event_name}"
+        
+        # Zapisz w mail_log
+        mail_id = save_mail_log(
+            event_order_id=order_id,
+            direction="participant",
+            template_key="participant_ticket_resend",
+            to_email=participant_email,
+            subject=subject,
+            status="queued",
+        )
+        
+        # Wyślij
+        result = _send_email_via_make(
+            to_email=participant_email,
+            subject=subject,
+            body_html=html,
+            event_order_id=order_id,
+            template_type="participant_ticket",
+            mail_id=mail_id,
+        )
+        
+        if result.get("success"):
+            sent_count += 1
+        else:
+            failed_count += 1
+            errors.append(f"Błąd wysyłki do {participant_email}: {result.get('error', 'Nieznany błąd')}")
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="tickets_resent",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={"sent": sent_count, "failed": failed_count, "total_participants": len(participants)},
+        ip=request.remote_addr,
+    )
+    
+    message = f"Wysłano {sent_count} biletów"
+    if failed_count > 0:
+        message += f", {failed_count} błędów"
+    
+    return jsonify({
+        "success": sent_count > 0 or failed_count == 0,
+        "sent": sent_count,
+        "failed": failed_count,
+        "errors": errors[:5] if errors else [],  # Ogranicz liczbę błędów w odpowiedzi
+        "message": message,
+    })
 
 
 @admin_v2_bp.route("/orders/<order_id>/cancel", methods=["POST"])
@@ -650,6 +1061,97 @@ def order_cancel(order_id: str):
         return jsonify({"success": True})
     
     return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+
+
+@admin_v2_bp.route("/orders/<order_id>/refund", methods=["POST"])
+@_require_permission("orders")
+def order_refund(order_id: str):
+    """Realizuje zwrot płatności Stripe."""
+    from flask import jsonify
+    from pg_storage import get_stripe_session_by_order_id, update_order_status, save_error_task
+    
+    user = _get_current_admin_user()
+    order = get_order(order_id)
+    
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    if order.get("status") != "paid":
+        return jsonify({"success": False, "error": "Zamówienie nie jest opłacone (status: {})".format(order.get("status"))}), 400
+    
+    # Pobierz sesję Stripe
+    stripe_session = get_stripe_session_by_order_id(order_id)
+    if not stripe_session:
+        return jsonify({"success": False, "error": "Brak danych płatności Stripe dla tego zamówienia"}), 404
+    
+    payment_intent_id = stripe_session.get("payment_intent_id")
+    if not payment_intent_id:
+        return jsonify({"success": False, "error": "Brak Payment Intent ID - nie można wykonać zwrotu"}), 400
+    
+    # Przyczyna zwrotu (opcjonalnie z formularza)
+    reason = request.form.get("reason", "requested_by_customer")
+    if reason not in ["duplicate", "fraudulent", "requested_by_customer"]:
+        reason = "requested_by_customer"
+    
+    try:
+        import stripe
+        
+        # Użyj odpowiedniego klucza API
+        stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
+        if not stripe_api_key:
+            return jsonify({"success": False, "error": "Brak konfiguracji Stripe API"}), 500
+        
+        stripe.api_key = stripe_api_key
+        
+        # Wykonaj zwrot
+        refund = stripe.Refund.create(
+            payment_intent=payment_intent_id,
+            reason=reason,
+        )
+        
+        # Aktualizuj status zamówienia
+        update_order_status(order_id, "refunded")
+        
+        # Zapisz w audit log
+        insert_admin_audit_log(
+            action="order_refunded",
+            admin_user_id=user.get("id") if user else None,
+            target_id=order_id,
+            extra={
+                "refund_id": refund.id,
+                "reason": reason,
+                "amount": refund.amount,
+                "currency": refund.currency,
+            },
+            ip=request.remote_addr,
+        )
+        
+        return jsonify({
+            "success": True,
+            "refund_id": refund.id,
+            "amount": refund.amount / 100.0,  # Stripe zwraca w groszach
+            "currency": refund.currency.upper(),
+            "message": f"Zwrot zrealizowany: {refund.amount / 100.0:.2f} {refund.currency.upper()}",
+        })
+        
+    except ImportError:
+        return jsonify({"success": False, "error": "Biblioteka Stripe nie jest zainstalowana"}), 500
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[order_refund] Stripe error: {error_msg}")
+        
+        # Zapisz błąd do Work Queue
+        save_error_task(
+            category="stripe",
+            severity="error",
+            title=f"Błąd zwrotu płatności: {order_id}",
+            description=error_msg,
+            event_order_id=order_id,
+            error_data={"payment_intent_id": payment_intent_id, "reason": reason},
+            can_retry=True,
+        )
+        
+        return jsonify({"success": False, "error": f"Błąd Stripe: {error_msg}"}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -752,8 +1254,6 @@ def event_edit(event_id: str):
     import requests as http_requests
     from pg_storage import upsert_event
     
-    ZOHO_FLOW_EVENT_UPDATE_WEBHOOK = "https://flow.zoho.eu/20101689330/flow/webhook/incoming?zapikey=1001.fd0397adf2d2daf0194fb08d80fd3530.3f05b43c8fad5bf3f6761b5aaef1cf2c&isdebug=false"
-    
     user = _get_current_admin_user()
     
     event = get_event(event_id)
@@ -812,29 +1312,33 @@ def event_edit(event_id: str):
                     is_active=is_active
                 )
                 
-                # Wyślij webhook do Zoho Flow
-                try:
-                    webhook_payload = {
-                        "event_id": event_id,
-                        "event_name": event_name,
-                        "status": event.get("status") or "active",
-                        "is_active": is_active,
-                        "start_date": event_date_time,
-                        "end_date": event_end_date_time,
-                        "event_description": event_description,
-                        "event_summary": event_summary,
-                        "updated_by": user.get("email", "unknown") if user else "unknown",
-                    }
-                    resp = http_requests.post(
-                        ZOHO_FLOW_EVENT_UPDATE_WEBHOOK,
-                        json=webhook_payload,
-                        headers={"Content-Type": "application/json"},
-                        timeout=10,
-                    )
-                    webhook_sent = resp.status_code in (200, 201, 202)
-                    print(f"[EVENT EDIT] Webhook sent: {webhook_sent}, event={event_id}")
-                except Exception as wh_err:
-                    print(f"[EVENT EDIT] Webhook error: {wh_err}")
+                # Wyślij webhook do Zoho Flow (jeśli skonfigurowany)
+                webhook_sent = False
+                if ZOHO_FLOW_EVENT_UPDATE_WEBHOOK:
+                    try:
+                        webhook_payload = {
+                            "event_id": event_id,
+                            "event_name": event_name,
+                            "status": event.get("status") or "active",
+                            "is_active": is_active,
+                            "start_date": event_date_time,
+                            "end_date": event_end_date_time,
+                            "event_description": event_description,
+                            "event_summary": event_summary,
+                            "updated_by": user.get("email", "unknown") if user else "unknown",
+                        }
+                        resp = http_requests.post(
+                            ZOHO_FLOW_EVENT_UPDATE_WEBHOOK,
+                            json=webhook_payload,
+                            headers={"Content-Type": "application/json"},
+                            timeout=10,
+                        )
+                        webhook_sent = resp.status_code in (200, 201, 202)
+                        print(f"[EVENT EDIT] Webhook sent: {webhook_sent}, event={event_id}")
+                    except Exception as wh_err:
+                        print(f"[EVENT EDIT] Webhook error: {wh_err}")
+                else:
+                    print(f"[EVENT EDIT] Webhook skipped: ZOHO_FLOW_EVENT_UPDATE_WEBHOOK not configured")
                 
                 success = "Wydarzenie zostało zaktualizowane" + (" i zsynchronizowane z Zoho" if webhook_sent else "")
                 # Odśwież dane
@@ -858,6 +1362,100 @@ def event_edit(event_id: str):
         success=success,
         **_get_common_context(user),
     )
+
+
+@admin_v2_bp.route("/events/<event_id>/sync-backstage", methods=["POST"])
+@_require_permission("events")
+def event_sync_backstage(event_id: str):
+    """Synchronizuje dane wydarzenia z Zoho Backstage API."""
+    from flask import jsonify
+    from pg_storage import upsert_event, save_ticket_class
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy wydarzenie istnieje
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    # Sprawdź konfigurację Backstage API
+    try:
+        from zoho_backstage_api import is_backstage_configured, sync_event_from_backstage
+    except ImportError as e:
+        return jsonify({"success": False, "error": f"Moduł zoho_backstage_api niedostępny: {e}"}), 500
+    
+    if not is_backstage_configured():
+        return jsonify({
+            "success": False, 
+            "error": "Backstage API nie jest skonfigurowane. Ustaw BACKSTAGE_CLIENT_ID, BACKSTAGE_CLIENT_SECRET i BACKSTAGE_REFRESH_TOKEN."
+        }), 400
+    
+    # Synchronizuj dane
+    result = sync_event_from_backstage(event_id)
+    
+    if not result.get("success"):
+        return jsonify({"success": False, "error": result.get("error", "Nieznany błąd")}), 500
+    
+    # Scal dane z istniejącymi
+    current_data = event.get("data") or {}
+    new_data = result.get("event_data", {})
+    
+    # Zachowaj lokalne konfiguracje (email, kolory itp.), dodaj dane z Backstage
+    merged_data = {**current_data, **new_data}
+    
+    # Zachowaj ważne lokalne pola jeśli istnieją
+    for key in ["md_email_kontakt", "md_email_techniczny", "color_gradient_1", "color_gradient_2", 
+                "event_mail_link_top_banner", "event_mail_link_bottom_banner", "event_config_link"]:
+        if current_data.get(key):
+            merged_data[key] = current_data[key]
+    
+    try:
+        # Aktualizuj wydarzenie
+        upsert_event(
+            event_id=event_id,
+            event_name=result.get("event_name") or event.get("event_name"),
+            status=event.get("status") or "active",
+            notes=event.get("notes") or "",
+            data=merged_data,
+            is_active=event.get("is_active", True),
+        )
+        
+        # Aktualizuj klasy biletów
+        ticket_classes = result.get("ticket_classes", [])
+        for tc in ticket_classes:
+            tc_id = tc.get("ticket_class_id")
+            if tc_id:
+                save_ticket_class(
+                    event_id=event_id,
+                    ticket_class_id=tc_id,
+                    ticket_name=tc.get("ticket_name", ""),
+                    data=tc,
+                )
+        
+        # Audit log
+        insert_admin_audit_log(
+            action="event_synced_backstage",
+            admin_user_id=user.get("id") if user else None,
+            target_id=event_id,
+            extra={
+                "event_name": result.get("event_name"),
+                "venue": new_data.get("venue_name"),
+                "ticket_classes_count": len(ticket_classes),
+            },
+            ip=request.remote_addr,
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": f"Zsynchronizowano dane z Backstage",
+            "event_name": result.get("event_name"),
+            "venue": new_data.get("venue_name"),
+            "location": new_data.get("location"),
+            "ticket_classes_count": len(ticket_classes),
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Błąd zapisu: {e}"}), 500
 
 
 @admin_v2_bp.route("/events/<event_id>/preview", methods=["GET"])
@@ -1152,6 +1750,107 @@ def participant_detail(participant_id: int):
     )
 
 
+@admin_v2_bp.route("/participants/<int:participant_id>/edit", methods=["GET", "POST"])
+@_require_permission("orders")
+def participant_edit(participant_id: int):
+    """Edycja danych uczestnika."""
+    from pg_storage import _with_conn, _put_conn
+    
+    user = _get_current_admin_user()
+    participant = get_participant_by_id(participant_id)
+    
+    if not participant:
+        return redirect(url_for("admin_v2_bp.participants_list"))
+    
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        # Pobierz dane z formularza
+        email = request.form.get("email", "").strip()
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        phone = request.form.get("phone", "").strip()
+        company = request.form.get("company", "").strip()
+        position = request.form.get("position", "").strip()
+        
+        if not email:
+            error = "Email jest wymagany"
+        elif not first_name:
+            error = "Imię jest wymagane"
+        else:
+            # Aktualizuj w DB
+            pool = None
+            conn = None
+            try:
+                pool, conn = _with_conn()
+                cur = conn.cursor()
+                
+                # Pobierz obecne data JSON
+                cur.execute("SELECT data FROM participants WHERE id = %s", (participant_id,))
+                row = cur.fetchone()
+                current_data = row[0] if row else {}
+                if not isinstance(current_data, dict):
+                    current_data = {}
+                
+                # Aktualizuj data z dodatkowymi polami
+                current_data["company"] = company
+                current_data["position"] = position
+                
+                import json
+                import psycopg2.extras
+                
+                cur.execute("""
+                    UPDATE participants
+                    SET email = %s, first_name = %s, last_name = %s, phone = %s,
+                        data = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                """, (
+                    email, first_name, last_name, phone,
+                    psycopg2.extras.Json(current_data),
+                    participant_id
+                ))
+                
+                # Audit log
+                insert_admin_audit_log(
+                    action="participant_edited",
+                    admin_user_id=user.get("id") if user else None,
+                    target_id=str(participant_id),
+                    extra={
+                        "email": email,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                    },
+                    ip=request.remote_addr,
+                )
+                
+                success = "Dane uczestnika zostały zaktualizowane"
+                
+                # Odśwież dane uczestnika
+                participant = get_participant_by_id(participant_id)
+                
+            except Exception as e:
+                error = f"Błąd aktualizacji: {e}"
+            finally:
+                if pool is not None and conn is not None:
+                    _put_conn(pool, conn)
+    
+    # Rozpakuj dane z JSON
+    p_data = participant.get("data") or {}
+    participant["company"] = p_data.get("company") or p_data.get("firma") or ""
+    participant["position"] = p_data.get("position") or p_data.get("stanowisko") or ""
+    
+    return render_template(
+        "admin_v2/participant_edit.html",
+        active_page="participants",
+        participant=participant,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
+
+
 @admin_v2_bp.route("/users", methods=["GET"])
 @_require_permission("users")
 def users_list():
@@ -1210,11 +1909,13 @@ def audit_log():
 def work_queue():
     """Monitoring procesów - kolejka błędów i akcji."""
     from datetime import datetime
+    from pg_storage import list_error_tasks, get_error_queue_stats
     
     user = _get_current_admin_user()
     
     # Filtry
     category_filter = request.args.get("category", "").strip()
+    severity_filter = request.args.get("severity", "").strip()
     
     # Kategorie zadań
     categories = {
@@ -1224,19 +1925,25 @@ def work_queue():
         "database": {"label": "Baza danych", "icon": "database"},
         "attendee": {"label": "Uczestnicy", "icon": "users"},
         "config": {"label": "Konfiguracja", "icon": "settings"},
+        "backstage": {"label": "Backstage", "icon": "globe"},
+        "email": {"label": "Email", "icon": "mail"},
     }
     
-    # Na razie pusta lista - w przyszłości pobieranie z bazy
-    tasks = []
-    
-    # Statystyki (na razie zerowe)
-    stats = {
-        "total": 0,
-        "critical": 0,
-        "errors": 0,
-        "warnings": 0,
-        "can_retry": 0,
-    }
+    # Pobierz zadania z bazy danych
+    try:
+        tasks = list_error_tasks(
+            category=category_filter or None,
+            severity=severity_filter or None,
+            resolved=False,
+            limit=200
+        )
+        
+        # Pobierz statystyki
+        stats = get_error_queue_stats()
+    except Exception as e:
+        print(f"[work_queue] Error fetching tasks: {e}")
+        tasks = []
+        stats = {"total": 0, "critical": 0, "errors": 0, "warnings": 0, "can_retry": 0}
     
     # Eventy wymagające konfiguracji (sprawdź czy mają wymagane pola)
     events_needing_config = []
@@ -1268,6 +1975,8 @@ def work_queue():
         categories=categories,
         events_needing_config=events_needing_config,
         current_date=current_date,
+        category_filter=category_filter,
+        severity_filter=severity_filter,
         **_get_common_context(user),
     )
 
@@ -1276,16 +1985,106 @@ def work_queue():
 @_require_login
 def work_queue_retry_all():
     """Ponów wszystkie możliwe do ponowienia zadania."""
-    # Placeholder - w przyszłości implementacja
-    return redirect(url_for("admin_v2_bp.work_queue"))
+    from flask import jsonify
+    from pg_storage import list_error_tasks, retry_error_task
+    
+    user = _get_current_admin_user()
+    
+    try:
+        tasks = list_error_tasks(resolved=False, limit=500)
+        retried = 0
+        failed = 0
+        
+        for task in tasks:
+            if task.get("can_retry") and task.get("retry_count", 0) < task.get("max_retries", 3):
+                result = retry_error_task(task["id"])
+                if result.get("success"):
+                    retried += 1
+                else:
+                    failed += 1
+        
+        # Audit log
+        insert_admin_audit_log(
+            action="work_queue_retry_all",
+            admin_user_id=user.get("id") if user else None,
+            extra={"retried": retried, "failed": failed},
+            ip=request.remote_addr,
+        )
+        
+        return jsonify({
+            "success": True,
+            "retried": retried,
+            "failed": failed,
+            "message": f"Ponowiono {retried} zadań" + (f", {failed} błędów" if failed > 0 else "")
+        })
+    except Exception as e:
+        print(f"[work_queue_retry_all] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@admin_v2_bp.route("/work-queue/<task_id>/retry", methods=["POST"])
+@admin_v2_bp.route("/work-queue/<int:task_id>/retry", methods=["POST"])
 @_require_login
-def work_queue_retry(task_id: str):
+def work_queue_retry(task_id: int):
     """Ponów pojedyncze zadanie."""
-    # Placeholder - w przyszłości implementacja
-    return redirect(url_for("admin_v2_bp.work_queue"))
+    from flask import jsonify
+    from pg_storage import retry_error_task, get_error_task
+    
+    user = _get_current_admin_user()
+    
+    try:
+        task = get_error_task(task_id)
+        if not task:
+            return jsonify({"success": False, "error": "Zadanie nie istnieje"}), 404
+        
+        result = retry_error_task(task_id)
+        
+        if result.get("success"):
+            # Audit log
+            insert_admin_audit_log(
+                action="work_queue_retry",
+                admin_user_id=user.get("id") if user else None,
+                target_id=str(task_id),
+                extra={"task_title": task.get("title"), "category": task.get("category")},
+                ip=request.remote_addr,
+            )
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"[work_queue_retry] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@admin_v2_bp.route("/work-queue/<int:task_id>/resolve", methods=["POST"])
+@_require_login
+def work_queue_resolve(task_id: int):
+    """Oznacz zadanie jako rozwiązane."""
+    from flask import jsonify
+    from pg_storage import resolve_error_task, get_error_task
+    
+    user = _get_current_admin_user()
+    
+    try:
+        task = get_error_task(task_id)
+        if not task:
+            return jsonify({"success": False, "error": "Zadanie nie istnieje"}), 404
+        
+        success = resolve_error_task(task_id)
+        
+        if success:
+            # Audit log
+            insert_admin_audit_log(
+                action="work_queue_resolve",
+                admin_user_id=user.get("id") if user else None,
+                target_id=str(task_id),
+                extra={"task_title": task.get("title"), "category": task.get("category")},
+                ip=request.remote_addr,
+            )
+            return jsonify({"success": True, "message": "Zadanie zostało rozwiązane"})
+        else:
+            return jsonify({"success": False, "error": "Nie udało się oznaczyć zadania jako rozwiązane"}), 500
+    except Exception as e:
+        print(f"[work_queue_resolve] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -1665,8 +2464,67 @@ def communication():
 @_require_permission("orders")
 def email_retry(email_id: int):
     """Ponów wysyłkę emaila."""
-    # Placeholder - w przyszłości implementacja ponownej wysyłki
-    return redirect(url_for("admin_v2_bp.communication"))
+    from flask import jsonify
+    from pg_storage import get_mail_task, update_mail_task_status
+    from backstage_engine import _send_email_via_make
+    
+    user = _get_current_admin_user()
+    email = get_mail_task(email_id)
+    
+    if not email:
+        return jsonify({"success": False, "error": "Nie znaleziono emaila"}), 404
+    
+    # Sprawdź czy email można ponowić
+    if email.get("status") not in ["failed", "error", "queued"]:
+        return jsonify({"success": False, "error": "Email nie może być wysłany ponownie (status: {})".format(email.get("status"))}), 400
+    
+    # Sprawdź czy mamy treść emaila
+    email_data = email.get("data") or {}
+    body_html = email_data.get("body_html", "")
+    
+    if not body_html:
+        return jsonify({"success": False, "error": "Brak treści emaila do ponownej wysyłki"}), 400
+    
+    to_email = email.get("to_email")
+    if not to_email:
+        return jsonify({"success": False, "error": "Brak adresu email odbiorcy"}), 400
+    
+    subject = email.get("subject", "")
+    if not subject:
+        subject = "Ponowiona wiadomość"
+    
+    # Ponów wysyłkę
+    result = _send_email_via_make(
+        to_email=to_email,
+        subject=subject,
+        body_html=body_html,
+        event_order_id=email.get("event_order_id", ""),
+        template_type=email.get("template_key", ""),
+        mail_id=email_id,
+    )
+    
+    # Aktualizuj status
+    if result.get("success"):
+        update_mail_task_status(email_id, "sent", None)
+        status_msg = "sent"
+    else:
+        error_msg = result.get("error", "Nieznany błąd")
+        update_mail_task_status(email_id, "failed", error_msg)
+        status_msg = "failed"
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="email_retry",
+        admin_user_id=user.get("id") if user else None,
+        target_id=str(email_id),
+        extra={"to_email": to_email, "success": result.get("success"), "new_status": status_msg},
+        ip=request.remote_addr,
+    )
+    
+    if result.get("success"):
+        return jsonify({"success": True, "message": "Email został wysłany ponownie"})
+    else:
+        return jsonify({"success": False, "error": result.get("error", "Błąd wysyłki")}), 500
 
 
 @admin_v2_bp.route("/communication/export", methods=["GET"])
@@ -1917,12 +2775,118 @@ def template_preview(template_key: str):
 @admin_v2_bp.route("/settings", methods=["GET"])
 @_require_login
 def settings():
-    """Strona ustawień."""
+    """Strona ustawień z statusem integracji."""
+    from pg_storage import get_wfirma_token
+    
     user = _get_current_admin_user()
+    
+    # Status integracji
+    integrations = {}
+    
+    # 1. Stripe
+    stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY", "")
+    stripe_webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    integrations["stripe"] = {
+        "name": "Stripe",
+        "icon": "credit-card",
+        "configured": bool(stripe_api_key and stripe_webhook_secret),
+        "details": {
+            "api_key": "✓ Skonfigurowany" if stripe_api_key else "✗ Brak klucza API",
+            "webhook": "✓ Skonfigurowany" if stripe_webhook_secret else "✗ Brak sekretu webhooka",
+            "webhook_url": f"{request.host_url}api/stripe/webhook",
+        },
+    }
+    
+    # 2. wFirma
+    try:
+        wfirma_token = get_wfirma_token("md")
+        wfirma_configured = bool(wfirma_token)
+        wfirma_expires = None
+        if wfirma_token and wfirma_token.get("refresh_token_expires_at"):
+            import time
+            from datetime import datetime
+            expires_ts = wfirma_token.get("refresh_token_expires_at")
+            if expires_ts:
+                wfirma_expires = datetime.fromtimestamp(expires_ts).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        wfirma_configured = False
+        wfirma_expires = None
+    
+    integrations["wfirma"] = {
+        "name": "wFirma",
+        "icon": "file-text",
+        "configured": wfirma_configured,
+        "details": {
+            "token": "✓ Token aktywny" if wfirma_configured else "✗ Brak tokenu - wymaga autoryzacji",
+            "expires": f"Refresh token wygasa: {wfirma_expires}" if wfirma_expires else "—",
+            "auth_url": f"{request.host_url}auth?company=md",
+        },
+    }
+    
+    # 3. Make.com (wysyłka emaili)
+    make_webhook = os.environ.get("MAKE_WEBHOOK_SEND_EMAIL_REQUEST", "")
+    make_api_key = os.environ.get("RENDER_EMAIL_KEY_SEND_REQUEST", "")
+    integrations["make"] = {
+        "name": "Make.com",
+        "icon": "zap",
+        "configured": bool(make_webhook and make_api_key),
+        "details": {
+            "webhook": "✓ Skonfigurowany" if make_webhook else "✗ Brak webhooka",
+            "api_key": "✓ Skonfigurowany" if make_api_key else "✗ Brak klucza API",
+        },
+    }
+    
+    # 4. GUS/REGON
+    gus_api_key = os.environ.get("GUS_API_KEY") or os.environ.get("BIR1_medidesk", "")
+    integrations["gus"] = {
+        "name": "GUS/REGON",
+        "icon": "building",
+        "configured": bool(gus_api_key),
+        "details": {
+            "api_key": "✓ Skonfigurowany" if gus_api_key else "✗ Brak klucza API",
+            "mode": "Produkcja" if os.environ.get("GUS_USE_TEST", "").lower() != "true" else "Test",
+        },
+    }
+    
+    # 5. Zoho Flow
+    zoho_webhook = os.environ.get("ZOHO_FLOW_EVENT_UPDATE_WEBHOOK", "")
+    integrations["zoho"] = {
+        "name": "Zoho Flow",
+        "icon": "globe",
+        "configured": bool(zoho_webhook),
+        "details": {
+            "webhook": "✓ Skonfigurowany" if zoho_webhook else "✗ Brak webhooka do synchronizacji wydarzeń",
+        },
+    }
+    
+    # 6. Zoho Backstage API
+    backstage_client_id = os.environ.get("BACKSTAGE_CLIENT_ID", "")
+    backstage_client_secret = os.environ.get("BACKSTAGE_CLIENT_SECRET", "")
+    backstage_refresh_token = os.environ.get("BACKSTAGE_REFRESH_TOKEN", "")
+    backstage_configured = bool(backstage_client_id and backstage_client_secret and backstage_refresh_token)
+    integrations["backstage_api"] = {
+        "name": "Backstage API",
+        "icon": "cloud-download",
+        "configured": backstage_configured,
+        "details": {
+            "client_id": "✓ Skonfigurowany" if backstage_client_id else "✗ Brak CLIENT_ID",
+            "client_secret": "✓ Skonfigurowany" if backstage_client_secret else "✗ Brak CLIENT_SECRET",
+            "refresh_token": "✓ Skonfigurowany" if backstage_refresh_token else "✗ Brak REFRESH_TOKEN",
+        },
+    }
+    
+    # Powiadomienia email
+    email_config = {
+        "technical": os.environ.get("BACKSTAGE_TECHNICAL_INFO_EMAIL", ""),
+        "events": os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL", ""),
+        "wfirma_alerts": os.environ.get("WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL", ""),
+    }
     
     return render_template(
         "admin_v2/settings.html",
         active_page="settings",
+        integrations=integrations,
+        email_config=email_config,
         **_get_common_context(user),
     )
 

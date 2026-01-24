@@ -86,6 +86,27 @@
 
 ---
 
+## 🔄 Zoho Flow
+
+| Zmienna | Opis |
+|---------|------|
+| `ZOHO_FLOW_EVENT_UPDATE_WEBHOOK` | URL webhooka Zoho Flow do synchronizacji aktualizacji wydarzeń z panelu Admin V2 |
+
+---
+
+## 🎪 Zoho Backstage API (pobieranie danych wydarzeń)
+
+| Zmienna | Opis | Wymagane |
+|---------|------|----------|
+| `BACKSTAGE_CLIENT_ID` | OAuth2 Client ID dla Zoho Backstage | ✅ |
+| `BACKSTAGE_CLIENT_SECRET` | OAuth2 Client Secret | ✅ |
+| `BACKSTAGE_REFRESH_TOKEN` | Refresh token (długowieczny) | ✅ |
+| `BACKSTAGE_PORTAL_ID` | ID portalu Backstage (domyślnie: 20101549222) | opcjonalne |
+
+**Użycie:** Umożliwia pobieranie pełnych danych wydarzenia z Backstage (venue, description, ticket_classes) przez przycisk "Pobierz z Backstage" w panelu Admin V2.
+
+---
+
 ## 🔧 Render (auto-update ENV)
 
 | Zmienna | Opis |
