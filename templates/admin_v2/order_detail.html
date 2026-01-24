@@ -90,7 +90,7 @@
             <span class="info-label">Wartość zamówienia</span>
             <div class="value-with-details">
               <span class="value-main">{{ order.total|default('0.00', true) }} zł</span>
-              <span class="value-breakdown">Netto: {{ (order.total / 1.23)|round(2) if order.total else '0.00' }} zł • VAT 23%</span>
+              <span class="value-breakdown">Netto: {{ (order.total|float / 1.23)|round(2) if order.total else '0.00' }} zł • VAT 23%</span>
             </div>
           </div>
           <div class="info-item">
