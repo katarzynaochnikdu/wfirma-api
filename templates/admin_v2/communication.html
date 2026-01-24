@@ -2,6 +2,118 @@
 
 {% block title %}Komunikacja{% endblock %}
 
+{% block extra_head %}
+<style>
+/* Type icon badges */
+.type-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid;
+}
+
+.type-icon-badge i {
+  width: 16px;
+  height: 16px;
+}
+
+.type-icon-badge.type-success {
+  background: hsl(160, 82%, 96%);
+  border-color: hsl(160, 82%, 70%);
+  color: hsl(160, 82%, 35%);
+}
+
+.type-icon-badge.type-warning {
+  background: hsl(38, 92%, 95%);
+  border-color: hsl(38, 92%, 70%);
+  color: hsl(38, 92%, 40%);
+}
+
+.type-icon-badge.type-error {
+  background: hsl(0, 84%, 96%);
+  border-color: hsl(0, 84%, 75%);
+  color: hsl(0, 84%, 50%);
+}
+
+.type-icon-badge.type-stripe {
+  background: hsl(212, 100%, 96%);
+  border-color: hsl(212, 100%, 70%);
+  color: hsl(212, 100%, 42%);
+}
+
+.type-icon-badge.type-info {
+  background: hsl(195, 100%, 96%);
+  border-color: hsl(195, 100%, 70%);
+  color: hsl(195, 100%, 35%);
+}
+
+.type-icon-badge.type-proforma {
+  background: hsl(270, 80%, 96%);
+  border-color: hsl(270, 80%, 75%);
+  color: hsl(270, 80%, 50%);
+}
+
+.type-icon-badge.type-received {
+  background: hsl(220, 14%, 96%);
+  border-color: hsl(220, 14%, 75%);
+  color: hsl(220, 14%, 46%);
+}
+
+/* Status icon badges */
+.status-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid;
+}
+
+.status-icon-badge i {
+  width: 16px;
+  height: 16px;
+}
+
+.status-icon-badge.status-icon-delivered {
+  background: hsl(160, 82%, 96%);
+  border-color: hsl(160, 82%, 70%);
+  color: hsl(160, 82%, 35%);
+}
+
+.status-icon-badge.status-icon-sent {
+  background: hsl(38, 92%, 95%);
+  border-color: hsl(38, 92%, 70%);
+  color: hsl(38, 92%, 40%);
+}
+
+.status-icon-badge.status-icon-queued {
+  background: hsl(220, 14%, 96%);
+  border-color: hsl(220, 14%, 75%);
+  color: hsl(220, 14%, 46%);
+}
+
+.status-icon-badge.status-icon-error {
+  background: hsl(0, 84%, 96%);
+  border-color: hsl(0, 84%, 75%);
+  color: hsl(0, 84%, 50%);
+}
+
+/* Sortable headers */
+.sortable-header:hover {
+  background-color: var(--muted);
+}
+.sortable-header.sorted-asc i[data-lucide="arrow-up-down"],
+.sortable-header.sorted-desc i[data-lucide="arrow-up-down"] {
+  color: var(--primary);
+  opacity: 1;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- PAGE HEADER -->
 <div class="page-header">
@@ -176,21 +288,41 @@
       <tr>
         <td class="text-muted" style="white-space: nowrap;">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
         <td>{{ email.recipient }}</td>
-        <td>
-          {% set type_label = email.type|replace('_', ' ')|replace('Internal ', '')|replace('internal ', '')|title %}
-          {% set type_color = 'var(--muted-foreground)' %}
-          {% if 'paid' in email.type|lower or 'confirmation' in email.type|lower %}
-            {% set type_color = 'hsl(160, 82%, 44%)' %}
-          {% elif 'reminder' in email.type|lower or 'pending' in email.type|lower %}
-            {% set type_color = 'hsl(38, 92%, 50%)' %}
-          {% elif 'expired' in email.type|lower or 'error' in email.type|lower %}
-            {% set type_color = 'hsl(0, 84%, 60%)' %}
-          {% elif 'stripe' in email.type|lower or 'payment' in email.type|lower %}
-            {% set type_color = 'hsl(212, 100%, 42%)' %}
-          {% endif %}
-          <span class="status-badge" style="background: {{ type_color }}15; color: {{ type_color }}; border: 1px solid {{ type_color }}30;">
-            {{ type_label }}
+        <td class="text-center">
+          {% set type_lower = email.type|lower %}
+          {% if 'paid' in type_lower or 'confirmation' in type_lower %}
+          <span class="type-icon-badge type-success" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="check-circle"></i>
           </span>
+          {% elif 'reminder' in type_lower or 'pending' in type_lower %}
+          <span class="type-icon-badge type-warning" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="clock"></i>
+          </span>
+          {% elif 'expired' in type_lower %}
+          <span class="type-icon-badge type-error" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="x-circle"></i>
+          </span>
+          {% elif 'stripe' in type_lower or 'payment_link' in type_lower %}
+          <span class="type-icon-badge type-stripe" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="credit-card"></i>
+          </span>
+          {% elif 'registration' in type_lower %}
+          <span class="type-icon-badge type-info" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="user-plus"></i>
+          </span>
+          {% elif 'proforma' in type_lower %}
+          <span class="type-icon-badge type-proforma" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="file-text"></i>
+          </span>
+          {% elif 'received' in type_lower %}
+          <span class="type-icon-badge type-received" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="inbox"></i>
+          </span>
+          {% else %}
+          <span class="type-icon-badge" title="{{ email.type|replace('_', ' ')|title }}">
+            <i data-lucide="mail"></i>
+          </span>
+          {% endif %}
         </td>
         <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
           {{ email.subject }}
@@ -204,19 +336,31 @@
           —
           {% endif %}
         </td>
-        <td>
+        <td class="text-center">
           {% if email.status == 'delivered' %}
-          <span class="status-badge status-paid">Dostarczono</span>
+          <span class="status-icon-badge status-icon-delivered" title="Dostarczono">
+            <i data-lucide="check-circle"></i>
+          </span>
           {% elif email.status == 'sent' %}
-          <span class="status-badge status-pending">Wysłano</span>
+          <span class="status-icon-badge status-icon-sent" title="Wysłano">
+            <i data-lucide="send"></i>
+          </span>
           {% elif email.status == 'queued' %}
-          <span class="status-badge">W kolejce</span>
+          <span class="status-icon-badge status-icon-queued" title="W kolejce">
+            <i data-lucide="clock"></i>
+          </span>
           {% elif email.status == 'bounced' %}
-          <span class="status-badge status-cancelled">Bounce</span>
+          <span class="status-icon-badge status-icon-error" title="Bounce">
+            <i data-lucide="alert-triangle"></i>
+          </span>
           {% elif email.status == 'error' %}
-          <span class="status-badge status-cancelled">Błąd</span>
+          <span class="status-icon-badge status-icon-error" title="Błąd">
+            <i data-lucide="x-circle"></i>
+          </span>
           {% else %}
-          <span class="status-badge">{{ email.status }}</span>
+          <span class="status-icon-badge" title="{{ email.status }}">
+            <i data-lucide="help-circle"></i>
+          </span>
           {% endif %}
         </td>
         <td class="text-right">
@@ -248,19 +392,6 @@
   </div>
   {% endif %}
 </div>
-{% endblock %}
-
-{% block extra_head %}
-<style>
-.sortable-header:hover {
-  background-color: var(--muted);
-}
-.sortable-header.sorted-asc i[data-lucide="arrow-up-down"],
-.sortable-header.sorted-desc i[data-lucide="arrow-up-down"] {
-  color: var(--primary);
-  opacity: 1;
-}
-</style>
 {% endblock %}
 
 {% block extra_scripts %}
