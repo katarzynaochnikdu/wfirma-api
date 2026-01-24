@@ -1431,6 +1431,53 @@ def settings():
 
 
 # ---------------------------------------------------------------------------
+# PAYMENT BUCKETS HELPER
+# ---------------------------------------------------------------------------
+
+def _build_payment_buckets(orders: list) -> dict:
+    """Buduje strukturę buckets dla zakładki Płatności."""
+    from datetime import datetime, timedelta
+    
+    today = datetime.now().date()
+    
+    buckets = {
+        "due_today": {"orders": [], "total": 0},
+        "overdue": {"orders": [], "total": 0},
+        "upcoming": {"orders": [], "total": 0},
+        "paid": {"orders": [], "total": 0},
+    }
+    
+    for order in orders:
+        status = order.get("status", "")
+        total = float(order.get("total") or 0)
+        created_at = order.get("created_at")
+        
+        if status == "paid":
+            buckets["paid"]["orders"].append(order)
+            buckets["paid"]["total"] += total
+        elif status in ("pending_payment", "received"):
+            # Określ bucket na podstawie daty utworzenia
+            if created_at:
+                order_date = created_at.date() if hasattr(created_at, 'date') else created_at
+                days_old = (today - order_date).days if isinstance(order_date, type(today)) else 0
+                
+                if days_old >= 7:
+                    buckets["overdue"]["orders"].append(order)
+                    buckets["overdue"]["total"] += total
+                elif days_old >= 3:
+                    buckets["due_today"]["orders"].append(order)
+                    buckets["due_today"]["total"] += total
+                else:
+                    buckets["upcoming"]["orders"].append(order)
+                    buckets["upcoming"]["total"] += total
+            else:
+                buckets["upcoming"]["orders"].append(order)
+                buckets["upcoming"]["total"] += total
+    
+    return buckets
+
+
+# ---------------------------------------------------------------------------
 # EVENT ROOM (Dashboard pojedynczego wydarzenia z zakładkami)
 # ---------------------------------------------------------------------------
 
@@ -1509,6 +1556,9 @@ def event_room(event_id: str):
         p["company"] = ""  # Brak w danych
     
     # Backstage URLs są już ustawione przez _normalize_event_data()
+    
+    # Buduj strukturę buckets dla zakładki Płatności
+    buckets = _build_payment_buckets(orders)
 
     return render_template(
         "admin_v2/event_room.html",
@@ -1519,5 +1569,6 @@ def event_room(event_id: str):
         orders=orders,
         participants=participants,
         emails=emails,
+        buckets=buckets,
         **_get_common_context(user),
     )
