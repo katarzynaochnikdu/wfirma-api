@@ -701,14 +701,26 @@ def event_new():
             else:
                 # Zbierz dane
                 is_active = request.form.get("is_active") == "1"
+                
+                # Pola synchronizowane z Zoho
+                event_date_time = request.form.get("event_date_time") or ""
+                event_end_date_time = request.form.get("event_end_date_time") or ""
+                event_description = request.form.get("event_description") or ""
+                event_summary = request.form.get("event_summary") or ""
+                
+                # Formatuj daty do ISO (dodaj sekundy jeśli brak)
+                if event_date_time and len(event_date_time) == 16:
+                    event_date_time = event_date_time + ":00"
+                if event_end_date_time and len(event_end_date_time) == 16:
+                    event_end_date_time = event_end_date_time + ":00"
+                
                 data = {
-                    "event_date_start": request.form.get("event_date_start") or "",
-                    "event_time_text": request.form.get("event_time_text") or "",
-                    "event_description": request.form.get("event_description") or "",
-                    "event_location_place": request.form.get("event_location_place") or "",
-                    "event_location_address": request.form.get("event_location_address") or "",
-                    "event_location_zip": request.form.get("event_location_zip") or "",
-                    "event_location_city": request.form.get("event_location_city") or "",
+                    # Pola synchronizowane
+                    "event_date_time": event_date_time,
+                    "event_end_date_time": event_end_date_time,
+                    "event_description": event_description,
+                    "event_summary": event_summary,
+                    # Pola tylko lokalne
                     "color_gradient_1": request.form.get("color_gradient_1") or "#2563eb",
                     "color_gradient_2": request.form.get("color_gradient_2") or "#1e40af",
                     "event_mail_link_top_banner": request.form.get("event_mail_link_top_banner") or "",
@@ -737,7 +749,10 @@ def event_new():
 @_require_permission("events")
 def event_edit(event_id: str):
     """Edycja wydarzenia."""
+    import requests as http_requests
     from pg_storage import upsert_event
+    
+    ZOHO_FLOW_EVENT_UPDATE_WEBHOOK = "https://flow.zoho.eu/20101689330/flow/webhook/incoming?zapikey=1001.fd0397adf2d2daf0194fb08d80fd3530.3f05b43c8fad5bf3f6761b5aaef1cf2c&isdebug=false"
     
     user = _get_current_admin_user()
     
@@ -747,6 +762,7 @@ def event_edit(event_id: str):
     
     error = None
     success = None
+    webhook_sent = False
     
     if request.method == "POST":
         event_name = (request.form.get("event_name") or "").strip()
@@ -757,15 +773,28 @@ def event_edit(event_id: str):
             is_active = request.form.get("is_active") == "1"
             data = event.get("data") or {}
             
-            # Aktualizuj dane
+            # Pola synchronizowane z Zoho
+            event_date_time = request.form.get("event_date_time") or ""
+            event_end_date_time = request.form.get("event_end_date_time") or ""
+            event_description = request.form.get("event_description") or ""
+            event_summary = request.form.get("event_summary") or ""
+            
+            # Formatuj daty do ISO (dodaj sekundy jeśli brak)
+            if event_date_time and len(event_date_time) == 16:
+                event_date_time = event_date_time + ":00"
+            if event_end_date_time and len(event_end_date_time) == 16:
+                event_end_date_time = event_end_date_time + ":00"
+            
+            # Aktualizuj dane - pola synchronizowane
             data.update({
-                "event_date_start": request.form.get("event_date_start") or "",
-                "event_time_text": request.form.get("event_time_text") or "",
-                "event_description": request.form.get("event_description") or "",
-                "event_location_place": request.form.get("event_location_place") or "",
-                "event_location_address": request.form.get("event_location_address") or "",
-                "event_location_zip": request.form.get("event_location_zip") or "",
-                "event_location_city": request.form.get("event_location_city") or "",
+                "event_date_time": event_date_time,
+                "event_end_date_time": event_end_date_time,
+                "event_description": event_description,
+                "event_summary": event_summary,
+            })
+            
+            # Aktualizuj dane - pola tylko lokalne
+            data.update({
                 "color_gradient_1": request.form.get("color_gradient_1") or "#2563eb",
                 "color_gradient_2": request.form.get("color_gradient_2") or "#1e40af",
                 "event_mail_link_top_banner": request.form.get("event_mail_link_top_banner") or "",
@@ -782,7 +811,32 @@ def event_edit(event_id: str):
                     data=data,
                     is_active=is_active
                 )
-                success = "Wydarzenie zostało zaktualizowane"
+                
+                # Wyślij webhook do Zoho Flow
+                try:
+                    webhook_payload = {
+                        "event_id": event_id,
+                        "event_name": event_name,
+                        "status": event.get("status") or "active",
+                        "is_active": is_active,
+                        "start_date": event_date_time,
+                        "end_date": event_end_date_time,
+                        "event_description": event_description,
+                        "event_summary": event_summary,
+                        "updated_by": user.get("email", "unknown") if user else "unknown",
+                    }
+                    resp = http_requests.post(
+                        ZOHO_FLOW_EVENT_UPDATE_WEBHOOK,
+                        json=webhook_payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=10,
+                    )
+                    webhook_sent = resp.status_code in (200, 201, 202)
+                    print(f"[EVENT EDIT] Webhook sent: {webhook_sent}, event={event_id}")
+                except Exception as wh_err:
+                    print(f"[EVENT EDIT] Webhook error: {wh_err}")
+                
+                success = "Wydarzenie zostało zaktualizowane" + (" i zsynchronizowane z Zoho" if webhook_sent else "")
                 # Odśwież dane
                 event = get_event(event_id)
             except Exception as e:

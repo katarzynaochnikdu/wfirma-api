@@ -103,16 +103,26 @@ input[type="color"].form-input {
 {% endif %}
 
 <form method="POST" class="card" style="padding: 1.5rem;">
-  <!-- PODSTAWOWE INFORMACJE -->
+  <!-- INFO O SYNCHRONIZACJI -->
+  <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: var(--radius); background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 85%);">
+    <p style="font-size: 0.875rem; color: hsl(212, 100%, 30%); display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+      <i data-lucide="info" style="width: 16px; height: 16px;"></i>
+      <span>Pola oznaczone <span style="color: hsl(160, 82%, 35%); font-weight: 600;">●</span> są synchronizowane z Zoho Backstage. Pozostałe pola są tylko lokalne.</span>
+    </p>
+  </div>
+
+  <!-- PODSTAWOWE INFORMACJE (SYNCHRONIZOWANE) -->
   <div style="margin-bottom: 2rem;">
     <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="info" style="width: 18px; height: 18px;"></i>
-      Podstawowe informacje
+      <i data-lucide="refresh-cw" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%);"></i>
+      Dane synchronizowane z Zoho
     </h3>
     
     <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
       <div class="form-group">
-        <label class="form-label">Nazwa wydarzenia *</label>
+        <label class="form-label">
+          <span style="color: hsl(160, 82%, 35%);">●</span> Nazwa wydarzenia *
+        </label>
         <input type="text" name="event_name" class="form-input" required
                value="{{ event.event_name if event else '' }}"
                placeholder="np. Kongres Zdrowia 2026">
@@ -129,70 +139,92 @@ input[type="color"].form-input {
       {% endif %}
       
       <div class="form-group">
-        <label class="form-label">Data wydarzenia</label>
-        <input type="date" name="event_date_start" class="form-input"
-               value="{{ event_data.event_date_start if event_data else '' }}">
+        <label class="form-label">
+          <span style="color: hsl(160, 82%, 35%);">●</span> Data rozpoczęcia
+        </label>
+        <input type="datetime-local" name="event_date_time" class="form-input"
+               value="{{ event_data.event_date_time[:16] if event_data and event_data.event_date_time else '' }}">
       </div>
       
       <div class="form-group">
-        <label class="form-label">Godziny wydarzenia</label>
-        <input type="text" name="event_time_text" class="form-input"
-               value="{{ event_data.event_time_text if event_data else '' }}"
-               placeholder="np. 9:00 - 17:00">
+        <label class="form-label">
+          <span style="color: hsl(160, 82%, 35%);">●</span> Data zakończenia
+        </label>
+        <input type="datetime-local" name="event_end_date_time" class="form-input"
+               value="{{ event_data.event_end_date_time[:16] if event_data and event_data.event_end_date_time else '' }}">
       </div>
     </div>
     
     <div class="form-group" style="margin-top: 1rem;">
-      <label class="form-label">Opis wydarzenia</label>
+      <label class="form-label">
+        <span style="color: hsl(160, 82%, 35%);">●</span> Opis wydarzenia
+      </label>
       <textarea name="event_description" class="form-input" rows="3"
                 placeholder="Krótki opis wydarzenia...">{{ event_data.event_description if event_data else '' }}</textarea>
     </div>
+    
+    <div class="form-group" style="margin-top: 1rem;">
+      <label class="form-label">
+        <span style="color: hsl(160, 82%, 35%);">●</span> Podsumowanie wydarzenia
+      </label>
+      <input type="text" name="event_summary" class="form-input"
+             value="{{ event_data.event_summary if event_data else '' }}"
+             placeholder="np. 15-16 marca 2026, Warszawa">
+      <small style="color: var(--muted-foreground);">Krótki tekst wyświetlany na kartach wydarzeń</small>
+    </div>
   </div>
 
-  <!-- LOKALIZACJA -->
+  <!-- LOKALIZACJA (TYLKO LOKALNIE) -->
   <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
       <i data-lucide="map-pin" style="width: 18px; height: 18px;"></i>
       Lokalizacja
     </h3>
+    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
+      <i data-lucide="alert-circle" style="width: 12px; height: 12px; display: inline;"></i>
+      Te dane nie są synchronizowane z Zoho — zmień lokalizację bezpośrednio w Backstage
+    </p>
     
     <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
       <div class="form-group">
-        <label class="form-label">Nazwa miejsca</label>
-        <input type="text" name="event_location_place" class="form-input"
+        <label class="form-label" style="color: var(--muted-foreground);">Nazwa miejsca</label>
+        <input type="text" name="event_location_place" class="form-input" disabled
                value="{{ event_data.event_location_place if event_data else '' }}"
                placeholder="np. Hotel Marriott">
       </div>
       
       <div class="form-group">
-        <label class="form-label">Adres</label>
-        <input type="text" name="event_location_address" class="form-input"
+        <label class="form-label" style="color: var(--muted-foreground);">Adres</label>
+        <input type="text" name="event_location_address" class="form-input" disabled
                value="{{ event_data.event_location_address if event_data else '' }}"
                placeholder="np. ul. Główna 123">
       </div>
       
       <div class="form-group">
-        <label class="form-label">Kod pocztowy</label>
-        <input type="text" name="event_location_zip" class="form-input"
+        <label class="form-label" style="color: var(--muted-foreground);">Kod pocztowy</label>
+        <input type="text" name="event_location_zip" class="form-input" disabled
                value="{{ event_data.event_location_zip if event_data else '' }}"
                placeholder="np. 00-001">
       </div>
       
       <div class="form-group">
-        <label class="form-label">Miasto</label>
-        <input type="text" name="event_location_city" class="form-input"
+        <label class="form-label" style="color: var(--muted-foreground);">Miasto</label>
+        <input type="text" name="event_location_city" class="form-input" disabled
                value="{{ event_data.event_location_city if event_data else '' }}"
                placeholder="np. Warszawa">
       </div>
     </div>
   </div>
 
-  <!-- BRANDING -->
+  <!-- BRANDING (TYLKO LOKALNIE) -->
   <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
       <i data-lucide="palette" style="width: 18px; height: 18px;"></i>
-      Branding
+      Branding (tylko lokalne)
     </h3>
+    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
+      Ustawienia wyglądu używane w panelu i emailach
+    </p>
     
     <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
       <div class="form-group">
@@ -216,12 +248,15 @@ input[type="color"].form-input {
     </div>
   </div>
 
-  <!-- LINKI I KONTAKT -->
+  <!-- LINKI I KONTAKT (TYLKO LOKALNIE) -->
   <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
       <i data-lucide="link" style="width: 18px; height: 18px;"></i>
-      Linki i kontakt
+      Linki i kontakt (tylko lokalne)
     </h3>
+    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
+      Używane w emailach i panelu
+    </p>
     
     <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
       <div class="form-group">
@@ -240,10 +275,10 @@ input[type="color"].form-input {
     </div>
   </div>
 
-  <!-- STATUS -->
+  <!-- STATUS (SYNCHRONIZOWANY) -->
   <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
     <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="toggle-left" style="width: 18px; height: 18px;"></i>
+      <i data-lucide="refresh-cw" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%);"></i>
       Status
     </h3>
     
@@ -252,10 +287,10 @@ input[type="color"].form-input {
         <input type="checkbox" name="is_active" value="1" 
                {% if not event or event.is_active %}checked{% endif %}
                style="width: 18px; height: 18px;">
-        <span>Wydarzenie aktywne</span>
+        <span><span style="color: hsl(160, 82%, 35%);">●</span> Wydarzenie aktywne</span>
       </label>
       <small style="color: var(--muted-foreground); display: block; margin-top: 0.25rem;">
-        Nieaktywne wydarzenia nie są widoczne w integracji z Backstage
+        Status jest synchronizowany z Zoho Backstage
       </small>
     </div>
   </div>
