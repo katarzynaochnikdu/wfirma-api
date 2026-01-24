@@ -4,6 +4,35 @@
 
 {% block extra_head %}
 <style>
+    /* CSS Variables for Email Designer */
+    :root {
+        --surface-primary: var(--card, hsl(0, 0%, 100%));
+        --surface-secondary: var(--muted, hsl(210, 40%, 96.1%));
+        --surface-tertiary: hsl(210, 20%, 94%);
+        --surface-hover: hsl(210, 20%, 96%);
+        --surface-brand: hsl(212, 100%, 95%);
+        --text-primary: var(--foreground, hsl(215, 25%, 17%));
+        --text-secondary: var(--muted-foreground, hsl(215, 16%, 47%));
+        --text-muted: hsl(215, 16%, 57%);
+        --text-brand: var(--primary, hsl(212, 100%, 42%));
+        --border-subtle: var(--border, hsl(214, 32%, 91%));
+        --color-primary: var(--primary, hsl(212, 100%, 42%));
+        --color-success: hsl(142, 71%, 45%);
+        --color-error: hsl(0, 84%, 60%);
+        --color-error-light: hsl(0, 84%, 95%);
+    }
+    
+    /* Override global content-wrapper for full-width designer */
+    .content-wrapper {
+        max-width: none !important;
+        padding: 1rem !important;
+    }
+    
+    .page-header {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
     /* Email Designer Layout */
     .email-designer-container {
         display: flex;
@@ -733,18 +762,30 @@
     .editor-field select {
         width: 100%;
         padding: 10px 12px;
-        border: 1px solid var(--border-subtle);
+        border: 1px solid var(--border);
         border-radius: 8px;
         font-size: 14px;
-        background: var(--surface-primary);
-        transition: border-color 0.15s ease;
+        background: var(--background);
+        color: var(--foreground);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
 
     .editor-field input:focus,
     .editor-field textarea:focus,
     .editor-field select:focus {
         outline: none;
-        border-color: var(--color-primary);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px hsl(212 100% 42% / 0.15);
+    }
+    
+    .editor-field select {
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+        background-position: right 0.5rem center;
+        background-repeat: no-repeat;
+        background-size: 1.5em 1.5em;
+        padding-right: 2.5rem;
     }
 
     .editor-field textarea {

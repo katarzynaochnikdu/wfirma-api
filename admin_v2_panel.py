@@ -1517,8 +1517,11 @@ def api_event_preview_data(event_id: str):
     event_data = event.get("data") or {}
     
     # Pobierz przykładowego uczestnika (jeśli istnieje)
-    participants = get_participants_for_event(event_id, limit=1)
-    sample_participant = participants[0] if participants else {}
+    try:
+        all_participants = get_participants_for_event(event_id)
+        sample_participant = all_participants[0] if all_participants else {}
+    except Exception:
+        sample_participant = {}
     
     # Pobierz przykładowe zamówienie
     orders = list_orders(event_id=event_id, limit=1)
