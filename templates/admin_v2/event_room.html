@@ -3,55 +3,73 @@
 {% block title %}{{ event.event_name }}{% endblock %}
 
 {% block content %}
-<!-- EVENT HEADER BANNER -->
-<div class="event-header-banner">
-  <!-- Background -->
-  {% if event.data.email_header_url %}
-  <div class="event-header-bg" style="background-image: url('{{ event.data.email_header_url }}');"></div>
-  {% endif %}
-  <div class="event-header-gradient" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %});"></div>
+<!-- STICKY HEADER WRAPPER -->
+<div class="sticky-header-wrapper" id="sticky-header-wrapper">
   
-  <!-- Content -->
-  <div class="event-header-content">
-    <!-- Top row: back + actions -->
-    <div class="event-header-top">
-      <a href="{{ url_for('admin_v2_bp.events_list') }}" class="event-header-back">
-        <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
-        Powrót do wydarzeń
-      </a>
-      <div class="event-header-actions">
-        <a href="{{ event.backstage_url }}" target="_blank" class="event-header-btn" title="Otwórz w Backstage">
-          <i data-lucide="external-link" style="width: 18px; height: 18px;"></i>
-        </a>
-        <button class="event-header-btn" onclick="toggleHeaderCollapse()" title="Zwiń/rozwiń">
-          <i data-lucide="chevron-up" id="collapse-icon" style="width: 18px; height: 18px;"></i>
-        </button>
-      </div>
+  <!-- COMPACT STICKY HEADER (pokazuje się przy scrollowaniu) -->
+  <div class="event-sticky-header" id="event-sticky-header" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }});">
+    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="sticky-back-btn" title="Powrót do wydarzeń">
+      <i data-lucide="chevron-left"></i>
+    </a>
+    <div class="sticky-event-info">
+      <span class="sticky-event-name">{{ event.event_name }}</span>
+      <span class="sticky-meta-separator">•</span>
+      <span class="sticky-event-meta">
+        {% if event.data.eventDate %}{{ event.data.eventDate|format_date_pl }}{% endif %}
+        {% if event.data.eventCity %} • {{ event.data.eventCity }}{% endif %}
+      </span>
     </div>
+    <a href="{{ event.backstage_url }}" target="_blank" class="sticky-backstage-btn" title="Otwórz w Backstage">
+      <i data-lucide="external-link"></i>
+    </a>
+  </div>
+
+  <!-- EVENT HEADER BANNER (pełna wersja) -->
+  <div class="event-header-banner" id="event-header-banner">
+    <!-- Background -->
+    {% if event.data.email_header_url %}
+    <div class="event-header-bg" style="background-image: url('{{ event.data.email_header_url }}');"></div>
+    {% endif %}
+    <div class="event-header-gradient" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %});"></div>
     
-    <!-- Event info -->
-    <div class="event-header-info">
-      <div class="event-header-title-row">
-        <span class="event-status-dot {% if event.is_active %}active{% endif %}"></span>
-        <h1 class="event-header-title">{{ event.event_name }}</h1>
+    <!-- Content -->
+    <div class="event-header-content">
+      <!-- Top row: back + actions -->
+      <div class="event-header-top">
+        <a href="{{ url_for('admin_v2_bp.events_list') }}" class="event-header-back">
+          <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
+          Powrót do wydarzeń
+        </a>
+        <div class="event-header-actions">
+          <a href="{{ event.backstage_url }}" target="_blank" class="event-header-btn" title="Otwórz w Backstage">
+            <i data-lucide="external-link" style="width: 18px; height: 18px;"></i>
+          </a>
+        </div>
       </div>
-      <div class="event-header-meta">
-        {% if event.data.eventDate %}
-        <span>{{ event.data.eventDate|format_date_pl }}</span>
-        <span class="meta-dot">•</span>
-        {% endif %}
-        <span>{{ event.data.eventCity or 'Lokalizacja nieznana' }}</span>
-        {% if event.data.eventLocation %}
-        <span class="meta-dot">•</span>
-        <span>{{ event.data.eventLocation }}</span>
-        {% endif %}
+      
+      <!-- Event info -->
+      <div class="event-header-info">
+        <div class="event-header-title-row">
+          <span class="event-status-dot {% if event.is_active %}active{% endif %}"></span>
+          <h1 class="event-header-title">{{ event.event_name }}</h1>
+        </div>
+        <div class="event-header-meta">
+          {% if event.data.eventDate %}
+          <span>{{ event.data.eventDate|format_date_pl }}</span>
+          <span class="meta-dot">•</span>
+          {% endif %}
+          <span>{{ event.data.eventCity or 'Lokalizacja nieznana' }}</span>
+          {% if event.data.eventLocation %}
+          <span class="meta-dot">•</span>
+          <span>{{ event.data.eventLocation }}</span>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- TABS (JavaScript switching without reload) -->
-<div class="event-tabs-container">
+  <!-- TABS (JavaScript switching without reload) -->
+  <div class="event-tabs-container" id="event-tabs-container">
   <div class="event-tabs-list" id="event-tabs">
     <button type="button" data-tab="sales" 
        class="event-tab {% if active_tab == 'sales' %}active{% endif %}">
@@ -87,6 +105,7 @@
     </button>
   </div>
 </div>
+</div><!-- END sticky-header-wrapper -->
 
 <!-- TAB CONTENT -->
 <div class="tab-content">
@@ -687,12 +706,371 @@
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
+  /* ===== STICKY HEADER WRAPPER ===== */
+  .sticky-header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--background);
+    margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+    padding: 1.5rem 1.5rem 0 1.5rem;
+  }
+  
+  /* Compact sticky header - hidden by default */
+  .event-sticky-header {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    color: white;
+  }
+  
+  .sticky-header-wrapper.scrolled .event-sticky-header {
+    display: flex;
+  }
+  
+  .sticky-header-wrapper.scrolled .event-header-banner {
+    display: none;
+  }
+  
+  .sticky-back-btn,
+  .sticky-backstage-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    text-decoration: none;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  
+  .sticky-back-btn:hover,
+  .sticky-backstage-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
+  
+  .sticky-back-btn i,
+  .sticky-backstage-btn i {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .sticky-event-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+    padding: 0 1rem;
+  }
+  
+  .sticky-event-name {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .sticky-meta-separator {
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+  
+  .sticky-event-meta {
+    font-size: 0.8125rem;
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  /* Tabs sticky styling when scrolled */
+  .sticky-header-wrapper.scrolled .event-tabs-container {
+    margin-bottom: 0;
+    padding-bottom: 0.5rem;
+    background: var(--background);
+  }
+
+  /* ===== PAYMENT BUCKETS ===== */
+  .payment-buckets {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .bulk-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--primary);
+    color: white;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+  }
+  
+  .bulk-actions-bar.hidden {
+    display: none;
+  }
+  
+  .bulk-count {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+  }
+  
+  .bulk-actions-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .bulk-actions-bar .btn {
+    color: white;
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  .bulk-actions-bar .btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  
+  .bulk-actions-bar .btn-primary {
+    background: white;
+    color: var(--primary);
+  }
+  
+  .buckets-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+  
+  @media (max-width: 768px) {
+    .buckets-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  .bucket-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  
+  .bucket-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  
+  .bucket-header:hover {
+    background: var(--muted);
+  }
+  
+  .bucket-checkbox {
+    flex-shrink: 0;
+  }
+  
+  .bucket-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  
+  .bucket-icon i {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .bucket-icon-due_today {
+    background: hsl(38, 92%, 92%);
+    color: hsl(38, 92%, 45%);
+  }
+  
+  .bucket-icon-overdue {
+    background: hsl(0, 84%, 92%);
+    color: hsl(0, 84%, 55%);
+  }
+  
+  .bucket-icon-paid {
+    background: hsl(142, 71%, 92%);
+    color: hsl(142, 71%, 40%);
+  }
+  
+  .bucket-icon-cancelled {
+    background: hsl(215, 16%, 92%);
+    color: hsl(215, 16%, 47%);
+  }
+  
+  .bucket-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .bucket-label {
+    display: block;
+    font-weight: 500;
+    font-size: 0.9375rem;
+  }
+  
+  .bucket-count {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    margin-left: 0.5rem;
+  }
+  
+  .bucket-total {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+  }
+  
+  .bucket-toggle {
+    width: 20px;
+    height: 20px;
+    color: var(--muted-foreground);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  
+  .bucket-toggle.expanded {
+    transform: rotate(180deg);
+  }
+  
+  .bucket-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  
+  .bucket-content.expanded {
+    max-height: 500px;
+    overflow-y: auto;
+  }
+  
+  .bucket-order-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  
+  .bucket-order-item:hover {
+    background: var(--muted);
+  }
+  
+  .bucket-order-item.selected {
+    background: hsl(212, 100%, 97%);
+  }
+  
+  .bucket-order-link {
+    flex: 1;
+    min-width: 0;
+    text-decoration: none;
+    color: inherit;
+  }
+  
+  .bucket-order-buyer {
+    display: block;
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .bucket-order-event {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .bucket-order-amount {
+    font-weight: 600;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+  
+  .bucket-empty {
+    padding: 1rem;
+    text-align: center;
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  .revenue-summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  
+  .revenue-item {
+    padding: 1rem;
+    border-radius: var(--radius);
+  }
+  
+  .revenue-paid {
+    background: hsl(142, 71%, 97%);
+    border: 1px solid hsl(142, 71%, 85%);
+  }
+  
+  .revenue-pending {
+    background: hsl(38, 92%, 97%);
+    border: 1px solid hsl(38, 92%, 85%);
+  }
+  
+  .revenue-label {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    margin-bottom: 0.25rem;
+  }
+  
+  .revenue-value {
+    display: block;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--foreground);
+  }
+  
+  .revenue-paid .revenue-value {
+    color: hsl(142, 71%, 35%);
+  }
+  
+  .revenue-pending .revenue-value {
+    color: hsl(38, 92%, 40%);
+  }
+  
   /* ===== EVENT HEADER ===== */
   .event-header-banner {
     position: relative;
     border-radius: 16px;
     overflow: hidden;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     min-height: 140px;
   }
   
@@ -1190,7 +1568,42 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Tab switching functionality
   initTabs();
+  
+  // Sticky header scroll handling
+  initStickyHeader();
 });
+
+// ===== STICKY HEADER SCROLL =====
+function initStickyHeader() {
+  var wrapper = document.getElementById('sticky-header-wrapper');
+  var banner = document.getElementById('event-header-banner');
+  
+  if (!wrapper || !banner) return;
+  
+  var scrollThreshold = 80; // pixels to scroll before switching to compact
+  
+  function handleScroll() {
+    if (window.scrollY > scrollThreshold) {
+      wrapper.classList.add('scrolled');
+    } else {
+      wrapper.classList.remove('scrolled');
+    }
+  }
+  
+  // Listen for scroll
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  
+  // Check initial state
+  handleScroll();
+  
+  // Re-init icons after state change
+  var observer = new MutationObserver(function() {
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  });
+  observer.observe(wrapper, { attributes: true, attributeFilter: ['class'] });
+}
 
 // Tab switching without page reload
 function initTabs() {
@@ -1241,38 +1654,7 @@ function initTabs() {
   });
 }
 
-// Toggle header collapse
-function toggleHeaderCollapse() {
-  var banner = document.querySelector('.event-header-banner');
-  var icon = document.getElementById('collapse-icon');
-  
-  if (banner.classList.contains('collapsed')) {
-    banner.classList.remove('collapsed');
-    icon.setAttribute('data-lucide', 'chevron-up');
-  } else {
-    banner.classList.add('collapsed');
-    icon.setAttribute('data-lucide', 'chevron-down');
-  }
-  
-  // Save state to localStorage
-  localStorage.setItem('event_header_collapsed', banner.classList.contains('collapsed'));
-  
-  if (typeof lucide !== 'undefined') {
-    lucide.createIcons();
-  }
-}
-
-// Restore header collapse state on load
-document.addEventListener('DOMContentLoaded', function() {
-  var isCollapsed = localStorage.getItem('event_header_collapsed') === 'true';
-  if (isCollapsed) {
-    var banner = document.querySelector('.event-header-banner');
-    var icon = document.getElementById('collapse-icon');
-    if (banner) banner.classList.add('collapsed');
-    if (icon) icon.setAttribute('data-lucide', 'chevron-down');
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-  }
-});
+// (Removed old collapse toggle - now using scroll-based sticky header)
 
 // ===== PARTICIPANT SELECTION (Event Room) =====
 var selectedEventParticipants = [];
