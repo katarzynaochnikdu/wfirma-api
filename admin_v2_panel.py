@@ -1288,6 +1288,135 @@ def _list_mail_logs(event_id: str = None, status: str = None, email_type: str = 
             _put_conn(pool, conn)
 
 
+def _get_system_email_templates() -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Zwraca listę wszystkich szablonów emaili w systemie pogrupowanych wg kategorii.
+    
+    Kategorie:
+    - purchaser: Szablony dla kupujących (linki płatności, potwierdzenia, przypomnienia)
+    - participant: Szablony dla uczestników (bilety)
+    - internal: Szablony wewnętrzne (powiadomienia dla admina)
+    """
+    return {
+        "purchaser": [
+            {
+                "key": "stripe_payment_link",
+                "name": "Link do płatności Stripe",
+                "description": "Wysyłany po rejestracji z linkiem do płatności online",
+                "icon": "credit-card",
+                "color": "blue",
+            },
+            {
+                "key": "proforma_sent",
+                "name": "Proforma wysłana",
+                "description": "Informacja o wystawionej fakturze proforma z załącznikiem PDF",
+                "icon": "file-text",
+                "color": "purple",
+            },
+            {
+                "key": "payment_confirmation",
+                "name": "Potwierdzenie płatności",
+                "description": "Wysyłany po udanej płatności z podziękowaniem",
+                "icon": "check-circle",
+                "color": "green",
+            },
+            {
+                "key": "registration_confirmation",
+                "name": "Potwierdzenie rejestracji (FOC)",
+                "description": "Dla zamówień z 100% rabatem (Free of Charge)",
+                "icon": "user-check",
+                "color": "teal",
+            },
+            {
+                "key": "checkout_reminder",
+                "name": "Przypomnienie o płatności",
+                "description": "Wysyłany gdy sesja płatności zbliża się do wygaśnięcia",
+                "icon": "clock",
+                "color": "amber",
+            },
+            {
+                "key": "checkout_expired_new_link",
+                "name": "Nowy link po wygaśnięciu",
+                "description": "Gdy sesja płatności wygasła - nowy link do płatności",
+                "icon": "refresh-cw",
+                "color": "amber",
+            },
+        ],
+        "participant": [
+            {
+                "key": "participant_ticket",
+                "name": "Bilet uczestnika",
+                "description": "Email z biletem elektronicznym na wydarzenie",
+                "icon": "ticket",
+                "color": "cyan",
+            },
+        ],
+        "internal": [
+            {
+                "key": "internal_order_received",
+                "name": "Nowe zamówienie",
+                "description": "Powiadomienie wewnętrzne o nowym zamówieniu",
+                "icon": "inbox",
+                "color": "blue",
+            },
+            {
+                "key": "internal_order_paid",
+                "name": "Zamówienie opłacone",
+                "description": "Powiadomienie wewnętrzne o otrzymanej płatności",
+                "icon": "banknote",
+                "color": "green",
+            },
+            {
+                "key": "internal_payment_expired",
+                "name": "Płatność wygasła",
+                "description": "Powiadomienie gdy sesja płatności Stripe wygasła",
+                "icon": "alert-circle",
+                "color": "amber",
+            },
+            {
+                "key": "internal_payment_failed",
+                "name": "Płatność nieudana",
+                "description": "Powiadomienie o nieudanej płatności",
+                "icon": "x-circle",
+                "color": "red",
+            },
+            {
+                "key": "internal_invoice_error",
+                "name": "Błąd faktury",
+                "description": "Problem z wystawieniem faktury w wFirma",
+                "icon": "file-x",
+                "color": "red",
+            },
+        ],
+    }
+
+
+def _get_template_usage_stats() -> Dict[str, int]:
+    """Pobiera statystyki użycia szablonów (ile razy każdy był użyty)."""
+    from pg_storage import _with_conn, _put_conn, _dict_cursor
+    
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        cur.execute("""
+            SELECT template_key, COUNT(*) as count
+            FROM mail_log
+            WHERE template_key IS NOT NULL
+            GROUP BY template_key
+        """)
+        
+        return {row["template_key"]: row["count"] for row in (cur.fetchall() or [])}
+    except Exception as e:
+        print(f"[DB] _get_template_usage_stats error: {e}")
+        return {}
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 @admin_v2_bp.route("/communication", methods=["GET"])
 @_require_permission("orders")
 def communication():
@@ -1349,13 +1478,27 @@ def communication():
         "delivery_rate": delivery_rate,
     }
     
+    # Szablony emaili i statystyki użycia
+    email_templates = _get_system_email_templates()
+    template_usage = _get_template_usage_stats()
+    
+    # Dodaj statystyki użycia do każdego szablonu
+    for category in email_templates.values():
+        for template in category:
+            template["usage_count"] = template_usage.get(template["key"], 0)
+    
+    # Aktywny tab (historia lub szablony)
+    active_tab = request.args.get("tab", "history")
+    
     return render_template(
         "admin_v2/communication.html",
         active_page="communication",
+        active_tab=active_tab,
         stats=stats,
         events=events,
         error_emails=error_emails[:10],
         emails=emails,
+        email_templates=email_templates,
         **_get_common_context(user),
     )
 
@@ -1411,6 +1554,187 @@ def communication_export():
             'Content-Type': 'text/csv; charset=utf-8'
         }
     )
+
+
+@admin_v2_bp.route("/templates/<template_key>/preview", methods=["GET"])
+@_require_permission("orders")
+def template_preview(template_key: str):
+    """
+    Podgląd szablonu emaila z przykładowymi danymi.
+    Zwraca HTML szablonu gotowy do wyświetlenia w modalu.
+    """
+    from flask import jsonify
+    
+    # Przykładowe dane do podglądu szablonów
+    sample_data = {
+        "event_name": "Konferencja Medyczna 2026",
+        "purchaser_first_name": "Jan",
+        "purchaser_last_name": "Kowalski",
+        "purchaser_email": "jan.kowalski@example.com",
+        "purchaser_phone": "+48 123 456 789",
+        "company_name": "Przykładowa Firma Sp. z o.o.",
+        "company_nip": "1234567890",
+        "total_gross": 1230.00,
+        "total_net": 1000.00,
+        "event_date": "15-16 marca 2026",
+        "event_city": "Warszawa",
+        "event_location": "Hotel Marriott, ul. Jerozolimskie 65/79",
+        "tickets": [
+            {"name": "Bilet Standard", "quantity": 2, "price_gross": 615.00},
+        ],
+        "payment_url": "https://checkout.stripe.com/example",
+        "order_number": "ORD-2026-001234",
+        "proforma_number": "PF/2026/001234",
+        "participant_first_name": "Anna",
+        "participant_last_name": "Nowak",
+        "participant_email": "anna.nowak@example.com",
+        "ticket_name": "Bilet VIP",
+    }
+    
+    # Kolory i style wydarzenia
+    event_config = {
+        "banner_url": "",
+        "color_gradient_1": "hsl(212, 100%, 42%)",
+        "color_gradient_2": "hsl(195, 100%, 42%)",
+        "email_footer_text": "© 2026 Medidesk. Wszystkie prawa zastrzeżone.",
+        "organizer_name": "Medidesk Sp. z o.o.",
+        "organizer_email": "kontakt@medidesk.pl",
+        "organizer_phone": "+48 22 123 45 67",
+    }
+    
+    # Mapowanie kluczy szablonów na tematy emaili
+    template_subjects = {
+        "stripe_payment_link": f"Link do płatności - {sample_data['event_name']}",
+        "proforma_sent": f"Faktura proforma - {sample_data['event_name']}",
+        "payment_confirmation": f"Potwierdzenie płatności - {sample_data['event_name']}",
+        "registration_confirmation": f"Potwierdzenie rejestracji - {sample_data['event_name']}",
+        "checkout_reminder": f"Przypomnienie o płatności - {sample_data['event_name']}",
+        "checkout_expired_new_link": f"Nowy link do płatności - {sample_data['event_name']}",
+        "participant_ticket": f"Twój bilet na {sample_data['event_name']}",
+        "internal_order_received": f"[Medidesk] Nowe zamówienie - {sample_data['event_name']}",
+        "internal_order_paid": f"[Medidesk] Zamówienie opłacone - {sample_data['event_name']}",
+        "internal_payment_expired": f"[Medidesk] Płatność wygasła - {sample_data['event_name']}",
+        "internal_payment_failed": f"[Medidesk] Płatność nieudana - {sample_data['event_name']}",
+        "internal_invoice_error": f"[Medidesk] Błąd faktury - {sample_data['event_name']}",
+    }
+    
+    try:
+        html_content = None
+        template_subject = template_subjects.get(template_key, f"Email: {template_key}")
+        
+        # Renderuj odpowiedni szablon
+        if template_key == "stripe_payment_link":
+            from email_templates import render_stripe_payment_email
+            html_content = render_stripe_payment_email(
+                template_type="personal",
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                purchaser_phone=sample_data["purchaser_phone"],
+                purchaser_nip=None,
+                total_gross=sample_data["total_gross"],
+                tickets=sample_data["tickets"],
+                stripe_payment_url=sample_data["payment_url"],
+                event_config=event_config,
+            )
+        
+        elif template_key == "payment_confirmation":
+            from email_templates import render_payment_confirmation_email
+            html_content = render_payment_confirmation_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                purchaser_phone=sample_data["purchaser_phone"],
+                company_name=sample_data["company_name"],
+                total_gross=sample_data["total_gross"],
+                tickets=sample_data["tickets"],
+                event_config=event_config,
+            )
+        
+        elif template_key == "registration_confirmation":
+            from email_templates import render_foc_confirmation_email
+            html_content = render_foc_confirmation_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                purchaser_phone=sample_data["purchaser_phone"],
+                tickets=sample_data["tickets"],
+                event_config=event_config,
+            )
+        
+        elif template_key == "participant_ticket":
+            from email_templates import render_participant_ticket_email
+            html_content = render_participant_ticket_email(
+                event_name=sample_data["event_name"],
+                participant_first_name=sample_data["participant_first_name"],
+                participant_last_name=sample_data["participant_last_name"],
+                participant_email=sample_data["participant_email"],
+                ticket_name=sample_data["ticket_name"],
+                ticket_id="TICKET-2026-001234",
+                ticket_price=615.00,
+                event_config=event_config,
+            )
+        
+        elif template_key == "checkout_reminder":
+            from email_templates import render_checkout_reminder_email
+            html_content = render_checkout_reminder_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                total_gross=sample_data["total_gross"],
+                checkout_url=sample_data["payment_url"],
+                expires_at="20.03.2026, 15:00",
+                expires_in="24 godziny",
+                event_config=event_config,
+            )
+        
+        elif template_key == "checkout_expired_new_link":
+            from email_templates import render_checkout_expired_new_link_email
+            html_content = render_checkout_expired_new_link_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                total_gross=sample_data["total_gross"],
+                new_checkout_url=sample_data["payment_url"],
+                new_expires_at="20.03.2026, 15:00",
+                original_order_date="15.03.2026",
+                event_config=event_config,
+            )
+        
+        else:
+            # Dla szablonów bez dedykowanej funkcji render - pokaż placeholder
+            html_content = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; text-align: center; color: #64748b;">
+                <div style="font-size: 48px; margin-bottom: 16px;">📧</div>
+                <h2 style="color: #1e293b; margin-bottom: 8px;">Szablon: {template_key}</h2>
+                <p>Podgląd tego szablonu nie jest jeszcze dostępny.</p>
+                <p style="font-size: 12px; margin-top: 24px;">
+                    Ten szablon jest generowany dynamicznie przez system<br>
+                    i wymaga specjalnych danych do renderowania.
+                </p>
+            </div>
+            """
+            template_subject = f"[Podgląd] {template_key}"
+        
+        return jsonify({
+            "success": True,
+            "template_key": template_key,
+            "subject": template_subject,
+            "html": html_content,
+        })
+        
+    except Exception as e:
+        print(f"[TEMPLATE_PREVIEW] Error rendering {template_key}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "template_key": template_key,
+        }), 500
 
 
 # ---------------------------------------------------------------------------
