@@ -576,15 +576,15 @@
       <div style="display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);">
         <div class="form-group" style="grid-column: span 2;">
           <label class="form-label">Miejsce</label>
-          <input type="text" class="form-input" value="{{ event.data.eventLocation or '—' }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.event_location_place or event.data.eventLocation or '—' }}" disabled>
         </div>
         <div class="form-group">
           <label class="form-label">Miasto</label>
-          <input type="text" class="form-input" value="{{ event.data.eventCity or '—' }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.event_location_city or event.data.eventCity or '—' }}" disabled>
         </div>
         <div class="form-group" style="grid-column: span 2;">
           <label class="form-label">Adres</label>
-          <input type="text" class="form-input" value="{{ event.data.eventAddress or '—' }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.event_location_address or event.data.eventAddress or '—' }}" disabled>
         </div>
         <div class="form-group">
           <label class="form-label">Kod pocztowy</label>

@@ -336,13 +336,19 @@ def map_event_to_local(backstage_event: Dict[str, Any]) -> Dict[str, Any]:
         "event_description": backstage_event.get("description", ""),
         "event_summary": backstage_event.get("summary", ""),
         
-        # Lokalizacja (venue)
-        "venue_name": venue.get("name", ""),
-        "venue_street": venue.get("street", ""),
-        "venue_city": venue.get("city", ""),
-        "venue_state": venue.get("state", ""),
-        "venue_country": venue.get("country", ""),
-        "location": location_full,
+        # Lokalizacja - KANONICZNE NAZWY (V1 format: event_location_*)
+        "event_location_place": venue.get("name", ""),
+        "event_location_address": venue.get("street", ""),
+        "event_location_city": venue.get("city", ""),
+        "event_location_state": venue.get("state", ""),
+        "event_location_country": venue.get("country", ""),
+        "event_location_zip": "",  # Backstage nie zwraca kodu pocztowego bezpośrednio
+        "location": location_full,  # Pełny adres jako fallback
+        
+        # Aliasy dla kompatybilności z V2 (eventLocation, eventCity, eventAddress)
+        "eventLocation": venue.get("name", ""),
+        "eventCity": venue.get("city", ""),
+        "eventAddress": venue.get("street", ""),
         
         # Daty i godziny
         "event_date": event_date,

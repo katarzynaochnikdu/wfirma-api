@@ -1467,9 +1467,9 @@ def api_event_preview_data(event_id: str):
         "event_time": event_data.get("eventTime") or event_data.get("event_time") or "09:00",
         "event_end_date": event_data.get("event_end_date") or "",
         "event_end_time": event_data.get("event_end_time") or "",
-        "event_location": event_data.get("eventLocation") or event_data.get("location") or event_data.get("venue_name") or "Lokalizacja wydarzenia",
-        "event_city": event_data.get("eventCity") or event_data.get("venue_city") or "Warszawa",
-        "event_address": event_data.get("eventAddress") or event_data.get("venue_street") or "ul. Przykładowa 1",
+        "event_location": event_data.get("event_location_place") or event_data.get("eventLocation") or event_data.get("location") or "Lokalizacja wydarzenia",
+        "event_city": event_data.get("event_location_city") or event_data.get("eventCity") or "Warszawa",
+        "event_address": event_data.get("event_location_address") or event_data.get("eventAddress") or "ul. Przykładowa 1",
         "event_description": event_data.get("event_description") or event_data.get("eventDescription") or "",
         
         # Linki wydarzenia
@@ -1756,18 +1756,33 @@ def event_sync_backstage(event_id: str):
     new_data = result.get("event_data", {})
     
     # Pola do porównania (label, klucz, typ)
+    # Używamy KANONICZNYCH nazw pól (event_location_*) ale sprawdzamy też aliasy V2
+    def get_current(key, alias=None):
+        """Pobiera aktualną wartość - sprawdza kanoniczny klucz i alias."""
+        val = current_data.get(key)
+        if not val and alias:
+            val = current_data.get(alias)
+        return val
+    
     compare_fields = [
         ("Nazwa wydarzenia", "event_name", "text", event.get("event_name"), result.get("event_name")),
-        ("Lokalizacja (venue)", "venue_name", "text", current_data.get("venue_name"), new_data.get("venue_name")),
-        ("Ulica", "venue_street", "text", current_data.get("venue_street"), new_data.get("venue_street")),
-        ("Miasto", "venue_city", "text", current_data.get("venue_city"), new_data.get("venue_city")),
+        # Lokalizacja - kanoniczne nazwy (event_location_*)
+        ("Miejsce (venue)", "event_location_place", "text", 
+         get_current("event_location_place", "eventLocation"), new_data.get("event_location_place")),
+        ("Adres", "event_location_address", "text", 
+         get_current("event_location_address", "eventAddress"), new_data.get("event_location_address")),
+        ("Miasto", "event_location_city", "text", 
+         get_current("event_location_city", "eventCity"), new_data.get("event_location_city")),
         ("Pełny adres", "location", "text", current_data.get("location"), new_data.get("location")),
+        # Daty
         ("Data wydarzenia", "event_date", "date", current_data.get("event_date"), new_data.get("event_date")),
         ("Godzina rozpoczęcia", "event_time", "time", current_data.get("event_time"), new_data.get("event_time")),
         ("Data zakończenia", "event_end_date", "date", current_data.get("event_end_date"), new_data.get("event_end_date")),
         ("Godzina zakończenia", "event_end_time", "time", current_data.get("event_end_time"), new_data.get("event_end_time")),
+        # Opis
         ("Opis", "event_description", "textarea", current_data.get("event_description"), new_data.get("event_description")),
         ("Podsumowanie", "event_summary", "textarea", current_data.get("event_summary"), new_data.get("event_summary")),
+        # Metadane
         ("Status Backstage", "backstage_status", "text", current_data.get("backstage_status"), new_data.get("backstage_status")),
         ("Typ wydarzenia", "event_type", "text", current_data.get("event_type"), new_data.get("event_type")),
         ("URL strony", "backstage_website_url", "url", current_data.get("backstage_website_url"), new_data.get("backstage_website_url")),
