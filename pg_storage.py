@@ -2567,14 +2567,24 @@ def insert_admin_audit_log(
     action: str,
     admin_user_id: Optional[int] = None,
     target_email: Optional[str] = None,
+    target_id: Optional[str] = None,  # Added for compatibility
     ip: Optional[str] = None,
     user_agent: Optional[str] = None,
     data: Optional[Dict[str, Any]] = None,
+    extra: Optional[Dict[str, Any]] = None,  # Alias for data
 ) -> Optional[int]:
     """Dodaje wpis do logu audytu. Zwraca id wpisu."""
     ensure_schema()
     pool = None
     conn = None
+    
+    # Merge extra into data if provided
+    merged_data = dict(data or {})
+    if extra:
+        merged_data.update(extra)
+    if target_id:
+        merged_data["target_id"] = target_id
+    
     try:
         pool, conn = _with_conn()
         cur = conn.cursor()
@@ -2590,10 +2600,11 @@ def insert_admin_audit_log(
                 target_email,
                 ip,
                 user_agent,
-                psycopg2.extras.Json(data or {}),  # type: ignore[attr-defined]
+                psycopg2.extras.Json(merged_data),  # type: ignore[attr-defined]
             ),
         )
         row = cur.fetchone()
+        conn.commit()
         return row[0] if row else None
     except Exception as e:
         print(f"[DB] insert_admin_audit_log error: {e}")
