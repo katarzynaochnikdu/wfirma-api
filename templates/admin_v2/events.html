@@ -52,7 +52,7 @@
     {% set banner_url = event_data.get('email_header_url') or event_data.get('event_mail_link_top_banner') or '' %}
     {% set tagline = event_data.get('event_tagline') or event_data.get('tagline') or event_data.get('event_motto') or '' %}
     
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
+    <div class="event-card event-card-active" onclick="window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}'">
       <!-- Banner Header -->
       <div class="event-card-header-banner" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});">
         {% if banner_url %}
@@ -102,7 +102,7 @@
           </div>
         </div>
       </div>
-    </a>
+    </div>
     {% endfor %}
   </div>
 </div>
@@ -130,8 +130,8 @@
     {% for event in inactive_events %}
     {% set event_data = event.data or {} %}
     
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-inactive">
-      <div class="event-card-header event-card-header-minimal">
+    <div class="event-card event-card-inactive" onclick="window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}'" style="cursor: pointer;">
+      <div class="event-card-header-minimal">
         <div class="event-card-gradient" style="background: linear-gradient(135deg, hsl(215, 16%, 47%), hsl(215, 16%, 57%)); height: 8px;"></div>
       </div>
       
@@ -149,7 +149,7 @@
           </div>
         </div>
       </div>
-    </a>
+    </div>
     {% endfor %}
   </div>
 </div>
@@ -167,6 +167,7 @@
   overflow: hidden;
   transition: all 0.2s ease;
   border: 1px solid var(--border, #e5e7eb);
+  cursor: pointer;
 }
 
 .event-card-active {
