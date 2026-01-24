@@ -514,6 +514,10 @@
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
           </button>
+          <button class="btn btn-outline btn-danger-outline" onclick="deleteOrder()" title="Usuń zamówienie (nieodwracalne)">
+            <i data-lucide="trash-2"></i>
+            Usuń zamówienie
+          </button>
         </div>
       </div>
     </div>
@@ -683,10 +687,32 @@
       fetch(`/api/orders/${orderId}/cancel`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-          showToast('Zamówienie zostało anulowane', 'success');
-          location.reload();
+          if (data.success) {
+            showToast('Zamówienie zostało anulowane', 'success');
+            location.reload();
+          } else {
+            showToast(data.error || 'Błąd anulowania', 'error');
+          }
         })
         .catch(err => showToast('Błąd anulowania', 'error'));
+    }
+  }
+
+  function deleteOrder() {
+    if (confirm('UWAGA: Czy na pewno chcesz USUNĄĆ to zamówienie?\n\nTa operacja jest NIEODWRACALNA!\nZostaną usunięte wszystkie dane: zamówienie, uczestnicy, historia emaili.')) {
+      if (confirm('Ostatnie ostrzeżenie: Potwierdź usunięcie zamówienia ' + orderId)) {
+        fetch(`/api/orders/${orderId}/delete`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Zamówienie zostało usunięte', 'success');
+              window.location.href = '/admin-v2/orders';
+            } else {
+              showToast(data.error || 'Błąd usuwania', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd usuwania', 'error'));
+      }
     }
   }
 
@@ -845,6 +871,15 @@
     .status-destructive-label {
       display: none;
     }
+  }
+
+  /* Danger button (Usuń) */
+  .btn-danger-outline {
+    border-color: #dc2626 !important;
+    color: #dc2626 !important;
+  }
+  .btn-danger-outline:hover {
+    background: #fef2f2 !important;
   }
 
   /* Status warning */

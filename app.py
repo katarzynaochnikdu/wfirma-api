@@ -3270,6 +3270,67 @@ def api_cancel_order(event_order_id: str):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route('/api/orders/<event_order_id>/delete', methods=['POST'])
+def api_delete_order(event_order_id: str):
+    """
+    Usuwa zamówienie i wszystkie powiązane dane (nieodwracalne!).
+    
+    Tylko dla zalogowanych adminów.
+    
+    Response:
+    {
+        "success": true,
+        "deleted": { "participants": 2, "orders": 1, ... }
+    }
+    """
+    try:
+        from pg_storage import delete_order, get_order, insert_admin_audit_log
+        
+        # Sprawdź czy użytkownik jest zalogowany jako admin
+        admin_user = session.get("admin_v2_user")
+        if not admin_user:
+            return jsonify({"success": False, "error": "Wymagane zalogowanie"}), 401
+        
+        # Pobierz dane zamówienia przed usunięciem (do audytu)
+        order = get_order(event_order_id)
+        if not order:
+            return jsonify({"success": False, "error": "Zamówienie nie znalezione"}), 404
+        
+        # Usuń zamówienie
+        deleted = delete_order(event_order_id)
+        
+        if "error" in deleted:
+            return jsonify({"success": False, "error": deleted["error"]}), 500
+        
+        # Zapisz audit log
+        try:
+            insert_admin_audit_log(
+                action="order_deleted",
+                admin_user_id=admin_user.get("id"),
+                target_id=event_order_id,
+                extra={
+                    "deleted": deleted,
+                    "purchaser_email": order.get("purchaser_email"),
+                    "total": float(order.get("total") or 0),
+                },
+                ip=request.remote_addr,
+            )
+        except Exception as audit_err:
+            print(f"[ORDER DELETE] Audit log error: {audit_err}")
+        
+        print(f"[ORDER DELETE] Order {event_order_id} deleted by {admin_user.get('email')}")
+        
+        return jsonify({
+            "success": True,
+            "event_order_id": event_order_id,
+            "deleted": deleted,
+        }), 200
+        
+    except Exception as e:
+        print(f"[ORDER DELETE] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # STRIPE INTEGRATION
 # ---------------------------------------------------------------------------
