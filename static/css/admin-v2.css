@@ -722,19 +722,35 @@
     height: 1.25rem;
   }
   
+  /* Stat Icon Colors - zgodnie z ICON-STYLES-REFERENCE.md */
   .stat-icon.blue {
     background: hsl(212, 100%, 42%, 0.1);
     color: var(--primary);
   }
   
   .stat-icon.green {
-    background: var(--success-bg);
-    color: var(--success);
+    background: hsl(160, 70%, 92%);
+    color: hsl(160, 82%, 35%);
   }
   
   .stat-icon.cyan {
     background: hsl(195, 100%, 42%, 0.1);
     color: hsl(195, 100%, 35%);
+  }
+  
+  .stat-icon.amber {
+    background: hsl(45, 90%, 50%, 0.1);
+    color: hsl(45, 90%, 40%);
+  }
+  
+  .stat-icon.red {
+    background: hsl(0, 70%, 50%, 0.1);
+    color: var(--destructive);
+  }
+  
+  .stat-icon.purple {
+    background: hsl(270, 70%, 50%, 0.1);
+    color: hsl(270, 70%, 50%);
   }
   
   .stat-value {
@@ -1006,17 +1022,18 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.75rem;
+    padding: 0.875rem 1rem;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 10px;
     text-decoration: none;
     color: var(--foreground);
-    transition: background 0.15s, border-color 0.15s;
+    transition: all 0.2s;
   }
   
   .document-item:hover {
     background: var(--muted);
     border-color: var(--muted-foreground);
+    transform: translateX(2px);
   }
   
   .document-item > i:first-child {
@@ -1029,14 +1046,40 @@
     flex: 1;
   }
   
+  /* Document icon container */
+  .document-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .document-icon i {
+    width: 20px;
+    height: 20px;
+  }
+
+  .document-icon.proforma {
+    background: hsl(45, 90%, 92%);
+    color: hsl(45, 90%, 40%);
+  }
+
+  .document-icon.invoice {
+    background: hsl(160, 70%, 92%);
+    color: hsl(160, 82%, 35%);
+  }
+  
   .document-name {
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 500;
   }
   
   .document-meta {
-    font-size: 0.75rem;
-    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    color: var(--primary);
   }
   
   /* ============================================
@@ -1329,11 +1372,6 @@
   .stat-change.negative {
     color: var(--destructive);
   }
-  
-  .stat-icon.purple {
-    background: hsl(270, 60%, 50%, 0.1);
-    color: hsl(270, 60%, 50%);
-  }
 
   /* ============================================
      ORDER DETAIL PAGE
@@ -1455,15 +1493,21 @@
     gap: 0.75rem;
     padding: 0.875rem 1rem;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 10px;
     background: var(--card);
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
 
+  .buyer-info-block:hover {
+    border-color: var(--muted-foreground);
+  }
+
+  /* Avatar Initials - zgodnie z ICON-STYLES-REFERENCE.md */
   .avatar-initials {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: linear-gradient(135deg, hsl(199, 89%, 48%), hsl(180, 70%, 45%));
+    background: linear-gradient(135deg, hsl(199, 89%, 48%), hsl(212, 100%, 50%));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1471,16 +1515,19 @@
     font-weight: 600;
     color: white;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px hsla(212, 100%, 50%, 0.25);
   }
 
   .avatar-initials.small {
     width: 36px;
     height: 36px;
     font-size: 0.75rem;
+    box-shadow: 0 2px 6px hsla(212, 100%, 50%, 0.2);
   }
 
   .avatar-initials.company {
-    background: linear-gradient(135deg, hsl(220, 14%, 55%), hsl(220, 14%, 65%));
+    background: linear-gradient(135deg, hsl(270, 60%, 55%), hsl(270, 70%, 60%));
+    box-shadow: 0 2px 8px hsla(270, 60%, 50%, 0.25);
   }
 
   .buyer-info-details {
@@ -1613,34 +1660,42 @@
     height: 16px;
   }
 
-  /* Timeline icon colors */
+  /* Timeline icon colors - zgodnie z ICON-STYLES-REFERENCE.md */
   .timeline-v2-icon.status_change,
   .timeline-v2-icon.created {
-    background: hsl(212, 100%, 94%);
-    color: hsl(212, 100%, 45%);
+    background: hsl(212, 90%, 94%);
+    color: hsl(212, 100%, 42%);
   }
 
   .timeline-v2-icon.document,
   .timeline-v2-icon.proforma {
-    background: hsl(270, 80%, 94%);
-    color: hsl(270, 80%, 50%);
+    background: hsl(270, 70%, 94%);
+    color: hsl(270, 70%, 50%);
   }
 
-  .timeline-v2-icon.email {
-    background: hsl(330, 80%, 94%);
-    color: hsl(330, 80%, 50%);
+  .timeline-v2-icon.email,
+  .timeline-v2-icon.sent {
+    background: hsl(45, 90%, 92%);
+    color: hsl(45, 90%, 40%);
   }
 
   .timeline-v2-icon.pending,
   .timeline-v2-icon.waiting {
-    background: hsl(38, 92%, 94%);
+    background: hsl(38, 92%, 92%);
     color: hsl(38, 92%, 45%);
   }
 
   .timeline-v2-icon.payment,
-  .timeline-v2-icon.paid {
-    background: hsl(160, 82%, 94%);
+  .timeline-v2-icon.paid,
+  .timeline-v2-icon.success {
+    background: hsl(160, 70%, 92%);
     color: hsl(160, 82%, 35%);
+  }
+
+  .timeline-v2-icon.note,
+  .timeline-v2-icon.info {
+    background: hsl(210, 15%, 93%);
+    color: hsl(210, 15%, 45%);
   }
 
   .timeline-v2-content {
