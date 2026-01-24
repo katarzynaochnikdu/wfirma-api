@@ -726,7 +726,13 @@ def participants_list():
     
     # Mapuj pola dla szablonu
     for p in all_participants:
-        p["ticket_name"] = p.get("ticket_class_name") or p.get("ticket_class_id") or "Bilet Standard"
+        # Preferuj nazwę biletu, ale nie pokazuj długich ID numerycznych
+        ticket_name = p.get("ticket_class_name") or ""
+        ticket_id = p.get("ticket_class_id") or ""
+        # Jeśli ticket_id wygląda jak długi numer (>10 cyfr), nie pokazuj go
+        if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
+            ticket_name = "Bilet Standard"
+        p["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = p.get("company") or ""
     
@@ -1089,7 +1095,12 @@ def event_room(event_id: str):
     
     # Mapuj pola uczestników dla szablonu
     for p in participants:
-        p["ticket_name"] = p.get("ticket_class_name") or p.get("ticket_class_id") or "Bilet Standard"
+        # Preferuj nazwę biletu, ale nie pokazuj długich ID numerycznych
+        ticket_name = p.get("ticket_class_name") or ""
+        ticket_id = p.get("ticket_class_id") or ""
+        if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
+            ticket_name = "Bilet Standard"
+        p["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = ""  # Brak w danych
     
