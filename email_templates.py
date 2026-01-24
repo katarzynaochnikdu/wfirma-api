@@ -2034,10 +2034,17 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
 
                 <!-- INFO BAR -->
                 <tr>
-                  <td style="background: linear-gradient(90deg, {color_gradient_1}, {color_gradient_2}); padding: 12px 24px;">
-                    <p style="margin: 0; color: #ffffff; font-size: 14px; font-weight: bold; text-align: center;">
-                      🔄 Wygenerowaliśmy dla Ciebie nowy link do płatności
-                    </p>
+                  <td style="background: linear-gradient(90deg, #F59E0B, #D97706); padding: 12px 24px;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="color: #ffffff; font-size: 14px; font-weight: bold;">
+                          🔄 Nowy link do płatności
+                        </td>
+                        <td align="right" style="color: #ffffff; font-size: 13px;">
+                          Ważny do: {new_expires_at}
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
 
@@ -2066,36 +2073,20 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
                 <!-- PODSUMOWANIE ZAMÓWIENIA -->
                 <tr>
                   <td style="padding: 0 24px 24px 24px; background-color: #FFFFFF;">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0;">
-                      <tr>
-                        <td style="padding: 16px;">
-                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                            <tr>
-                              <td style="vertical-align: top; width: 40px;">
-                                <div style="width: 32px; height: 32px; background-color: #22c55e; border-radius: 50%; text-align: center; line-height: 32px; color: white; font-size: 16px;">✓</div>
-                              </td>
-                              <td style="vertical-align: top; padding-left: 12px;">
-                                <p style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #166534;">Twoja rezerwacja jest nadal aktywna</p>
-                                <p style="margin: 0; font-size: 13px; color: #15803d;">Zamówienie z dnia {original_order_date}</p>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- KWOTA -->
-                <tr>
-                  <td style="padding: 0 24px 24px 24px; background-color: #FFFFFF;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
                       <tr>
                         <td style="padding: 16px;">
-                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Podsumowanie zamówienia
+                          </p>
+                          {tickets_summary}
+                          <p style="margin: 8px 0 0 0; font-size: 12px; color: #9ca3af;">
+                            Zamówienie z dnia {original_order_date}
+                          </p>
+                          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
                             <tr>
-                              <td style="font-size: 14px; color: #64748b;">Kwota do zapłaty:</td>
-                              <td align="right" style="font-size: 24px; font-weight: 700; color: {color_gradient_1};">{total_formatted}</td>
+                              <td style="font-size: 16px; font-weight: 700; color: #1f2937;">Do zapłaty:</td>
+                              <td align="right" style="font-size: 20px; font-weight: 700; color: {color_gradient_1};">{total_formatted}</td>
                             </tr>
                           </table>
                         </td>
@@ -2192,6 +2183,8 @@ def render_checkout_expired_new_link_email(
     """
     event_config = event_config or get_default_event_config()
     
+    tickets_summary = '<p style="margin: 0; font-size: 14px; color: #374151;">Rezerwacja na wydarzenie</p>'
+    
     data = {
         "event_name": event_name,
         "purchaser_first_name": purchaser_first_name or "Uczestniku",
@@ -2199,6 +2192,7 @@ def render_checkout_expired_new_link_email(
         "new_checkout_url": new_checkout_url,
         "new_expires_at": new_expires_at,
         "original_order_date": original_order_date,
+        "tickets_summary": tickets_summary,
         # Event config
         "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),

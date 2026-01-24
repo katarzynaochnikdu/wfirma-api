@@ -12,12 +12,13 @@ from typing import Any, Dict, List, Optional, Tuple
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-BACKSTAGE_CLIENT_ID = os.environ.get("BACKSTAGE_CLIENT_ID", "")
-BACKSTAGE_CLIENT_SECRET = os.environ.get("BACKSTAGE_CLIENT_SECRET", "")
-BACKSTAGE_REFRESH_TOKEN = os.environ.get("BACKSTAGE_REFRESH_TOKEN", "")
+# Preferuj nowe nazwy ENV (ZOHO_MD_BACKSTAGE_*), fallback do BACKSTAGE_*
+BACKSTAGE_CLIENT_ID = os.environ.get("ZOHO_MD_BACKSTAGE_CLIENT_ID") or os.environ.get("BACKSTAGE_CLIENT_ID", "")
+BACKSTAGE_CLIENT_SECRET = os.environ.get("ZOHO_MD_BACKSTAGE_CLIENT_SECRET") or os.environ.get("BACKSTAGE_CLIENT_SECRET", "")
+BACKSTAGE_REFRESH_TOKEN = os.environ.get("ZOHO_MD_BACKSTAGE_REFRESH_TOKEN") or os.environ.get("BACKSTAGE_REFRESH_TOKEN", "")
 
-# Portal ID - można ustawić jako ENV lub wykryć z danych
-BACKSTAGE_PORTAL_ID = os.environ.get("BACKSTAGE_PORTAL_ID", "20101549222")
+# Portal ID - można ustawić jako ENV (również ZOHO_MD_BACKSTAGE_PORTAL_ID)
+BACKSTAGE_PORTAL_ID = os.environ.get("ZOHO_MD_BACKSTAGE_PORTAL_ID") or os.environ.get("BACKSTAGE_PORTAL_ID", "20101549222")
 
 # Zoho OAuth2 endpoints (EU region)
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
@@ -269,6 +270,83 @@ def fetch_event_with_tickets(event_id: str, portal_id: str = None) -> Tuple[Opti
     event_data["ticket_classes"] = ticket_classes
     
     return event_data, None
+
+
+# ---------------------------------------------------------------------------
+# ATTENDEES API
+# ---------------------------------------------------------------------------
+
+
+def fetch_attendees(
+    event_id: str,
+    portal_id: str = None,
+    page: int = 1,
+    per_page: int = 500,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Pobiera listę uczestników z Backstage API.
+    
+    Args:
+        event_id: ID wydarzenia w Backstage
+        portal_id: ID portalu (domyślnie z ENV)
+        page: Numer strony (domyślnie 1)
+        per_page: Liczba rekordów na stronę (domyślnie 500)
+    
+    Returns:
+        (data, error) gdzie data zawiera {"attendees": [...], "pagination": {...}}
+    """
+    portal_id = portal_id or BACKSTAGE_PORTAL_ID
+    
+    _log("INFO", "Pobieranie uczestników", {"event_id": event_id, "portal_id": portal_id, "page": page})
+    
+    data, error = _make_api_request(
+        method="GET",
+        endpoint=f"/portals/{portal_id}/events/{event_id}/attendees",
+        params={"page": page, "per_page": per_page},
+    )
+    
+    if error:
+        return None, error
+    
+    return {
+        "attendees": data.get("attendees", []),
+        "pagination": data.get("pagination", {}),
+    }, None
+
+
+def fetch_attendee_details(
+    event_id: str,
+    attendee_id: str,
+    portal_id: str = None,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Pobiera szczegóły pojedynczego uczestnika z Backstage API.
+    
+    Args:
+        event_id: ID wydarzenia w Backstage
+        attendee_id: ID uczestnika w Backstage
+        portal_id: ID portalu (domyślnie z ENV)
+    
+    Returns:
+        (attendee_data, error)
+    """
+    portal_id = portal_id or BACKSTAGE_PORTAL_ID
+    
+    _log("INFO", "Pobieranie szczegółów uczestnika", {
+        "event_id": event_id,
+        "attendee_id": attendee_id,
+        "portal_id": portal_id,
+    })
+    
+    data, error = _make_api_request(
+        method="GET",
+        endpoint=f"/portals/{portal_id}/events/{event_id}/attendees/{attendee_id}",
+    )
+    
+    if error:
+        return None, error
+    
+    return data, None
 
 
 # ---------------------------------------------------------------------------

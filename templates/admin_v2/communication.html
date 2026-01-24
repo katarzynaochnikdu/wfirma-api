@@ -861,6 +861,17 @@
           <span id="preview-modal-title">Podgląd szablonu</span>
         </h3>
         <p class="modal-description" id="preview-modal-subject">Temat emaila</p>
+        <div style="margin-top: 0.5rem;">
+          <label for="preview-event-select" style="font-size: 0.75rem; color: var(--muted-foreground); display: block; margin-bottom: 0.25rem;">
+            Podgląd dla wydarzenia
+          </label>
+          <select id="preview-event-select" class="form-select" style="max-width: 320px;">
+            <option value="">— dane przykładowe —</option>
+            {% for ev in events %}
+            <option value="{{ ev.event_id }}">{{ ev.event_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
       <button class="modal-close" onclick="closeTemplatePreview()">
         <i data-lucide="x"></i>
@@ -928,28 +939,33 @@ function initTabs() {
 // ============================================
 // Template Preview
 // ============================================
-function previewTemplate(templateKey) {
+let currentPreviewTemplateKey = null;
+
+function loadTemplatePreview() {
   const modal = document.getElementById('template-preview-modal');
   const titleEl = document.getElementById('preview-modal-title');
   const subjectEl = document.getElementById('preview-modal-subject');
   const loadingEl = document.getElementById('preview-loading');
   const iframeEl = document.getElementById('preview-iframe');
+  const eventSelect = document.getElementById('preview-event-select');
   
   // Reset state
   loadingEl.style.display = 'flex';
   iframeEl.style.display = 'none';
-  titleEl.textContent = 'Ładowanie...';
+  titleEl.textContent = currentPreviewTemplateKey ? currentPreviewTemplateKey : 'Ładowanie...';
   subjectEl.textContent = '';
   
-  // Show modal
-  modal.classList.remove('hidden');
-  
   // Fetch template preview
-  fetch(`/admin-v2/templates/${templateKey}/preview`)
+  let url = `/admin-v2/templates/${currentPreviewTemplateKey}/preview`;
+  if (eventSelect && eventSelect.value) {
+    url += `?event_id=${encodeURIComponent(eventSelect.value)}`;
+  }
+  
+  fetch(url)
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        titleEl.textContent = templateKey;
+        titleEl.textContent = currentPreviewTemplateKey;
         subjectEl.textContent = data.subject || 'Brak tematu';
         
         // Write HTML to iframe
@@ -978,6 +994,13 @@ function previewTemplate(templateKey) {
     });
 }
 
+function previewTemplate(templateKey) {
+  const modal = document.getElementById('template-preview-modal');
+  currentPreviewTemplateKey = templateKey;
+  modal.classList.remove('hidden');
+  loadTemplatePreview();
+}
+
 function closeTemplatePreview() {
   const modal = document.getElementById('template-preview-modal');
   modal.classList.add('hidden');
@@ -994,6 +1017,16 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Init tabs
   initTabs();
+  
+  // Event select for preview
+  const previewEventSelect = document.getElementById('preview-event-select');
+  if (previewEventSelect) {
+    previewEventSelect.addEventListener('change', function() {
+      if (currentPreviewTemplateKey) {
+        loadTemplatePreview();
+      }
+    });
+  }
   
   // Close preview modal on backdrop click
   const previewModal = document.getElementById('template-preview-modal');

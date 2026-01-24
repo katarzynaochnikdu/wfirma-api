@@ -92,12 +92,12 @@
   </div>
   
   <!-- Email Status -->
-  {% set last_email = emails|last if emails else none %}
+  {% set last_email = emails|first if emails else none %}
   {% set email_status = {
-    'type': 'success' if last_email and last_email.status == 'delivered' else ('warning' if last_email and last_email.status == 'sent' else ('error' if last_email and last_email.status in ['error', 'bounced'] else 'neutral')),
-    'icon': 'check-circle' if last_email and last_email.status == 'delivered' else ('clock' if last_email and last_email.status == 'sent' else ('alert-triangle' if last_email and last_email.status in ['error', 'bounced'] else 'mail-x')),
-    'label': 'Dostarczono' if last_email and last_email.status == 'delivered' else ('Wysłano' if last_email and last_email.status == 'sent' else ('Błąd' if last_email and last_email.status in ['error', 'bounced'] else 'Nie wysłano')),
-    'detail': last_email.sent_at|format_date_pl if last_email and last_email.sent_at else ''
+    'type': 'success' if last_email and last_email.status in ['delivered', 'sent'] else ('warning' if last_email and last_email.status == 'queued' else ('error' if last_email and last_email.status in ['error', 'bounced', 'failed'] else 'neutral')),
+    'icon': 'check-circle' if last_email and last_email.status in ['delivered', 'sent'] else ('clock' if last_email and last_email.status == 'queued' else ('alert-triangle' if last_email and last_email.status in ['error', 'bounced', 'failed'] else 'mail-x')),
+    'label': 'Wysłano' if last_email and last_email.status in ['delivered', 'sent'] else ('W kolejce' if last_email and last_email.status == 'queued' else ('Błąd' if last_email and last_email.status in ['error', 'bounced', 'failed'] else 'Nie wysłano')),
+    'detail': last_email.created_at|format_date_pl if last_email and last_email.created_at else ''
   } %}
   <div class="operational-status-badge operational-status-{{ email_status.type }}">
     <div class="operational-icon-wrapper">

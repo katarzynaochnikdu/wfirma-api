@@ -816,6 +816,7 @@ def order_detail(order_id: str):
     
     # Buduj historię zamówienia z emaili
     order_history = _build_order_history(order_id, order)
+    emails = _get_emails_for_order(order_id)
     
     return render_template(
         "admin_v2/order_detail.html",
@@ -824,6 +825,7 @@ def order_detail(order_id: str):
         participants=participants,
         wfirma_documents=wfirma_documents,
         order_history=order_history,
+        emails=emails,
         **_get_common_context(user),
     )
 
@@ -2307,13 +2309,34 @@ def participant_detail(participant_id: int):
     if not participant:
         return redirect(url_for("admin_v2_bp.participants_list"))
     
-    # Rozpakuj dane wydarzenia
+    # Rozpakuj dane wydarzenia (bezpieczne parsowanie JSONB)
     event_data = participant.get("event_data") or {}
+    if isinstance(event_data, str):
+        try:
+            event_data = json.loads(event_data)
+        except Exception:
+            event_data = {}
+    if not isinstance(event_data, dict):
+        event_data = {}
+    
     participant["event_color"] = event_data.get("color_gradient_1", "#0065D7")
     participant["event_color_2"] = event_data.get("color_gradient_2", "#00A1D7")
-    participant["event_date"] = event_data.get("event_date")
-    participant["event_time"] = event_data.get("event_time")
-    participant["event_location"] = event_data.get("location")
+    
+    # Normalizacja dat (obsługa różnych formatów)
+    raw_start = event_data.get("event_date_time") or event_data.get("event_date") or event_data.get("eventDate") or ""
+    raw_time = event_data.get("event_time") or event_data.get("event_time_text") or event_data.get("eventTime") or ""
+    start_date = raw_start[:10] if raw_start else ""
+    if not raw_time and "T" in raw_start:
+        raw_time = raw_start.split("T")[1][:5]
+    
+    participant["event_date"] = start_date or ""
+    participant["event_time"] = raw_time or ""
+    participant["event_location"] = (
+        event_data.get("location")
+        or event_data.get("event_location_place")
+        or event_data.get("eventLocation")
+        or ""
+    )
     
     # Rozpakuj dodatkowe dane uczestnika z JSON
     p_data = participant.get("data") or {}
@@ -3217,6 +3240,14 @@ def template_preview(template_key: str):
     Zwraca HTML szablonu gotowy do wyświetlenia w modalu.
     """
     from flask import jsonify
+    from email_templates import get_default_event_config
+    
+    event_id = (request.args.get("event_id") or "").strip()
+    event = get_event(event_id) if event_id else None
+    event_data = {}
+    if event:
+        event = _normalize_event_data(event)
+        event_data = event.get("data") or {}
     
     # Przykładowe dane do podglądu szablonów
     # WAŻNE: tickets muszą mieć pole "price" lub "total_gross" - inaczej 
@@ -3246,16 +3277,41 @@ def template_preview(template_key: str):
         "ticket_name": "Bilet VIP",
     }
     
-    # Kolory i style wydarzenia
-    event_config = {
-        "banner_url": "",
-        "color_gradient_1": "hsl(212, 100%, 42%)",
-        "color_gradient_2": "hsl(195, 100%, 42%)",
+    # Kolory i style wydarzenia (domyślne + nadpisanie z eventu jeśli podany)
+    event_config = get_default_event_config()
+    event_config.update({
         "email_footer_text": "© 2026 Medidesk. Wszystkie prawa zastrzeżone.",
         "organizer_name": "Medidesk Sp. z o.o.",
         "organizer_email": "kontakt@medidesk.pl",
         "organizer_phone": "+48 22 123 45 67",
-    }
+    })
+    if event_data:
+        event_config.update(event_data)
+        # Uzupełnij banner jeśli używamy nowych pól
+        if not event_config.get("event_mail_link_top_banner"):
+            event_config["event_mail_link_top_banner"] = event_data.get("email_header_url") or event_data.get("event_logo_url") or event_config.get("event_mail_link_top_banner")
+    
+    # Podstaw event-specific data do preview
+    if event:
+        sample_data["event_name"] = event.get("event_name") or sample_data["event_name"]
+        sample_data["event_date"] = event_data.get("eventDate") or event_data.get("event_date") or sample_data["event_date"]
+        sample_data["event_city"] = event_data.get("event_location_city") or event_data.get("eventCity") or sample_data["event_city"]
+        sample_data["event_location"] = event_data.get("location") or event_data.get("event_location_place") or event_data.get("eventLocation") or sample_data["event_location"]
+        
+        # Jeśli mamy zamówienie dla eventu, użyj realnych danych kupującego i kwoty
+        try:
+            orders = list_orders(event_id=event_id, limit=1)
+            if orders:
+                order = orders[0]
+                sample_data["purchaser_first_name"] = order.get("purchaser_first_name") or sample_data["purchaser_first_name"]
+                sample_data["purchaser_last_name"] = order.get("purchaser_last_name") or sample_data["purchaser_last_name"]
+                sample_data["purchaser_email"] = order.get("purchaser_email") or sample_data["purchaser_email"]
+                sample_data["purchaser_phone"] = order.get("purchaser_phone") or sample_data["purchaser_phone"]
+                sample_data["company_name"] = order.get("purchaser_company") or sample_data["company_name"]
+                sample_data["company_nip"] = order.get("purchaser_nip") or sample_data["company_nip"]
+                sample_data["total_gross"] = float(order.get("total") or sample_data["total_gross"])
+        except Exception:
+            pass
     
     # Mapowanie kluczy szablonów na tematy emaili
     template_subjects = {
