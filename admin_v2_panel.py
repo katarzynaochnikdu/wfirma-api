@@ -180,10 +180,33 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     event_data = event.get("data") or {}
     
     # Mapuj pola na nazwy oczekiwane przez template
+    
+    # Normalizacja dat - pobierz z różnych źródeł
+    # event_date_time to pełny datetime (2026-02-26T10:00:00), event_date to sama data (2026-02-26)
+    raw_start = event_data.get("event_date_time") or event_data.get("event_date") or event_data.get("eventDate") or ""
+    raw_end = event_data.get("event_end_date_time") or event_data.get("event_end_date") or ""
+    raw_start_time = event_data.get("event_time") or event_data.get("event_time_text") or event_data.get("eventTime") or ""
+    raw_end_time = event_data.get("event_end_time") or ""
+    
+    # Wyciągnij datę z datetime jeśli potrzeba
+    start_date = raw_start[:10] if raw_start else ""  # YYYY-MM-DD
+    end_date = raw_end[:10] if raw_end else ""
+    
+    # Wyciągnij godzinę z datetime jeśli nie mamy osobnej
+    if not raw_start_time and raw_start and "T" in raw_start:
+        raw_start_time = raw_start[11:16]  # HH:MM
+    if not raw_end_time and raw_end and "T" in raw_end:
+        raw_end_time = raw_end[11:16]
+    
     normalized = {
-        # Data i czas
-        "eventDate": event_data.get("event_day_text_1") or event_data.get("event_date_time") or event_data.get("eventDate") or "",
-        "eventTime": event_data.get("event_time_text") or event_data.get("eventTime") or "",
+        # Data i czas - rozpoczęcie
+        "eventDate": event_data.get("event_day_text_1") or start_date or "",
+        "eventTime": raw_start_time or "",
+        # Data i czas - zakończenie
+        "eventEndDate": end_date or "",
+        "eventEndTime": raw_end_time or "",
+        # Czy wielodniowe
+        "isMultiDay": bool(end_date and end_date != start_date),
         
         # Lokalizacja
         "eventCity": event_data.get("event_location_city") or event_data.get("eventCity") or "",

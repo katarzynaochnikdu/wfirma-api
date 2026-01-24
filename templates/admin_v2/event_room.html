@@ -15,8 +15,13 @@
       <span class="sticky-event-name">{{ event.event_name }}</span>
       <span class="sticky-meta-separator">•</span>
       <span class="sticky-event-meta">
-        {% if event.data.eventDate %}{{ event.data.eventDate|format_date_pl }}{% endif %}
-        {% if event.data.eventCity %} • {{ event.data.eventCity }}{% endif %}
+        {% if event.data.eventDate %}
+          {{ event.data.eventDate|format_date_pl }}
+          {% if event.data.eventEndDate and event.data.eventEndDate != event.data.eventDate %}
+           — {{ event.data.eventEndDate|format_date_pl }}
+          {% endif %}
+        {% endif %}
+        {% if event.data.event_location_city or event.data.eventCity %} • {{ event.data.event_location_city or event.data.eventCity }}{% endif %}
       </span>
     </div>
     <a href="{{ event.backstage_url }}" target="_blank" class="sticky-backstage-btn" title="Otwórz w Backstage">
@@ -55,10 +60,15 @@
         </div>
         <div class="event-header-meta">
           {% if event.data.eventDate %}
-          <span>{{ event.data.eventDate|format_date_pl }}</span>
+          <span>
+            {{ event.data.eventDate|format_date_pl }}
+            {% if event.data.eventEndDate and event.data.eventEndDate != event.data.eventDate %}
+             — {{ event.data.eventEndDate|format_date_pl }}
+            {% endif %}
+          </span>
           <span class="meta-dot">•</span>
           {% endif %}
-          <span>{{ event.data.eventCity or 'Lokalizacja nieznana' }}</span>
+          <span>{{ event.data.event_location_city or event.data.eventCity or 'Lokalizacja nieznana' }}</span>
           {% if event.data.eventLocation %}
           <span class="meta-dot">•</span>
           <span>{{ event.data.eventLocation }}</span>
@@ -517,7 +527,7 @@
       </h3>
     </div>
     <div style="padding: 1rem;">
-      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);">
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(4, 1fr);">
         <div class="form-group">
           <label class="form-label">ID wydarzenia</label>
           <input type="text" class="form-input" value="{{ event.event_id }}" disabled>
@@ -527,16 +537,52 @@
           <input type="text" class="form-input" value="{{ event.event_name }}" disabled>
         </div>
         <div class="form-group">
-          <label class="form-label">Data rozpoczęcia</label>
+          <label class="form-label">Status</label>
+          <input type="text" class="form-input" value="{% if event.is_active %}Aktywne{% else %}Nieaktywne{% endif %}" disabled>
+        </div>
+      </div>
+      
+      <!-- Daty wydarzenia -->
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(4, 1fr); margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--border);">
+        <div class="form-group">
+          <label class="form-label" style="color: hsl(160, 82%, 35%);">
+            <i data-lucide="calendar" style="width: 12px; height: 12px; display: inline;"></i>
+            Data rozpoczęcia
+          </label>
           <input type="text" class="form-input" value="{{ event.data.eventDate|format_date_pl if event.data.eventDate else '—' }}" disabled>
         </div>
         <div class="form-group">
-          <label class="form-label">Godzina</label>
+          <label class="form-label" style="color: hsl(160, 82%, 35%);">
+            <i data-lucide="clock" style="width: 12px; height: 12px; display: inline;"></i>
+            Godzina rozpoczęcia
+          </label>
           <input type="text" class="form-input" value="{{ event.data.eventTime or '—' }}" disabled>
         </div>
         <div class="form-group">
-          <label class="form-label">Status</label>
-          <input type="text" class="form-input" value="{% if event.is_active %}Aktywne{% else %}Nieaktywne{% endif %}" disabled>
+          <label class="form-label" style="color: hsl(0, 72%, 50%);">
+            <i data-lucide="calendar-x" style="width: 12px; height: 12px; display: inline;"></i>
+            Data zakończenia
+          </label>
+          {% if event.data.eventEndDate and event.data.eventEndDate != event.data.eventDate %}
+          <input type="text" class="form-input" value="{{ event.data.eventEndDate|format_date_pl }}" disabled>
+          {% elif event.data.eventDate %}
+          <input type="text" class="form-input" value="(jednodniowe)" disabled style="color: var(--muted-foreground); font-style: italic;">
+          {% else %}
+          <input type="text" class="form-input" value="—" disabled>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="color: hsl(0, 72%, 50%);">
+            <i data-lucide="clock" style="width: 12px; height: 12px; display: inline;"></i>
+            Godzina zakończenia
+          </label>
+          {% if event.data.eventEndTime %}
+          <input type="text" class="form-input" value="{{ event.data.eventEndTime }}" disabled>
+          {% elif event.data.eventTime and (not event.data.eventEndDate or event.data.eventEndDate == event.data.eventDate) %}
+          <input type="text" class="form-input" value="—" disabled>
+          {% else %}
+          <input type="text" class="form-input" value="—" disabled>
+          {% endif %}
         </div>
       </div>
     </div>
