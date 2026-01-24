@@ -50,48 +50,48 @@
   </div>
 </div>
 
-<!-- TABS -->
+<!-- TABS (JavaScript switching without reload) -->
 <div class="event-tabs-container">
-  <div class="event-tabs-list">
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='sales') }}" 
+  <div class="event-tabs-list" id="event-tabs">
+    <button type="button" data-tab="sales" 
        class="event-tab {% if active_tab == 'sales' %}active{% endif %}">
       <i data-lucide="trending-up"></i>
       <span>Sprzedaż</span>
-    </a>
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='payments') }}" 
+    </button>
+    <button type="button" data-tab="payments" 
        class="event-tab {% if active_tab == 'payments' %}active{% endif %}">
       <i data-lucide="credit-card"></i>
       <span>Płatności</span>
       {% if stats.pending > 0 %}<span class="tab-badge tab-badge-amber">{{ stats.pending }}</span>{% endif %}
-    </a>
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='orders') }}" 
+    </button>
+    <button type="button" data-tab="orders" 
        class="event-tab {% if active_tab == 'orders' %}active{% endif %}">
       <i data-lucide="shopping-cart"></i>
       <span>Zamówienia</span>
-    </a>
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='participants') }}" 
+    </button>
+    <button type="button" data-tab="participants" 
        class="event-tab {% if active_tab == 'participants' %}active{% endif %}">
       <i data-lucide="users"></i>
       <span>Uczestnicy</span>
-    </a>
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='communication') }}" 
+    </button>
+    <button type="button" data-tab="communication" 
        class="event-tab {% if active_tab == 'communication' %}active{% endif %}">
       <i data-lucide="mail"></i>
       <span>Komunikacja</span>
       {% if stats.email_errors > 0 %}<span class="tab-badge tab-badge-red">{{ stats.email_errors }}</span>{% endif %}
-    </a>
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='config') }}" 
+    </button>
+    <button type="button" data-tab="config" 
        class="event-tab {% if active_tab == 'config' %}active{% endif %}">
       <i data-lucide="settings"></i>
       <span>Konfiguracja</span>
-    </a>
+    </button>
   </div>
 </div>
 
 <!-- TAB CONTENT -->
 <div class="tab-content">
-  {% if active_tab == 'sales' %}
   <!-- SALES TAB -->
+  <div id="tab-sales" class="tab-panel {% if active_tab == 'sales' %}active{% endif %}">
   <div class="sales-stats-grid">
     <!-- Zamówienia -->
     <div class="sales-stat-card">
@@ -192,12 +192,15 @@
       </div>
     </div>
   </div>
+  </div>
   
-  {% elif active_tab == 'payments' %}
-  <!-- PAYMENTS TAB - Payment Buckets -->
+  <!-- PAYMENTS TAB -->
+  <div id="tab-payments" class="tab-panel {% if active_tab == 'payments' %}active{% endif %}">
   {% include 'admin_v2/_payment_buckets.html' %}
+  </div>
   
-  {% elif active_tab == 'orders' %}
+  <!-- ORDERS TAB -->
+  <div id="tab-orders" class="tab-panel {% if active_tab == 'orders' %}active{% endif %}">>
   <!-- ORDERS TAB -->
   <div class="card filters-card" style="margin-bottom: 1rem;">
     <form class="filters-grid" method="GET">
@@ -274,9 +277,10 @@
       </tbody>
     </table>
   </div>
+  </div>
   
-  {% elif active_tab == 'participants' %}
   <!-- PARTICIPANTS TAB -->
+  <div id="tab-participants" class="tab-panel {% if active_tab == 'participants' %}active{% endif %}">>
   <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
     <div class="stat-card">
       <div class="stat-content">
@@ -374,9 +378,10 @@
       </tbody>
     </table>
   </div>
+  </div>
   
-  {% elif active_tab == 'communication' %}
   <!-- COMMUNICATION TAB -->
+  <div id="tab-communication" class="tab-panel {% if active_tab == 'communication' %}active{% endif %}">>
   <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
     <div class="stat-card">
       <div class="stat-content">
@@ -450,9 +455,10 @@
       </tbody>
     </table>
   </div>
+  </div>
   
-  {% elif active_tab == 'config' %}
   <!-- CONFIG TAB -->
+  <div id="tab-config" class="tab-panel {% if active_tab == 'config' %}active{% endif %}">>
   
   <!-- Basic Data -->
   <div class="card" style="margin-bottom: 1rem;">
@@ -500,11 +506,11 @@
       <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
         <div class="form-group">
           <label class="form-label">Email kontaktowy</label>
-          <input type="text" class="form-input" value="{{ event.data.md_email_kontakt or 'eventy@medidesk.com' }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.md_email_kontakt }}" disabled>
         </div>
         <div class="form-group">
           <label class="form-label">Telefon kontaktowy</label>
-          <input type="text" class="form-input" value="{{ event.data.md_mobile_kontakt or '+48 729 927 389' }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.md_mobile_kontakt }}" disabled>
         </div>
       </div>
     </div>
@@ -668,10 +674,14 @@
       </div>
     </div>
   </div>
-  {% endif %}
+  </div>
 </div>
 
 <style>
+  /* Tab panel visibility */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
   /* ===== EVENT HEADER ===== */
   .event-header-banner {
     position: relative;
@@ -808,6 +818,27 @@
     overflow-x: auto;
     padding-bottom: 0.75rem;
     border-bottom: 1px solid var(--border);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Mobile scroll shadow indicators */
+  @media (max-width: 768px) {
+    .event-tabs-container {
+      position: relative;
+    }
+    .event-tabs-container::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0.75rem;
+      width: 40px;
+      background: linear-gradient(to right, transparent, var(--background));
+      pointer-events: none;
+      opacity: 0.8;
+    }
   }
   
   .event-tab {
@@ -1147,12 +1178,64 @@ document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
+  
+  // Tab switching functionality
+  initTabs();
 });
+
+// Tab switching without page reload
+function initTabs() {
+  var tabs = document.querySelectorAll('#event-tabs .event-tab');
+  var panels = document.querySelectorAll('.tab-panel');
+  
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var targetTab = this.getAttribute('data-tab');
+      
+      // Update tabs active state
+      tabs.forEach(function(t) { t.classList.remove('active'); });
+      this.classList.add('active');
+      
+      // Update panels visibility
+      panels.forEach(function(p) { p.classList.remove('active'); });
+      var targetPanel = document.getElementById('tab-' + targetTab);
+      if (targetPanel) {
+        targetPanel.classList.add('active');
+      }
+      
+      // Update URL without reload
+      var url = new URL(window.location);
+      url.searchParams.set('tab', targetTab);
+      history.pushState({tab: targetTab}, '', url);
+      
+      // Re-initialize Lucide icons for the new tab
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+    });
+  });
+  
+  // Handle browser back/forward
+  window.addEventListener('popstate', function(e) {
+    if (e.state && e.state.tab) {
+      var targetTab = e.state.tab;
+      tabs.forEach(function(t) { 
+        t.classList.toggle('active', t.getAttribute('data-tab') === targetTab); 
+      });
+      panels.forEach(function(p) { 
+        p.classList.toggle('active', p.id === 'tab-' + targetTab); 
+      });
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+    }
+  });
+}
 
 // Toggle header collapse
 function toggleHeaderCollapse() {
-  const banner = document.querySelector('.event-header-banner');
-  const icon = document.getElementById('collapse-icon');
+  var banner = document.querySelector('.event-header-banner');
+  var icon = document.getElementById('collapse-icon');
   
   if (banner.classList.contains('collapsed')) {
     banner.classList.remove('collapsed');

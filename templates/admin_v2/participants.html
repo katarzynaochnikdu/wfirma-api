@@ -14,10 +14,10 @@
       <i data-lucide="mail"></i>
       Wyślij wiadomość
     </button>
-    <button class="btn btn-outline" onclick="window.print()">
+    <a href="{{ url_for('admin_v2_bp.participants_export', event_id=request.args.get('event_id', '')) }}" class="btn btn-outline">
       <i data-lucide="download"></i>
-      Eksportuj
-    </button>
+      Eksportuj CSV
+    </a>
   </div>
 </div>
 

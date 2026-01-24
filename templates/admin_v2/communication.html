@@ -126,10 +126,10 @@
       <i data-lucide="palette"></i>
       Kreator szablonów
     </a>
-    <button class="btn btn-outline" onclick="window.print()">
+    <a href="{{ url_for('admin_v2_bp.communication_export', event_id=request.args.get('event_id', '')) }}" class="btn btn-outline">
       <i data-lucide="download"></i>
-      Eksport
-    </button>
+      Eksportuj CSV
+    </a>
   </div>
 </div>
 

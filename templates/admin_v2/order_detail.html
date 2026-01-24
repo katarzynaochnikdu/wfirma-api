@@ -322,33 +322,11 @@
             </div>
             {% endfor %}
           {% else %}
-            <div class="document-item">
-              <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(45, 90%, 92%); display: flex; align-items: center; justify-content: center;">
-                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(45, 90%, 40%);"></i>
-                </div>
-                <div>
-                  <p class="document-name">Proforma</p>
-                  <p class="document-meta">PF/2025/001234</p>
-                </div>
-              </div>
-              <button class="btn btn-ghost" style="padding: 0.5rem;">
-                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
-              </button>
-            </div>
-            <div class="document-item">
-              <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(160, 70%, 92%); display: flex; align-items: center; justify-content: center;">
-                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(160, 82%, 35%);"></i>
-                </div>
-                <div>
-                  <p class="document-name">Faktura VAT</p>
-                  <p class="document-meta">FV/2025/000892</p>
-                </div>
-              </div>
-              <button class="btn btn-ghost" style="padding: 0.5rem;">
-                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
-              </button>
+            <!-- Empty state dla braku dokumentów -->
+            <div class="empty-state-small">
+              <i data-lucide="file-x" style="width: 32px; height: 32px; color: var(--muted-foreground); opacity: 0.5;"></i>
+              <p style="font-size: 0.875rem; color: var(--muted-foreground); margin-top: 0.5rem;">Brak dokumentów</p>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground); opacity: 0.7;">Dokumenty pojawią się po wygenerowaniu faktury</p>
             </div>
           {% endif %}
         </div>
@@ -362,15 +340,15 @@
       </div>
       <div class="card-content">
         <div class="quick-actions">
-          <button class="btn btn-outline">
+          <button class="btn btn-outline" id="btn-send-reminder" {% if order.status == 'paid' %}disabled title="Zamówienie już opłacone"{% endif %}>
             <i data-lucide="send"></i>
             Wyślij przypomnienie o płatności
           </button>
-          <button class="btn btn-outline">
+          <button class="btn btn-outline" id="btn-resend-ticket" {% if order.status != 'paid' %}disabled title="Zamówienie musi być opłacone"{% endif %}>
             <i data-lucide="mail"></i>
             Wyślij potwierdzenie uczestnictwa
           </button>
-          <button class="btn btn-outline btn-destructive-outline">
+          <button class="btn btn-outline btn-destructive-outline" id="btn-cancel-order" {% if order.status == 'cancelled' %}disabled{% endif %}>
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
           </button>
@@ -395,4 +373,115 @@
 
   </div>
 </div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var orderId = '{{ order.event_order_id }}';
+  
+  // Status change handler
+  var statusSelect = document.getElementById('order-status-select');
+  if (statusSelect) {
+    statusSelect.addEventListener('change', function() {
+      var select = this;
+      var newStatus = select.value;
+      var statusLabel = select.options[select.selectedIndex].text;
+      
+      showConfirmDialog(
+        'Zmiana statusu', 
+        'Czy na pewno chcesz zmienić status zamówienia na "' + statusLabel + '"?',
+        {okText: 'Zmień status'}
+      ).then(function(confirmed) {
+        if (!confirmed) {
+          location.reload();
+          return;
+        }
+        
+        fetch('{{ url_for("admin_v2_bp.order_update_status", order_id=order.event_order_id) }}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'status=' + encodeURIComponent(newStatus)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          location.reload();
+        })
+        .catch(function(err) {
+          location.reload();
+        });
+      });
+    });
+  }
+  
+  // Send reminder button
+  var btnReminder = document.getElementById('btn-send-reminder');
+  if (btnReminder && !btnReminder.disabled) {
+    btnReminder.addEventListener('click', function() {
+      showConfirmDialog(
+        'Wyślij przypomnienie',
+        'Czy wysłać przypomnienie o płatności na adres {{ order.purchaser_email }}?',
+        {okText: 'Wyślij'}
+      ).then(function(confirmed) {
+        if (!confirmed) return;
+        
+        fetch('{{ url_for("admin_v2_bp.order_send_reminder", order_id=order.event_order_id) }}', {
+          method: 'POST'
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          showConfirmDialog('Sukces', data.message || 'Przypomnienie zostanie wysłane', {okText: 'OK', cancelText: ''});
+        });
+      });
+    });
+  }
+  
+  // Resend ticket button
+  var btnResend = document.getElementById('btn-resend-ticket');
+  if (btnResend && !btnResend.disabled) {
+    btnResend.addEventListener('click', function() {
+      showConfirmDialog(
+        'Wyślij bilet ponownie',
+        'Czy ponownie wysłać bilet na adres {{ order.purchaser_email }}?',
+        {okText: 'Wyślij'}
+      ).then(function(confirmed) {
+        if (!confirmed) return;
+        
+        fetch('{{ url_for("admin_v2_bp.order_resend_ticket", order_id=order.event_order_id) }}', {
+          method: 'POST'
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          showConfirmDialog('Sukces', data.message || 'Bilet zostanie ponownie wysłany', {okText: 'OK', cancelText: ''});
+        });
+      });
+    });
+  }
+  
+  // Cancel order button
+  var btnCancel = document.getElementById('btn-cancel-order');
+  if (btnCancel && !btnCancel.disabled) {
+    btnCancel.addEventListener('click', function() {
+      showConfirmDialog(
+        'Anuluj zamówienie',
+        'Czy na pewno chcesz anulować to zamówienie? Ta operacja jest nieodwracalna.',
+        {danger: true, okText: 'Anuluj zamówienie', cancelText: 'Nie, zachowaj'}
+      ).then(function(confirmed) {
+        if (!confirmed) return;
+        
+        fetch('{{ url_for("admin_v2_bp.order_cancel", order_id=order.event_order_id) }}', {
+          method: 'POST'
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.success) {
+            location.reload();
+          }
+        });
+      });
+    });
+  }
+});
+</script>
 {% endblock %}

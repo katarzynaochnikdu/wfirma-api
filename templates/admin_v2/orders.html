@@ -10,10 +10,10 @@
     <p class="page-description">Przeglądaj i zarządzaj zamówieniami</p>
   </div>
   <div class="header-actions">
-    <button class="btn btn-outline" onclick="window.print()">
+    <a href="{{ url_for('admin_v2_bp.orders_export', status=request.args.get('status', ''), event_id=request.args.get('event_id', '')) }}" class="btn btn-outline">
       <i data-lucide="download"></i>
       Eksportuj CSV
-    </button>
+    </a>
   </div>
 </div>
 

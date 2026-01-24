@@ -152,6 +152,65 @@ def _get_common_context(user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
+# EVENT DATA NORMALIZATION
+# ---------------------------------------------------------------------------
+
+def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalizuje dane wydarzenia - mapuje pola z Backstage na nazwy oczekiwane przez template.
+    
+    Backstage używa nazw pól jak:
+    - event_location_city, event_day_text_1, event_mail_link_top_banner
+    
+    Template oczekuje:
+    - eventCity, eventDate, email_header_url
+    """
+    if not event:
+        return event
+    
+    event_data = event.get("data") or {}
+    
+    # Mapuj pola na nazwy oczekiwane przez template
+    normalized = {
+        # Data i czas
+        "eventDate": event_data.get("event_day_text_1") or event_data.get("event_date_time") or event_data.get("eventDate") or "",
+        "eventTime": event_data.get("event_time_text") or event_data.get("eventTime") or "",
+        
+        # Lokalizacja
+        "eventCity": event_data.get("event_location_city") or event_data.get("eventCity") or "",
+        "eventLocation": event_data.get("event_location_place") or event_data.get("eventLocation") or "",
+        "eventAddress": event_data.get("event_location_address") or event_data.get("eventAddress") or "",
+        "event_location_zip": event_data.get("event_location_zip") or "",
+        
+        # Grafiki i branding
+        "email_header_url": event_data.get("event_mail_link_top_banner") or event_data.get("email_header_url") or "",
+        "event_logo_url": event_data.get("event_logo_link") or event_data.get("event_logo_url") or "",
+        "color_gradient_1": event_data.get("color_gradient_1") or "#0065D7",
+        "color_gradient_2": event_data.get("color_gradient_2") or event_data.get("color_gradient_1") or "#00A1D7",
+        
+        # Kontakt
+        "md_email_kontakt": event_data.get("md_email_kontakt") or "eventy@medidesk.com",
+        "md_mobile_kontakt": event_data.get("md_mobile_kontakt") or "+48 729 927 389",
+        
+        # Linki publiczne
+        "event_public_url": event_data.get("event_public_url") or "",
+        "success_page_url": event_data.get("success_page_url") or "",
+        "cancel_page_url": event_data.get("cancel_page_url") or "",
+    }
+    
+    # Zachowaj wszystkie oryginalne pola i nadpisz znormalizowanymi
+    merged_data = {**event_data, **normalized}
+    event["data"] = merged_data
+    
+    # Mapuj linki Backstage
+    event["backstage_url"] = event_data.get("event_config_link") or "#"
+    event["backstage_orders_url"] = event_data.get("event_orders_link") or "#"
+    event["backstage_attendees_url"] = event_data.get("event_attendees_link") or "#"
+    
+    return event
+
+
+# ---------------------------------------------------------------------------
 # ROUTES
 # ---------------------------------------------------------------------------
 
@@ -368,6 +427,115 @@ def orders_list():
     )
 
 
+@admin_v2_bp.route("/orders/export", methods=["GET"])
+@_require_permission("orders")
+def orders_export():
+    """Eksport zamówień do CSV."""
+    import csv
+    import io
+    from flask import Response
+    
+    # Filtry (te same co lista)
+    status_filter = request.args.get("status", "").strip()
+    event_filter = request.args.get("event_id", "").strip()
+    
+    orders = list_orders(
+        event_id=event_filter or None,
+        status=status_filter or None,
+        limit=1000,
+    )
+    events = list_events(limit=100)
+    event_map = {e.get("event_id"): e for e in events}
+    
+    # Twórz CSV
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+    
+    # Nagłówki
+    writer.writerow([
+        'ID zamówienia', 'Wydarzenie', 'Nabywca', 'Email', 'Firma',
+        'Uczestników', 'Kwota', 'Status', 'Data utworzenia'
+    ])
+    
+    # Dane
+    for o in orders:
+        event = event_map.get(o.get("event_id"), {})
+        created = o.get("created_at")
+        writer.writerow([
+            o.get("event_order_id", ""),
+            event.get("event_name", o.get("event_id", "")),
+            f"{o.get('purchaser_first_name', '')} {o.get('purchaser_last_name', '')}".strip(),
+            o.get("purchaser_email", ""),
+            o.get("purchaser_company", ""),
+            o.get("participant_count", 1),
+            f"{o.get('total', 0)} {o.get('currency', 'PLN')}",
+            o.get("status", ""),
+            created.strftime("%Y-%m-%d %H:%M") if created else "",
+        ])
+    
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv; charset=utf-8',
+        headers={
+            'Content-Disposition': 'attachment; filename=zamowienia.csv',
+            'Content-Type': 'text/csv; charset=utf-8'
+        }
+    )
+
+
+@admin_v2_bp.route("/participants/export", methods=["GET"])
+@_require_permission("orders")
+def participants_export():
+    """Eksport uczestników do CSV."""
+    import csv
+    import io
+    from flask import Response
+    
+    event_filter = request.args.get("event_id", "").strip()
+    
+    if event_filter:
+        participants = get_participants_for_event(event_filter) or []
+    else:
+        # Wszystkie wydarzenia
+        events = list_events(limit=100)
+        participants = []
+        for e in events:
+            p_list = get_participants_for_event(e.get("event_id")) or []
+            for p in p_list:
+                p["event_name"] = e.get("event_name", "")
+            participants.extend(p_list)
+    
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+    
+    writer.writerow([
+        'Imię', 'Nazwisko', 'Email', 'Wydarzenie', 'Typ biletu', 'Status', 'Data'
+    ])
+    
+    for p in participants:
+        created = p.get("created_at")
+        writer.writerow([
+            p.get("first_name", ""),
+            p.get("last_name", ""),
+            p.get("email", ""),
+            p.get("event_name", ""),
+            p.get("ticket_class_name") or p.get("ticket_class_id") or "Bilet Standard",
+            p.get("status", ""),
+            created.strftime("%Y-%m-%d %H:%M") if created else "",
+        ])
+    
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv; charset=utf-8',
+        headers={
+            'Content-Disposition': 'attachment; filename=uczestnicy.csv',
+            'Content-Type': 'text/csv; charset=utf-8'
+        }
+    )
+
+
 @admin_v2_bp.route("/orders/<order_id>", methods=["GET"])
 @_require_permission("orders")
 def order_detail(order_id: str):
@@ -412,6 +580,75 @@ def order_detail(order_id: str):
         order_history=order_history,
         **_get_common_context(user),
     )
+
+
+@admin_v2_bp.route("/orders/<order_id>/status", methods=["POST"])
+@_require_permission("orders")
+def order_update_status(order_id: str):
+    """Aktualizuje status zamówienia (AJAX)."""
+    from flask import jsonify
+    from pg_storage import update_order_status
+    
+    user = _get_current_admin_user()
+    new_status = request.form.get("status", "").strip()
+    
+    valid_statuses = ["received", "pending_payment", "paid", "cancelled", "refunded"]
+    if new_status not in valid_statuses:
+        return jsonify({"success": False, "error": "Nieprawidłowy status"}), 400
+    
+    result = update_order_status(order_id, new_status)
+    if result:
+        # Zapisz w logach audytu
+        insert_admin_audit_log(
+            action="order_status_change",
+            admin_user_id=user.get("id"),
+            target_id=order_id,
+            extra={"new_status": new_status},
+            ip=request.remote_addr,
+        )
+        return jsonify({"success": True, "status": new_status})
+    
+    return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+
+
+@admin_v2_bp.route("/orders/<order_id>/send-reminder", methods=["POST"])
+@_require_permission("orders")
+def order_send_reminder(order_id: str):
+    """Wysyła przypomnienie o płatności (placeholder)."""
+    from flask import jsonify
+    # TODO: Integracja z Make/email
+    return jsonify({"success": True, "message": "Przypomnienie zostanie wysłane"})
+
+
+@admin_v2_bp.route("/orders/<order_id>/resend-ticket", methods=["POST"])
+@_require_permission("orders")
+def order_resend_ticket(order_id: str):
+    """Ponownie wysyła bilet (placeholder)."""
+    from flask import jsonify
+    # TODO: Integracja z Make/email
+    return jsonify({"success": True, "message": "Bilet zostanie ponownie wysłany"})
+
+
+@admin_v2_bp.route("/orders/<order_id>/cancel", methods=["POST"])
+@_require_permission("orders")
+def order_cancel(order_id: str):
+    """Anuluje zamówienie."""
+    from flask import jsonify
+    from pg_storage import update_order_status
+    
+    user = _get_current_admin_user()
+    result = update_order_status(order_id, "cancelled")
+    
+    if result:
+        insert_admin_audit_log(
+            action="order_cancelled",
+            admin_user_id=user.get("id"),
+            target_id=order_id,
+            ip=request.remote_addr,
+        )
+        return jsonify({"success": True})
+    
+    return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
 
 
 # ---------------------------------------------------------------------------
@@ -655,12 +892,14 @@ def events_list():
     active_events = [e for e in all_events if e.get("is_active", True)]
     inactive_events = [e for e in all_events if not e.get("is_active", True)]
     
-    # Dodaj statystyki do wydarzeń
+    # Dodaj statystyki i normalizuj dane wydarzeń
     for event in active_events + inactive_events:
         event_id = event.get("event_id")
         orders = list_orders(event_id=event_id, limit=500)
         event["order_count"] = len(orders)
         event["participant_count"] = sum(int(o.get("participant_count") or 0) for o in orders)
+        # Normalizuj pola z Backstage
+        _normalize_event_data(event)
     
     return render_template(
         "admin_v2/events.html",
@@ -1129,6 +1368,51 @@ def email_retry(email_id: int):
     return redirect(url_for("admin_v2_bp.communication"))
 
 
+@admin_v2_bp.route("/communication/export", methods=["GET"])
+@_require_permission("orders")
+def communication_export():
+    """Eksport historii komunikacji do CSV."""
+    import csv
+    import io
+    from flask import Response
+    
+    event_filter = request.args.get("event_id", "").strip()
+    
+    emails = _list_mail_logs(event_id=event_filter or None, limit=1000)
+    events = list_events(limit=100)
+    event_map = {e.get("event_id"): e for e in events}
+    
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+    
+    writer.writerow([
+        'Data', 'Odbiorca', 'Typ', 'Temat', 'Status', 'Wydarzenie', 'ID zamówienia'
+    ])
+    
+    for e in emails:
+        event = event_map.get(e.get("event_id"), {})
+        created = e.get("created_at")
+        writer.writerow([
+            created.strftime("%Y-%m-%d %H:%M") if created else "",
+            e.get("to_email", ""),
+            e.get("template_key", ""),
+            e.get("subject", ""),
+            e.get("status", ""),
+            event.get("event_name", ""),
+            e.get("event_order_id", ""),
+        ])
+    
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv; charset=utf-8',
+        headers={
+            'Content-Disposition': 'attachment; filename=komunikacja.csv',
+            'Content-Type': 'text/csv; charset=utf-8'
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # SETTINGS (Ustawienia)
 # ---------------------------------------------------------------------------
@@ -1159,6 +1443,9 @@ def event_room(event_id: str):
     event = get_event(event_id)
     if not event:
         return redirect(url_for("admin_v2_bp.events_list"))
+    
+    # Normalizuj dane wydarzenia (mapuj pola Backstage)
+    _normalize_event_data(event)
     
     # Aktywna zakładka
     active_tab = request.args.get("tab", "sales").strip()
@@ -1221,11 +1508,8 @@ def event_room(event_id: str):
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = ""  # Brak w danych
     
-    # Backstage URLs (placeholder)
-    event["backstage_url"] = "#"
-    event["backstage_orders_url"] = "#"
-    event["backstage_attendees_url"] = "#"
-    
+    # Backstage URLs są już ustawione przez _normalize_event_data()
+
     return render_template(
         "admin_v2/event_room.html",
         active_page="events",

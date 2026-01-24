@@ -23,6 +23,18 @@
     </main>
   </div>
 
+  <!-- Confirmation Dialog -->
+  <div class="confirm-dialog-overlay" id="confirmDialog">
+    <div class="confirm-dialog">
+      <h3 class="confirm-dialog-title" id="confirmTitle">Potwierdzenie</h3>
+      <p class="confirm-dialog-message" id="confirmMessage">Czy na pewno chcesz wykonać tę akcję?</p>
+      <div class="confirm-dialog-actions">
+        <button class="btn btn-outline" id="confirmCancel">Anuluj</button>
+        <button class="btn btn-primary" id="confirmOk">Potwierdź</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Inicjalizuj ikony Lucide po załadowaniu DOM
     document.addEventListener('DOMContentLoaded', function() {
@@ -37,6 +49,45 @@
     
     function logout() {
       window.location.href = '{{ url_for("admin_v2_bp.logout") }}';
+    }
+    
+    // Custom confirm dialog
+    function showConfirmDialog(title, message, options) {
+      options = options || {};
+      var dialog = document.getElementById('confirmDialog');
+      var titleEl = document.getElementById('confirmTitle');
+      var msgEl = document.getElementById('confirmMessage');
+      var okBtn = document.getElementById('confirmOk');
+      var cancelBtn = document.getElementById('confirmCancel');
+      
+      titleEl.textContent = title || 'Potwierdzenie';
+      msgEl.textContent = message || 'Czy na pewno chcesz wykonać tę akcję?';
+      
+      if (options.danger) {
+        okBtn.className = 'btn btn-destructive';
+      } else {
+        okBtn.className = 'btn btn-primary';
+      }
+      okBtn.textContent = options.okText || 'Potwierdź';
+      cancelBtn.textContent = options.cancelText || 'Anuluj';
+      
+      dialog.classList.add('active');
+      
+      return new Promise(function(resolve) {
+        function cleanup() {
+          dialog.classList.remove('active');
+          okBtn.removeEventListener('click', handleOk);
+          cancelBtn.removeEventListener('click', handleCancel);
+          dialog.removeEventListener('click', handleOverlay);
+        }
+        function handleOk() { cleanup(); resolve(true); }
+        function handleCancel() { cleanup(); resolve(false); }
+        function handleOverlay(e) { if (e.target === dialog) { cleanup(); resolve(false); } }
+        
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        dialog.addEventListener('click', handleOverlay);
+      });
     }
   </script>
   {% block extra_scripts %}{% endblock %}
