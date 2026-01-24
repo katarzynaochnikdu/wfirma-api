@@ -326,6 +326,76 @@ document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
+  
+  // Sortowanie tabeli
+  const table = document.querySelector('.sortable-table');
+  if (!table) return;
+  
+  const headers = table.querySelectorAll('.sortable-header');
+  const tbody = table.querySelector('tbody');
+  
+  headers.forEach((header, colIndex) => {
+    header.addEventListener('click', function() {
+      const sortKey = this.dataset.sort;
+      const rows = Array.from(tbody.querySelectorAll('tr.clickable-row'));
+      
+      if (rows.length === 0) return;
+      
+      // Toggle direction
+      const isAsc = this.classList.contains('sorted-asc');
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      this.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
+      
+      rows.sort((a, b) => {
+        let aVal, bVal;
+        const aCell = a.children[colIndex];
+        const bCell = b.children[colIndex];
+        
+        if (!aCell || !bCell) return 0;
+        
+        // Pobierz wartość w zależności od typu kolumny
+        if (sortKey === 'date') {
+          // Data - parsuj z formatu DD.MM.YYYY HH:MM
+          const aText = aCell.textContent.replace(/\s+/g, ' ').trim();
+          const bText = bCell.textContent.replace(/\s+/g, ' ').trim();
+          const parseDate = (text) => {
+            const match = text.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2}):(\d{2})?/);
+            if (match) {
+              return new Date(match[3], match[2]-1, match[1], match[4] || 0, match[5] || 0);
+            }
+            return new Date(0);
+          };
+          aVal = parseDate(aText);
+          bVal = parseDate(bText);
+          return isAsc ? bVal - aVal : aVal - bVal;
+        } else if (sortKey === 'total' || sortKey === 'participants') {
+          // Liczby - usuń formatowanie walutowe
+          aVal = parseFloat(aCell.textContent.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+          bVal = parseFloat(bCell.textContent.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+          return isAsc ? bVal - aVal : aVal - bVal;
+        } else if (sortKey === 'status' || sortKey === 'payment') {
+          // Status/płatność - po title ikony
+          const aIcon = aCell.querySelector('[title]');
+          const bIcon = bCell.querySelector('[title]');
+          aVal = aIcon ? aIcon.getAttribute('title') : '';
+          bVal = bIcon ? bIcon.getAttribute('title') : '';
+        } else {
+          // Tekst - domyślnie
+          aVal = aCell.textContent.trim().toLowerCase();
+          bVal = bCell.textContent.trim().toLowerCase();
+        }
+        
+        // Porównanie tekstowe
+        if (typeof aVal === 'string') {
+          return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+        }
+        return 0;
+      });
+      
+      // Przenieś posortowane wiersze
+      rows.forEach(row => tbody.appendChild(row));
+    });
+  });
 });
 </script>
 {% endblock %}
