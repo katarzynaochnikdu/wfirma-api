@@ -145,10 +145,8 @@
         <!-- Data -->
         <td class="text-right">
           <div>
-            <p style="font-size: 0.875rem;">
-              {{ p.created_at.strftime('%d %B')|replace('January', 'stycznia')|replace('February', 'lutego')|replace('March', 'marca')|replace('April', 'kwietnia')|replace('May', 'maja')|replace('June', 'czerwca')|replace('July', 'lipca')|replace('August', 'sierpnia')|replace('September', 'września')|replace('October', 'października')|replace('November', 'listopada')|replace('December', 'grudnia') if p.created_at else '—' }}
-            </p>
-            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ p.created_at.year if p.created_at else '' }}</p>
+            <p style="font-size: 0.875rem;">{{ p.created_at.strftime('%d.%m.%Y') if p.created_at else '—' }}</p>
+            <p style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground);">{{ p.created_at.strftime('%H:%M') if p.created_at else '' }}</p>
           </div>
         </td>
       </tr>
