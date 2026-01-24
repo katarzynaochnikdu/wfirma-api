@@ -49,34 +49,29 @@
     {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
     {% set event_city = event_data.get('event_location_city') or event_data.get('event_address_text_city') or event_data.get('eventCity') or '' %}
     {% set event_date = event_data.get('event_date_start') or event_data.get('eventDate') or '' %}
-    {% set banner_url = event_data.get('email_header_url') or '' %}
+    {% set banner_url = event_data.get('email_header_url') or event_data.get('event_mail_link_top_banner') or '' %}
+    {% set tagline = event_data.get('event_tagline') or event_data.get('tagline') or event_data.get('event_motto') or '' %}
     
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
-      <!-- Banner Header with overlay content -->
+      <!-- Banner Header - cały obraz nagłówka z maila -->
       <div class="event-card-header event-card-header-banner" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});">
         {% if banner_url %}
         <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
         {% endif %}
         
-        <!-- Overlay content -->
-        <div class="event-card-overlay">
-          <!-- Date badge -->
-          {% if event_date %}
-          <div class="event-date-badge">
-            <i data-lucide="calendar" style="width: 12px; height: 12px;"></i>
-            {{ event_date }}
-          </div>
-          {% endif %}
-          
-          <!-- Title on banner -->
-          <h3 class="event-card-banner-title">{{ event.event_name or 'Bez nazwy' }}</h3>
-        </div>
-        
-        <!-- Settings gear -->
-        <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config" class="event-settings-btn" onclick="event.stopPropagation();">
+        <!-- Settings gear - prawy górny róg (jedyny element nakładany na banner) -->
+        <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config" class="event-settings-btn" onclick="event.stopPropagation();" title="Konfiguracja">
           <i data-lucide="settings"></i>
         </a>
       </div>
+      
+      <!-- Tagline ribbon -->
+      {% if tagline %}
+      <div class="event-card-tagline" style="background: linear-gradient(90deg, {{ event_color }}, {{ event_color_2 }});">
+        <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i>
+        <span>{{ tagline }}</span>
+      </div>
+      {% endif %}
       
       <div class="event-card-body">
         <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
@@ -99,11 +94,11 @@
         <div class="event-card-stats">
           <div class="event-stat">
             <span class="event-stat-value">{{ event.order_count or 0 }}</span>
-            <span class="event-stat-label">Zamówień</span>
+            <span class="event-stat-label">ZAMÓWIEŃ</span>
           </div>
           <div class="event-stat">
             <span class="event-stat-value">{{ event.participant_count or 0 }}</span>
-            <span class="event-stat-label">Uczestników</span>
+            <span class="event-stat-label">UCZESTNIKÓW</span>
           </div>
         </div>
       </div>
@@ -174,16 +169,12 @@
 }
 
 .event-card-active {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  ring: 2px;
-  ring-color: hsl(var(--primary) / 0.2);
-  outline: 2px solid hsl(var(--primary) / 0.2);
-  outline-offset: 0;
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.1), 0 0 0 2px rgba(59, 130, 246, 0.15);
 }
 
 .event-card-active:hover {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  outline-color: hsl(var(--primary) / 0.4);
+  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.3);
+  transform: translateY(-2px);
 }
 
 .event-card-inactive {
@@ -194,15 +185,12 @@
   opacity: 0.9;
 }
 
-/* Banner header - 3:1 aspect ratio */
+/* Banner header */
 .event-card-header-banner {
   position: relative;
-  aspect-ratio: 2.5 / 1;
-  min-height: 140px;
+  aspect-ratio: 2.2 / 1;
+  min-height: 160px;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
 }
 
 .event-card-header-minimal {
@@ -224,66 +212,49 @@
   transform: scale(1.05);
 }
 
-/* Overlay on banner */
-.event-card-overlay {
-  position: relative;
-  z-index: 10;
-  padding: 1rem;
-  background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%);
-  color: white;
+/* Tagline ribbon */
+.event-card-tagline {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-height: 80px;
-  justify-content: flex-end;
-}
-
-.event-date-badge {
-  display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  background: rgba(255,255,255,0.2);
-  backdrop-filter: blur(4px);
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  width: fit-content;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
 
-.event-card-banner-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin: 0;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  line-height: 1.3;
-}
-
-/* Settings button */
+/* Settings button - styl jak na screenie */
 .event-settings-btn {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
-  width: 32px;
-  height: 32px;
+  z-index: 20;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  transition: background 0.2s ease;
+  color: hsl(215, 16%, 47%);
+  transition: all 0.2s ease;
   text-decoration: none;
 }
 
 .event-settings-btn:hover {
-  background: rgba(0, 0, 0, 0.6);
+  background: white;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  color: hsl(212, 100%, 42%);
 }
 
 .event-settings-btn i {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 /* Card body */
