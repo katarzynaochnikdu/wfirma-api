@@ -1318,48 +1318,57 @@ def api_template_create():
     from flask import jsonify
     from pg_storage import save_email_template
     
-    user = _get_current_admin_user()
-    data = request.get_json() or {}
-    
-    name = data.get("name", "").strip()
-    subject = data.get("subject", "").strip()
-    blocks = data.get("blocks", [])
-    category = data.get("category", "custom")
-    template_type = data.get("template_type", "custom")
-    html_content = data.get("html_content")
-    event_id = data.get("event_id") or None
-    
-    if not name:
-        return jsonify({"success": False, "error": "Nazwa szablonu jest wymagana"}), 400
-    
-    template_id = save_email_template(
-        name=name,
-        subject=subject,
-        blocks=blocks,
-        category=category,
-        template_type=template_type,
-        html_content=html_content,
-        event_id=event_id,
-        admin_user_id=user.get("id") if user else None,
-    )
-    
-    if not template_id:
-        return jsonify({"success": False, "error": "Błąd zapisu szablonu"}), 500
-    
-    # Audit log
-    insert_admin_audit_log(
-        action="template_created",
-        admin_user_id=user.get("id") if user else None,
-        target_id=str(template_id),
-        extra={"name": name, "category": category, "type": template_type},
-        ip=request.remote_addr,
-    )
-    
-    return jsonify({
-        "success": True,
-        "template_id": template_id,
-        "message": f"Szablon '{name}' został utworzony",
-    })
+    try:
+        user = _get_current_admin_user()
+        data = request.get_json() or {}
+        
+        name = data.get("name", "").strip()
+        subject = data.get("subject", "").strip()
+        blocks = data.get("blocks", [])
+        category = data.get("category", "custom")
+        template_type = data.get("template_type", "custom")
+        html_content = data.get("html_content")
+        event_id = data.get("event_id") or None
+        
+        if not name:
+            return jsonify({"success": False, "error": "Nazwa szablonu jest wymagana"}), 400
+        
+        template_id = save_email_template(
+            name=name,
+            subject=subject,
+            blocks=blocks,
+            category=category,
+            template_type=template_type,
+            html_content=html_content,
+            event_id=event_id,
+            admin_user_id=user.get("id") if user else None,
+        )
+        
+        if not template_id:
+            return jsonify({"success": False, "error": "Błąd zapisu szablonu - sprawdź logi serwera"}), 500
+        
+        # Audit log (ignore errors)
+        try:
+            insert_admin_audit_log(
+                action="template_created",
+                admin_user_id=user.get("id") if user else None,
+                target_id=str(template_id),
+                extra={"name": name, "category": category, "type": template_type},
+                ip=request.remote_addr,
+            )
+        except Exception as audit_err:
+            print(f"[TEMPLATE] Audit log error (ignored): {audit_err}")
+        
+        return jsonify({
+            "success": True,
+            "template_id": template_id,
+            "message": f"Szablon '{name}' został utworzony",
+        })
+    except Exception as e:
+        import traceback
+        print(f"[TEMPLATE CREATE ERROR] {e}")
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @admin_v2_bp.route("/api/templates/<int:template_id>", methods=["PUT"])
@@ -1431,35 +1440,44 @@ def api_template_delete(template_id: int):
     from flask import jsonify
     from pg_storage import delete_email_template, get_email_template
     
-    user = _get_current_admin_user()
-    
-    # Sprawdź czy istnieje
-    existing = get_email_template(template_id)
-    if not existing:
-        return jsonify({"success": False, "error": "Szablon nie istnieje"}), 404
-    
-    # Nie pozwól usuwać szablonów systemowych
-    if existing.get("is_system"):
-        return jsonify({"success": False, "error": "Nie można usunąć szablonów systemowych"}), 403
-    
-    success = delete_email_template(template_id)
-    
-    if not success:
-        return jsonify({"success": False, "error": "Błąd usuwania szablonu"}), 500
-    
-    # Audit log
-    insert_admin_audit_log(
-        action="template_deleted",
-        admin_user_id=user.get("id") if user else None,
-        target_id=str(template_id),
-        extra={"name": existing.get("name")},
-        ip=request.remote_addr,
-    )
-    
-    return jsonify({
-        "success": True,
-        "message": f"Szablon '{existing.get('name')}' został usunięty",
-    })
+    try:
+        user = _get_current_admin_user()
+        
+        # Sprawdź czy istnieje
+        existing = get_email_template(template_id)
+        if not existing:
+            return jsonify({"success": False, "error": "Szablon nie istnieje"}), 404
+        
+        # Nie pozwól usuwać szablonów systemowych
+        if existing.get("is_system"):
+            return jsonify({"success": False, "error": "Nie można usunąć szablonów systemowych"}), 403
+        
+        success = delete_email_template(template_id)
+        
+        if not success:
+            return jsonify({"success": False, "error": "Błąd usuwania szablonu"}), 500
+        
+        # Audit log (ignore errors)
+        try:
+            insert_admin_audit_log(
+                action="template_deleted",
+                admin_user_id=user.get("id") if user else None,
+                target_id=str(template_id),
+                extra={"name": existing.get("name")},
+                ip=request.remote_addr,
+            )
+        except Exception as audit_err:
+            print(f"[TEMPLATE] Audit log error (ignored): {audit_err}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Szablon '{existing.get('name')}' został usunięty",
+        })
+    except Exception as e:
+        import traceback
+        print(f"[TEMPLATE DELETE ERROR] {e}")
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @admin_v2_bp.route("/api/templates/<int:template_id>/duplicate", methods=["POST"])

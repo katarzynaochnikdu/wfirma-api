@@ -3354,10 +3354,13 @@ def delete_email_template(template_id: int, soft_delete: bool = True) -> bool:
         else:
             cur.execute("DELETE FROM email_templates WHERE id = %s AND is_system = FALSE", (template_id,))
         
+        conn.commit()
         return cur.rowcount > 0
         
     except Exception as e:
         print(f"[DB] delete_email_template error: {e}")
+        if conn:
+            conn.rollback()
         return False
     finally:
         if pool is not None and conn is not None:
