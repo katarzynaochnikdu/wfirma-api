@@ -53,13 +53,13 @@
     {% set tagline = event_data.get('event_tagline') or event_data.get('tagline') or event_data.get('event_motto') or '' %}
     
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
-      <!-- Banner Header - cały obraz nagłówka z maila -->
-      <div class="event-card-header event-card-header-banner" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});">
+      <!-- Banner Header -->
+      <div class="event-card-header-banner" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});">
         {% if banner_url %}
-        <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
+        <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img" loading="lazy">
         {% endif %}
         
-        <!-- Settings gear - prawy górny róg (jedyny element nakładany na banner) -->
+        <!-- Settings gear -->
         <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config" class="event-settings-btn" onclick="event.stopPropagation();" title="Konfiguracja">
           <i data-lucide="settings"></i>
         </a>
@@ -156,16 +156,17 @@
 {% endif %}
 
 <style>
-/* Event Cards - Active with ring */
+/* Event Cards */
 .event-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
   text-decoration: none;
   color: inherit;
-  background: var(--card);
-  border-radius: var(--radius);
+  background: var(--card, #ffffff);
+  border-radius: 12px;
   overflow: hidden;
   transition: all 0.2s ease;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border, #e5e7eb);
 }
 
 .event-card-active {
@@ -185,31 +186,41 @@
   opacity: 0.9;
 }
 
-/* Banner header */
+/* Banner header - MUST be first child, fills width */
 .event-card-header-banner {
   position: relative;
-  aspect-ratio: 2.2 / 1;
-  min-height: 160px;
+  width: 100%;
+  min-height: 140px;
+  max-height: 180px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .event-card-header-minimal {
   position: relative;
+  width: 100%;
 }
 
+/* Banner image - covers entire header */
 .event-card-banner-img {
+  display: block;
   width: 100%;
   height: 100%;
+  min-height: 140px;
+  max-height: 180px;
   object-fit: cover;
+  object-position: center;
   transition: transform 0.3s ease;
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
 }
 
 .event-card:hover .event-card-banner-img {
-  transform: scale(1.05);
+  transform: scale(1.02);
+}
+
+/* Ensure header has proper height when no image */
+.event-card-header-banner:empty,
+.event-card-header-banner:not(:has(img)) {
+  min-height: 140px;
 }
 
 /* Tagline ribbon */
@@ -257,11 +268,12 @@
   height: 18px;
 }
 
-/* Card body */
+/* Card body - fills remaining space */
 .event-card-body {
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .event-card-title {
