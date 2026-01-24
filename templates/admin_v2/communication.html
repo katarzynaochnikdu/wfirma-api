@@ -286,7 +286,12 @@
     <tbody>
       {% for email in emails %}
       <tr>
-        <td class="text-muted" style="white-space: nowrap;">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
+        <td style="white-space: nowrap;">
+          <div>
+            <p style="font-size: 0.875rem;">{{ email.sent_at.strftime('%d.%m.%Y') if email.sent_at else '—' }}</p>
+            <p style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground);">{{ email.sent_at.strftime('%H:%M') if email.sent_at else '' }}</p>
+          </div>
+        </td>
         <td>{{ email.recipient }}</td>
         <td class="text-center">
           {% set type_lower = email.type|lower %}
