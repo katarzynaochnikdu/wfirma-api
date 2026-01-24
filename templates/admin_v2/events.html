@@ -38,8 +38,8 @@
 <!-- ACTIVE EVENTS SECTION -->
 {% if active_events %}
 <div style="margin-bottom: 2rem;">
-  <h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-    <span style="width: 10px; height: 10px; border-radius: 50%; background: var(--primary);"></span>
+  <h2 class="section-header">
+    <span class="active-dot"></span>
     Aktywne wydarzenia ({{ active_events|length }})
   </h2>
   <div class="events-grid">
@@ -52,29 +52,22 @@
     {% set banner_url = event_data.get('email_header_url') or event_data.get('event_mail_link_top_banner') or '' %}
     {% set tagline = event_data.get('event_tagline') or event_data.get('tagline') or event_data.get('event_motto') or '' %}
     
-    <div class="event-card event-card-active" onclick="window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}'">
-      <!-- Banner Header - pełna szerokość -->
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
+      <!-- Banner -->
       <div class="event-card-header-banner">
         {% if banner_url %}
-        <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img" loading="lazy">
+        <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
         {% else %}
         <div class="event-card-banner-fallback" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
         {% endif %}
         
-        <!-- Settings gear - prawy górny róg -->
-        <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config" class="event-settings-btn" onclick="event.stopPropagation();" title="Konfiguracja">
+        <!-- Settings button -->
+        <span class="event-settings-btn" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config';" title="Konfiguracja">
           <i data-lucide="settings"></i>
-        </a>
+        </span>
       </div>
       
-      <!-- Tagline ribbon -->
-      {% if tagline %}
-      <div class="event-card-tagline" style="background: linear-gradient(90deg, {{ event_color }}, {{ event_color_2 }});">
-        <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i>
-        <span>{{ tagline }}</span>
-      </div>
-      {% endif %}
-      
+      <!-- Body -->
       <div class="event-card-body">
         <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
         
@@ -93,18 +86,19 @@
           {% endif %}
         </div>
         
+        <!-- Stats -->
         <div class="event-card-stats">
           <div class="event-stat">
-            <span class="event-stat-value">{{ event.order_count or 0 }}</span>
-            <span class="event-stat-label event-stat-orders">ZAMÓWIEŃ</span>
+            <div class="event-stat-value">{{ event.order_count or 0 }}</div>
+            <div class="event-stat-label">Zamówień</div>
           </div>
           <div class="event-stat">
-            <span class="event-stat-value">{{ event.participant_count or 0 }}</span>
-            <span class="event-stat-label event-stat-participants">UCZESTNIKÓW</span>
+            <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
+            <div class="event-stat-label">Uczestników</div>
           </div>
         </div>
       </div>
-    </div>
+    </a>
     {% endfor %}
   </div>
 </div>
@@ -132,70 +126,75 @@
     {% for event in inactive_events %}
     {% set event_data = event.data or {} %}
     
-    <div class="event-card event-card-inactive" onclick="window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}'" style="cursor: pointer;">
+    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-inactive">
+      <!-- Minimal header (thin line) -->
       <div class="event-card-header-minimal">
-        <div class="event-card-gradient" style="background: linear-gradient(135deg, hsl(215, 16%, 47%), hsl(215, 16%, 57%)); height: 8px;"></div>
+        <div style="background: linear-gradient(135deg, hsl(215, 16%, 47%), hsl(215, 16%, 57%)); height: 0.5rem;"></div>
       </div>
       
+      <!-- Body -->
       <div class="event-card-body">
         <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
         
         <div class="event-card-stats">
           <div class="event-stat">
-            <span class="event-stat-value">{{ event.order_count or 0 }}</span>
-            <span class="event-stat-label">Zamówień</span>
+            <div class="event-stat-value">{{ event.order_count or 0 }}</div>
+            <div class="event-stat-label">Zamówień</div>
           </div>
           <div class="event-stat">
-            <span class="event-stat-value">{{ event.participant_count or 0 }}</span>
-            <span class="event-stat-label">Uczestników</span>
+            <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
+            <div class="event-stat-label">Uczestników</div>
           </div>
         </div>
       </div>
-    </div>
+    </a>
     {% endfor %}
   </div>
 </div>
 {% endif %}
 
 <style>
-/* Event Cards */
+/* === EVENT CARD BASE === */
 .event-card {
-  display: flex;
-  flex-direction: column;
+  display: block;
   text-decoration: none;
   color: inherit;
   background: var(--card, #ffffff);
-  border-radius: 16px;
-  overflow: hidden;
-  transition: all 0.2s ease;
+  border-radius: var(--radius, 0.5rem);
   border: 1px solid var(--border, #e5e7eb);
+  overflow: hidden;
   cursor: pointer;
 }
 
+/* === ACTIVE CARD === */
 .event-card-active {
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s ease;
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 0 0 2px hsl(212 100% 50% / 0.2);
 }
 
 .event-card-active:hover {
-  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.18);
-  transform: translateY(-3px);
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 0 0 2px hsl(212 100% 50% / 0.4);
 }
 
+/* === INACTIVE CARD === */
 .event-card-inactive {
   opacity: 0.7;
+  transition: all 0.2s ease;
 }
 
 .event-card-inactive:hover {
   opacity: 0.9;
 }
 
-/* Banner header - pełna szerokość, bez marginesów */
+/* === BANNER === */
 .event-card-header-banner {
   position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 7;
+  aspect-ratio: 3 / 1;
   overflow: hidden;
-  flex-shrink: 0;
 }
 
 .event-card-header-minimal {
@@ -203,102 +202,96 @@
   width: 100%;
 }
 
-/* Banner image - pełna szerokość */
 .event-card-banner-img {
-  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
   transition: transform 0.3s ease;
 }
 
-/* Fallback gdy brak banera */
+.event-card:hover .event-card-banner-img {
+  transform: scale(1.05);
+}
+
 .event-card-banner-fallback {
   width: 100%;
   height: 100%;
-  min-height: 140px;
 }
 
-.event-card:hover .event-card-banner-img {
-  transform: scale(1.03);
+.event-card-gradient {
+  width: 100%;
+  height: 100%;
 }
 
-/* Tagline ribbon */
+/* === SETTINGS BUTTON === */
+.event-settings-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  transition: background-color 0.2s ease;
+  text-decoration: none;
+  z-index: 10;
+}
+
+.event-settings-btn:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.event-settings-btn i {
+  width: 16px;
+  height: 16px;
+}
+
+/* === TAGLINE RIBBON === */
 .event-card-tagline {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.625rem 1rem;
+  padding: 0.5rem 1rem;
   font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: white;
   text-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
 
-/* Settings button - biały okrągły przycisk */
-.event-settings-btn {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  z-index: 20;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: hsl(215, 16%, 47%);
-  transition: all 0.2s ease;
-  text-decoration: none;
-}
-
-.event-settings-btn:hover {
-  background: white;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  color: hsl(212, 100%, 42%);
-  transform: rotate(45deg);
-}
-
-.event-settings-btn i {
-  width: 18px;
-  height: 18px;
-}
-
-/* Card body */
+/* === BODY === */
 .event-card-body {
-  padding: 1.25rem 1.5rem 1.5rem;
+  padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  flex: 1;
 }
 
-/* Tytuł wydarzenia - duży i wyrazisty */
+/* === TITLE === */
 .event-card-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.3;
-  margin: 0 0 0.75rem 0;
-  color: var(--foreground);
-  /* 2 linie max */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
 }
 
-/* Meta info - data i lokalizacja */
+/* === METADATA === */
 .event-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
-  margin-bottom: 1rem;
+  gap: 1rem;
+  margin-top: 0.5rem;
   font-size: 0.875rem;
+  line-height: 1.25rem;
   color: var(--muted-foreground);
 }
 
@@ -311,16 +304,17 @@
 .event-meta-item i {
   width: 16px;
   height: 16px;
-  opacity: 0.7;
+  flex-shrink: 0;
 }
 
-/* Stats - zamówienia i uczestnicy */
+/* === STATS === */
 .event-card-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  padding-top: 1rem;
-  margin-top: auto;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  margin-top: 1rem;
   border-top: 1px solid var(--border);
 }
 
@@ -329,46 +323,47 @@
 }
 
 .event-stat-value {
-  display: block;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  line-height: 1.75rem;
   font-weight: 700;
-  color: var(--foreground);
-  line-height: 1.2;
 }
 
 .event-stat-label {
-  display: block;
-  font-size: 0.7rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--muted-foreground);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-top: 0.25rem;
+  letter-spacing: 0.025em;
 }
 
-/* Kolory etykiet zgodne ze wzorcem */
-.event-stat-orders {
-  color: hsl(212, 100%, 50%);
-}
-
-.event-stat-participants {
-  color: hsl(180, 70%, 45%);
-}
-
-/* Grid - 2 kolumny dla kart */
+/* === GRID === */
 .events-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 1.5rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .events-grid {
     grid-template-columns: 1fr;
   }
-  
-  .event-card-header-banner {
-    aspect-ratio: 16 / 8;
-  }
+}
+
+/* === SECTION HEADER === */
+.section-header {
+  font-size: 1.125rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.active-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
 }
 </style>
 {% endblock %}
