@@ -3379,7 +3379,6 @@ def template_preview(template_key: str):
                 purchaser_last_name=sample_data["purchaser_last_name"],
                 purchaser_email=sample_data["purchaser_email"],
                 purchaser_phone=sample_data["purchaser_phone"],
-                company_name=sample_data["company_name"],
                 total_gross=sample_data["total_gross"],
                 tickets=sample_data["tickets"],
                 event_config=event_config,
@@ -3450,6 +3449,140 @@ def template_preview(template_key: str):
                 tickets=sample_data["tickets"],
                 proforma_number="PRO/2026/03/0042",
             )
+        
+        elif template_key == "internal_order_received":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 24px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">📥 Nowe zamówienie</h1>
+                    </div>
+                    <div style="padding: 24px;">
+                        <p style="margin: 0 0 16px; color: #374151;">Otrzymano nowe zamówienie na wydarzenie:</p>
+                        <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; margin-bottom: 16px;">
+                            <strong style="color: #1e293b;">{sample_data['event_name']}</strong>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kupujący:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['purchaser_first_name']} {sample_data['purchaser_last_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Email:</td><td style="padding: 8px 0;">{sample_data['purchaser_email']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Firma:</td><td style="padding: 8px 0;">{sample_data['company_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kwota:</td><td style="padding: 8px 0; font-weight: 600; color: #059669;">{sample_data['total_gross']:.2f} PLN</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        
+        elif template_key == "internal_order_paid":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 24px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">✅ Płatność otrzymana</h1>
+                    </div>
+                    <div style="padding: 24px;">
+                        <p style="margin: 0 0 16px; color: #374151;">Otrzymano płatność za zamówienie:</p>
+                        <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 16px; margin-bottom: 16px;">
+                            <strong style="color: #1e293b;">{sample_data['event_name']}</strong>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kupujący:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['purchaser_first_name']} {sample_data['purchaser_last_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Email:</td><td style="padding: 8px 0;">{sample_data['purchaser_email']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Firma:</td><td style="padding: 8px 0;">{sample_data['company_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kwota:</td><td style="padding: 8px 0; font-weight: 600; color: #059669;">{sample_data['total_gross']:.2f} PLN</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Status:</td><td style="padding: 8px 0;"><span style="background: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">OPŁACONE</span></td></tr>
+                        </table>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        
+        elif template_key == "internal_payment_expired":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 24px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">⏰ Płatność wygasła</h1>
+                    </div>
+                    <div style="padding: 24px;">
+                        <p style="margin: 0 0 16px; color: #374151;">Link do płatności wygasł dla zamówienia:</p>
+                        <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px; margin-bottom: 16px;">
+                            <strong style="color: #1e293b;">{sample_data['event_name']}</strong>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kupujący:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['purchaser_first_name']} {sample_data['purchaser_last_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Email:</td><td style="padding: 8px 0;">{sample_data['purchaser_email']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kwota:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['total_gross']:.2f} PLN</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Status:</td><td style="padding: 8px 0;"><span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">WYGASŁO</span></td></tr>
+                        </table>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        
+        elif template_key == "internal_payment_failed":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 24px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">❌ Płatność nieudana</h1>
+                    </div>
+                    <div style="padding: 24px;">
+                        <p style="margin: 0 0 16px; color: #374151;">Płatność nie powiodła się dla zamówienia:</p>
+                        <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 16px; margin-bottom: 16px;">
+                            <strong style="color: #1e293b;">{sample_data['event_name']}</strong>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kupujący:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['purchaser_first_name']} {sample_data['purchaser_last_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Email:</td><td style="padding: 8px 0;">{sample_data['purchaser_email']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kwota:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['total_gross']:.2f} PLN</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Status:</td><td style="padding: 8px 0;"><span style="background: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">NIEUDANA</span></td></tr>
+                        </table>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        
+        elif template_key == "internal_invoice_error":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; padding: 24px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">⚠️ Błąd faktury</h1>
+                    </div>
+                    <div style="padding: 24px;">
+                        <p style="margin: 0 0 16px; color: #374151;">Wystąpił błąd podczas generowania faktury:</p>
+                        <div style="background: #f5f3ff; border-left: 4px solid #8b5cf6; padding: 16px; margin-bottom: 16px;">
+                            <strong style="color: #1e293b;">{sample_data['event_name']}</strong>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kupujący:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['purchaser_first_name']} {sample_data['purchaser_last_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Firma:</td><td style="padding: 8px 0;">{sample_data['company_name']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">NIP:</td><td style="padding: 8px 0;">{sample_data['company_nip']}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #6b7280;">Kwota:</td><td style="padding: 8px 0; font-weight: 600;">{sample_data['total_gross']:.2f} PLN</td></tr>
+                        </table>
+                        <p style="margin-top: 16px; padding: 12px; background: #fef2f2; border-radius: 4px; color: #991b1b; font-size: 13px;">
+                            ⚠️ Wymaga ręcznej interwencji - sprawdź logi systemu
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
         
         else:
             # Dla szablonów bez dedykowanej funkcji render - pokaż placeholder
