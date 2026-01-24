@@ -373,8 +373,8 @@
       </thead>
       <tbody>
         {% for p in participants %}
-        <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}">
-          <td>
+        <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}" class="clickable-row" onclick="goToParticipantDetail(event, {{ p.participant_id }})" style="cursor: pointer;">
+          <td onclick="event.stopPropagation();">
             <input type="checkbox" class="checkbox event-participant-checkbox" data-participant-id="{{ p.participant_id }}" onchange="updateEventParticipantSelection()">
           </td>
           <td>
@@ -2000,6 +2000,15 @@ function initTabs() {
 }
 
 // (Removed old collapse toggle - now using scroll-based sticky header)
+
+// ===== PARTICIPANT NAVIGATION =====
+function goToParticipantDetail(event, participantId) {
+  // Don't navigate if clicking on checkbox
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'A') {
+    return;
+  }
+  window.location.href = '/admin-v2/participants/' + participantId;
+}
 
 // ===== PARTICIPANT SELECTION (Event Room) =====
 var selectedEventParticipants = [];
