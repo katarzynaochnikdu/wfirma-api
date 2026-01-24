@@ -447,10 +447,12 @@
   
   {% elif active_tab == 'config' %}
   <!-- CONFIG TAB -->
+  
+  <!-- Basic Data -->
   <div class="card" style="margin-bottom: 1rem;">
     <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
       <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
-        <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+        <i data-lucide="info" style="width: 16px; height: 16px;"></i>
         Dane podstawowe
       </h3>
     </div>
@@ -465,13 +467,22 @@
           <input type="text" class="form-input" value="{{ event.event_name }}" disabled>
         </div>
         <div class="form-group">
-          <label class="form-label">Data i godzina</label>
-          <input type="text" class="form-input" value="{{ event.data.eventDate|format_date_pl }} {{ event.data.eventTime or '' }}" disabled>
+          <label class="form-label">Data rozpoczęcia</label>
+          <input type="text" class="form-input" value="{{ event.data.eventDate|format_date_pl if event.data.eventDate else '—' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Godzina</label>
+          <input type="text" class="form-input" value="{{ event.data.eventTime or '—' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <input type="text" class="form-input" value="{% if event.is_active %}Aktywne{% else %}Nieaktywne{% endif %}" disabled>
         </div>
       </div>
     </div>
   </div>
   
+  <!-- Contacts -->
   <div class="card" style="margin-bottom: 1rem;">
     <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
       <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
@@ -493,7 +504,8 @@
     </div>
   </div>
   
-  <div class="card">
+  <!-- Location -->
+  <div class="card" style="margin-bottom: 1rem;">
     <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
       <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
         <i data-lucide="map-pin" style="width: 16px; height: 16px;"></i>
@@ -517,6 +529,135 @@
         <div class="form-group">
           <label class="form-label">Kod pocztowy</label>
           <input type="text" class="form-input" value="{{ event.data.event_location_zip or '—' }}" disabled>
+        </div>
+      </div>
+      {% if event.data.eventAddress or event.data.eventCity %}
+      <div style="margin-top: 1rem;">
+        <a href="https://www.google.com/maps/search/?api=1&query={{ (event.data.eventAddress or '') ~ ', ' ~ (event.data.eventCity or '')|urlencode }}" 
+           target="_blank" 
+           rel="noopener noreferrer"
+           class="btn btn-outline btn-sm">
+          <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+          Pokaż na mapie
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Branding -->
+  <div class="card" style="margin-bottom: 1rem;">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="palette" style="width: 16px; height: 16px;"></i>
+        Branding
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <div style="display: grid; gap: 1.5rem; grid-template-columns: 1fr 2fr;">
+        <!-- Logo -->
+        <div>
+          <label class="form-label" style="margin-bottom: 0.5rem;">Logo wydarzenia</label>
+          {% if event.data.event_logo_url %}
+          <div style="padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted);">
+            <img src="{{ event.data.event_logo_url }}" alt="Logo" style="max-width: 100%; max-height: 80px; object-fit: contain;">
+          </div>
+          {% else %}
+          <div style="padding: 1rem; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--muted); text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">
+            Brak logo
+          </div>
+          {% endif %}
+        </div>
+        
+        <!-- Banner -->
+        <div>
+          <label class="form-label" style="margin-bottom: 0.5rem;">Banner email</label>
+          {% if event.data.email_header_url %}
+          <div style="border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;">
+            <img src="{{ event.data.email_header_url }}" alt="Banner" style="width: 100%; max-height: 120px; object-fit: cover;">
+          </div>
+          {% else %}
+          <div style="padding: 2rem; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--muted); text-align: center; color: var(--muted-foreground); font-size: 0.875rem;">
+            Brak bannera
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      
+      <!-- Color gradients -->
+      <div style="margin-top: 1rem;">
+        <label class="form-label" style="margin-bottom: 0.5rem;">Kolory gradientu</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <div style="width: 48px; height: 48px; border-radius: var(--radius); background: {{ event.data.color_gradient_1 or '#0065D7' }}; border: 1px solid var(--border);"></div>
+          <div style="width: 48px; height: 48px; border-radius: var(--radius); background: {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}; border: 1px solid var(--border);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- External Links -->
+  <div class="card">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="external-link" style="width: 16px; height: 16px;"></i>
+        Linki zewnętrzne
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
+        <!-- Backstage Links -->
+        <div>
+          <label class="form-label" style="margin-bottom: 0.75rem; font-weight: 600;">Zoho Backstage</label>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <a href="{{ event.backstage_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
+              <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+              <span>Ogólne</span>
+              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
+            </a>
+            <a href="{{ event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
+              <i data-lucide="shopping-cart" style="width: 16px; height: 16px;"></i>
+              <span>Zamówienia</span>
+              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
+            </a>
+            <a href="{{ event.backstage_attendees_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
+              <i data-lucide="users" style="width: 16px; height: 16px;"></i>
+              <span>Uczestnicy</span>
+              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
+            </a>
+          </div>
+        </div>
+        
+        <!-- Public URLs -->
+        <div>
+          <label class="form-label" style="margin-bottom: 0.75rem; font-weight: 600;">Strony publiczne</label>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            {% if event.data.event_public_url %}
+            <a href="{{ event.data.event_public_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
+              <i data-lucide="globe" style="width: 16px; height: 16px;"></i>
+              <span>Strona wydarzenia</span>
+              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
+            </a>
+            {% endif %}
+            {% if event.data.success_page_url %}
+            <a href="{{ event.data.success_page_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
+              <i data-lucide="check-circle" style="width: 16px; height: 16px;"></i>
+              <span>Strona sukcesu</span>
+              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
+            </a>
+            {% endif %}
+            {% if event.data.cancel_page_url %}
+            <a href="{{ event.data.cancel_page_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
+              <i data-lucide="x-circle" style="width: 16px; height: 16px;"></i>
+              <span>Strona anulowania</span>
+              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
+            </a>
+            {% endif %}
+            {% if not event.data.event_public_url and not event.data.success_page_url and not event.data.cancel_page_url %}
+            <div style="padding: 1rem; color: var(--muted-foreground); font-size: 0.875rem; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius);">
+              Brak skonfigurowanych linków
+            </div>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -551,6 +692,53 @@
   .tab-trigger.active {
     color: var(--primary);
     border-bottom-color: var(--primary);
+  }
+  
+  /* Form styles for config tab */
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  
+  .form-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  
+  .form-input {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--muted);
+    font-size: 0.875rem;
+    color: var(--foreground);
+  }
+  
+  .form-input:disabled {
+    opacity: 0.8;
+    cursor: not-allowed;
+  }
+  
+  /* Link card for external links */
+  .link-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: inherit;
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  
+  .link-card:hover {
+    border-color: var(--primary);
+    background: hsl(var(--primary) / 0.05);
   }
 </style>
 {% endblock %}

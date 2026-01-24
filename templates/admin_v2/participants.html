@@ -14,7 +14,7 @@
       <i data-lucide="mail"></i>
       Wyślij wiadomość
     </button>
-    <button class="btn btn-outline">
+    <button class="btn btn-outline" onclick="window.print()">
       <i data-lucide="download"></i>
       Eksportuj
     </button>
@@ -38,7 +38,7 @@
       <span class="stat-value">{{ stats.emailed or 0 }}</span>
     </div>
     <div class="stat-icon green">
-      <i data-lucide="user-check"></i>
+      <i data-lucide="mail-check"></i>
     </div>
   </div>
   <div class="stat-card">
@@ -46,7 +46,7 @@
       <span class="stat-label">Oczekujący</span>
       <span class="stat-value">{{ stats.pending or 0 }}</span>
     </div>
-    <div class="stat-icon purple">
+    <div class="stat-icon">
       <i data-lucide="user-plus"></i>
     </div>
   </div>
@@ -54,29 +54,30 @@
 
 <!-- FILTERS -->
 <div class="card filters-card">
-  <form class="filters-grid" method="GET">
+  <form class="filters-grid" method="GET" style="grid-template-columns: 1fr 180px 220px;">
     <div class="filter-search">
       <i data-lucide="search" class="search-icon"></i>
-      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po imieniu, emailu..." class="search-input">
+      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po imieniu, nazwisku lub emailu..." class="search-input">
     </div>
     <div class="filter-select">
-      <select name="status">
+      <i data-lucide="filter" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--muted-foreground); pointer-events: none;"></i>
+      <select name="status" style="padding-left: 2.25rem;" onchange="this.form.submit()">
         <option value="">Wszystkie statusy</option>
-        <option value="emailed"{% if request.args.get('status') == 'emailed' %} selected{% endif %}>Powiadomieni</option>
-        <option value="registered"{% if request.args.get('status') == 'registered' %} selected{% endif %}>Zarejestrowani</option>
-        <option value="checked_in"{% if request.args.get('status') == 'checked_in' %} selected{% endif %}>Zameldowani</option>
-        <option value="cancelled"{% if request.args.get('status') == 'cancelled' %} selected{% endif %}>Anulowani</option>
+        <option value="registered"{% if request.args.get('status') == 'registered' %} selected{% endif %}>Zarejestrowany</option>
+        <option value="emailed"{% if request.args.get('status') == 'emailed' %} selected{% endif %}>Powiadomiony</option>
+        <option value="checked_in"{% if request.args.get('status') == 'checked_in' %} selected{% endif %}>Zameldowany</option>
       </select>
     </div>
     <div class="filter-select">
-      <select name="event_id">
+      <select name="event_id" onchange="this.form.submit()">
         <option value="">Wszystkie wydarzenia</option>
         {% for event in events %}
-        <option value="{{ event.event_id }}"{% if request.args.get('event_id') == event.event_id %} selected{% endif %}>{{ event.event_name }}</option>
+        <option value="{{ event.event_id }}"{% if request.args.get('event_id') == event.event_id %} selected{% endif %}>
+          {{ event.event_name[:30] }}{% if event.event_name|length > 30 %}...{% endif %}
+        </option>
         {% endfor %}
       </select>
     </div>
-    <button type="submit" class="btn btn-primary">Filtruj</button>
   </form>
 </div>
 
@@ -88,58 +89,73 @@
         <th>Uczestnik</th>
         <th>Wydarzenie</th>
         <th>Bilet</th>
-        <th>Zamówienie</th>
-        <th>Status</th>
-        <th>Data</th>
+        <th class="text-center">Status</th>
+        <th class="text-right">Data</th>
       </tr>
     </thead>
     <tbody>
       {% for p in participants %}
+      {% set event_color = p.event_color or 'hsl(212, 100%, 42%)' %}
+      {% set event_color_2 = p.event_color_2 or 'hsl(195, 100%, 42%)' %}
       <tr>
+        <!-- Uczestnik z avatarem -->
         <td>
           <div style="display: flex; align-items: center; gap: 0.75rem;">
             <div class="avatar-initials small">
               {{ (p.first_name or '')[:1]|upper }}{{ (p.last_name or '')[:1]|upper }}
             </div>
-            <div class="buyer-cell">
-              <span class="buyer-name">{{ (p.first_name or '') ~ ' ' ~ (p.last_name or '') or '—' }}</span>
-              <span class="buyer-email">{{ p.email or '—' }}</span>
+            <div style="min-width: 0;">
+              <p style="font-size: 0.875rem; font-weight: 500;">{{ p.first_name or '' }} {{ p.last_name or '' }}</p>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.email or '—' }}</p>
+              {% if p.company %}
+              <p style="font-size: 0.75rem; color: var(--muted-foreground); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.company }}</p>
+              {% endif %}
             </div>
           </div>
         </td>
+        <!-- Wydarzenie -->
         <td>
-          <div class="event-cell">
-            <div class="event-dot" style="background: linear-gradient(135deg, {{ p.event_color or 'hsl(212, 100%, 42%)' }}, hsl(195, 100%, 42%));"></div>
-            <span>{{ p.event_name or '—' }}</span>
+          <a href="{{ url_for('admin_v2_bp.event_room', event_id=p.event_id) }}" style="display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: inherit;">
+            <div style="width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
+            <span style="font-size: 0.875rem;">
+              {% if p.event_name %}
+                {{ p.event_name[:25] }}{% if p.event_name|length > 25 %}...{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </span>
+          </a>
+        </td>
+        <!-- Bilet -->
+        <td>
+          <span style="font-size: 0.875rem;">{{ p.ticket_name or 'Bilet Standard' }}</span>
+        </td>
+        <!-- Status (ikona) -->
+        <td class="text-center">
+          {% if p.is_notified %}
+          <span title="Powiadomiony" style="display: inline-flex; align-items: center; justify-content: center;">
+            <i data-lucide="mail-check" style="width: 20px; height: 20px; color: var(--primary);"></i>
+          </span>
+          {% else %}
+          <span title="Niepowiadomiony" style="display: inline-flex; align-items: center; justify-content: center;">
+            <i data-lucide="user-plus" style="width: 20px; height: 20px; color: var(--muted-foreground);"></i>
+          </span>
+          {% endif %}
+        </td>
+        <!-- Data -->
+        <td class="text-right">
+          <div>
+            <p style="font-size: 0.875rem;">
+              {{ p.created_at.strftime('%d %B')|replace('January', 'stycznia')|replace('February', 'lutego')|replace('March', 'marca')|replace('April', 'kwietnia')|replace('May', 'maja')|replace('June', 'czerwca')|replace('July', 'lipca')|replace('August', 'sierpnia')|replace('September', 'września')|replace('October', 'października')|replace('November', 'listopada')|replace('December', 'grudnia') if p.created_at else '—' }}
+            </p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ p.created_at.year if p.created_at else '' }}</p>
           </div>
         </td>
-        <td>{{ p.ticket_class_name or p.ticket_class_id or '—' }}</td>
-        <td>
-          {% if p.event_order_id %}
-          <a href="{{ url_for('admin_v2_bp.order_detail', order_id=p.event_order_id) }}" class="order-link">{{ p.event_order_id[:12] }}...</a>
-          {% else %}
-          —
-          {% endif %}
-        </td>
-        <td>
-          {% if p.status == 'emailed' %}
-          <span class="status-badge status-paid">Powiadomiony</span>
-          {% elif p.status == 'registered' %}
-          <span class="status-badge">Zarejestrowany</span>
-          {% elif p.status == 'checked_in' %}
-          <span class="status-badge status-paid">Zameldowany</span>
-          {% elif p.status == 'cancelled' %}
-          <span class="status-badge status-cancelled">Anulowany</span>
-          {% else %}
-          <span class="status-badge">{{ p.status or '—' }}</span>
-          {% endif %}
-        </td>
-        <td class="text-muted">{{ p.created_at.strftime('%d.%m.%Y') if p.created_at else '—' }}</td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
-          Brak uczestników do wyświetlenia
+        <td colspan="5" style="text-align: center; color: var(--muted-foreground); padding: 3rem;">
+          <p>Brak uczestników pasujących do filtrów</p>
         </td>
       </tr>
       {% endfor %}
@@ -148,7 +164,7 @@
   
   {% if participants %}
   <div class="table-footer">
-    <span class="table-info">Wyświetlono {{ participants|length }} uczestników</span>
+    <span class="table-info">Wyświetlono {{ participants|length }} z {{ total_participants or participants|length }} uczestników</span>
   </div>
   {% endif %}
 </div>

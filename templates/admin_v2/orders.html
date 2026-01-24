@@ -7,115 +7,184 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Zamówienia</h1>
-    <p class="page-description">Zarządzaj zamówieniami na wszystkie wydarzenia</p>
+    <p class="page-description">Przeglądaj i zarządzaj zamówieniami</p>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline" onclick="window.print()">
       <i data-lucide="download"></i>
-      Eksportuj
+      Eksportuj CSV
     </button>
   </div>
 </div>
 
 <!-- FILTERS CARD -->
 <div class="card filters-card">
-  <form class="filters-grid" method="GET">
+  <form class="filters-grid" method="GET" style="grid-template-columns: 1fr 180px 220px;">
     <!-- Search -->
     <div class="filter-search">
       <i data-lucide="search" class="search-icon"></i>
-      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po ID, emailu lub nazwisku..." class="search-input">
+      <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po nr zamówienia, emailu lub nazwisku..." class="search-input">
     </div>
     
     <!-- Status filter -->
     <div class="filter-select">
-      <select name="status">
+      <i data-lucide="filter" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--muted-foreground); pointer-events: none;"></i>
+      <select name="status" style="padding-left: 2.25rem;" onchange="this.form.submit()">
         <option value="">Wszystkie statusy</option>
         <option value="paid"{% if request.args.get('status') == 'paid' %} selected{% endif %}>Opłacone</option>
         <option value="pending_payment"{% if request.args.get('status') == 'pending_payment' %} selected{% endif %}>Oczekujące</option>
+        <option value="received"{% if request.args.get('status') == 'received' %} selected{% endif %}>Otrzymane</option>
         <option value="cancelled"{% if request.args.get('status') == 'cancelled' %} selected{% endif %}>Anulowane</option>
-        <option value="failed"{% if request.args.get('status') == 'failed' %} selected{% endif %}>Błąd</option>
       </select>
     </div>
     
     <!-- Event filter -->
     <div class="filter-select">
-      <select name="event_id">
+      <select name="event_id" onchange="this.form.submit()">
         <option value="">Wszystkie wydarzenia</option>
         {% for event in events %}
-        <option value="{{ event.event_id }}"{% if request.args.get('event_id') == event.event_id %} selected{% endif %}>{{ event.event_name }}</option>
+        <option value="{{ event.event_id }}"{% if request.args.get('event_id') == event.event_id %} selected{% endif %}>
+          {{ event.event_name[:30] }}{% if event.event_name|length > 30 %}...{% endif %}
+        </option>
         {% endfor %}
       </select>
     </div>
-    
-    <button type="submit" class="btn btn-primary">Filtruj</button>
   </form>
 </div>
 
 <!-- DATA TABLE -->
 <div class="card">
-  <table class="data-table">
+  <table class="data-table sortable-table">
     <thead>
       <tr>
-        <th>Wydarzenie</th>
-        <th>Płatność</th>
-        <th>ID</th>
-        <th>Kupujący</th>
-        <th>Uczestnicy</th>
-        <th>Wartość</th>
-        <th>Status</th>
-        <th>Data</th>
+        <th class="sortable-header {% if sort_column == 'date' %}sorted-{{ sort_direction }}{% endif %}" data-sort="date" style="width: 100px;">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Data
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header {% if sort_column == 'buyer' %}sorted-{{ sort_direction }}{% endif %}" data-sort="buyer">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Kupujący
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header {% if sort_column == 'event_name' %}sorted-{{ sort_direction }}{% endif %}" data-sort="event_name" style="min-width: 240px;">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Wydarzenie
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-center {% if sort_column == 'participants' %}sorted-{{ sort_direction }}{% endif %}" data-sort="participants" style="width: 80px;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+            Osoby
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-right {% if sort_column == 'total' %}sorted-{{ sort_direction }}{% endif %}" data-sort="total">
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.375rem;">
+            Wartość
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-center {% if sort_column == 'status' %}sorted-{{ sort_direction }}{% endif %}" data-sort="status">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+            Status
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-center {% if sort_column == 'payment' %}sorted-{{ sort_direction }}{% endif %}" data-sort="payment">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+            Płatność
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
       </tr>
     </thead>
     <tbody>
       {% for order in orders %}
-      <tr>
+      {% set event_color = order.event_color or 'hsl(212, 100%, 42%)' %}
+      {% set event_color_2 = order.event_color_2 or 'hsl(195, 100%, 42%)' %}
+      {% set payment_method = 'Online' %}
+      {% if (order.total or 0)|float == 0 %}
+        {% set payment_method = 'FOC' %}
+      {% elif 'pro' in (order.payment_option_name or '')|lower or 'proforma' in (order.payment_option_name or '')|lower %}
+        {% set payment_method = 'Pro forma' %}
+      {% endif %}
+      
+      <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
+        <!-- Data -->
         <td>
-          <div class="event-cell">
-            <div class="event-dot" style="background: linear-gradient(135deg, {{ order.event_color or 'hsl(212, 100%, 42%)' }}, hsl(195, 100%, 42%));"></div>
-            <span>{{ order.event_name or 'Nieznane' }}</span>
+          <div>
+            <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
+            <p style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
           </div>
         </td>
+        <!-- Kupujący -->
         <td>
-          {% if 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
-          <span class="payment-badge payment-online">Online</span>
-          {% elif 'pro' in (order.payment_option_name or '')|lower or 'proforma' in (order.payment_type or '')|lower %}
-          <span class="payment-badge payment-proforma">Pro forma</span>
-          {% elif (order.total or 0)|float == 0 %}
-          <span class="payment-badge payment-foc">FOC</span>
-          {% else %}
-          <span class="payment-badge">{{ order.payment_option_name or order.payment_type or '—' }}</span>
-          {% endif %}
-        </td>
-        <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link" style="display: inline-flex; align-items: center; gap: 4px;">{{ order.event_order_id[:12] }}...<i data-lucide="external-link" style="width: 12px; height: 12px;"></i></a></td>
-        <td>
-          <div class="buyer-cell">
-            <span class="buyer-name">{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or '—' }}</span>
-            <span class="buyer-email">{{ order.purchaser_email or '—' }}</span>
+          <div>
+            <p style="font-size: 0.875rem; font-weight: 500;">{{ order.buyer_first_name or '' }} {{ order.buyer_last_name or '' }}</p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.buyer_email or '—' }}</p>
+            {% if order.buyer_company %}
+            <p style="font-size: 0.75rem; color: var(--muted-foreground); opacity: 0.7;">{{ order.buyer_company }}</p>
+            {% endif %}
           </div>
         </td>
-        <td class="text-center">{{ order.participant_count or 0 }}</td>
-        <td class="text-right font-medium">{{ order.total|default('0.00', true) }} zł</td>
+        <!-- Wydarzenie -->
         <td>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }}); width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></div>
+            <a href="{{ url_for('admin_v2_bp.event_room', event_id=order.event_id) }}" 
+               class="event-link"
+               onclick="event.stopPropagation();"
+               style="font-size: 0.875rem; font-weight: 500; color: inherit; text-decoration: none;">
+              {{ order.event_name or 'Nieznane' }}
+            </a>
+          </div>
+        </td>
+        <!-- Osoby -->
+        <td class="text-center">
+          <span style="font-weight: 500;">{{ order.participants_count or 1 }}</span>
+        </td>
+        <!-- Wartość -->
+        <td class="text-right">
+          <span style="font-weight: 600;">{{ order.total|format_currency }}</span>
+        </td>
+        <!-- Status -->
+        <td class="text-center">
           {% if order.status == 'paid' %}
           <span class="status-badge status-paid">Opłacone</span>
           {% elif order.status == 'pending_payment' %}
           <span class="status-badge status-pending">Oczekujące</span>
           {% elif order.status == 'cancelled' %}
           <span class="status-badge status-cancelled">Anulowane</span>
-          {% elif order.status == 'failed' %}
-          <span class="status-badge status-cancelled">Błąd</span>
           {% elif order.status == 'received' %}
           <span class="status-badge">Otrzymane</span>
           {% else %}
           <span class="status-badge">{{ order.status or '—' }}</span>
           {% endif %}
         </td>
-        <td class="text-muted">{{ order.created_at.strftime('%Y-%m-%d') if order.created_at else '—' }}</td>
+        <!-- Płatność (ikona z tooltipem) -->
+        <td class="text-center">
+          {% if payment_method == 'Online' %}
+          <span class="payment-icon-badge payment-online" title="Płatność online">
+            <i data-lucide="credit-card"></i>
+          </span>
+          {% elif payment_method == 'Pro forma' %}
+          <span class="payment-icon-badge payment-proforma" title="Pro-forma">
+            <i data-lucide="file-text"></i>
+          </span>
+          {% elif payment_method == 'FOC' %}
+          <span class="payment-icon-badge payment-foc" title="Free of Charge">
+            <i data-lucide="gift"></i>
+          </span>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="8" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
-          <img src="/Empty_order_list.png" alt="" style="max-width: 200px; opacity: 0.5; margin-bottom: 1rem;">
+        <td colspan="7" style="text-align: center; color: var(--muted-foreground); padding: 3rem;">
+          <img src="/images/empty-orders.png" alt="" style="max-width: 120px; opacity: 0.5; margin-bottom: 1rem;">
           <p>Brak zamówień do wyświetlenia</p>
         </td>
       </tr>
@@ -125,8 +194,77 @@
   
   {% if orders %}
   <div class="table-footer">
-    <span class="table-info">Wyświetlono {{ orders|length }} zamówień</span>
+    <span class="table-info">Wyświetlono {{ orders|length }} z {{ total_orders or orders|length }} zamówień</span>
   </div>
   {% endif %}
 </div>
+
+<style>
+/* Clickable rows */
+.clickable-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.clickable-row:hover {
+  background-color: var(--muted);
+}
+
+/* Event link hover effect */
+.clickable-row .event-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* Sortable headers */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.sortable-header:hover {
+  background-color: var(--muted);
+}
+
+.sortable-header.sorted-asc i[data-lucide="arrow-up-down"],
+.sortable-header.sorted-desc i[data-lucide="arrow-up-down"] {
+  color: var(--primary);
+  opacity: 1;
+}
+
+/* Payment icon badges */
+.payment-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid;
+}
+
+.payment-icon-badge i {
+  width: 16px;
+  height: 16px;
+}
+
+.payment-icon-badge.payment-online {
+  background: hsl(199, 89%, 96%);
+  border-color: hsl(199, 89%, 85%);
+  color: hsl(199, 89%, 40%);
+}
+
+.payment-icon-badge.payment-proforma {
+  background: hsl(270, 80%, 96%);
+  border-color: hsl(270, 80%, 85%);
+  color: hsl(270, 80%, 50%);
+}
+
+.payment-icon-badge.payment-foc {
+  background: hsl(220, 14%, 96%);
+  border-color: hsl(220, 14%, 85%);
+  color: hsl(220, 14%, 46%);
+}
+</style>
 {% endblock %}

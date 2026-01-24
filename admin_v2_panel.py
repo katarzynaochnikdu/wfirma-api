@@ -335,19 +335,35 @@ def orders_list():
             or q_filter in (o.get("purchaser_last_name") or "").lower()
         ]
     
-    # Dodaj nazwy wydarzeń
+    # Sortowanie
+    sort_column = request.args.get("sort", "date").strip()
+    sort_direction = request.args.get("dir", "desc").strip()
+    
+    # Dodaj nazwy wydarzeń i mapuj pola dla szablonu
     event_map = {e.get("event_id"): e for e in events}
     for order in orders:
         event = event_map.get(order.get("event_id"))
         if event:
             order["event_name"] = event.get("event_name", "")
-            order["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
+            event_data = event.get("data") or {}
+            order["event_color"] = event_data.get("color_gradient_1", "hsl(212, 100%, 42%)")
+            order["event_color_2"] = event_data.get("color_gradient_2", "hsl(195, 100%, 42%)")
+        
+        # Mapuj pola kupującego dla szablonu
+        order["buyer_first_name"] = order.get("purchaser_first_name", "")
+        order["buyer_last_name"] = order.get("purchaser_last_name", "")
+        order["buyer_email"] = order.get("purchaser_email", "")
+        order["buyer_company"] = order.get("purchaser_company", "")
+        order["participants_count"] = order.get("participant_count", 1)
     
     return render_template(
         "admin_v2/orders.html",
         active_page="orders",
         orders=orders,
         events=events,
+        total_orders=len(orders),
+        sort_column=sort_column,
+        sort_direction=sort_direction,
         **_get_common_context(user),
     )
 
@@ -641,7 +657,7 @@ def events_list():
     return render_template(
         "admin_v2/events.html",
         active_page="events",
-        events=active_events,
+        active_events=active_events,
         inactive_events=inactive_events,
         **_get_common_context(user),
     )
@@ -667,17 +683,21 @@ def participants_list():
         all_participants = get_participants_for_event(event_id_filter) or []
         # Dodaj event info
         event = get_event(event_id_filter)
+        event_data = (event.get("data") or {}) if event else {}
         for p in all_participants:
             p["event_name"] = event.get("event_name", "") if event else ""
-            p["event_color"] = (event.get("data") or {}).get("color_gradient_1", "") if event else ""
+            p["event_color"] = event_data.get("color_gradient_1", "hsl(212, 100%, 42%)")
+            p["event_color_2"] = event_data.get("color_gradient_2", "hsl(195, 100%, 42%)")
     else:
         # Pobierz z wszystkich aktywnych wydarzeń
         for event in events:
             if event.get("is_active", True):
                 event_participants = get_participants_for_event(event.get("event_id")) or []
+                event_data = event.get("data") or {}
                 for p in event_participants:
                     p["event_name"] = event.get("event_name", "")
-                    p["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
+                    p["event_color"] = event_data.get("color_gradient_1", "hsl(212, 100%, 42%)")
+                    p["event_color_2"] = event_data.get("color_gradient_2", "hsl(195, 100%, 42%)")
                 all_participants.extend(event_participants)
     
     # Filtrowanie po statusie
@@ -704,12 +724,19 @@ def participants_list():
     # Ogranicz do 500 dla wydajności
     all_participants = all_participants[:500]
     
+    # Mapuj pola dla szablonu
+    for p in all_participants:
+        p["ticket_name"] = p.get("ticket_class_name") or p.get("ticket_class_id") or "Bilet Standard"
+        p["is_notified"] = p.get("status") == "emailed"
+        p["company"] = p.get("company") or ""
+    
     return render_template(
         "admin_v2/participants.html",
         active_page="participants",
         participants=all_participants,
         events=events,
         stats=stats,
+        total_participants=stats["total"],
         **_get_common_context(user),
     )
 
