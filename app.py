@@ -2616,6 +2616,177 @@ def backstage_event_create():
         }), 500
 
 
+@app.route('/api/backstage/ticket_classes', methods=['POST'])
+@require_api_key
+def backstage_ticket_classes():
+    """
+    Endpoint do odbierania typów biletów z Zoho Flow.
+    
+    Wywoływany przez Zoho Flow po pobraniu ticket classes z Backstage.
+    
+    Headers:
+        X-API-Key: klucz API (MAKE_RENDER_API_KEY)
+    
+    Body (JSON):
+    {
+        "event_id": "...",
+        "ticket_classes": [
+            {
+                "ticket_class_id": "...",
+                "ticket_name": "...",
+                "price": 100.00,
+                "currency": "PLN",
+                "quantity": 50,
+                ...
+            }
+        ]
+    }
+    
+    Response:
+    {
+        "status": "ok",
+        "event_id": "...",
+        "saved_count": 3
+    }
+    """
+    try:
+        from pg_storage import replace_ticket_classes, get_event
+        
+        payload = request.get_json(silent=True)
+        if not payload:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak JSON payload w request body'
+            }), 400
+        
+        event_id = str(payload.get("event_id") or "").strip()
+        ticket_classes = payload.get("ticket_classes") or []
+        
+        if not event_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak wymaganego pola event_id'
+            }), 400
+        
+        # Sprawdź czy wydarzenie istnieje
+        event = get_event(event_id)
+        if not event:
+            return jsonify({
+                'status': 'error',
+                'error': f'Wydarzenie {event_id} nie istnieje'
+            }), 404
+        
+        # Zapisz ticket classes
+        classes_to_save = []
+        for tc in ticket_classes:
+            ticket_class_id = str(tc.get("ticket_class_id") or tc.get("id") or "").strip()
+            ticket_name = str(tc.get("ticket_name") or tc.get("name") or "").strip()
+            
+            if ticket_class_id:
+                classes_to_save.append({
+                    "ticket_class_id": ticket_class_id,
+                    "ticket_name": ticket_name or f"Bilet {ticket_class_id}",
+                    "data": tc,  # Całe dane z webhooka
+                })
+        
+        replace_ticket_classes(event_id, classes_to_save)
+        
+        print(f"[TICKET CLASSES] Zapisano {len(classes_to_save)} typów biletów dla wydarzenia {event_id}")
+        
+        return jsonify({
+            'status': 'ok',
+            'event_id': event_id,
+            'saved_count': len(classes_to_save),
+        }), 200
+        
+    except Exception as e:
+        print(f"[TICKET CLASSES] Error: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+# Webhook do Zoho Flow - pobieranie typów biletów
+ZOHO_FLOW_FETCH_TICKETS_WEBHOOK = os.environ.get(
+    "ZOHO_FLOW_FETCH_TICKETS_WEBHOOK",
+    ""  # Ustaw w ENV na Render
+)
+
+
+@app.route('/api/events/<event_id>/fetch-tickets', methods=['POST'])
+def api_fetch_event_tickets(event_id: str):
+    """
+    Wywołuje Zoho Flow webhook do pobrania typów biletów z Backstage.
+    
+    Tylko dla zalogowanych adminów.
+    
+    Zoho Flow powinien:
+    1. Pobrać ticket classes z Backstage dla danego event_id
+    2. Wywołać /api/backstage/ticket_classes z wynikami
+    
+    Returns:
+    {
+        "success": true,
+        "message": "Żądanie wysłane do Zoho Flow"
+    }
+    """
+    try:
+        from pg_storage import get_event
+        
+        # Sprawdź czy użytkownik jest zalogowany jako admin
+        admin_user = session.get("admin_v2_user")
+        if not admin_user:
+            return jsonify({"success": False, "error": "Wymagane zalogowanie"}), 401
+        
+        # Sprawdź czy wydarzenie istnieje
+        event = get_event(event_id)
+        if not event:
+            return jsonify({"success": False, "error": "Wydarzenie nie znalezione"}), 404
+        
+        # Sprawdź czy webhook jest skonfigurowany
+        if not ZOHO_FLOW_FETCH_TICKETS_WEBHOOK:
+            return jsonify({
+                "success": False, 
+                "error": "Webhook do pobierania biletów nie jest skonfigurowany (ZOHO_FLOW_FETCH_TICKETS_WEBHOOK)"
+            }), 500
+        
+        # Wyślij request do Zoho Flow
+        callback_url = request.url_root.rstrip('/') + '/api/backstage/ticket_classes'
+        
+        webhook_payload = {
+            "event_id": event_id,
+            "event_name": event.get("event_name", ""),
+            "callback_url": callback_url,
+            "api_key": os.environ.get("MAKE_RENDER_API_KEY", ""),  # Do autoryzacji callbacku
+        }
+        
+        resp = requests.post(
+            ZOHO_FLOW_FETCH_TICKETS_WEBHOOK,
+            json=webhook_payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        
+        if resp.status_code not in (200, 201, 202):
+            return jsonify({
+                "success": False,
+                "error": f"Zoho Flow zwrócił błąd: HTTP {resp.status_code}"
+            }), 500
+        
+        print(f"[FETCH TICKETS] Wysłano żądanie do Zoho Flow dla wydarzenia {event_id}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Żądanie wysłane do Zoho Flow. Typy biletów zostaną zaktualizowane.",
+            "event_id": event_id,
+        }), 200
+        
+    except Exception as e:
+        print(f"[FETCH TICKETS] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/backstage/order', methods=['POST'])
 @require_api_key
 def backstage_order():

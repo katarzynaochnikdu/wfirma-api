@@ -2980,6 +2980,77 @@ def _strip_html_tags(html: str) -> str:
     return clean.strip()
 
 
+def _send_new_event_notification(event_id: str, event_name: str, event_data: Dict[str, Any]) -> None:
+    """
+    Wysyła email powiadomienie o nowym wydarzeniu wymagającym konfiguracji.
+    
+    Email do: halo@medidesk.com
+    """
+    import os
+    
+    notification_email = os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL", "halo@medidesk.com")
+    panel_url = os.environ.get("PANEL_BASE_URL", "https://wfirma-api.onrender.com")
+    edit_url = f"{panel_url}/admin-v2/events/{event_id}/edit"
+    
+    # Data wydarzenia
+    event_date = event_data.get("event_date_time", "")[:10] if event_data.get("event_date_time") else "nie podano"
+    event_city = event_data.get("event_location_city", "") or "nie podano"
+    
+    subject = f"🆕 Nowe wydarzenie: {event_name}"
+    
+    body_html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563eb;">Utworzono nowe wydarzenie</h2>
+        
+        <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+            <p style="margin: 0.5rem 0;"><strong>Nazwa:</strong> {event_name}</p>
+            <p style="margin: 0.5rem 0;"><strong>ID:</strong> {event_id}</p>
+            <p style="margin: 0.5rem 0;"><strong>Data:</strong> {event_date}</p>
+            <p style="margin: 0.5rem 0;"><strong>Miasto:</strong> {event_city}</p>
+        </div>
+        
+        <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; margin: 1rem 0; border-left: 4px solid #f59e0b;">
+            <p style="margin: 0; color: #92400e;"><strong>⚠️ Wydarzenie wymaga uzupełnienia konfiguracji:</strong></p>
+            <ul style="margin: 0.5rem 0; color: #92400e;">
+                <li>Kolory brandingowe</li>
+                <li>Banner email</li>
+                <li>URL wydarzenia</li>
+                <li>Typy biletów</li>
+            </ul>
+        </div>
+        
+        <p style="margin: 1.5rem 0;">
+            <a href="{edit_url}" style="display: inline-block; background: #2563eb; color: white; padding: 0.75rem 1.5rem; text-decoration: none; border-radius: 6px; font-weight: 600;">
+                Uzupełnij konfigurację →
+            </a>
+        </p>
+        
+        <p style="color: #64748b; font-size: 0.875rem;">
+            Ten email został wysłany automatycznie po utworzeniu wydarzenia z Zoho Backstage.
+        </p>
+    </div>
+    """
+    
+    try:
+        result = _send_email_via_make(
+            to_email=notification_email,
+            subject=subject,
+            body_html=body_html,
+            template_type="new_event_notification",
+            extra_data={
+                "event_id": event_id,
+                "event_name": event_name,
+            }
+        )
+        _log("INFO", f"Wysłano powiadomienie o nowym wydarzeniu do {notification_email}", {
+            "event_id": event_id,
+            "result": result.get("success", False),
+        })
+    except Exception as e:
+        _log("ERROR", f"Błąd wysyłania powiadomienia o nowym wydarzeniu: {e}")
+        raise
+
+
 def _parse_event_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Parsuje payload webhooka wydarzenia z Zoho Backstage.
@@ -3191,11 +3262,13 @@ def process_backstage_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         existing = get_event(event_id)
         action = "updated" if existing else "created"
         
-        # 3. Zapisz/zaktualizuj wydarzenie ze statusem "draft"
+        # 3. Zapisz/zaktualizuj wydarzenie ze statusem "pending_config" (wymaga uzupełnienia)
+        event_status = "pending_config" if not existing else (existing.get("status") or "pending_config")
+        
         upsert_event(
             event_id=event_id,
             event_name=event_name,
-            status="draft",  # Do zatwierdzenia
+            status=event_status,
             notes=f"Utworzono automatycznie z webhooka Backstage ({datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC)",
             data=data,
             is_active=True,
@@ -3203,10 +3276,17 @@ def process_backstage_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         
         _log("INFO", f"Wydarzenie {action}: {event_id}", {
             "event_name": event_name,
-            "status": "draft",
+            "status": event_status,
         })
         
-        message = "Wydarzenie utworzone jako szkic do zatwierdzenia" if action == "created" else "Wydarzenie zaktualizowane (szkic)"
+        # 4. Wyślij email powiadomienie dla NOWYCH wydarzeń
+        if action == "created":
+            try:
+                _send_new_event_notification(event_id, event_name, data)
+            except Exception as notify_err:
+                _log("WARNING", f"Nie udało się wysłać powiadomienia o nowym wydarzeniu: {notify_err}")
+        
+        message = "Wydarzenie utworzone - wymaga uzupełnienia konfiguracji" if action == "created" else "Wydarzenie zaktualizowane"
         
         return {
             "status": "ok",

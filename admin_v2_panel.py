@@ -844,11 +844,16 @@ def event_edit(event_id: str):
     
     event_data = event.get("data") or {}
     
+    # Pobierz typy biletów dla wydarzenia
+    from pg_storage import get_ticket_classes
+    ticket_classes = get_ticket_classes(event_id)
+    
     return render_template(
         "admin_v2/event_form.html",
         active_page="events",
         event=event,
         event_data=event_data,
+        ticket_classes=ticket_classes,
         error=error,
         success=success,
         **_get_common_context(user),
