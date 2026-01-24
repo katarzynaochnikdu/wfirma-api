@@ -1528,7 +1528,7 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Potwierdzenie rezerwacji – {event_name}</title>
 </head>
-<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif;">
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
     <tr>
       <td align="center" style="padding: 20px 0;">
@@ -1802,7 +1802,7 @@ TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dokończ płatność – {event_name}</title>
 </head>
-<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif;">
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
     <tr>
       <td align="center" style="padding: 20px 0;">
@@ -2014,7 +2014,7 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nowy link do płatności – {event_name}</title>
 </head>
-<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; min-width: 100%; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif;">
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
     <tr>
       <td align="center" style="padding: 20px 0;">

@@ -3011,6 +3011,7 @@ def _get_template_usage_stats() -> Dict[str, int]:
 def communication():
     """Historia wysyłek i komunikacji."""
     from datetime import datetime, timedelta
+    from pg_storage import list_email_templates
     
     user = _get_current_admin_user()
     
@@ -3075,6 +3076,9 @@ def communication():
     for category in email_templates.values():
         for template in category:
             template["usage_count"] = template_usage.get(template["key"], 0)
+
+    # Szablony niestandardowe (edytowalne w kreatorze)
+    custom_templates = list_email_templates(category="custom", limit=100)
     
     # Aktywny tab (historia lub szablony)
     active_tab = request.args.get("tab", "history")
@@ -3088,6 +3092,7 @@ def communication():
         error_emails=error_emails[:10],
         emails=emails,
         email_templates=email_templates,
+        custom_templates=custom_templates,
         **_get_common_context(user),
     )
 
@@ -3372,7 +3377,7 @@ def template_preview(template_key: str):
         else:
             # Dla szablonów bez dedykowanej funkcji render - pokaż placeholder
             html_content = f"""
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; text-align: center; color: #64748b;">
+            <div style="font-family: Arial, Helvetica, sans-serif; padding: 40px; text-align: center; color: #64748b;">
                 <div style="font-size: 48px; margin-bottom: 16px;">📧</div>
                 <h2 style="color: #1e293b; margin-bottom: 8px;">Szablon: {template_key}</h2>
                 <p>Podgląd tego szablonu nie jest jeszcze dostępny.</p>

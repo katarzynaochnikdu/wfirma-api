@@ -179,6 +179,13 @@
   border: 1px solid var(--border);
 }
 
+.templates-section-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .templates-section-title {
   font-size: 1.25rem;
   font-weight: 600;
@@ -687,6 +694,51 @@
     <h2 class="templates-section-title">Szablony emaili</h2>
     <p class="templates-section-desc">Wszystkie szablony używane przez system do wysyłki wiadomości</p>
   </div>
+  <div class="templates-section-actions">
+    <a class="btn btn-primary" href="{{ url_for('admin_v2_bp.email_designer') }}">
+      <i data-lucide="file-plus"></i>
+      Nowy szablon
+    </a>
+  </div>
+</div>
+
+<!-- CUSTOM TEMPLATES -->
+<div class="template-category" style="margin-bottom: 2rem;">
+  <div class="template-category-header">
+    <div>
+      <h3 class="template-category-title">Moje szablony</h3>
+      <p class="template-category-desc">Szablony edytowalne w kreatorze (Twoje własne wzorce)</p>
+    </div>
+  </div>
+  {% if custom_templates %}
+  <div class="templates-grid">
+    {% for template in custom_templates %}
+    <div class="template-card" data-template-id="{{ template.id }}">
+      <div class="template-card-icon teal">
+        <i data-lucide="pencil"></i>
+      </div>
+      <div class="template-card-content">
+        <h4 class="template-card-name">{{ template.name }}</h4>
+        <code class="template-card-key">ID: {{ template.id }}</code>
+        <p class="template-card-desc">{{ template.subject or 'Brak tematu' }}</p>
+      </div>
+      <div class="template-card-meta">
+        <span class="template-usage-count" title="Ostatnia edycja">
+          <i data-lucide="clock" style="width: 12px; height: 12px;"></i>
+          {{ template.updated_at|format_date_pl if template.updated_at else '—' }}
+        </span>
+        <a class="btn-icon" href="{{ url_for('admin_v2_bp.email_designer') }}?template_id={{ template.id }}" title="Edytuj w kreatorze">
+          <i data-lucide="pencil"></i>
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="template-empty" style="padding: 1rem; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--muted-foreground);">
+    Brak własnych szablonów. Kliknij "Nowy szablon" aby utworzyć pierwszy.
+  </div>
+  {% endif %}
 </div>
 
 <!-- CATEGORY: PURCHASER (Kupujący) -->

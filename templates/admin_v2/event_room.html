@@ -416,6 +416,20 @@
   
   <!-- COMMUNICATION TAB -->
   <div id="tab-communication" class="tab-panel {% if active_tab == 'communication' %}active{% endif %}">
+  {% set email_type_meta = {
+    'stripe_payment_link': {'label': 'Link do płatności', 'icon': 'credit-card'},
+    'checkout_reminder': {'label': 'Przypomnienie o płatności', 'icon': 'bell'},
+    'checkout_expired_new_link': {'label': 'Nowy link do płatności', 'icon': 'rotate-ccw'},
+    'payment_confirmation': {'label': 'Potwierdzenie płatności', 'icon': 'badge-check'},
+    'registration_confirmation': {'label': 'Potwierdzenie rejestracji', 'icon': 'clipboard-check'},
+    'proforma_sent': {'label': 'Faktura proforma', 'icon': 'file-text'},
+    'participant_ticket': {'label': 'Bilet uczestnika', 'icon': 'ticket'},
+    'internal_order_received': {'label': 'Nowe zamówienie (wewn.)', 'icon': 'inbox'},
+    'internal_order_paid': {'label': 'Opłacone zamówienie (wewn.)', 'icon': 'circle-check'},
+    'internal_payment_expired': {'label': 'Płatność wygasła (wewn.)', 'icon': 'timer'},
+    'internal_payment_failed': {'label': 'Płatność nieudana (wewn.)', 'icon': 'alert-octagon'},
+    'internal_invoice_error': {'label': 'Błąd faktury (wewn.)', 'icon': 'file-warning'}
+  } %}
   <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
     <div class="stat-card">
       <div class="stat-content">
@@ -464,7 +478,17 @@
         {% for email in emails %}
         <tr>
           <td class="text-muted">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
-          <td><span class="status-badge" style="text-transform: capitalize;">{{ email.type }}</span></td>
+          <td>
+            {% set meta = email_type_meta.get(email.type) %}
+            {% if meta %}
+            <span class="status-badge" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+              <i data-lucide="{{ meta.icon }}" style="width: 14px; height: 14px;"></i>
+              {{ meta.label }}
+            </span>
+            {% else %}
+            <span class="status-badge" style="text-transform: capitalize;">{{ email.type }}</span>
+            {% endif %}
+          </td>
           <td>{{ email.recipient }}</td>
           <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ email.subject }}</td>
           <td>
