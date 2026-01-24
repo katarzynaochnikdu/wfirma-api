@@ -84,7 +84,7 @@
       <span class="stat-label">Wszystkie</span>
       <span class="stat-value">{{ stats.total or 0 }}</span>
     </div>
-    <div class="stat-icon">
+    <div class="stat-icon blue">
       <i data-lucide="inbox"></i>
     </div>
   </div>
@@ -93,8 +93,8 @@
       <span class="stat-label">Krytyczne</span>
       <span class="stat-value">{{ stats.critical or 0 }}</span>
     </div>
-    <div class="stat-icon {% if stats.critical > 0 %}red{% endif %}">
-      <i data-lucide="alert-triangle"></i>
+    <div class="stat-icon red">
+      <i data-lucide="alert-octagon"></i>
     </div>
   </div>
   <div class="stat-card">
@@ -102,7 +102,7 @@
       <span class="stat-label">Błędy</span>
       <span class="stat-value">{{ stats.errors or 0 }}</span>
     </div>
-    <div class="stat-icon {% if stats.errors > 0 %}amber{% endif %}">
+    <div class="stat-icon amber">
       <i data-lucide="alert-triangle"></i>
     </div>
   </div>
@@ -111,7 +111,7 @@
       <span class="stat-label">Ostrzeżenia</span>
       <span class="stat-value">{{ stats.warnings or 0 }}</span>
     </div>
-    <div class="stat-icon {% if stats.warnings > 0 %}amber{% endif %}">
+    <div class="stat-icon cyan">
       <i data-lucide="bell"></i>
     </div>
   </div>
