@@ -1566,6 +1566,8 @@ def template_preview(template_key: str):
     from flask import jsonify
     
     # Przykładowe dane do podglądu szablonów
+    # WAŻNE: tickets muszą mieć pole "price" lub "total_gross" - inaczej 
+    # email_templates.py nadpisze zmienną total_gross na None (bug w kodzie)
     sample_data = {
         "event_name": "Konferencja Medyczna 2026",
         "purchaser_first_name": "Jan",
@@ -1580,7 +1582,7 @@ def template_preview(template_key: str):
         "event_city": "Warszawa",
         "event_location": "Hotel Marriott, ul. Jerozolimskie 65/79",
         "tickets": [
-            {"name": "Bilet Standard", "quantity": 2, "price_gross": 615.00},
+            {"name": "Bilet Standard", "quantity": 2, "price": 615.00, "total_gross": 1230.00},
         ],
         "payment_url": "https://checkout.stripe.com/example",
         "order_number": "ORD-2026-001234",

@@ -740,11 +740,12 @@ def render_stripe_payment_email(
             if price is None:
                 price = t.get("unit_price")
             if price is None:
-                # fallback: jeśli mamy total_gross, przelicz na jednostkową
-                total_gross = t.get("total_gross")
-                if total_gross is not None and qty_num > 0:
+                # fallback: jeśli mamy total_gross w bilecie, przelicz na jednostkową
+                # UWAGA: używamy ticket_total zamiast total_gross żeby nie przesłonić parametru funkcji
+                ticket_total = t.get("total_gross")
+                if ticket_total is not None and qty_num > 0:
                     try:
-                        price = float(total_gross) / float(qty_num)
+                        price = float(ticket_total) / float(qty_num)
                     except (ValueError, TypeError):
                         price = 0
 
@@ -762,7 +763,7 @@ def render_stripe_payment_email(
             # Nie blokuj renderu emaila przez jeden błędny rekord biletu
             continue
     
-    # Oblicz wartości
+    # Oblicz wartości (używamy oryginalnego parametru total_gross)
     vat_calc = calculate_vat(total_gross)
     
     # Przygotuj dane do szablonu
@@ -1217,11 +1218,11 @@ def render_proforma_reservation_email(
             if price is None:
                 price = t.get("unit_price")
             if price is None:
-                # fallback: jeśli mamy total_gross, przelicz na jednostkową
-                total_gross = t.get("total_gross")
-                if total_gross is not None and qty_num > 0:
+                # fallback: jeśli mamy total_gross w bilecie, przelicz na jednostkową
+                ticket_total = t.get("total_gross")
+                if ticket_total is not None and qty_num > 0:
                     try:
-                        price = float(total_gross) / float(qty_num)
+                        price = float(ticket_total) / float(qty_num)
                     except (ValueError, TypeError):
                         price = 0
 
