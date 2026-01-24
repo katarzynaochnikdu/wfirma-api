@@ -165,17 +165,67 @@
       </div>
       <div class="card-content">
         
-        <!-- Status change block -->
-        <div class="status-change-block">
-          <label class="status-change-label">Zmień status zamówienia</label>
-          <div class="filter-select">
-            <select name="status" id="order-status-select" style="width: 100%; max-width: 280px;" onchange="handleStatusChange(this.value)">
-              <option value="received"{% if order.status == 'received' %} selected{% endif %}>Otrzymane</option>
-              <option value="pending_payment"{% if order.status == 'pending_payment' %} selected{% endif %}>Oczekuje na płatność</option>
-              <option value="paid"{% if order.status == 'paid' %} selected{% endif %}>Opłacone</option>
-              <option value="cancelled"{% if order.status == 'cancelled' %} selected{% endif %}>Anulowane</option>
-              <option value="refunded"{% if order.status == 'refunded' %} selected{% endif %}>Zwrócone</option>
-            </select>
+        <!-- Status flow pills -->
+        <div class="status-flow-section">
+          <label class="status-flow-label">Status zamówienia</label>
+          
+          <!-- Main flow: received → pending → paid -->
+          <div class="status-flow-pills">
+            <button type="button" 
+                    class="status-pill {% if order.status == 'received' %}active{% endif %}" 
+                    data-status="received"
+                    onclick="handleStatusChange('received')"
+                    {% if order.status == 'received' %}disabled{% endif %}>
+              <i data-lucide="inbox"></i>
+              <span>Otrzymane</span>
+            </button>
+            
+            <div class="status-flow-arrow">
+              <i data-lucide="chevron-right"></i>
+            </div>
+            
+            <button type="button" 
+                    class="status-pill {% if order.status == 'pending_payment' %}active{% endif %}" 
+                    data-status="pending_payment"
+                    onclick="handleStatusChange('pending_payment')"
+                    {% if order.status == 'pending_payment' %}disabled{% endif %}>
+              <i data-lucide="clock"></i>
+              <span>Oczekuje</span>
+            </button>
+            
+            <div class="status-flow-arrow">
+              <i data-lucide="chevron-right"></i>
+            </div>
+            
+            <button type="button" 
+                    class="status-pill status-pill-success {% if order.status == 'paid' %}active{% endif %}" 
+                    data-status="paid"
+                    onclick="handleStatusChange('paid')"
+                    {% if order.status == 'paid' %}disabled{% endif %}>
+              <i data-lucide="check-circle"></i>
+              <span>Opłacone</span>
+            </button>
+          </div>
+          
+          <!-- Destructive actions (separated) -->
+          <div class="status-destructive-row">
+            <span class="status-destructive-label">Akcje końcowe:</span>
+            <button type="button" 
+                    class="status-pill status-pill-danger {% if order.status == 'cancelled' %}active{% endif %}" 
+                    data-status="cancelled"
+                    onclick="handleStatusChange('cancelled')"
+                    {% if order.status == 'cancelled' %}disabled{% endif %}>
+              <i data-lucide="x-circle"></i>
+              <span>Anulowane</span>
+            </button>
+            <button type="button" 
+                    class="status-pill status-pill-muted {% if order.status == 'refunded' %}active{% endif %}" 
+                    data-status="refunded"
+                    onclick="handleStatusChange('refunded')"
+                    {% if order.status == 'refunded' %}disabled{% endif %}>
+              <i data-lucide="rotate-ccw"></i>
+              <span>Zwrócone</span>
+            </button>
           </div>
         </div>
 
@@ -553,7 +603,6 @@
 
   function closeStatusModal() {
     document.getElementById('status-confirm-modal').classList.add('hidden');
-    document.getElementById('order-status-select').value = currentStatus;
     pendingStatus = null;
   }
 
@@ -652,6 +701,152 @@
 </script>
 
 <style>
+  /* ===== STATUS FLOW PILLS ===== */
+  .status-flow-section {
+    margin-bottom: 0.5rem;
+  }
+  
+  .status-flow-label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    margin-bottom: 0.75rem;
+  }
+  
+  .status-flow-pills {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+  
+  .status-flow-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--border);
+  }
+  
+  .status-flow-arrow i {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 9999px;
+    border: 1.5px solid var(--border);
+    background: var(--background);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+  }
+  
+  .status-pill i {
+    width: 14px;
+    height: 14px;
+  }
+  
+  .status-pill:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: hsl(212, 100%, 97%);
+  }
+  
+  .status-pill:disabled {
+    cursor: default;
+  }
+  
+  .status-pill.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+    box-shadow: 0 2px 8px hsl(212, 100%, 50%, 0.3);
+  }
+  
+  /* Success variant (Opłacone) */
+  .status-pill-success:hover:not(:disabled) {
+    border-color: hsl(142, 71%, 45%);
+    color: hsl(142, 71%, 35%);
+    background: hsl(142, 71%, 97%);
+  }
+  
+  .status-pill-success.active {
+    background: hsl(142, 71%, 45%);
+    border-color: hsl(142, 71%, 45%);
+    color: white;
+    box-shadow: 0 2px 8px hsl(142, 71%, 45%, 0.3);
+  }
+  
+  /* Danger variant (Anulowane) */
+  .status-pill-danger:hover:not(:disabled) {
+    border-color: hsl(0, 84%, 60%);
+    color: hsl(0, 84%, 50%);
+    background: hsl(0, 84%, 97%);
+  }
+  
+  .status-pill-danger.active {
+    background: hsl(0, 84%, 60%);
+    border-color: hsl(0, 84%, 60%);
+    color: white;
+    box-shadow: 0 2px 8px hsl(0, 84%, 60%, 0.3);
+  }
+  
+  /* Muted variant (Zwrócone) */
+  .status-pill-muted:hover:not(:disabled) {
+    border-color: hsl(215, 16%, 47%);
+    color: hsl(215, 16%, 37%);
+    background: hsl(215, 16%, 97%);
+  }
+  
+  .status-pill-muted.active {
+    background: hsl(215, 16%, 47%);
+    border-color: hsl(215, 16%, 47%);
+    color: white;
+    box-shadow: 0 2px 8px hsl(215, 16%, 47%, 0.3);
+  }
+  
+  /* Destructive row */
+  .status-destructive-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border);
+  }
+  
+  .status-destructive-label {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    margin-right: 0.25rem;
+  }
+  
+  /* Responsive */
+  @media (max-width: 640px) {
+    .status-flow-pills {
+      gap: 0.5rem;
+    }
+    .status-flow-arrow {
+      display: none;
+    }
+    .status-pill span {
+      display: none;
+    }
+    .status-pill {
+      padding: 0.5rem;
+    }
+    .status-destructive-label {
+      display: none;
+    }
+  }
+
   /* Status warning */
   .status-warning {
     display: none;

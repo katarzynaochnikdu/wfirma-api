@@ -47,10 +47,34 @@
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
+      
+      // Set correct sidebar toggle icon based on initial state
+      var sidebar = document.getElementById('sidebar');
+      var icon = document.getElementById('sidebar-toggle-icon');
+      if (sidebar && icon && sidebar.classList.contains('collapsed')) {
+        icon.setAttribute('data-lucide', 'chevron-right');
+        if (typeof lucide !== 'undefined') {
+          lucide.createIcons();
+        }
+      }
     });
     
     function toggleSidebar() {
-      document.getElementById('sidebar').classList.toggle('collapsed');
+      var sidebar = document.getElementById('sidebar');
+      var icon = document.getElementById('sidebar-toggle-icon');
+      sidebar.classList.toggle('collapsed');
+      
+      // Update icon direction
+      if (sidebar.classList.contains('collapsed')) {
+        icon.setAttribute('data-lucide', 'chevron-right');
+      } else {
+        icon.setAttribute('data-lucide', 'chevron-left');
+      }
+      
+      // Re-render Lucide icons
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
     }
     
     function logout() {
