@@ -578,6 +578,58 @@ def get_ticket_classes(event_id: str) -> List[Dict[str, Any]]:
             _put_conn(pool, conn)
 
 
+def save_ticket_class(
+    event_id: str,
+    ticket_class_id: str,
+    ticket_name: str = "",
+    data: Dict[str, Any] = None,
+) -> bool:
+    """
+    Zapisuje lub aktualizuje pojedynczą klasę biletu (upsert).
+    
+    Args:
+        event_id: ID wydarzenia
+        ticket_class_id: ID klasy biletu (z Backstage)
+        ticket_name: Nazwa klasy biletu
+        data: Dodatkowe dane (JSONB)
+    
+    Returns:
+        True jeśli sukces
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO event_ticket_classes(event_id, ticket_class_id, ticket_name, data)
+            VALUES(%s, %s, %s, %s)
+            ON CONFLICT (event_id, ticket_class_id) DO UPDATE SET
+                ticket_name = EXCLUDED.ticket_name,
+                data = event_ticket_classes.data || EXCLUDED.data,
+                updated_at = NOW()
+            """,
+            (
+                str(event_id),
+                str(ticket_class_id),
+                ticket_name or "",
+                json.dumps(data or {}),
+            ),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"[PG] save_ticket_class error: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 def replace_ticket_classes(event_id: str, classes: List[Dict[str, Any]]) -> None:
     """
     Najprostszy model edycji: replace-all dla danego eventu.

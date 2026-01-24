@@ -729,23 +729,29 @@ async function fetchTicketTypes() {
   
   btn.disabled = true;
   btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Pobieranie...';
-  status.textContent = 'Wysyłanie żądania...';
+  status.textContent = 'Łączenie z Backstage API...';
   
   try {
-    const resp = await fetch('/api/events/{{ event.event_id }}/fetch-tickets', {
+    // Używamy nowego endpointu admin-v2 z obsługą OAuth2 refresh
+    const resp = await fetch('/admin-v2/events/{{ event.event_id }}/sync-tickets', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
     });
     
     const data = await resp.json();
     
     if (data.success) {
       status.innerHTML = '<span style="color: hsl(160, 82%, 35%);">✓</span> ' + data.message;
-      // Odśwież stronę po 2 sekundach żeby pokazać nowe typy biletów
-      setTimeout(() => {
-        status.textContent = 'Odświeżanie strony...';
-        window.location.reload();
-      }, 2000);
+      if (data.count > 0) {
+        // Odśwież stronę po 2 sekundach żeby pokazać nowe typy biletów
+        setTimeout(() => {
+          status.textContent = 'Odświeżanie strony...';
+          window.location.reload();
+        }, 2000);
+      }
     } else {
       status.innerHTML = '<span style="color: hsl(0, 84%, 50%);">✗</span> ' + (data.error || 'Błąd');
       btn.disabled = false;
@@ -753,7 +759,7 @@ async function fetchTicketTypes() {
       if (typeof lucide !== 'undefined') lucide.createIcons();
     }
   } catch (err) {
-    status.innerHTML = '<span style="color: hsl(0, 84%, 50%);">✗</span> Błąd połączenia';
+    status.innerHTML = '<span style="color: hsl(0, 84%, 50%);">✗</span> Błąd połączenia: ' + err.message;
     btn.disabled = false;
     btn.innerHTML = '<i data-lucide="download"></i> Pobierz typy biletów z Backstage';
     if (typeof lucide !== 'undefined') lucide.createIcons();

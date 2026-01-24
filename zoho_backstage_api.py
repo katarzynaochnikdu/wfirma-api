@@ -350,11 +350,22 @@ def map_event_to_local(backstage_event: Dict[str, Any]) -> Dict[str, Any]:
         "eventCity": venue.get("city", ""),
         "eventAddress": venue.get("street", ""),
         
-        # Daty i godziny
+        # Daty i godziny - KANONICZNE (event_date, event_time)
         "event_date": event_date,
         "event_time": event_time,
         "event_end_date": event_end_date,
         "event_end_time": event_end_time,
+        
+        # Daty i godziny - FORMAT FORMULARZA (event_date_time = YYYY-MM-DDTHH:MM:SS)
+        "event_date_time": f"{event_date}T{event_time}:00" if event_date and event_time else "",
+        "event_end_date_time": f"{event_end_date}T{event_end_time}:00" if event_end_date and event_end_time else "",
+        
+        # Daty i godziny - ALIASY V2 (eventDate, eventTime)
+        "eventDate": event_date,
+        "eventTime": event_time,
+        "eventEndDate": event_end_date,
+        "eventEndTime": event_end_time,
+        
         "timezone": backstage_event.get("timezone", "Europe/Warsaw"),
         
         # Status

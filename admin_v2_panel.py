@@ -124,10 +124,26 @@ def _require_permission(page: str):
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            from flask import jsonify
             user = _get_current_admin_user()
+            
+            # Sprawdź czy to request AJAX/API (oczekuje JSON)
+            is_ajax = (
+                request.headers.get("X-Requested-With") == "XMLHttpRequest" or
+                request.content_type == "application/json" or
+                request.path.startswith("/admin-v2/api/") or
+                "apply-backstage" in request.path or
+                "sync-backstage" in request.path or
+                "preview-data" in request.path
+            )
+            
             if not user:
+                if is_ajax:
+                    return jsonify({"success": False, "error": "Sesja wygasła. Zaloguj się ponownie."}), 401
                 return redirect(url_for("admin_v2_bp.login"))
             if not _user_has_permission(user, page):
+                if is_ajax:
+                    return jsonify({"success": False, "error": "Brak uprawnień do tej operacji."}), 403
                 return render_template(
                     "admin_v2/base.html",
                     active_page="",
@@ -198,13 +214,37 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     if not raw_end_time and raw_end and "T" in raw_end:
         raw_end_time = raw_end[11:16]
     
+    # Zrekonstruuj event_date_time i event_end_date_time dla formularza edycji
+    # Format datetime-local: YYYY-MM-DDTHH:MM
+    reconstructed_start_datetime = ""
+    reconstructed_end_datetime = ""
+    
+    if start_date:
+        time_part = raw_start_time or "00:00"
+        if len(time_part) == 5:  # HH:MM
+            reconstructed_start_datetime = f"{start_date}T{time_part}"
+        elif len(time_part) >= 8:  # HH:MM:SS
+            reconstructed_start_datetime = f"{start_date}T{time_part[:5]}"
+    
+    if end_date:
+        time_part = raw_end_time or "00:00"
+        if len(time_part) == 5:
+            reconstructed_end_datetime = f"{end_date}T{time_part}"
+        elif len(time_part) >= 8:
+            reconstructed_end_datetime = f"{end_date}T{time_part[:5]}"
+    
     normalized = {
-        # Data i czas - rozpoczęcie
-        "eventDate": event_data.get("event_day_text_1") or start_date or "",
+        # Data i czas - rozpoczęcie (używamy formatu ISO YYYY-MM-DD, filtr format_date_pl sformatuje)
+        "eventDate": start_date or "",
         "eventTime": raw_start_time or "",
         # Data i czas - zakończenie
         "eventEndDate": end_date or "",
         "eventEndTime": raw_end_time or "",
+        # Format datetime-local dla formularza edycji (jeśli brak oryginalnych)
+        "event_date_time": event_data.get("event_date_time") or reconstructed_start_datetime,
+        "event_end_date_time": event_data.get("event_end_date_time") or reconstructed_end_datetime,
+        # Stary format tekstowy (dla kompatybilności wstecznej)
+        "event_day_text_1": event_data.get("event_day_text_1") or "",
         # Czy wielodniowe
         "isMultiDay": bool(end_date and end_date != start_date),
         
@@ -1725,6 +1765,8 @@ def event_edit(event_id: str):
             except Exception as e:
                 error = f"Błąd aktualizacji: {e}"
     
+    # Normalizuj dane wydarzenia (rekonstruuje event_date_time jeśli brak)
+    event = _normalize_event_data(event)
     event_data = event.get("data") or {}
     
     # Pobierz typy biletów dla wydarzenia
@@ -1779,13 +1821,48 @@ def event_sync_backstage(event_id: str):
     new_data = result.get("event_data", {})
     
     # Pola do porównania (label, klucz, typ)
-    # Używamy KANONICZNYCH nazw pól (event_location_*) ale sprawdzamy też aliasy V2
-    def get_current(key, alias=None):
-        """Pobiera aktualną wartość - sprawdza kanoniczny klucz i alias."""
+    # Używamy KANONICZNYCH nazw pól ale sprawdzamy też aliasy
+    def get_current(key, *aliases):
+        """Pobiera aktualną wartość - sprawdza kanoniczny klucz i aliasy."""
         val = current_data.get(key)
-        if not val and alias:
+        for alias in aliases:
+            if val:
+                break
             val = current_data.get(alias)
         return val
+    
+    def get_current_date(key):
+        """Pobiera datę - wyciąga z różnych formatów (event_date_time -> event_date)."""
+        # Najpierw sprawdź kanoniczny klucz
+        val = current_data.get(key)
+        if val:
+            return val[:10] if len(val) >= 10 else val
+        # Sprawdź format datetime
+        if key == "event_date":
+            dt = current_data.get("event_date_time") or current_data.get("eventDate") or ""
+            return dt[:10] if dt else ""
+        if key == "event_end_date":
+            dt = current_data.get("event_end_date_time") or current_data.get("eventEndDate") or ""
+            return dt[:10] if dt else ""
+        return ""
+    
+    def get_current_time(key):
+        """Pobiera godzinę - wyciąga z różnych formatów."""
+        val = current_data.get(key)
+        if val:
+            return val[:5] if len(val) >= 5 else val
+        # Sprawdź format datetime
+        if key == "event_time":
+            dt = current_data.get("event_date_time") or ""
+            if "T" in dt:
+                return dt.split("T")[1][:5]
+            return current_data.get("eventTime") or ""
+        if key == "event_end_time":
+            dt = current_data.get("event_end_date_time") or ""
+            if "T" in dt:
+                return dt.split("T")[1][:5]
+            return current_data.get("eventEndTime") or ""
+        return ""
     
     compare_fields = [
         ("Nazwa wydarzenia", "event_name", "text", event.get("event_name"), result.get("event_name")),
@@ -1797,11 +1874,11 @@ def event_sync_backstage(event_id: str):
         ("Miasto", "event_location_city", "text", 
          get_current("event_location_city", "eventCity"), new_data.get("event_location_city")),
         ("Pełny adres", "location", "text", current_data.get("location"), new_data.get("location")),
-        # Daty
-        ("Data wydarzenia", "event_date", "date", current_data.get("event_date"), new_data.get("event_date")),
-        ("Godzina rozpoczęcia", "event_time", "time", current_data.get("event_time"), new_data.get("event_time")),
-        ("Data zakończenia", "event_end_date", "date", current_data.get("event_end_date"), new_data.get("event_end_date")),
-        ("Godzina zakończenia", "event_end_time", "time", current_data.get("event_end_time"), new_data.get("event_end_time")),
+        # Daty - wyciągamy z różnych formatów
+        ("Data wydarzenia", "event_date", "date", get_current_date("event_date"), new_data.get("event_date")),
+        ("Godzina rozpoczęcia", "event_time", "time", get_current_time("event_time"), new_data.get("event_time")),
+        ("Data zakończenia", "event_end_date", "date", get_current_date("event_end_date"), new_data.get("event_end_date")),
+        ("Godzina zakończenia", "event_end_time", "time", get_current_time("event_end_time"), new_data.get("event_end_time")),
         # Opis
         ("Opis", "event_description", "textarea", current_data.get("event_description"), new_data.get("event_description")),
         ("Podsumowanie", "event_summary", "textarea", current_data.get("event_summary"), new_data.get("event_summary")),
@@ -1879,6 +1956,16 @@ def event_apply_backstage(event_id: str):
                 current_data[key] = new_data[key]
                 updated_fields.append(key)
         
+        # Synchronizuj wszystkie warianty dat (jeśli wybrano jakiekolwiek pole daty/czasu)
+        date_fields_selected = {"event_date", "event_time", "event_end_date", "event_end_time"} & set(selected_keys)
+        if date_fields_selected:
+            # Pobierz wartości dat z new_data (już są wszystkie warianty z Backstage API)
+            for variant in ["event_date", "event_time", "event_end_date", "event_end_time",
+                            "event_date_time", "event_end_date_time", 
+                            "eventDate", "eventTime", "eventEndDate", "eventEndTime"]:
+                if variant in new_data and new_data[variant]:
+                    current_data[variant] = new_data[variant]
+        
         # Dodaj timestamp synchronizacji
         current_data["backstage_synced_at"] = new_data.get("backstage_synced_at")
         
@@ -1932,6 +2019,75 @@ def event_apply_backstage(event_id: str):
         
     except Exception as e:
         return jsonify({"success": False, "error": f"Błąd zapisu: {e}"}), 500
+
+
+@admin_v2_bp.route("/events/<event_id>/sync-tickets", methods=["POST"])
+@_require_permission("events")
+def event_sync_tickets(event_id: str):
+    """Pobiera typy biletów z Backstage API i zapisuje lokalnie."""
+    from flask import jsonify
+    from zoho_backstage_api import fetch_ticket_classes, is_backstage_configured, map_ticket_class_to_local
+    from pg_storage import save_ticket_class
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy wydarzenie istnieje
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    # Sprawdź konfigurację Backstage
+    if not is_backstage_configured():
+        return jsonify({
+            "success": False, 
+            "error": "Backstage API nie jest skonfigurowane. Ustaw zmienne środowiskowe."
+        }), 400
+    
+    try:
+        # Pobierz typy biletów z Backstage
+        ticket_classes, error = fetch_ticket_classes(event_id)
+        
+        if error:
+            return jsonify({"success": False, "error": f"Błąd Backstage API: {error}"}), 500
+        
+        if not ticket_classes:
+            return jsonify({
+                "success": True,
+                "message": "Brak typów biletów w Backstage dla tego wydarzenia",
+                "count": 0,
+            })
+        
+        # Zapisz typy biletów lokalnie
+        saved_count = 0
+        for tc in ticket_classes:
+            tc_data = map_ticket_class_to_local(tc)
+            tc_id = tc_data.get("ticket_class_id")
+            if tc_id:
+                save_ticket_class(
+                    event_id=event_id,
+                    ticket_class_id=tc_id,
+                    ticket_name=tc_data.get("ticket_name", ""),
+                    data=tc_data,
+                )
+                saved_count += 1
+        
+        # Audit log
+        insert_admin_audit_log(
+            action="tickets_synced_from_backstage",
+            admin_user_id=user.get("id") if user else None,
+            target_id=event_id,
+            extra={"saved_count": saved_count},
+            ip=request.remote_addr,
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": f"Pobrano {saved_count} typ(ów) biletów z Backstage",
+            "count": saved_count,
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Błąd: {e}"}), 500
 
 
 @admin_v2_bp.route("/events/<event_id>/preview", methods=["GET"])
