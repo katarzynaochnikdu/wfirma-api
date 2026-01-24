@@ -1367,9 +1367,8 @@ def event_edit(event_id: str):
 @admin_v2_bp.route("/events/<event_id>/sync-backstage", methods=["POST"])
 @_require_permission("events")
 def event_sync_backstage(event_id: str):
-    """Synchronizuje dane wydarzenia z Zoho Backstage API."""
+    """Pobiera dane wydarzenia z Backstage API i zwraca podgląd zmian (bez zapisu)."""
     from flask import jsonify
-    from pg_storage import upsert_event, save_ticket_class
     
     user = _get_current_admin_user()
     
@@ -1390,68 +1389,151 @@ def event_sync_backstage(event_id: str):
             "error": "Backstage API nie jest skonfigurowane. Ustaw BACKSTAGE_CLIENT_ID, BACKSTAGE_CLIENT_SECRET i BACKSTAGE_REFRESH_TOKEN."
         }), 400
     
-    # Synchronizuj dane
+    # Pobierz dane z Backstage (bez zapisu)
     result = sync_event_from_backstage(event_id)
     
     if not result.get("success"):
         return jsonify({"success": False, "error": result.get("error", "Nieznany błąd")}), 500
     
-    # Scal dane z istniejącymi
+    # Przygotuj porównanie: obecne vs nowe
     current_data = event.get("data") or {}
     new_data = result.get("event_data", {})
     
-    # Zachowaj lokalne konfiguracje (email, kolory itp.), dodaj dane z Backstage
-    merged_data = {**current_data, **new_data}
+    # Pola do porównania (label, klucz, typ)
+    compare_fields = [
+        ("Nazwa wydarzenia", "event_name", "text", event.get("event_name"), result.get("event_name")),
+        ("Lokalizacja (venue)", "venue_name", "text", current_data.get("venue_name"), new_data.get("venue_name")),
+        ("Ulica", "venue_street", "text", current_data.get("venue_street"), new_data.get("venue_street")),
+        ("Miasto", "venue_city", "text", current_data.get("venue_city"), new_data.get("venue_city")),
+        ("Pełny adres", "location", "text", current_data.get("location"), new_data.get("location")),
+        ("Data wydarzenia", "event_date", "date", current_data.get("event_date"), new_data.get("event_date")),
+        ("Godzina rozpoczęcia", "event_time", "time", current_data.get("event_time"), new_data.get("event_time")),
+        ("Data zakończenia", "event_end_date", "date", current_data.get("event_end_date"), new_data.get("event_end_date")),
+        ("Godzina zakończenia", "event_end_time", "time", current_data.get("event_end_time"), new_data.get("event_end_time")),
+        ("Opis", "event_description", "textarea", current_data.get("event_description"), new_data.get("event_description")),
+        ("Podsumowanie", "event_summary", "textarea", current_data.get("event_summary"), new_data.get("event_summary")),
+        ("Status Backstage", "backstage_status", "text", current_data.get("backstage_status"), new_data.get("backstage_status")),
+        ("Typ wydarzenia", "event_type", "text", current_data.get("event_type"), new_data.get("event_type")),
+        ("URL strony", "backstage_website_url", "url", current_data.get("backstage_website_url"), new_data.get("backstage_website_url")),
+        ("Miniatura", "thumbnail_url", "image", current_data.get("thumbnail_url"), new_data.get("thumbnail_url")),
+    ]
     
-    # Zachowaj ważne lokalne pola jeśli istnieją
-    for key in ["md_email_kontakt", "md_email_techniczny", "color_gradient_1", "color_gradient_2", 
-                "event_mail_link_top_banner", "event_mail_link_bottom_banner", "event_config_link"]:
-        if current_data.get(key):
-            merged_data[key] = current_data[key]
+    # Buduj listę zmian
+    changes = []
+    for label, key, field_type, current_val, new_val in compare_fields:
+        current_str = str(current_val or "").strip()
+        new_str = str(new_val or "").strip()
+        
+        has_change = current_str != new_str and new_str  # zmiana tylko jeśli nowa wartość niepusta
+        
+        changes.append({
+            "key": key,
+            "label": label,
+            "type": field_type,
+            "current": current_val or "",
+            "new": new_val or "",
+            "has_change": has_change,
+            "selected": has_change,  # domyślnie zaznacz jeśli jest zmiana
+        })
+    
+    # Klasy biletów
+    ticket_classes = result.get("ticket_classes", [])
+    
+    return jsonify({
+        "success": True,
+        "mode": "preview",
+        "event_id": event_id,
+        "event_name": result.get("event_name"),
+        "changes": changes,
+        "ticket_classes": ticket_classes,
+        "ticket_classes_count": len(ticket_classes),
+        "new_data": new_data,  # pełne dane do zapisu
+    })
+
+
+@admin_v2_bp.route("/events/<event_id>/apply-backstage", methods=["POST"])
+@_require_permission("events")
+def event_apply_backstage(event_id: str):
+    """Zapisuje wybrane pola z Backstage do wydarzenia."""
+    from flask import jsonify
+    from pg_storage import upsert_event, save_ticket_class
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy wydarzenie istnieje
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    data = request.get_json() or {}
+    selected_keys = data.get("selected_keys", [])
+    new_data = data.get("new_data", {})
+    new_event_name = data.get("event_name")
+    save_tickets = data.get("save_tickets", False)
+    ticket_classes = data.get("ticket_classes", [])
+    
+    if not selected_keys and not save_tickets:
+        return jsonify({"success": False, "error": "Nie wybrano żadnych pól do aktualizacji"}), 400
     
     try:
-        # Aktualizuj wydarzenie
+        current_data = event.get("data") or {}
+        
+        # Aplikuj tylko wybrane pola
+        updated_fields = []
+        for key in selected_keys:
+            if key in new_data:
+                current_data[key] = new_data[key]
+                updated_fields.append(key)
+        
+        # Dodaj timestamp synchronizacji
+        current_data["backstage_synced_at"] = new_data.get("backstage_synced_at")
+        
+        # Aktualizuj nazwę wydarzenia jeśli wybrana
+        final_event_name = event.get("event_name")
+        if "event_name" in selected_keys and new_event_name:
+            final_event_name = new_event_name
+        
+        # Zapisz wydarzenie
         upsert_event(
             event_id=event_id,
-            event_name=result.get("event_name") or event.get("event_name"),
+            event_name=final_event_name,
             status=event.get("status") or "active",
             notes=event.get("notes") or "",
-            data=merged_data,
+            data=current_data,
             is_active=event.get("is_active", True),
         )
         
-        # Aktualizuj klasy biletów
-        ticket_classes = result.get("ticket_classes", [])
-        for tc in ticket_classes:
-            tc_id = tc.get("ticket_class_id")
-            if tc_id:
-                save_ticket_class(
-                    event_id=event_id,
-                    ticket_class_id=tc_id,
-                    ticket_name=tc.get("ticket_name", ""),
-                    data=tc,
-                )
+        # Zapisz klasy biletów jeśli wybrane
+        saved_tickets = 0
+        if save_tickets and ticket_classes:
+            for tc in ticket_classes:
+                tc_id = tc.get("ticket_class_id")
+                if tc_id:
+                    save_ticket_class(
+                        event_id=event_id,
+                        ticket_class_id=tc_id,
+                        ticket_name=tc.get("ticket_name", ""),
+                        data=tc,
+                    )
+                    saved_tickets += 1
         
         # Audit log
         insert_admin_audit_log(
-            action="event_synced_backstage",
+            action="event_backstage_applied",
             admin_user_id=user.get("id") if user else None,
             target_id=event_id,
             extra={
-                "event_name": result.get("event_name"),
-                "venue": new_data.get("venue_name"),
-                "ticket_classes_count": len(ticket_classes),
+                "updated_fields": updated_fields,
+                "saved_tickets": saved_tickets,
             },
             ip=request.remote_addr,
         )
         
         return jsonify({
             "success": True,
-            "message": f"Zsynchronizowano dane z Backstage",
-            "event_name": result.get("event_name"),
-            "venue": new_data.get("venue_name"),
-            "location": new_data.get("location"),
-            "ticket_classes_count": len(ticket_classes),
+            "message": f"Zaktualizowano {len(updated_fields)} pól" + (f" i {saved_tickets} klas biletów" if saved_tickets else ""),
+            "updated_fields": updated_fields,
+            "saved_tickets": saved_tickets,
         })
         
     except Exception as e:

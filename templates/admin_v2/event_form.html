@@ -70,6 +70,98 @@ input[type="color"].form-input {
   height: 18px;
   color: var(--primary);
 }
+
+/* Modal styles */
+#backstage-compare-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#backstage-compare-modal .modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+#backstage-compare-modal .modal-content {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 90%;
+}
+
+#backstage-compare-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#backstage-compare-modal .modal-header h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+#backstage-compare-modal .modal-body {
+  padding: 1.5rem;
+}
+
+#backstage-compare-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--muted);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* Compare table */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.compare-table th {
+  font-weight: 600;
+  background: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.compare-row-changed {
+  background: hsl(160, 82%, 97%);
+}
+
+.compare-row-same {
+  opacity: 0.6;
+}
+
+.compare-row-same:hover {
+  opacity: 1;
+}
 </style>
 {% endblock %}
 
@@ -376,12 +468,15 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 {% if event %}
+// Dane do zapisu (przechowywane globalnie po pobraniu)
+let backstagePreviewData = null;
+
 async function syncFromBackstage() {
   const btn = document.getElementById('sync-btn');
   const statusDiv = document.getElementById('sync-status');
   
   btn.disabled = true;
-  btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Synchronizacja...';
+  btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Pobieranie...';
   
   statusDiv.style.display = 'block';
   statusDiv.style.background = 'hsl(212, 100%, 97%)';
@@ -397,33 +492,24 @@ async function syncFromBackstage() {
     
     const data = await resp.json();
     
-    if (data.success) {
-      statusDiv.style.background = 'hsl(160, 82%, 95%)';
-      statusDiv.style.border = '1px solid hsl(160, 82%, 44%)';
-      statusDiv.innerHTML = `
-        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-          <i data-lucide="check-circle" style="width: 20px; height: 20px; color: hsl(160, 82%, 35%);"></i>
-          <div>
-            <strong style="color: hsl(160, 82%, 25%);">Zsynchronizowano pomyślnie!</strong>
-            <ul style="margin: 0.5rem 0 0 0; padding-left: 1.25rem; color: hsl(160, 82%, 30%); font-size: 0.875rem;">
-              <li>Nazwa: ${data.event_name || '(brak)'}</li>
-              <li>Lokalizacja: ${data.venue || '(brak)'}</li>
-              <li>Adres: ${data.location || '(brak)'}</li>
-              <li>Klasy biletów: ${data.ticket_classes_count || 0}</li>
-            </ul>
-            <p style="margin: 0.75rem 0 0 0; font-size: 0.875rem; color: hsl(160, 82%, 35%);">Odświeżanie strony...</p>
-          </div>
-        </div>
-      `;
+    if (data.success && data.mode === 'preview') {
+      // Zapisz dane do późniejszego użycia
+      backstagePreviewData = data;
+      
+      // Pokaż modal z porównaniem
+      showCompareModal(data);
+      
+      statusDiv.style.display = 'none';
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="refresh-cw"></i> Pobierz z Backstage';
       if (typeof lucide !== 'undefined') lucide.createIcons();
-      setTimeout(() => window.location.reload(), 2000);
     } else {
       statusDiv.style.background = 'hsl(0, 84%, 95%)';
       statusDiv.style.border = '1px solid hsl(0, 84%, 80%)';
       statusDiv.innerHTML = `
         <div style="display: flex; align-items: center; gap: 0.5rem; color: hsl(0, 84%, 40%);">
           <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
-          <span><strong>Błąd synchronizacji:</strong> ${data.error || 'Nieznany błąd'}</span>
+          <span><strong>Błąd:</strong> ${data.error || 'Nieznany błąd'}</span>
         </div>
       `;
       if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -437,13 +523,203 @@ async function syncFromBackstage() {
     statusDiv.innerHTML = `
       <div style="display: flex; align-items: center; gap: 0.5rem; color: hsl(0, 84%, 40%);">
         <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
-        <span><strong>Błąd połączenia:</strong> ${err.message || 'Sprawdź połączenie internetowe'}</span>
+        <span><strong>Błąd połączenia:</strong> ${err.message || 'Sprawdź połączenie'}</span>
       </div>
     `;
     if (typeof lucide !== 'undefined') lucide.createIcons();
     btn.disabled = false;
     btn.innerHTML = '<i data-lucide="refresh-cw"></i> Pobierz z Backstage';
     if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
+
+function showCompareModal(data) {
+  // Usuń stary modal jeśli istnieje
+  const oldModal = document.getElementById('backstage-compare-modal');
+  if (oldModal) oldModal.remove();
+  
+  // Zlicz zmiany
+  const changesCount = data.changes.filter(c => c.has_change).length;
+  
+  // Buduj HTML zmian
+  let changesHtml = '';
+  for (const change of data.changes) {
+    const currentDisplay = change.current || '<em style="color: var(--muted-foreground);">(puste)</em>';
+    const newDisplay = change.new || '<em style="color: var(--muted-foreground);">(puste)</em>';
+    
+    // Skróć długie teksty
+    const truncate = (str, len = 100) => {
+      if (!str || typeof str !== 'string') return str;
+      return str.length > len ? str.substring(0, len) + '...' : str;
+    };
+    
+    const rowClass = change.has_change ? 'compare-row-changed' : 'compare-row-same';
+    const checked = change.selected ? 'checked' : '';
+    const disabled = !change.has_change ? 'disabled' : '';
+    
+    changesHtml += `
+      <tr class="${rowClass}">
+        <td style="width: 30px; text-align: center;">
+          <input type="checkbox" name="field_${change.key}" value="${change.key}" ${checked} ${disabled} 
+                 onchange="updateApplyButton()" style="width: 16px; height: 16px;">
+        </td>
+        <td style="font-weight: 500; white-space: nowrap;">${change.label}</td>
+        <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${truncate(change.current, 80) || '<em style="color: var(--muted-foreground);">(puste)</em>'}</td>
+        <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; ${change.has_change ? 'color: hsl(160, 82%, 30%); font-weight: 500;' : ''}">${truncate(change.new, 80) || '<em style="color: var(--muted-foreground);">(puste)</em>'}</td>
+      </tr>
+    `;
+  }
+  
+  // Buduj HTML biletów
+  let ticketsHtml = '';
+  if (data.ticket_classes && data.ticket_classes.length > 0) {
+    ticketsHtml = `
+      <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" id="save_tickets" name="save_tickets" checked style="width: 16px; height: 16px;">
+          <strong>Zapisz ${data.ticket_classes.length} klas biletów</strong>
+        </label>
+        <ul style="margin: 0.5rem 0 0 1.5rem; font-size: 0.875rem; color: var(--muted-foreground);">
+          ${data.ticket_classes.map(tc => `<li>${tc.ticket_name} - ${tc.price} ${tc.currency}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+  
+  const modal = document.createElement('div');
+  modal.id = 'backstage-compare-modal';
+  modal.innerHTML = `
+    <div class="modal-overlay" onclick="closeCompareModal()"></div>
+    <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow: auto;">
+      <div class="modal-header">
+        <h2 style="display: flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="git-compare" style="width: 24px; height: 24px;"></i>
+          Dane z Backstage
+        </h2>
+        <button type="button" onclick="closeCompareModal()" class="btn btn-ghost" style="padding: 0.5rem;">
+          <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+        </button>
+      </div>
+      
+      <div class="modal-body">
+        <p style="margin-bottom: 1rem; color: var(--muted-foreground);">
+          Pobrano dane dla: <strong>${data.event_name || '(brak nazwy)'}</strong><br>
+          <span style="color: hsl(160, 82%, 35%);">${changesCount} zmian</span> do zatwierdzenia. Zaznacz pola które chcesz zaktualizować.
+        </p>
+        
+        <div style="overflow-x: auto;">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th style="width: 30px;"></th>
+                <th>Pole</th>
+                <th>Obecna wartość</th>
+                <th>Z Backstage</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${changesHtml}
+            </tbody>
+          </table>
+        </div>
+        
+        ${ticketsHtml}
+      </div>
+      
+      <div class="modal-footer">
+        <button type="button" onclick="closeCompareModal()" class="btn btn-outline">Anuluj</button>
+        <button type="button" onclick="selectAllChanges()" class="btn btn-outline">Zaznacz wszystkie zmiany</button>
+        <button type="button" id="apply-backstage-btn" onclick="applyBackstageChanges()" class="btn btn-primary">
+          <i data-lucide="check"></i>
+          Zastosuj wybrane
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  updateApplyButton();
+}
+
+function closeCompareModal() {
+  const modal = document.getElementById('backstage-compare-modal');
+  if (modal) modal.remove();
+}
+
+function selectAllChanges() {
+  const checkboxes = document.querySelectorAll('#backstage-compare-modal input[type="checkbox"]:not(:disabled)');
+  checkboxes.forEach(cb => cb.checked = true);
+  updateApplyButton();
+}
+
+function updateApplyButton() {
+  const checkboxes = document.querySelectorAll('#backstage-compare-modal input[type="checkbox"][name^="field_"]:checked');
+  const ticketsCheckbox = document.getElementById('save_tickets');
+  const btn = document.getElementById('apply-backstage-btn');
+  
+  const count = checkboxes.length + (ticketsCheckbox && ticketsCheckbox.checked ? 1 : 0);
+  btn.disabled = count === 0;
+}
+
+async function applyBackstageChanges() {
+  if (!backstagePreviewData) return;
+  
+  const btn = document.getElementById('apply-backstage-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Zapisywanie...';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  
+  // Zbierz zaznaczone pola
+  const checkboxes = document.querySelectorAll('#backstage-compare-modal input[type="checkbox"][name^="field_"]:checked');
+  const selectedKeys = Array.from(checkboxes).map(cb => cb.value);
+  
+  const ticketsCheckbox = document.getElementById('save_tickets');
+  const saveTickets = ticketsCheckbox ? ticketsCheckbox.checked : false;
+  
+  try {
+    const resp = await fetch('/admin-v2/events/{{ event.event_id }}/apply-backstage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selected_keys: selectedKeys,
+        new_data: backstagePreviewData.new_data,
+        event_name: backstagePreviewData.event_name,
+        save_tickets: saveTickets,
+        ticket_classes: backstagePreviewData.ticket_classes,
+      }),
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      closeCompareModal();
+      
+      // Pokaż sukces i odśwież
+      const statusDiv = document.getElementById('sync-status');
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = 'hsl(160, 82%, 95%)';
+      statusDiv.style.border = '1px solid hsl(160, 82%, 44%)';
+      statusDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: hsl(160, 82%, 30%);">
+          <i data-lucide="check-circle" style="width: 20px; height: 20px;"></i>
+          <span><strong>${data.message}</strong> - odświeżanie strony...</span>
+        </div>
+      `;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="check"></i> Zastosuj wybrane';
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="check"></i> Zastosuj wybrane';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    alert('Błąd połączenia: ' + err.message);
   }
 }
 
