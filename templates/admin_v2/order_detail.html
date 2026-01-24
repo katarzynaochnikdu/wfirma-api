@@ -3,20 +3,16 @@
 {% block title %}Zamówienie {{ order.event_order_id[:12] }}...{% endblock %}
 
 {% block content %}
-<!-- BREADCRUMB -->
-<nav class="breadcrumb">
-  <a href="{{ url_for('admin_v2_bp.orders_list') }}">Zamówienia</a>
-  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
-  <span>{{ order.event_order_id[:16] }}...</span>
-</nav>
-
 <!-- PAGE HEADER -->
-<div class="page-header">
-  <div>
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
-      <h1 class="page-title">Szczegóły zamówienia</h1>
+<div class="page-header" style="margin-bottom: 1rem;">
+  <div style="display: flex; align-items: flex-start; gap: 1rem;">
+    <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="btn-icon" style="margin-top: 0.25rem;" title="Powrót do zamówień">
+      <i data-lucide="arrow-left"></i>
+    </a>
+    <div>
+      <h1 class="page-title" style="margin-bottom: 0.25rem;">Szczegóły zamówienia</h1>
+      <code style="font-size: 0.8125rem; color: var(--muted-foreground);">{{ order.event_order_id }}</code>
     </div>
-    <code style="font-size: 0.875rem; color: var(--muted-foreground);">{{ order.event_order_id }}</code>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline">
@@ -32,11 +28,14 @@
 
 <!-- EVENT BANNER -->
 <div class="event-banner" style="background: linear-gradient(135deg, {{ order.event_color or '#0065D7' }}, {{ order.event_color_2 or '#00A1D7' }});">
+  {% if order.event_banner_url %}
+  <div style="position: absolute; inset: 0; background-image: url('{{ order.event_banner_url }}'); background-size: cover; background-position: center; opacity: 0.3;"></div>
+  {% endif %}
   <div class="event-banner-content">
     <span class="event-banner-label">Wydarzenie</span>
     <span class="event-banner-title">{{ order.event_name or 'Nieznane wydarzenie' }}</span>
   </div>
-  <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=order.event_id) }}" class="event-banner-link">
+  <a href="{{ url_for('admin_v2_bp.event_room', event_id=order.event_id) }}" class="event-banner-link">
     Zobacz dashboard →
   </a>
 </div>
@@ -51,27 +50,30 @@
     <div class="card">
       <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h3 class="card-title">Informacje o zamówieniu</h3>
-        {% if order.status == 'paid' %}
-        <span class="status-badge status-paid">Opłacone</span>
-        {% elif order.status == 'pending_payment' %}
-        <span class="status-badge status-pending">Oczekujące na płatność</span>
-        {% elif order.status == 'cancelled' %}
-        <span class="status-badge status-cancelled">Anulowane</span>
-        {% elif order.status == 'received' %}
-        <span class="status-badge">Otrzymane</span>
-        {% elif order.status == 'refunded' %}
-        <span class="status-badge">Zwrócone</span>
-        {% else %}
-        <span class="status-badge">{{ order.status or '—' }}</span>
-        {% endif %}
+        <div style="width: 40px; height: 40px; border-radius: 50%; background: hsl(212, 100%, 94%); display: flex; align-items: center; justify-content: center;">
+          <i data-lucide="mail" style="width: 20px; height: 20px; color: hsl(212, 100%, 45%);"></i>
+        </div>
       </div>
       <div class="card-content">
         
         <!-- Status change block -->
         <div class="status-change-block">
           <label class="status-change-label">Zmień status zamówienia</label>
-          <div class="filter-select">
-            <select name="status" id="order-status-select" style="width: 100%; max-width: 280px;">
+          <div class="filter-select" style="position: relative;">
+            <span style="
+              position: absolute;
+              left: 12px;
+              top: 50%;
+              transform: translateY(-50%);
+              width: 8px;
+              height: 8px;
+              border-radius: 50%;
+              {% if order.status == 'paid' %}background: hsl(160, 82%, 44%);
+              {% elif order.status == 'pending_payment' %}background: hsl(38, 92%, 50%);
+              {% elif order.status == 'cancelled' %}background: hsl(0, 84%, 60%);
+              {% else %}background: hsl(212, 100%, 50%);{% endif %}
+            "></span>
+            <select name="status" id="order-status-select" style="width: 100%; max-width: 280px; padding-left: 2rem;">
               <option value="received"{% if order.status == 'received' %} selected{% endif %}>Otrzymane</option>
               <option value="pending_payment"{% if order.status == 'pending_payment' %} selected{% endif %}>Oczekuje na płatność</option>
               <option value="paid"{% if order.status == 'paid' %} selected{% endif %}>Opłacone</option>
@@ -214,8 +216,10 @@
     <!-- TIMELINE -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
-          <i data-lucide="clock" style="width: 18px; height: 18px;"></i>
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--muted); display: flex; align-items: center; justify-content: center;">
+            <i data-lucide="clock" style="width: 14px; height: 14px; color: var(--muted-foreground);"></i>
+          </div>
           Historia zamówienia
         </h3>
       </div>
@@ -289,8 +293,10 @@
     <!-- DOCUMENTS -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
-          <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--muted); display: flex; align-items: center; justify-content: center;">
+            <i data-lucide="file-text" style="width: 14px; height: 14px; color: var(--muted-foreground);"></i>
+          </div>
           Dokumenty
         </h3>
       </div>
