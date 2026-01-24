@@ -3,16 +3,20 @@
 {% block title %}Zamówienie {{ order.event_order_id[:12] }}...{% endblock %}
 
 {% block content %}
+<!-- BREADCRUMB -->
+<nav class="breadcrumb">
+  <a href="{{ url_for('admin_v2_bp.orders_list') }}">Zamówienia</a>
+  <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+  <span>{{ order.event_order_id[:16] }}...</span>
+</nav>
+
 <!-- PAGE HEADER -->
-<div class="page-header" style="margin-bottom: 1rem;">
-  <div style="display: flex; align-items: flex-start; gap: 1rem;">
-    <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="btn-icon" style="margin-top: 0.25rem;" title="Powrót do zamówień">
-      <i data-lucide="arrow-left"></i>
-    </a>
-    <div>
-      <h1 class="page-title" style="margin-bottom: 0.25rem;">Szczegóły zamówienia</h1>
-      <code style="font-size: 0.8125rem; color: var(--muted-foreground);">{{ order.event_order_id }}</code>
+<div class="page-header">
+  <div>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+      <h1 class="page-title">Szczegóły zamówienia</h1>
     </div>
+    <code style="font-size: 0.875rem; color: var(--muted-foreground);">{{ order.event_order_id }}</code>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline">
@@ -28,17 +32,112 @@
 
 <!-- EVENT BANNER -->
 <div class="event-banner" style="background: linear-gradient(135deg, {{ order.event_color or '#0065D7' }}, {{ order.event_color_2 or '#00A1D7' }});">
-  {% if order.event_banner_url %}
-  <div style="position: absolute; inset: 0; background-image: url('{{ order.event_banner_url }}'); background-size: cover; background-position: center; opacity: 0.3;"></div>
-  {% endif %}
   <div class="event-banner-content">
     <span class="event-banner-label">Wydarzenie</span>
     <span class="event-banner-title">{{ order.event_name or 'Nieznane wydarzenie' }}</span>
   </div>
-  <a href="{{ url_for('admin_v2_bp.event_room', event_id=order.event_id) }}" class="event-banner-link">
+  <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=order.event_id) }}" class="event-banner-link">
     Zobacz dashboard →
   </a>
 </div>
+
+<!-- OPERATIONAL BAR -->
+<div class="operational-bar">
+  <!-- Payment Status -->
+  {% set payment_status = {
+    'type': 'success' if order.status == 'paid' else ('warning' if order.status == 'pending_payment' else ('error' if order.status == 'cancelled' else 'neutral')),
+    'icon': 'check-circle' if order.status == 'paid' else ('clock' if order.status == 'pending_payment' else ('x-circle' if order.status == 'cancelled' else 'minus-circle')),
+    'label': 'Opłacone' if order.status == 'paid' else ('Oczekuje' if order.status == 'pending_payment' else ('Anulowane' if order.status == 'cancelled' else 'Zwrócone')),
+    'detail': order.paid_at|format_date_pl if order.status == 'paid' and order.paid_at else ('termin: ' ~ order.payment_due_date|format_date_pl if order.payment_due_date else '')
+  } %}
+  <div class="operational-status-badge operational-status-{{ payment_status.type }}">
+    <div class="operational-icon-wrapper">
+      <i data-lucide="credit-card"></i>
+    </div>
+    <div class="operational-status-content">
+      <span class="operational-status-label">Płatność</span>
+      <div class="operational-status-value">
+        <i data-lucide="{{ payment_status.icon }}"></i>
+        <span>{{ payment_status.label }}</span>
+      </div>
+      {% if payment_status.detail %}
+      <span class="operational-status-detail">{{ payment_status.detail }}</span>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Document Status -->
+  {% set has_invoice = wfirma_documents and wfirma_documents|selectattr('doc_type', 'equalto', 'Faktura VAT')|list|length > 0 %}
+  {% set has_proforma = wfirma_documents and wfirma_documents|selectattr('doc_type', 'equalto', 'Proforma')|list|length > 0 %}
+  {% set document_status = {
+    'type': 'success' if has_invoice else ('warning' if has_proforma else 'neutral'),
+    'icon': 'check-circle' if has_invoice else ('clock' if has_proforma else 'file-x'),
+    'label': 'Faktura VAT' if has_invoice else ('Proforma' if has_proforma else 'Brak dokumentów'),
+    'detail': (wfirma_documents|selectattr('doc_type', 'equalto', 'Faktura VAT')|first).number if has_invoice else ((wfirma_documents|selectattr('doc_type', 'equalto', 'Proforma')|first).number if has_proforma else '')
+  } %}
+  <div class="operational-status-badge operational-status-{{ document_status.type }}">
+    <div class="operational-icon-wrapper">
+      <i data-lucide="file-text"></i>
+    </div>
+    <div class="operational-status-content">
+      <span class="operational-status-label">Dokumenty</span>
+      <div class="operational-status-value">
+        <i data-lucide="{{ document_status.icon }}"></i>
+        <span>{{ document_status.label }}</span>
+      </div>
+      {% if document_status.detail %}
+      <span class="operational-status-detail">{{ document_status.detail }}</span>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Email Status -->
+  {% set last_email = emails|last if emails else none %}
+  {% set email_status = {
+    'type': 'success' if last_email and last_email.status == 'delivered' else ('warning' if last_email and last_email.status == 'sent' else ('error' if last_email and last_email.status in ['error', 'bounced'] else 'neutral')),
+    'icon': 'check-circle' if last_email and last_email.status == 'delivered' else ('clock' if last_email and last_email.status == 'sent' else ('alert-triangle' if last_email and last_email.status in ['error', 'bounced'] else 'mail-x')),
+    'label': 'Dostarczono' if last_email and last_email.status == 'delivered' else ('Wysłano' if last_email and last_email.status == 'sent' else ('Błąd' if last_email and last_email.status in ['error', 'bounced'] else 'Nie wysłano')),
+    'detail': last_email.sent_at|format_date_pl if last_email and last_email.sent_at else ''
+  } %}
+  <div class="operational-status-badge operational-status-{{ email_status.type }}">
+    <div class="operational-icon-wrapper">
+      <i data-lucide="mail"></i>
+    </div>
+    <div class="operational-status-content">
+      <span class="operational-status-label">Komunikacja</span>
+      <div class="operational-status-value">
+        <i data-lucide="{{ email_status.icon }}"></i>
+        <span>{{ email_status.label }}</span>
+      </div>
+      {% if email_status.detail %}
+      <span class="operational-status-detail">{{ email_status.detail }}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- QUICK ACTIONS BAR -->
+{% if order.status not in ['cancelled', 'refunded'] %}
+<div class="operational-actions">
+  <button class="btn btn-outline" onclick="sendProforma()" {% if order.status == 'paid' %}disabled{% endif %}>
+    <i data-lucide="send"></i>
+    Wyślij proformę
+  </button>
+  <button class="btn btn-primary" onclick="markAsPaid()" {% if order.status == 'paid' %}disabled{% endif %}>
+    <i data-lucide="credit-card"></i>
+    Oznacz opłacone
+  </button>
+  <button class="btn btn-outline" onclick="openCorrectionModal()">
+    <i data-lucide="edit"></i>
+    Korekta danych
+  </button>
+</div>
+{% else %}
+<div class="order-closed-notice">
+  <i data-lucide="info" style="width: 16px; height: 16px;"></i>
+  <span>Zamówienie zostało {{ 'anulowane' if order.status == 'cancelled' else 'zwrócone' }}. Akcje operacyjne są niedostępne.</span>
+</div>
+{% endif %}
 
 <!-- MAIN GRID -->
 <div class="detail-grid">
@@ -50,30 +149,27 @@
     <div class="card">
       <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h3 class="card-title">Informacje o zamówieniu</h3>
-        <div style="width: 40px; height: 40px; border-radius: 50%; background: hsl(212, 100%, 94%); display: flex; align-items: center; justify-content: center;">
-          <i data-lucide="mail" style="width: 20px; height: 20px; color: hsl(212, 100%, 45%);"></i>
-        </div>
+        {% if order.status == 'paid' %}
+        <span class="status-badge status-paid">Opłacone</span>
+        {% elif order.status == 'pending_payment' %}
+        <span class="status-badge status-pending">Oczekujące na płatność</span>
+        {% elif order.status == 'cancelled' %}
+        <span class="status-badge status-cancelled">Anulowane</span>
+        {% elif order.status == 'received' %}
+        <span class="status-badge">Otrzymane</span>
+        {% elif order.status == 'refunded' %}
+        <span class="status-badge">Zwrócone</span>
+        {% else %}
+        <span class="status-badge">{{ order.status or '—' }}</span>
+        {% endif %}
       </div>
       <div class="card-content">
         
         <!-- Status change block -->
         <div class="status-change-block">
           <label class="status-change-label">Zmień status zamówienia</label>
-          <div class="filter-select" style="position: relative;">
-            <span style="
-              position: absolute;
-              left: 12px;
-              top: 50%;
-              transform: translateY(-50%);
-              width: 8px;
-              height: 8px;
-              border-radius: 50%;
-              {% if order.status == 'paid' %}background: hsl(160, 82%, 44%);
-              {% elif order.status == 'pending_payment' %}background: hsl(38, 92%, 50%);
-              {% elif order.status == 'cancelled' %}background: hsl(0, 84%, 60%);
-              {% else %}background: hsl(212, 100%, 50%);{% endif %}
-            "></span>
-            <select name="status" id="order-status-select" style="width: 100%; max-width: 280px; padding-left: 2rem;">
+          <div class="filter-select">
+            <select name="status" id="order-status-select" style="width: 100%; max-width: 280px;" onchange="handleStatusChange(this.value)">
               <option value="received"{% if order.status == 'received' %} selected{% endif %}>Otrzymane</option>
               <option value="pending_payment"{% if order.status == 'pending_payment' %} selected{% endif %}>Oczekuje na płatność</option>
               <option value="paid"{% if order.status == 'paid' %} selected{% endif %}>Opłacone</option>
@@ -90,7 +186,7 @@
             <span class="info-label">Wartość zamówienia</span>
             <div class="value-with-details">
               <span class="value-main">{{ order.total|default('0.00', true) }} zł</span>
-              <span class="value-breakdown">Netto: {{ (order.total|float / 1.23)|round(2) if order.total else '0.00' }} zł • VAT 23%</span>
+              <span class="value-breakdown">Netto: {{ (order.total / 1.23)|round(2) if order.total else '0.00' }} zł • VAT 23%</span>
             </div>
           </div>
           <div class="info-item">
@@ -196,7 +292,7 @@
               {% else %}
               <span class="status-badge">{{ p.status or '—' }}</span>
               {% endif %}
-              <span class="participant-card-ticket">{{ p.ticket_name or 'Bilet Standard' }}</span>
+              <span class="participant-card-ticket">{{ p.ticket_class_name or p.ticket_class_id or 'Standard' }}</span>
             </div>
           </div>
           {% endfor %}
@@ -216,10 +312,8 @@
     <!-- TIMELINE -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title" style="display: flex; align-items: center; gap: 10px;">
-          <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--muted); display: flex; align-items: center; justify-content: center;">
-            <i data-lucide="clock" style="width: 14px; height: 14px; color: var(--muted-foreground);"></i>
-          </div>
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="clock" style="width: 18px; height: 18px;"></i>
           Historia zamówienia
         </h3>
       </div>
@@ -228,9 +322,7 @@
           {% for event in order_history %}
           <div class="timeline-v2-item">
             <div class="timeline-v2-icon {{ event.type }}">
-              {% if event.type == 'created' %}
-              <i data-lucide="plus-circle"></i>
-              {% elif event.type == 'status_change' %}
+              {% if event.type == 'status_change' %}
               <i data-lucide="refresh-cw"></i>
               {% elif event.type == 'payment' %}
               <i data-lucide="credit-card"></i>
@@ -295,10 +387,8 @@
     <!-- DOCUMENTS -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title" style="display: flex; align-items: center; gap: 10px;">
-          <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--muted); display: flex; align-items: center; justify-content: center;">
-            <i data-lucide="file-text" style="width: 14px; height: 14px; color: var(--muted-foreground);"></i>
-          </div>
+        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
           Dokumenty
         </h3>
       </div>
@@ -308,8 +398,8 @@
             {% for doc in wfirma_documents %}
             <div class="document-item">
               <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(45, 90%, 92%); display: flex; align-items: center; justify-content: center;">
-                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(45, 90%, 40%);"></i>
+                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: {% if 'Faktura' in (doc.doc_type or '') %}hsl(160, 70%, 92%){% else %}hsl(45, 90%, 92%){% endif %}; display: flex; align-items: center; justify-content: center;">
+                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: {% if 'Faktura' in (doc.doc_type or '') %}hsl(160, 82%, 35%){% else %}hsl(45, 90%, 40%){% endif %};"></i>
                 </div>
                 <div>
                   <p class="document-name">{{ doc.doc_type or 'Dokument' }}</p>
@@ -322,33 +412,55 @@
             </div>
             {% endfor %}
           {% else %}
-            <!-- Empty state dla braku dokumentów -->
-            <div class="empty-state-small">
-              <i data-lucide="file-x" style="width: 32px; height: 32px; color: var(--muted-foreground); opacity: 0.5;"></i>
-              <p style="font-size: 0.875rem; color: var(--muted-foreground); margin-top: 0.5rem;">Brak dokumentów</p>
-              <p style="font-size: 0.75rem; color: var(--muted-foreground); opacity: 0.7;">Dokumenty pojawią się po wygenerowaniu faktury</p>
+            <div class="document-item">
+              <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(45, 90%, 92%); display: flex; align-items: center; justify-content: center;">
+                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(45, 90%, 40%);"></i>
+                </div>
+                <div>
+                  <p class="document-name">Proforma</p>
+                  <p class="document-meta">PF/2025/001234</p>
+                </div>
+              </div>
+              <button class="btn btn-ghost" style="padding: 0.5rem;">
+                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+              </button>
+            </div>
+            <div class="document-item">
+              <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(160, 70%, 92%); display: flex; align-items: center; justify-content: center;">
+                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(160, 82%, 35%);"></i>
+                </div>
+                <div>
+                  <p class="document-name">Faktura VAT</p>
+                  <p class="document-meta">FV/2025/000892</p>
+                </div>
+              </div>
+              <button class="btn btn-ghost" style="padding: 0.5rem;">
+                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+              </button>
             </div>
           {% endif %}
         </div>
       </div>
     </div>
 
-    <!-- QUICK ACTIONS -->
+    <!-- QUICK ACTIONS (legacy - kept for sidebar) -->
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">Szybkie akcje</h3>
       </div>
       <div class="card-content">
         <div class="quick-actions">
-          <button class="btn btn-outline" id="btn-send-reminder" {% if order.status == 'paid' %}disabled title="Zamówienie już opłacone"{% endif %}>
+          <button class="btn btn-outline" onclick="sendReminder()">
             <i data-lucide="send"></i>
             Wyślij przypomnienie o płatności
           </button>
-          <button class="btn btn-outline" id="btn-resend-ticket" {% if order.status != 'paid' %}disabled title="Zamówienie musi być opłacone"{% endif %}>
+          <button class="btn btn-outline" onclick="resendTickets()">
             <i data-lucide="mail"></i>
             Wyślij potwierdzenie uczestnictwa
           </button>
-          <button class="btn btn-outline btn-destructive-outline" id="btn-cancel-order" {% if order.status == 'cancelled' %}disabled{% endif %}>
+          <button class="btn btn-outline btn-destructive-outline" onclick="cancelOrder()">
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
           </button>
@@ -374,114 +486,205 @@
   </div>
 </div>
 
-{% endblock %}
+<!-- STATUS CONFIRMATION MODAL -->
+<div id="status-confirm-modal" class="modal-backdrop hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title">Potwierdź zmianę statusu</h3>
+      <button class="modal-close" onclick="closeStatusModal()">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="status-warning-box" class="status-warning"></div>
+      <p id="status-confirm-text"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeStatusModal()">Anuluj</button>
+      <button class="btn btn-primary" id="confirm-status-btn" onclick="confirmStatusChange()">Potwierdź</button>
+    </div>
+  </div>
+</div>
 
-{% block extra_scripts %}
+<!-- Toast container is now global (in base.html) -->
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  var orderId = '{{ order.event_order_id }}';
-  
-  // Status change handler
-  var statusSelect = document.getElementById('order-status-select');
-  if (statusSelect) {
-    statusSelect.addEventListener('change', function() {
-      var select = this;
-      var newStatus = select.value;
-      var statusLabel = select.options[select.selectedIndex].text;
-      
-      showConfirmDialog(
-        'Zmiana statusu', 
-        'Czy na pewno chcesz zmienić status zamówienia na "' + statusLabel + '"?',
-        {okText: 'Zmień status'}
-      ).then(function(confirmed) {
-        if (!confirmed) {
+  const orderId = '{{ order.event_order_id }}';
+  let pendingStatus = null;
+  const currentStatus = '{{ order.status }}';
+
+  // Handle status change
+  function handleStatusChange(newStatus) {
+    if (newStatus === currentStatus) return;
+    
+    pendingStatus = newStatus;
+    
+    const statusLabels = {
+      'received': 'Otrzymane',
+      'pending_payment': 'Oczekuje na płatność',
+      'paid': 'Opłacone',
+      'cancelled': 'Anulowane',
+      'refunded': 'Zwrócone'
+    };
+    
+    const warningBox = document.getElementById('status-warning-box');
+    const confirmText = document.getElementById('status-confirm-text');
+    
+    // Show warning for destructive changes
+    if (newStatus === 'cancelled' || newStatus === 'refunded') {
+      warningBox.style.display = 'block';
+      warningBox.innerHTML = `
+        <i data-lucide="alert-triangle" style="width: 20px; height: 20px;"></i>
+        <span>Ta operacja może być nieodwracalna. Upewnij się, że chcesz zmienić status na "${statusLabels[newStatus]}".</span>
+      `;
+    } else {
+      warningBox.style.display = 'none';
+    }
+    
+    confirmText.textContent = `Czy na pewno chcesz zmienić status zamówienia z "${statusLabels[currentStatus]}" na "${statusLabels[newStatus]}"?`;
+    
+    document.getElementById('status-confirm-modal').classList.remove('hidden');
+    
+    // Reinit icons
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  }
+
+  function closeStatusModal() {
+    document.getElementById('status-confirm-modal').classList.add('hidden');
+    document.getElementById('order-status-select').value = currentStatus;
+    pendingStatus = null;
+  }
+
+  function confirmStatusChange() {
+    if (!pendingStatus) return;
+    
+    fetch(`/api/orders/${orderId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: pendingStatus })
+    })
+    .then(response => response.json())
+    .then(data => {
+      showToast('Status zamówienia został zmieniony', 'success');
+      location.reload();
+    })
+    .catch(err => {
+      showToast('Błąd zmiany statusu', 'error');
+      closeStatusModal();
+    });
+  }
+
+  // Quick actions
+  function sendProforma() {
+    if (confirm('Czy na pewno chcesz wysłać proformę?')) {
+      fetch(`/api/orders/${orderId}/send-proforma`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          showToast('Proforma została wysłana', 'success');
           location.reload();
-          return;
-        }
-        
-        fetch('{{ url_for("admin_v2_bp.order_update_status", order_id=order.event_order_id) }}', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'status=' + encodeURIComponent(newStatus)
         })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
+        .catch(err => showToast('Błąd wysyłki proformy', 'error'));
+    }
+  }
+
+  function markAsPaid() {
+    if (confirm('Czy na pewno chcesz oznaczyć zamówienie jako opłacone?')) {
+      fetch(`/api/orders/${orderId}/mark-paid`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          showToast('Zamówienie zostało oznaczone jako opłacone', 'success');
           location.reload();
         })
-        .catch(function(err) {
+        .catch(err => showToast('Błąd zmiany statusu', 'error'));
+    }
+  }
+
+  function openCorrectionModal() {
+    // TODO: Implement correction modal
+    showToast('Funkcja korekty danych w przygotowaniu', 'info');
+  }
+
+  function sendReminder() {
+    if (confirm('Wysłać przypomnienie o płatności?')) {
+      fetch(`/api/orders/${orderId}/send-reminder`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          showToast('Przypomnienie zostało wysłane', 'success');
           location.reload();
-        });
-      });
-    });
-  }
-  
-  // Send reminder button
-  var btnReminder = document.getElementById('btn-send-reminder');
-  if (btnReminder && !btnReminder.disabled) {
-    btnReminder.addEventListener('click', function() {
-      showConfirmDialog(
-        'Wyślij przypomnienie',
-        'Czy wysłać przypomnienie o płatności na adres {{ order.purchaser_email }}?',
-        {okText: 'Wyślij'}
-      ).then(function(confirmed) {
-        if (!confirmed) return;
-        
-        fetch('{{ url_for("admin_v2_bp.order_send_reminder", order_id=order.event_order_id) }}', {
-          method: 'POST'
         })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          showConfirmDialog('Sukces', data.message || 'Przypomnienie zostanie wysłane', {okText: 'OK', cancelText: ''});
-        });
-      });
-    });
+        .catch(err => showToast('Błąd wysyłki', 'error'));
+    }
   }
-  
-  // Resend ticket button
-  var btnResend = document.getElementById('btn-resend-ticket');
-  if (btnResend && !btnResend.disabled) {
-    btnResend.addEventListener('click', function() {
-      showConfirmDialog(
-        'Wyślij bilet ponownie',
-        'Czy ponownie wysłać bilet na adres {{ order.purchaser_email }}?',
-        {okText: 'Wyślij'}
-      ).then(function(confirmed) {
-        if (!confirmed) return;
-        
-        fetch('{{ url_for("admin_v2_bp.order_resend_ticket", order_id=order.event_order_id) }}', {
-          method: 'POST'
+
+  function resendTickets() {
+    if (confirm('Wysłać ponownie bilety uczestników?')) {
+      fetch(`/api/orders/${orderId}/resend-tickets`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          showToast('Bilety zostały wysłane', 'success');
         })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          showConfirmDialog('Sukces', data.message || 'Bilet zostanie ponownie wysłany', {okText: 'OK', cancelText: ''});
-        });
-      });
-    });
+        .catch(err => showToast('Błąd wysyłki', 'error'));
+    }
   }
-  
-  // Cancel order button
-  var btnCancel = document.getElementById('btn-cancel-order');
-  if (btnCancel && !btnCancel.disabled) {
-    btnCancel.addEventListener('click', function() {
-      showConfirmDialog(
-        'Anuluj zamówienie',
-        'Czy na pewno chcesz anulować to zamówienie? Ta operacja jest nieodwracalna.',
-        {danger: true, okText: 'Anuluj zamówienie', cancelText: 'Nie, zachowaj'}
-      ).then(function(confirmed) {
-        if (!confirmed) return;
-        
-        fetch('{{ url_for("admin_v2_bp.order_cancel", order_id=order.event_order_id) }}', {
-          method: 'POST'
+
+  function cancelOrder() {
+    if (confirm('Czy na pewno chcesz anulować to zamówienie? Ta operacja może być nieodwracalna.')) {
+      fetch(`/api/orders/${orderId}/cancel`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          showToast('Zamówienie zostało anulowane', 'success');
+          location.reload();
         })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.success) {
-            location.reload();
-          }
-        });
-      });
-    });
+        .catch(err => showToast('Błąd anulowania', 'error'));
+    }
   }
-});
+
+  // showToast is now global (defined in base.html)
+
+  // Initialize
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  });
 </script>
+
+<style>
+  /* Status warning */
+  .status-warning {
+    display: none;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: hsl(38, 92%, 95%);
+    border: 1px solid hsl(38, 92%, 75%);
+    border-radius: var(--radius);
+    color: hsl(38, 92%, 30%);
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+  
+  /* Order closed notice */
+  .order-closed-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--muted);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+    margin-bottom: 1.5rem;
+  }
+  
+  /* Toast animation */
+  @keyframes slideOut {
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+</style>
 {% endblock %}

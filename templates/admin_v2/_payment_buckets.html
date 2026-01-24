@@ -1,42 +1,363 @@
-<!-- PAYMENT BUCKETS - Placeholder -->
-<div class="card">
-  <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="credit-card" style="width: 20px; height: 20px;"></i>
-      Płatności według statusu
-    </h3>
+<!-- PAYMENT BUCKETS -->
+<div class="payment-buckets">
+  
+  <!-- Bulk Actions Bar -->
+  <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
+    <span class="bulk-count">
+      <i data-lucide="check-square" style="width: 16px; height: 16px;"></i>
+      Zaznaczono: <span id="selected-count">0</span>
+    </span>
+    <div class="bulk-actions-buttons">
+      <button class="btn btn-outline btn-sm" onclick="bulkAction('send_reminder')" type="button">
+        <i data-lucide="bell"></i>
+        Wyślij przypomnienie
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="bulkAction('resend_proforma')" type="button">
+        <i data-lucide="send"></i>
+        Wyślij proformę
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="bulkAction('mark_paid')" type="button">
+        <i data-lucide="credit-card"></i>
+        Oznacz opłacone
+      </button>
+    </div>
   </div>
-  <div style="padding: 1.5rem;">
-    <p style="color: var(--muted-foreground); text-align: center;">
-      Sekcja analityki płatności jest w trakcie rozwoju.
-    </p>
+  
+  <!-- Buckets Grid -->
+  <div class="buckets-grid">
     
-    <!-- Simple stats -->
-    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 1.5rem;">
-      <div class="card" style="padding: 1rem; text-align: center; background: hsl(160, 82%, 44%, 0.05);">
-        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Opłacone</div>
-        <div style="font-size: 1.25rem; font-weight: 700; color: hsl(160, 82%, 44%);">{{ stats.paid or 0 }}</div>
+    <!-- Due Today Bucket -->
+    <div class="bucket-card" data-bucket-id="due_today">
+      <div class="bucket-header" onclick="toggleBucket('due_today')">
+        <input type="checkbox" 
+               class="bucket-checkbox" 
+               data-bucket="due_today" 
+               onclick="event.stopPropagation(); selectAllInBucket('due_today', this.checked)"
+               {% if not buckets.due_today.orders %}disabled{% endif %}>
+        <div class="bucket-icon bucket-icon-due_today">
+          <i data-lucide="calendar-clock"></i>
+        </div>
+        <div class="bucket-info">
+          <span class="bucket-label">Do opłacenia dziś</span>
+          <span class="bucket-count">{{ buckets.due_today.orders|length if buckets.due_today else 0 }}</span>
+        </div>
+        <span class="bucket-total">{{ buckets.due_today.total|format_currency if buckets.due_today else '0,00 zł' }}</span>
+        <i data-lucide="chevron-down" class="bucket-toggle" id="toggle-due_today"></i>
       </div>
-      <div class="card" style="padding: 1rem; text-align: center; background: hsl(38, 92%, 50%, 0.05);">
-        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Oczekujące</div>
-        <div style="font-size: 1.25rem; font-weight: 700; color: hsl(38, 92%, 50%);">{{ stats.pending or 0 }}</div>
-      </div>
-      <div class="card" style="padding: 1rem; text-align: center; background: hsl(212, 100%, 42%, 0.05);">
-        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Łącznie</div>
-        <div style="font-size: 1.25rem; font-weight: 700; color: var(--primary);">{{ stats.orders or 0 }}</div>
+      
+      <div class="bucket-content" id="content-due_today">
+        {% if buckets.due_today and buckets.due_today.orders %}
+          {% for order in buckets.due_today.orders %}
+          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
+            <input type="checkbox" 
+                   class="order-checkbox" 
+                   data-order-id="{{ order.order_id }}" 
+                   data-bucket="due_today"
+                   onchange="updateSelection()">
+            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
+              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
+              <span class="bucket-order-event">{{ order.event_name }}</span>
+            </a>
+            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="bucket-empty">
+            Brak zamówień do opłacenia dziś
+          </div>
+        {% endif %}
       </div>
     </div>
     
-    <!-- Revenue -->
-    <div style="display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; padding: 1rem; background: var(--muted); border-radius: var(--radius);">
-      <div style="text-align: center;">
-        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Przychód zrealizowany</div>
-        <div style="font-size: 1.125rem; font-weight: 600; color: hsl(160, 82%, 44%);">{{ stats.revenue|format_currency if stats.revenue else '0,00 zł' }}</div>
+    <!-- Overdue Bucket -->
+    <div class="bucket-card" data-bucket-id="overdue">
+      <div class="bucket-header" onclick="toggleBucket('overdue')">
+        <input type="checkbox" 
+               class="bucket-checkbox" 
+               data-bucket="overdue" 
+               onclick="event.stopPropagation(); selectAllInBucket('overdue', this.checked)"
+               {% if not buckets.overdue.orders %}disabled{% endif %}>
+        <div class="bucket-icon bucket-icon-overdue">
+          <i data-lucide="alert-triangle"></i>
+        </div>
+        <div class="bucket-info">
+          <span class="bucket-label">Przeterminowane</span>
+          <span class="bucket-count">{{ buckets.overdue.orders|length if buckets.overdue else 0 }}</span>
+        </div>
+        <span class="bucket-total">{{ buckets.overdue.total|format_currency if buckets.overdue else '0,00 zł' }}</span>
+        <i data-lucide="chevron-down" class="bucket-toggle" id="toggle-overdue"></i>
       </div>
-      <div style="text-align: center;">
-        <div style="font-size: 0.75rem; color: var(--muted-foreground);">Przychód oczekujący</div>
-        <div style="font-size: 1.125rem; font-weight: 600; color: hsl(38, 92%, 50%);">{{ stats.pending_revenue|format_currency if stats.pending_revenue else '0,00 zł' }}</div>
+      
+      <div class="bucket-content" id="content-overdue">
+        {% if buckets.overdue and buckets.overdue.orders %}
+          {% for order in buckets.overdue.orders %}
+          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
+            <input type="checkbox" 
+                   class="order-checkbox" 
+                   data-order-id="{{ order.order_id }}" 
+                   data-bucket="overdue"
+                   onchange="updateSelection()">
+            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
+              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
+              <span class="bucket-order-event">{{ order.event_name }}</span>
+            </a>
+            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="bucket-empty">
+            Brak przeterminowanych zamówień
+          </div>
+        {% endif %}
       </div>
+    </div>
+    
+    <!-- Paid Bucket -->
+    <div class="bucket-card" data-bucket-id="paid">
+      <div class="bucket-header" onclick="toggleBucket('paid')">
+        <input type="checkbox" 
+               class="bucket-checkbox" 
+               data-bucket="paid" 
+               onclick="event.stopPropagation(); selectAllInBucket('paid', this.checked)"
+               {% if not buckets.paid.orders %}disabled{% endif %}>
+        <div class="bucket-icon bucket-icon-paid">
+          <i data-lucide="check-circle"></i>
+        </div>
+        <div class="bucket-info">
+          <span class="bucket-label">Opłacone</span>
+          <span class="bucket-count">{{ buckets.paid.orders|length if buckets.paid else 0 }}</span>
+        </div>
+        <span class="bucket-total">{{ buckets.paid.total|format_currency if buckets.paid else '0,00 zł' }}</span>
+        <i data-lucide="chevron-down" class="bucket-toggle" id="toggle-paid"></i>
+      </div>
+      
+      <div class="bucket-content" id="content-paid">
+        {% if buckets.paid and buckets.paid.orders %}
+          {% for order in buckets.paid.orders %}
+          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
+            <input type="checkbox" 
+                   class="order-checkbox" 
+                   data-order-id="{{ order.order_id }}" 
+                   data-bucket="paid"
+                   onchange="updateSelection()">
+            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
+              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
+              <span class="bucket-order-event">{{ order.event_name }}</span>
+            </a>
+            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="bucket-empty">
+            Brak opłaconych zamówień
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    
+    <!-- Cancelled Bucket -->
+    <div class="bucket-card" data-bucket-id="cancelled">
+      <div class="bucket-header" onclick="toggleBucket('cancelled')">
+        <input type="checkbox" 
+               class="bucket-checkbox" 
+               data-bucket="cancelled" 
+               onclick="event.stopPropagation(); selectAllInBucket('cancelled', this.checked)"
+               {% if not buckets.cancelled.orders %}disabled{% endif %}>
+        <div class="bucket-icon bucket-icon-cancelled">
+          <i data-lucide="x-circle"></i>
+        </div>
+        <div class="bucket-info">
+          <span class="bucket-label">Anulowane</span>
+          <span class="bucket-count">{{ buckets.cancelled.orders|length if buckets.cancelled else 0 }}</span>
+        </div>
+        <span class="bucket-total">{{ buckets.cancelled.total|format_currency if buckets.cancelled else '0,00 zł' }}</span>
+        <i data-lucide="chevron-down" class="bucket-toggle" id="toggle-cancelled"></i>
+      </div>
+      
+      <div class="bucket-content" id="content-cancelled">
+        {% if buckets.cancelled and buckets.cancelled.orders %}
+          {% for order in buckets.cancelled.orders %}
+          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
+            <input type="checkbox" 
+                   class="order-checkbox" 
+                   data-order-id="{{ order.order_id }}" 
+                   data-bucket="cancelled"
+                   onchange="updateSelection()">
+            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
+              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
+              <span class="bucket-order-event">{{ order.event_name }}</span>
+            </a>
+            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="bucket-empty">
+            Brak anulowanych zamówień
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    
+  </div>
+  
+  <!-- Revenue Summary -->
+  <div class="revenue-summary">
+    <div class="revenue-item revenue-paid">
+      <span class="revenue-label">Przychód zrealizowany</span>
+      <span class="revenue-value">{{ stats.revenue|format_currency if stats.revenue else '0,00 zł' }}</span>
+    </div>
+    <div class="revenue-item revenue-pending">
+      <span class="revenue-label">Przychód oczekujący</span>
+      <span class="revenue-value">{{ stats.pending_revenue|format_currency if stats.pending_revenue else '0,00 zł' }}</span>
     </div>
   </div>
 </div>
+
+<script>
+// Payment Buckets State
+const selectedOrders = new Set();
+
+// Toggle bucket expand/collapse
+function toggleBucket(bucketId) {
+  const content = document.getElementById(`content-${bucketId}`);
+  const toggle = document.getElementById(`toggle-${bucketId}`);
+  
+  if (content && toggle) {
+    content.classList.toggle('expanded');
+    toggle.classList.toggle('expanded');
+  }
+}
+
+// Select all orders in a bucket
+function selectAllInBucket(bucketId, checked) {
+  const checkboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]`);
+  
+  checkboxes.forEach(checkbox => {
+    checkbox.checked = checked;
+    const orderId = checkbox.dataset.orderId;
+    
+    if (checked) {
+      selectedOrders.add(orderId);
+      checkbox.closest('.bucket-order-item').classList.add('selected');
+    } else {
+      selectedOrders.delete(orderId);
+      checkbox.closest('.bucket-order-item').classList.remove('selected');
+    }
+  });
+  
+  updateBulkActionsBar();
+}
+
+// Update selection state
+function updateSelection() {
+  selectedOrders.clear();
+  
+  document.querySelectorAll('.order-checkbox').forEach(checkbox => {
+    const item = checkbox.closest('.bucket-order-item');
+    if (checkbox.checked) {
+      selectedOrders.add(checkbox.dataset.orderId);
+      item.classList.add('selected');
+    } else {
+      item.classList.remove('selected');
+    }
+  });
+  
+  // Update bucket checkboxes (indeterminate state)
+  document.querySelectorAll('.bucket-checkbox').forEach(bucketCheckbox => {
+    const bucketId = bucketCheckbox.dataset.bucket;
+    const allCheckboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]`);
+    const checkedCheckboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]:checked`);
+    
+    if (allCheckboxes.length === 0) {
+      bucketCheckbox.checked = false;
+      bucketCheckbox.indeterminate = false;
+    } else if (checkedCheckboxes.length === 0) {
+      bucketCheckbox.checked = false;
+      bucketCheckbox.indeterminate = false;
+    } else if (checkedCheckboxes.length === allCheckboxes.length) {
+      bucketCheckbox.checked = true;
+      bucketCheckbox.indeterminate = false;
+    } else {
+      bucketCheckbox.checked = false;
+      bucketCheckbox.indeterminate = true;
+    }
+  });
+  
+  updateBulkActionsBar();
+}
+
+// Update bulk actions bar visibility
+function updateBulkActionsBar() {
+  const bar = document.getElementById('bulk-actions-bar');
+  const countEl = document.getElementById('selected-count');
+  
+  if (bar && countEl) {
+    if (selectedOrders.size > 0) {
+      bar.classList.remove('hidden');
+      countEl.textContent = selectedOrders.size;
+    } else {
+      bar.classList.add('hidden');
+    }
+  }
+}
+
+// Bulk action handler
+function bulkAction(action) {
+  if (selectedOrders.size === 0) return;
+  
+  const orderIds = Array.from(selectedOrders);
+  
+  let confirmMessage = '';
+  switch (action) {
+    case 'send_reminder':
+      confirmMessage = `Wysłać przypomnienie do ${orderIds.length} zamówień?`;
+      break;
+    case 'resend_proforma':
+      confirmMessage = `Wysłać proformę do ${orderIds.length} zamówień?`;
+      break;
+    case 'mark_paid':
+      confirmMessage = `Oznaczyć ${orderIds.length} zamówień jako opłacone?`;
+      break;
+  }
+  
+  if (confirm(confirmMessage)) {
+    fetch('/api/orders/bulk-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, order_ids: orderIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (typeof showToast === 'function') {
+        showToast(`Akcja wykonana dla ${orderIds.length} zamówień`, 'success');
+      }
+      location.reload();
+    })
+    .catch(err => {
+      if (typeof showToast === 'function') {
+        showToast('Błąd wykonania akcji', 'error');
+      } else {
+        alert('Błąd wykonania akcji');
+      }
+    });
+  }
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', function() {
+  // Auto-expand due_today and overdue buckets if they have items
+  ['due_today', 'overdue'].forEach(bucketId => {
+    const content = document.getElementById(`content-${bucketId}`);
+    const toggle = document.getElementById(`toggle-${bucketId}`);
+    if (content && content.querySelector('.bucket-order-item')) {
+      content.classList.add('expanded');
+      if (toggle) toggle.classList.add('expanded');
+    }
+  });
+  
+  // Reinitialize Lucide icons
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+</script>

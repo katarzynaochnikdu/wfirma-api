@@ -180,74 +180,144 @@
     <div style="display: flex; flex-direction: column; gap: 0.75rem;">
       {% for task in tasks|sort(attribute='created_at', reverse=True) %}
       <div class="task-card" id="{% if task.alert_level == 'critical' %}critical{% endif %}" style="
-        padding: 1rem;
+        display: flex;
+        flex-direction: column;
         border-radius: var(--radius);
         border: 1px solid var(--border);
         background: var(--card);
+        overflow: hidden;
         {% if task.alert_level == 'critical' %}border-left: 4px solid var(--destructive);{% elif task.alert_level == 'error' %}border-left: 4px solid hsl(38, 92%, 50%);{% else %}border-left: 4px solid hsl(212, 100%, 42%);{% endif %}
       ">
-        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-          <div style="
-            padding: 0.5rem;
-            border-radius: var(--radius);
-            {% if task.category == 'wfirma' %}background: hsl(212, 100%, 42%, 0.1); color: hsl(212, 100%, 42%);
-            {% elif task.category == 'make' %}background: hsl(280, 80%, 50%, 0.1); color: hsl(280, 80%, 50%);
-            {% elif task.category == 'stripe' %}background: hsl(160, 82%, 44%, 0.1); color: hsl(160, 82%, 44%);
-            {% elif task.category == 'database' %}background: hsl(220, 10%, 50%, 0.1); color: hsl(220, 10%, 50%);
-            {% elif task.category == 'attendee' %}background: hsl(38, 92%, 50%, 0.1); color: hsl(38, 92%, 50%);
-            {% elif task.category == 'config' %}background: hsl(350, 80%, 50%, 0.1); color: hsl(350, 80%, 50%);
-            {% endif %}
-          ">
-            {% if task.category == 'wfirma' %}<i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
-            {% elif task.category == 'make' %}<i data-lucide="zap" style="width: 16px; height: 16px;"></i>
-            {% elif task.category == 'stripe' %}<i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
-            {% elif task.category == 'database' %}<i data-lucide="database" style="width: 16px; height: 16px;"></i>
-            {% elif task.category == 'attendee' %}<i data-lucide="users" style="width: 16px; height: 16px;"></i>
-            {% elif task.category == 'config' %}<i data-lucide="settings" style="width: 16px; height: 16px;"></i>
-            {% endif %}
-          </div>
-          
-          <div style="flex: 1; min-width: 0;">
-            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25rem;">
-              <span style="font-size: 0.875rem; font-weight: 600;">{{ task.title }}</span>
-              {% if task.is_overdue %}
-              <span class="status-badge status-cancelled" style="font-size: 0.625rem;">Zaległy</span>
+        <!-- Content Section -->
+        <div style="flex: 1; padding: 1.25rem;">
+          <div style="display: flex; align-items: flex-start; gap: 1rem;">
+            <div style="
+              flex-shrink: 0;
+              padding: 0.625rem;
+              border-radius: var(--radius);
+              background: hsl(var(--muted) / 0.6);
+              {% if task.category == 'wfirma' %}color: hsl(212, 100%, 42%);
+              {% elif task.category == 'make' %}color: hsl(280, 80%, 50%);
+              {% elif task.category == 'stripe' %}color: hsl(160, 82%, 44%);
+              {% elif task.category == 'database' %}color: hsl(220, 10%, 50%);
+              {% elif task.category == 'attendee' %}color: hsl(38, 92%, 50%);
+              {% elif task.category == 'config' %}color: hsl(350, 80%, 50%);
               {% endif %}
-              {% if task.retry_count > 0 %}
-              <span style="font-size: 0.625rem; color: var(--muted-foreground);">Próba {{ task.retry_count }}/{{ task.max_retries }}</span>
+            ">
+              {% if task.category == 'wfirma' %}<i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+              {% elif task.category == 'make' %}<i data-lucide="zap" style="width: 16px; height: 16px;"></i>
+              {% elif task.category == 'stripe' %}<i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
+              {% elif task.category == 'database' %}<i data-lucide="database" style="width: 16px; height: 16px;"></i>
+              {% elif task.category == 'attendee' %}<i data-lucide="users" style="width: 16px; height: 16px;"></i>
+              {% elif task.category == 'config' %}<i data-lucide="settings" style="width: 16px; height: 16px;"></i>
               {% endif %}
             </div>
-            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ task.description }}</p>
             
-            {% if task.event_name %}
-            <div style="margin-top: 0.5rem;">
-              <a href="{{ url_for('admin_v2_bp.event_room', event_id=task.event_id) }}" class="order-link" style="font-size: 0.75rem;">
-                {{ task.event_name }}
-              </a>
+            <div style="flex: 1; min-width: 0;">
+              <!-- Title row with badges -->
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.875rem; font-weight: 600;">{{ task.title }}</span>
+                
+                <!-- Alert level pill -->
+                <span style="
+                  font-size: 0.6875rem;
+                  font-weight: 500;
+                  padding: 0.125rem 0.5rem;
+                  border-radius: 9999px;
+                  {% if task.alert_level == 'critical' or task.alert_level == 'security' %}background: hsl(0, 84%, 95%); color: hsl(0, 84%, 40%);
+                  {% elif task.alert_level == 'error' %}background: hsl(25, 95%, 95%); color: hsl(25, 95%, 35%);
+                  {% elif task.alert_level == 'warning' %}background: hsl(38, 92%, 95%); color: hsl(38, 92%, 35%);
+                  {% else %}background: hsl(220, 10%, 95%); color: hsl(220, 10%, 40%);
+                  {% endif %}
+                ">
+                  {% if task.alert_level == 'critical' %}Krytyczny{% elif task.alert_level == 'error' %}Błąd{% elif task.alert_level == 'warning' %}Ostrzeżenie{% else %}Info{% endif %}
+                </span>
+                
+                {% if task.is_overdue %}
+                <span style="font-size: 0.6875rem; font-weight: 500; padding: 0.125rem 0.5rem; border-radius: 9999px; background: hsl(0, 84%, 95%); color: hsl(0, 84%, 40%); display: flex; align-items: center; gap: 0.25rem;">
+                  <i data-lucide="alert-triangle" style="width: 12px; height: 12px;"></i>
+                  Przeterminowane
+                </span>
+                {% endif %}
+              </div>
+              
+              <!-- Description -->
+              <p style="font-size: 0.875rem; color: var(--muted-foreground); line-height: 1.5; margin-bottom: 0.5rem;">{{ task.description }}</p>
+              
+              <!-- Metadata row -->
+              <div style="display: flex; align-items: center; gap: 0.75rem; font-size: 0.75rem; flex-wrap: wrap; padding-top: 0.25rem;">
+                {% if task.error_code %}
+                <code style="font-family: monospace; font-size: 0.6875rem; color: var(--muted-foreground); background: var(--muted); padding: 0.25rem 0.5rem; border-radius: 0.375rem;">
+                  {{ task.error_code }}
+                </code>
+                {% endif %}
+                
+                {% if task.flow_type %}
+                <span style="
+                  font-family: monospace;
+                  font-size: 0.6875rem;
+                  font-weight: 600;
+                  padding: 0.25rem 0.5rem;
+                  border-radius: 0.375rem;
+                  {% if task.flow_type == 'foc' %}background: hsl(160, 82%, 95%); color: hsl(160, 82%, 35%);
+                  {% elif task.flow_type == 'proforma' %}background: hsl(212, 100%, 95%); color: hsl(212, 100%, 35%);
+                  {% elif task.flow_type == 'stripe' %}background: hsl(280, 80%, 95%); color: hsl(280, 80%, 40%);
+                  {% endif %}
+                ">
+                  {% if task.flow_type == 'foc' %}FOC{% elif task.flow_type == 'proforma' %}PROFORMA{% elif task.flow_type == 'stripe' %}STRIPE{% endif %}
+                </span>
+                {% endif %}
+                
+                <span style="color: var(--muted-foreground); display: flex; align-items: center; gap: 0.25rem;">
+                  <i data-lucide="clock" style="width: 14px; height: 14px;"></i>
+                  {{ task.created_at|format_date_pl }}
+                </span>
+                
+                {% if task.can_retry and task.max_retries > 0 %}
+                <span style="display: flex; align-items: center; gap: 0.25rem; {% if task.retry_count >= task.max_retries %}color: hsl(0, 84%, 50%);{% else %}color: var(--muted-foreground);{% endif %}">
+                  <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                  {{ task.retry_count }}/{{ task.max_retries }}
+                </span>
+                {% endif %}
+              </div>
+              
+              <!-- Event/Order link -->
+              {% if task.event_name or task.order_number %}
+              <div style="display: flex; align-items: center; gap: 0.75rem; padding-top: 0.5rem; font-size: 0.875rem;">
+                {% if task.event_name %}
+                <a href="{{ url_for('admin_v2_bp.event_room', event_id=task.event_id) }}" class="order-link" style="color: var(--muted-foreground);">
+                  {{ task.event_name }}
+                </a>
+                {% endif %}
+                {% if task.order_number %}
+                <a href="{{ url_for('admin_v2_bp.order_detail', order_id=task.order_id) }}" style="font-family: monospace; font-size: 0.75rem; color: var(--muted-foreground); background: var(--muted); padding: 0.125rem 0.5rem; border-radius: 0.25rem;">
+                  #{{ task.order_number }}
+                </a>
+                {% endif %}
+              </div>
+              {% endif %}
             </div>
-            {% endif %}
-            
-            <div style="font-size: 0.625rem; color: var(--muted-foreground); margin-top: 0.5rem;">
-              {{ task.created_at|format_date_pl }}
-            </div>
-          </div>
-          
-          <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
-            {% if task.can_retry and task.retry_count < task.max_retries %}
-            <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry', task_id=task.id) }}" style="margin: 0;">
-              <button type="submit" class="btn btn-outline btn-sm" style="gap: 0.25rem;">
-                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
-                Ponów
-              </button>
-            </form>
-            {% endif %}
-            {% for action in task.actions %}
-            <a href="{{ action.url }}" class="btn btn-{% if action.primary %}primary{% else %}outline{% endif %} btn-sm" style="gap: 0.25rem;">
-              {{ action.label }}
-            </a>
-            {% endfor %}
           </div>
         </div>
+        
+        <!-- Action Bar - horizontal at bottom -->
+        {% if task.can_retry or task.actions|length > 0 %}
+        <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); background: hsl(var(--muted) / 0.3); flex-wrap: wrap;">
+          {% if task.can_retry and task.retry_count < task.max_retries %}
+          <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry', task_id=task.id) }}" style="margin: 0;">
+            <button type="submit" class="btn btn-primary btn-sm" style="height: 2.25rem; padding: 0 1rem; gap: 0.5rem;">
+              <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+              Ponów
+            </button>
+          </form>
+          {% endif %}
+          {% for action in task.actions %}
+          <a href="{{ action.url }}" class="btn btn-{% if loop.first and not task.can_retry %}primary{% else %}outline{% endif %} btn-sm" style="height: 2.25rem; padding: 0 1rem; gap: 0.5rem;">
+            {{ action.label }}
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

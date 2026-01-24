@@ -59,22 +59,23 @@
       <span>Komunikacja</span>
     </a>
     {% endif %}
-    {% if can_users %}
-    <a href="{{ url_for('admin_v2_bp.users_list') }}" class="nav-item{% if active_page == 'users' %} active{% endif %}">
-      <i data-lucide="user-cog"></i>
-      <span>Konta i uprawnienia</span>
-    </a>
-    {% endif %}
-    {% if can_audit %}
-    <a href="{{ url_for('admin_v2_bp.audit_log') }}" class="nav-item{% if active_page == 'audit' %} active{% endif %}">
-      <i data-lucide="file-text"></i>
-      <span>Log audytu</span>
-    </a>
-    {% endif %}
+  </nav>
+
+  <!-- Bottom navigation -->
+  <div class="sidebar-bottom">
     <a href="{{ url_for('admin_v2_bp.settings') }}" class="nav-item{% if active_page == 'settings' %} active{% endif %}">
       <i data-lucide="settings"></i>
       <span>Ustawienia</span>
     </a>
+    <a href="{{ url_for('admin_bp.events_list') }}" class="nav-item" title="Przejdź do starego panelu">
+      <i data-lucide="arrow-left-circle"></i>
+      <span>Stary panel</span>
+    </a>
+    <button class="nav-item nav-logout" onclick="logout()">
+      <i data-lucide="log-out"></i>
+      <span>Wyloguj</span>
+    </button>
+  </div>
   </nav>
 
   <!-- Bottom navigation -->

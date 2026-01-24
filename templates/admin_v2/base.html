@@ -35,6 +35,12 @@
     </div>
   </div>
 
+  <!-- Toast Container (Global) -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Send Message Dialog (Global) -->
+  {% include 'admin_v2/_send_message_dialog.html' %}
+
   <script>
     // Inicjalizuj ikony Lucide po załadowaniu DOM
     document.addEventListener('DOMContentLoaded', function() {
@@ -49,6 +55,33 @@
     
     function logout() {
       window.location.href = '{{ url_for("admin_v2_bp.logout") }}';
+    }
+    
+    // Global Toast Function
+    function showToast(message, type) {
+      type = type || 'info';
+      var container = document.getElementById('toast-container');
+      if (!container) return;
+      
+      var toast = document.createElement('div');
+      toast.className = 'toast toast-' + type;
+      
+      var iconName = 'info';
+      if (type === 'success') iconName = 'check-circle';
+      else if (type === 'error') iconName = 'x-circle';
+      else if (type === 'warning') iconName = 'alert-triangle';
+      
+      toast.innerHTML = '<i data-lucide="' + iconName + '" style="width: 16px; height: 16px;"></i><span>' + message + '</span>';
+      container.appendChild(toast);
+      
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+      
+      setTimeout(function() {
+        toast.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 4000);
     }
     
     // Custom confirm dialog

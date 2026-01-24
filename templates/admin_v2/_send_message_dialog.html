@@ -1,0 +1,240 @@
+<!-- SEND MESSAGE MODAL -->
+<div id="send-message-modal" class="modal-backdrop hidden">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <div class="modal-header-content">
+        <h3 class="modal-title">
+          <i data-lucide="mail"></i>
+          Wyślij wiadomość
+        </h3>
+        <p class="modal-description" id="modal-event-name">
+          Wyślij wiadomość do wybranych odbiorców
+        </p>
+      </div>
+      <button class="modal-close" onclick="closeSendMessageModal()">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <!-- Recipients -->
+      <div class="recipients-container">
+        <label class="recipients-label">
+          <i data-lucide="users"></i>
+          Odbiorcy (<span id="recipient-count">0</span>)
+        </label>
+        <div id="recipients-list" class="recipients-tags">
+          <!-- Recipients will be inserted here by JS -->
+        </div>
+      </div>
+      
+      <!-- Template Select -->
+      <div class="form-group">
+        <label class="form-label" for="message-template">Szablon wiadomości</label>
+        <select id="message-template" class="form-select" onchange="handleTemplateChange()">
+          <option value="" disabled selected>Wybierz szablon...</option>
+          <option value="confirmation">Potwierdzenie rejestracji</option>
+          <option value="reminder">Przypomnienie o wydarzeniu</option>
+          <option value="ticket">Bilet elektroniczny</option>
+          <option value="update">Aktualizacja informacji</option>
+          <option value="custom">Wiadomość własna</option>
+        </select>
+      </div>
+      
+      <!-- Custom Message (conditional) -->
+      <div id="custom-message-section" class="form-group" style="display: none;">
+        <label class="form-label" for="custom-message">Treść wiadomości</label>
+        <textarea id="custom-message" class="form-textarea" rows="6" placeholder="Wprowadź treść wiadomości..."></textarea>
+      </div>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeSendMessageModal()">Anuluj</button>
+      <button id="send-message-btn" class="btn btn-primary" onclick="sendMessage()" disabled>
+        <i data-lucide="send"></i>
+        <span id="send-btn-text">Wyślij wiadomość</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Send Message Modal State
+let messageRecipients = [];
+
+// Open modal with recipients
+function openSendMessageModal(recipients, eventName) {
+  messageRecipients = recipients;
+  
+  const modal = document.getElementById('send-message-modal');
+  const eventNameEl = document.getElementById('modal-event-name');
+  const countEl = document.getElementById('recipient-count');
+  const listEl = document.getElementById('recipients-list');
+  const sendBtn = document.getElementById('send-message-btn');
+  const sendBtnText = document.getElementById('send-btn-text');
+  
+  // Set event name
+  if (eventName) {
+    eventNameEl.innerHTML = `Wyślij wiadomość do uczestników wydarzenia: <strong>${eventName}</strong>`;
+  } else {
+    eventNameEl.textContent = 'Wyślij wiadomość do wybranych odbiorców';
+  }
+  
+  // Set count
+  countEl.textContent = recipients.length;
+  sendBtnText.textContent = `Wyślij wiadomość (${recipients.length})`;
+  
+  // Render recipients (max 10, then +X więcej)
+  listEl.innerHTML = '';
+  const displayRecipients = recipients.slice(0, 10);
+  
+  displayRecipients.forEach((recipient, index) => {
+    const tag = document.createElement('span');
+    tag.className = 'recipient-tag';
+    tag.dataset.index = index;
+    tag.innerHTML = `
+      ${recipient.name || recipient.email}
+      <button class="recipient-tag-remove" onclick="removeRecipient(${index})" type="button">
+        <i data-lucide="x"></i>
+      </button>
+    `;
+    listEl.appendChild(tag);
+  });
+  
+  if (recipients.length > 10) {
+    const moreTag = document.createElement('span');
+    moreTag.className = 'recipient-tag recipient-tag-more';
+    moreTag.textContent = `+${recipients.length - 10} więcej`;
+    listEl.appendChild(moreTag);
+  }
+  
+  // Reset form
+  document.getElementById('message-template').value = '';
+  document.getElementById('custom-message').value = '';
+  document.getElementById('custom-message-section').style.display = 'none';
+  sendBtn.disabled = true;
+  
+  // Show modal
+  modal.classList.remove('hidden');
+  
+  // Reinitialize Lucide icons
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+}
+
+// Close modal
+function closeSendMessageModal() {
+  const modal = document.getElementById('send-message-modal');
+  modal.classList.add('hidden');
+  messageRecipients = [];
+}
+
+// Remove a recipient
+function removeRecipient(index) {
+  messageRecipients.splice(index, 1);
+  
+  if (messageRecipients.length === 0) {
+    closeSendMessageModal();
+    return;
+  }
+  
+  // Re-render
+  const strongEl = document.getElementById('modal-event-name').querySelector('strong');
+  const eventName = strongEl ? strongEl.textContent : null;
+  openSendMessageModal(messageRecipients, eventName);
+}
+
+// Handle template change
+function handleTemplateChange() {
+  const template = document.getElementById('message-template').value;
+  const customSection = document.getElementById('custom-message-section');
+  const sendBtn = document.getElementById('send-message-btn');
+  
+  if (template === 'custom') {
+    customSection.style.display = 'block';
+    sendBtn.disabled = document.getElementById('custom-message').value.trim() === '';
+  } else {
+    customSection.style.display = 'none';
+    sendBtn.disabled = !template;
+  }
+}
+
+// Send message
+function sendMessage() {
+  const template = document.getElementById('message-template').value;
+  const customMessage = document.getElementById('custom-message').value;
+  const sendBtn = document.getElementById('send-message-btn');
+  
+  if (!template) {
+    showToast('Wybierz szablon wiadomości', 'error');
+    return;
+  }
+  
+  if (template === 'custom' && !customMessage.trim()) {
+    showToast('Wprowadź treść wiadomości', 'error');
+    return;
+  }
+  
+  // Set loading state
+  sendBtn.classList.add('loading');
+  sendBtn.disabled = true;
+  
+  const recipientIds = messageRecipients.map(r => r.id);
+  
+  fetch('/api/messages/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      template,
+      custom_message: template === 'custom' ? customMessage : null,
+      recipient_ids: recipientIds
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    showToast(`Wiadomość wysłana do ${recipientIds.length} odbiorców`, 'success');
+    closeSendMessageModal();
+  })
+  .catch(err => {
+    showToast('Błąd wysyłki wiadomości', 'error');
+    sendBtn.classList.remove('loading');
+    sendBtn.disabled = false;
+  });
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', function() {
+  // Close on backdrop click
+  const modal = document.getElementById('send-message-modal');
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeSendMessageModal();
+      }
+    });
+  }
+  
+  // Custom message input listener
+  const customMessageInput = document.getElementById('custom-message');
+  if (customMessageInput) {
+    customMessageInput.addEventListener('input', function() {
+      const sendBtn = document.getElementById('send-message-btn');
+      const template = document.getElementById('message-template').value;
+      if (template === 'custom') {
+        sendBtn.disabled = this.value.trim() === '';
+      }
+    });
+  }
+});
+
+// Close on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('send-message-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeSendMessageModal();
+    }
+  }
+});
+</script>
