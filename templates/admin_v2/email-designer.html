@@ -1838,6 +1838,7 @@
 
 {% block extra_scripts %}
 <script>
+  window.__TEMPLATE_DATA__ = {{ template_data|tojson if template_data else 'null' }};
 {% raw %}
 // ==================== STATE ====================
 let templateBlocks = [];
@@ -1930,7 +1931,7 @@ const BLOCK_LABELS = {
 };
 
 // ==================== TEMPLATE MANAGEMENT ====================
-let currentTemplateId = {{ template_data.id if template_data else 'null' }};
+let currentTemplateId = (window.__TEMPLATE_DATA__ && window.__TEMPLATE_DATA__.id) || null;
 let templatesCache = [];
 let searchDebounce = null;
 
@@ -2046,6 +2047,9 @@ async function loadTemplate(templateId) {
         
         if (data.success && data.template) {
             const tpl = data.template;
+            // #region agent log
+            fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H1',location:'email-designer.html:2042',message:'loadTemplate success',data:{templateId:tpl.id,blocksLen:Array.isArray(tpl.blocks)?tpl.blocks.length:null,hasRenderBlocks:typeof renderBlocks !== 'undefined'},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion agent log
             
             // Set metadata
             document.getElementById('templateName').value = tpl.name || '';
@@ -2095,6 +2099,9 @@ async function saveTemplate() {
     const subject = document.getElementById('templateSubject').value.trim();
     const category = document.getElementById('templateCategory').value;
     const templateType = document.getElementById('templateType').value;
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H2',location:'email-designer.html:2096',message:'saveTemplate (api) called',data:{currentTemplateId:currentTemplateId,category:category,templateType:templateType,templateBlocksLen:Array.isArray(templateBlocks)?templateBlocks.length:null,hasEmailBlocks:typeof emailBlocks !== 'undefined',emailBlocksLen:typeof emailBlocks !== 'undefined' && Array.isArray(emailBlocks)?emailBlocks.length:null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     
     if (!name) {
         showToast('Podaj nazwę szablonu', 'error');
@@ -2215,20 +2222,23 @@ function showToast(message, type = 'info') {
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H1',location:'email-designer.html:2217',message:'DOMContentLoaded init',data:{currentTemplateId:currentTemplateId,hasRenderBlocks:typeof renderBlocks !== 'undefined',templateBlocksLen:Array.isArray(templateBlocks)?templateBlocks.length:null,hasEmailBlocks:typeof emailBlocks !== 'undefined'},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     initPlaceholders();
     initToolbarButtons();
     lucide.createIcons();
     
     // Load template if specified
-    {% if template_data %}
-    currentTemplateId = {{ template_data.id }};
-    document.getElementById('templateName').value = {{ template_data.name|tojson }};
-    document.getElementById('templateSubject').value = {{ template_data.subject|tojson if template_data.subject else '""' }};
-    document.getElementById('templateCategory').value = {{ template_data.category|tojson }};
-    document.getElementById('templateType').value = {{ template_data.template_type|tojson }};
-    emailBlocks = {{ template_data.blocks|tojson }};
-    renderBlocks();
-    {% endif %}
+    if (window.__TEMPLATE_DATA__) {
+        currentTemplateId = window.__TEMPLATE_DATA__.id || null;
+        document.getElementById('templateName').value = window.__TEMPLATE_DATA__.name || '';
+        document.getElementById('templateSubject').value = window.__TEMPLATE_DATA__.subject || '';
+        document.getElementById('templateCategory').value = window.__TEMPLATE_DATA__.category || 'custom';
+        document.getElementById('templateType').value = window.__TEMPLATE_DATA__.template_type || 'custom';
+        templateBlocks = window.__TEMPLATE_DATA__.blocks || [];
+        renderCanvas();
+    }
     
     // Load templates count for badge
     fetch('/admin-v2/api/templates?per_page=1')
@@ -2307,6 +2317,9 @@ function addBlock(type) {
     
     templateBlocks.push(newBlock);
     selectedBlockId = newBlock.id;
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H3',location:'email-designer.html:2306',message:'addBlock',data:{type:type,templateBlocksLen:templateBlocks.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     
     renderCanvas();
     updateEditor();
@@ -3104,6 +3117,9 @@ function saveTemplate() {
         type: document.getElementById('templateType').value,
         blocks: templateBlocks
     };
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H2',location:'email-designer.html:3111',message:'saveTemplate (demo) called',data:{templateBlocksLen:Array.isArray(templateBlocks)?templateBlocks.length:null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     
     // Demo mode - pokazuj JSON w konsoli
     console.log('Saving template:', data);
