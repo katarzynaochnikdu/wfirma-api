@@ -95,7 +95,7 @@ def get_default_event_config() -> Dict[str, Any]:
         "color_gradient_2": "#1e40af",
         "md_email_kontakt": "konferencje@medidesk.com",
         "url_event": "https://medidesk.com",
-        "event_mail_link_top_banner": "https://via.placeholder.com/598x200/2563eb/ffffff?text=Medidesk+Event",
+        "event_mail_link_top_banner": "https://placehold.co/598x200/2563eb/ffffff?text=Medidesk+Event",
         "event_day_text_1": "",
         "event_time_text": "",
         "event_location_place": "",
@@ -786,7 +786,7 @@ def render_stripe_payment_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
         # GUS data (dla nip_valid)
         "gus_company_name": gus_data.get("name", ""),
         "gus_address": f"{gus_data.get('street', '')}, {gus_data.get('zip', '')} {gus_data.get('city', '')}".strip(", "),
@@ -1007,7 +1007,7 @@ def render_foc_confirmation_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
     }
     
     return TEMPLATE_FOC_CONFIRMATION.format(**data)
@@ -1255,7 +1255,7 @@ def render_proforma_reservation_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
     }
 
     return TEMPLATE_PROFORMA_RESERVATION.format(**data)
@@ -1511,7 +1511,7 @@ def render_payment_confirmation_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
     }
     
     return TEMPLATE_PAYMENT_CONFIRMATION.format(**data)
@@ -1785,7 +1785,7 @@ def render_participant_ticket_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
     }
     
     return TEMPLATE_PARTICIPANT_TICKET.format(**data)
@@ -1997,7 +1997,7 @@ def render_checkout_reminder_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
     }
     
     return TEMPLATE_CHECKOUT_REMINDER.format(**data)
@@ -2198,7 +2198,7 @@ def render_checkout_expired_new_link_email(
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
         "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
         "url_event": event_config.get("url_event", "https://medidesk.com"),
-        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://via.placeholder.com/598x200/2563eb/ffffff?text=Event"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/2563eb/ffffff?text=Event"),
     }
     
     return TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK.format(**data)

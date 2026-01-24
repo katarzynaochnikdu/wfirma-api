@@ -640,7 +640,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             banner_url = (
                 event_data.get("event_mail_link_top_banner")
                 or event_data.get("event_mail_link_bottom_banner")
-                or "https://via.placeholder.com/600x200/2563eb/ffffff?text=Event"
+                or "https://placehold.co/600x200/2563eb/ffffff?text=Event"
             )
             event_config_link = event_data.get("event_config_link") or ""
             color_primary = event_data.get("color_gradient_1") or "#0065D7"

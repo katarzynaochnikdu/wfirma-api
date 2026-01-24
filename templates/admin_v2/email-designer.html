@@ -2153,7 +2153,7 @@ async function saveTemplate() {
         blocks: templateBlocks,
         category: category,
         template_type: templateType,
-        html_content: generatePreviewHtml(),
+        html_content: generateEmailHtml(),
     };
     
     try {
@@ -2935,13 +2935,15 @@ function substitutePlaceholders(text) {
         // Branding / nagłówek
         color_gradient_1: '#0065D7',
         color_gradient_2: '#00A3E0',
-        email_header_url: 'https://via.placeholder.com/600x120/0065D7/ffffff?text=Header+wydarzenia',
+        email_header_url: 'https://placehold.co/600x120/0065D7/ffffff?text=Header+wydarzenia',
         event_logo_url: '',
         
         // Wydarzenie
         event_name: 'Nazwa wydarzenia',
         event_date: '15.03.2026',
         event_time: '09:00',
+        event_end_date: '16.03.2026',
+        event_end_time: '17:00',
         event_location: 'Lokalizacja wydarzenia',
         event_city: 'Warszawa',
         event_address: 'ul. Przykładowa 1',
@@ -2951,22 +2953,42 @@ function substitutePlaceholders(text) {
         // Nabywca
         buyer_name: 'Jan Kowalski',
         buyer_email: 'jan.kowalski@example.com',
-        buyer_company: 'Firma Przykładowa',
+        buyer_phone: '+48 123 456 789',
+        buyer_company: 'Firma Przykładowa Sp. z o.o.',
+        buyer_nip: '1234567890',
+        buyer_address: 'ul. Firmowa 10, 00-001 Warszawa',
         
         // Uczestnik
         participant_name: 'Anna Nowak',
+        participant_first_name: 'Anna',
+        participant_last_name: 'Nowak',
         participant_email: 'anna.nowak@example.com',
+        participant_company: 'Firma Uczestnika',
+        participant_position: 'Specjalista',
         ticket_name: 'Bilet Standard',
+        ticket_code: 'TICKET-123456',
+        
+        // Pozycje zamówienia (przykładowe)
+        item_name: 'Bilet Standard',
+        item_qty: '1',
+        item_price: '499.00 PLN',
         
         // Zamówienie / płatność
         order_id: 'ORD-2026-001',
         order_total: '499.00 PLN',
+        payment_status: 'paid',
         payment_url: 'https://checkout.stripe.com/pay/xxx',
+        success_page_url: 'https://example.com/success',
+        cancel_page_url: 'https://example.com/cancel',
         
         // Kontakt / organizator
         contact_email: 'kontakt@example.com',
         contact_phone: '+48 123 456 789',
         organizer_name: 'Medidesk',
+        organizer_address: 'ul. Organizatora 5, 00-001 Warszawa',
+        organizer_email: 'kontakt@medidesk.pl',
+        organizer_phone: '+48 123 456 789',
+        organizer_website: 'https://medidesk.pl',
         
         // Daty
         current_date: new Date().toLocaleDateString('pl-PL'),
