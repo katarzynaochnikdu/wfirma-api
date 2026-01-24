@@ -1769,6 +1769,7 @@ def _build_payment_buckets(orders: list) -> dict:
         "overdue": {"orders": [], "total": 0},
         "upcoming": {"orders": [], "total": 0},
         "paid": {"orders": [], "total": 0},
+        "cancelled": {"orders": [], "total": 0},
     }
     
     for order in orders:
@@ -1779,6 +1780,9 @@ def _build_payment_buckets(orders: list) -> dict:
         if status == "paid":
             buckets["paid"]["orders"].append(order)
             buckets["paid"]["total"] += total
+        elif status in ("cancelled", "expired", "refunded"):
+            buckets["cancelled"]["orders"].append(order)
+            buckets["cancelled"]["total"] += total
         elif status in ("pending_payment", "received"):
             # Określ bucket na podstawie daty utworzenia
             if created_at:
