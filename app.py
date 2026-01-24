@@ -2,7 +2,7 @@
 wFirma API - Web Service dla Render
 Flask web app z OAuth 2.0 i endpointami API
 """
-from flask import Flask, request, redirect, jsonify, Response, send_file
+from flask import Flask, request, redirect, jsonify, Response, send_file, session
 import requests
 import json
 import os
@@ -3328,6 +3328,171 @@ def api_delete_order(event_order_id: str):
         
     except Exception as e:
         print(f"[ORDER DELETE] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# EVENT UPDATE (API)
+# ---------------------------------------------------------------------------
+
+ZOHO_FLOW_EVENT_UPDATE_WEBHOOK = "https://flow.zoho.eu/20101689330/flow/webhook/incoming?zapikey=1001.fd0397adf2d2daf0194fb08d80fd3530.3f05b43c8fad5bf3f6761b5aaef1cf2c&isdebug=false"
+
+
+@app.route('/api/events/<event_id>/update', methods=['POST'])
+def api_update_event(event_id: str):
+    """
+    Aktualizuje dane wydarzenia i wysyła webhook do Zoho Flow.
+    
+    Tylko dla zalogowanych adminów.
+    
+    Body (JSON):
+    {
+        "event_name": "...",        // opcjonalnie
+        "status": "...",            // opcjonalnie
+        "notes": "...",             // opcjonalnie
+        "is_active": true/false,    // opcjonalnie
+        "data": {...}               // opcjonalnie - dodatkowe dane
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "event_id": "...",
+        "updated_fields": [...],
+        "webhook_sent": true
+    }
+    """
+    try:
+        from pg_storage import get_event, upsert_event, insert_admin_audit_log
+        
+        # Sprawdź czy użytkownik jest zalogowany jako admin
+        admin_user = session.get("admin_v2_user")
+        if not admin_user:
+            return jsonify({"success": False, "error": "Wymagane zalogowanie"}), 401
+        
+        # Pobierz aktualne dane wydarzenia
+        event = get_event(event_id)
+        if not event:
+            return jsonify({"success": False, "error": "Wydarzenie nie znalezione"}), 404
+        
+        # Pobierz dane do aktualizacji z request body
+        req_data = request.get_json() or {}
+        
+        # Zbierz pola do aktualizacji
+        updated_fields = []
+        
+        # Aktualizuj event_name
+        new_event_name = req_data.get("event_name", event.get("event_name", ""))
+        if req_data.get("event_name") and req_data.get("event_name") != event.get("event_name"):
+            updated_fields.append("event_name")
+        
+        # Aktualizuj status
+        new_status = req_data.get("status", event.get("status", ""))
+        if req_data.get("status") and req_data.get("status") != event.get("status"):
+            updated_fields.append("status")
+        
+        # Aktualizuj notes
+        new_notes = req_data.get("notes", event.get("notes", ""))
+        if "notes" in req_data and req_data.get("notes") != event.get("notes"):
+            updated_fields.append("notes")
+        
+        # Aktualizuj is_active
+        new_is_active = req_data.get("is_active", event.get("is_active", True))
+        if "is_active" in req_data and req_data.get("is_active") != event.get("is_active"):
+            updated_fields.append("is_active")
+        
+        # Aktualizuj data (merge z istniejącymi danymi)
+        current_data = event.get("data") or {}
+        new_data = current_data.copy()
+        if req_data.get("data"):
+            new_data.update(req_data.get("data"))
+            updated_fields.append("data")
+        
+        # Jeśli nie ma zmian
+        if not updated_fields:
+            return jsonify({
+                "success": True,
+                "event_id": event_id,
+                "message": "Brak zmian do zapisania",
+                "updated_fields": [],
+                "webhook_sent": False,
+            }), 200
+        
+        # Zapisz zmiany w bazie
+        upsert_event(
+            event_id=event_id,
+            event_name=new_event_name,
+            status=new_status,
+            notes=new_notes,
+            data=new_data,
+            is_active=new_is_active,
+        )
+        
+        # Wyślij webhook do Zoho Flow
+        webhook_sent = False
+        webhook_error = None
+        try:
+            # Pobierz daty i opisy z event data
+            event_start_date = new_data.get("event_date_time") or ""  # format: 2026-01-09T00:00:00
+            event_end_date = new_data.get("event_end_date_time") or ""  # format: 2026-01-09T00:00:00
+            event_description = new_data.get("event_description") or ""
+            event_summary = new_data.get("event_summary") or new_data.get("event_day_text_1") or ""
+            
+            webhook_payload = {
+                "event_id": event_id,
+                "event_name": new_event_name,
+                "status": new_status,
+                "notes": new_notes,
+                "is_active": new_is_active,
+                "start_date": event_start_date,
+                "end_date": event_end_date,
+                "event_description": event_description,
+                "event_summary": event_summary,
+                "data": new_data,
+                "updated_fields": updated_fields,
+                "updated_by": admin_user.get("email", "unknown"),
+            }
+            
+            resp = requests.post(
+                ZOHO_FLOW_EVENT_UPDATE_WEBHOOK,
+                json=webhook_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10,
+            )
+            webhook_sent = resp.status_code in (200, 201, 202)
+            if not webhook_sent:
+                webhook_error = f"HTTP {resp.status_code}: {resp.text[:100]}"
+            print(f"[EVENT UPDATE] Webhook sent to Zoho Flow: {webhook_sent}, event={event_id}, fields={updated_fields}")
+        except Exception as e:
+            webhook_error = str(e)
+            print(f"[EVENT UPDATE] Webhook error: {e}")
+        
+        # Zapisz audit log
+        try:
+            insert_admin_audit_log(
+                action="event_updated",
+                admin_user_id=admin_user.get("id"),
+                target_id=event_id,
+                extra={
+                    "updated_fields": updated_fields,
+                    "webhook_sent": webhook_sent,
+                    "webhook_error": webhook_error,
+                },
+                ip=request.remote_addr,
+            )
+        except Exception as audit_err:
+            print(f"[EVENT UPDATE] Audit log error: {audit_err}")
+        
+        return jsonify({
+            "success": True,
+            "event_id": event_id,
+            "updated_fields": updated_fields,
+            "webhook_sent": webhook_sent,
+            "webhook_error": webhook_error,
+        }), 200
+        
+    except Exception as e:
+        print(f"[EVENT UPDATE] Error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

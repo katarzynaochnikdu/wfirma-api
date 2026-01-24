@@ -839,11 +839,23 @@ def event_dashboard(event_id: str):
     total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
     total_participants = len(participants)
     
+    # Oblicz pending orders i pending revenue
+    pending_orders = [o for o in orders if o.get("status") not in ("paid", "cancelled", "refunded")]
+    pending_revenue = sum(float(o.get("total") or 0) for o in pending_orders)
+    
     stats = {
+        # Nazwy dla kompatybilności wstecznej
         "total_orders": total_orders,
         "total_participants": total_participants,
         "total_revenue": f"{total_revenue:,.2f}".replace(",", " "),
         "paid_orders": len(paid_orders),
+        # Nazwy oczekiwane przez event_dashboard.html
+        "orders": total_orders,
+        "participants": total_participants,
+        "paid": len(paid_orders),
+        "pending": len(pending_orders),
+        "revenue": float(total_revenue),
+        "pending_revenue": float(pending_revenue),
     }
     
     # Ostatnie zamówienia
