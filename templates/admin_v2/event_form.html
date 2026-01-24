@@ -2,6 +2,77 @@
 
 {% block title %}{{ 'Edytuj wydarzenie' if event else 'Nowe wydarzenie' }}{% endblock %}
 
+{% block extra_head %}
+<style>
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  background-color: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px hsl(212, 100%, 42%, 0.1);
+}
+
+.form-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-input:disabled {
+  background-color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+textarea.form-input {
+  resize: vertical;
+  min-height: 80px;
+}
+
+input[type="color"].form-input {
+  padding: 0.25rem;
+  cursor: pointer;
+}
+
+/* Section headers */
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 1rem;
+}
+
+.form-section-header i {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- PAGE HEADER -->
 <div class="page-header">
@@ -198,4 +269,14 @@
     </button>
   </div>
 </form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+</script>
 {% endblock %}

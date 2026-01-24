@@ -150,18 +150,28 @@
         <td class="text-right">
           <span style="font-weight: 600;">{{ order.total|format_currency }}</span>
         </td>
-        <!-- Status -->
+        <!-- Status (ikona) -->
         <td class="text-center">
           {% if order.status == 'paid' %}
-          <span class="status-badge status-paid">Opłacone</span>
+          <span class="status-icon-badge status-icon-paid" title="Opłacone">
+            <i data-lucide="check-circle"></i>
+          </span>
           {% elif order.status == 'pending_payment' %}
-          <span class="status-badge status-pending">Oczekujące</span>
+          <span class="status-icon-badge status-icon-pending" title="Oczekujące na płatność">
+            <i data-lucide="clock"></i>
+          </span>
           {% elif order.status == 'cancelled' %}
-          <span class="status-badge status-cancelled">Anulowane</span>
+          <span class="status-icon-badge status-icon-cancelled" title="Anulowane">
+            <i data-lucide="x-circle"></i>
+          </span>
           {% elif order.status == 'received' %}
-          <span class="status-badge">Otrzymane</span>
+          <span class="status-icon-badge status-icon-received" title="Otrzymane">
+            <i data-lucide="inbox"></i>
+          </span>
           {% else %}
-          <span class="status-badge">{{ order.status or '—' }}</span>
+          <span class="status-icon-badge" title="{{ order.status or 'Nieznany' }}">
+            <i data-lucide="help-circle"></i>
+          </span>
           {% endif %}
         </td>
         <!-- Płatność (ikona z tooltipem) -->
@@ -266,5 +276,56 @@
   border-color: hsl(220, 14%, 85%);
   color: hsl(220, 14%, 46%);
 }
+
+/* Status icon badges */
+.status-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.status-icon-badge i {
+  width: 18px;
+  height: 18px;
+}
+
+.status-icon-badge.status-icon-paid {
+  background: hsl(160, 82%, 96%);
+  border-color: hsl(160, 82%, 70%);
+  color: hsl(160, 82%, 35%);
+}
+
+.status-icon-badge.status-icon-pending {
+  background: hsl(38, 92%, 95%);
+  border-color: hsl(38, 92%, 70%);
+  color: hsl(38, 92%, 40%);
+}
+
+.status-icon-badge.status-icon-cancelled {
+  background: hsl(0, 84%, 96%);
+  border-color: hsl(0, 84%, 75%);
+  color: hsl(0, 84%, 50%);
+}
+
+.status-icon-badge.status-icon-received {
+  background: hsl(199, 89%, 96%);
+  border-color: hsl(199, 89%, 70%);
+  color: hsl(199, 89%, 40%);
+}
 </style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Reinicjalizuj ikony Lucide
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+</script>
 {% endblock %}

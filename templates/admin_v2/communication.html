@@ -115,7 +115,7 @@
         <div style="flex: 1; min-width: 0;">
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             <span style="font-size: 0.875rem; font-weight: 500;">{{ email.recipient }}</span>
-            <span class="status-badge" style="text-transform: capitalize;">{{ email.type }}</span>
+            <span class="status-badge" style="font-size: 0.625rem;">{{ email.type|replace('_', ' ')|title }}</span>
           </div>
           <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-top: 0.25rem;">
             {{ email.error_message or 'Nieznany błąd' }}
@@ -142,12 +142,32 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>Data</th>
-        <th>Odbiorca</th>
-        <th>Typ</th>
+        <th class="sortable-header" data-sort="date" style="cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Data
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header" data-sort="recipient" style="cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Odbiorca
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header" data-sort="type" style="cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Typ
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
         <th>Temat</th>
         <th>Wydarzenie</th>
-        <th>Status</th>
+        <th class="sortable-header" data-sort="status" style="cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Status
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
         <th class="text-right">Akcje</th>
       </tr>
     </thead>
@@ -157,7 +177,20 @@
         <td class="text-muted" style="white-space: nowrap;">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
         <td>{{ email.recipient }}</td>
         <td>
-          <span class="status-badge" style="text-transform: capitalize;">{{ email.type }}</span>
+          {% set type_label = email.type|replace('_', ' ')|replace('Internal ', '')|replace('internal ', '')|title %}
+          {% set type_color = 'var(--muted-foreground)' %}
+          {% if 'paid' in email.type|lower or 'confirmation' in email.type|lower %}
+            {% set type_color = 'hsl(160, 82%, 44%)' %}
+          {% elif 'reminder' in email.type|lower or 'pending' in email.type|lower %}
+            {% set type_color = 'hsl(38, 92%, 50%)' %}
+          {% elif 'expired' in email.type|lower or 'error' in email.type|lower %}
+            {% set type_color = 'hsl(0, 84%, 60%)' %}
+          {% elif 'stripe' in email.type|lower or 'payment' in email.type|lower %}
+            {% set type_color = 'hsl(212, 100%, 42%)' %}
+          {% endif %}
+          <span class="status-badge" style="background: {{ type_color }}15; color: {{ type_color }}; border: 1px solid {{ type_color }}30;">
+            {{ type_label }}
+          </span>
         </td>
         <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
           {{ email.subject }}
@@ -215,4 +248,54 @@
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.sortable-header:hover {
+  background-color: var(--muted);
+}
+.sortable-header.sorted-asc i[data-lucide="arrow-up-down"],
+.sortable-header.sorted-desc i[data-lucide="arrow-up-down"] {
+  color: var(--primary);
+  opacity: 1;
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Reinicjalizuj ikony Lucide
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+
+// Sortowanie tabeli
+document.querySelectorAll('.sortable-header').forEach(header => {
+  header.addEventListener('click', function() {
+    const table = this.closest('table');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const column = this.dataset.sort;
+    const colIndex = Array.from(this.parentNode.children).indexOf(this);
+    
+    // Toggle direction
+    const isAsc = this.classList.contains('sorted-asc');
+    document.querySelectorAll('.sortable-header').forEach(h => {
+      h.classList.remove('sorted-asc', 'sorted-desc');
+    });
+    this.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
+    
+    rows.sort((a, b) => {
+      const aVal = a.children[colIndex]?.textContent.trim() || '';
+      const bVal = b.children[colIndex]?.textContent.trim() || '';
+      return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+    });
+    
+    rows.forEach(row => tbody.appendChild(row));
+  });
+});
+</script>
 {% endblock %}
