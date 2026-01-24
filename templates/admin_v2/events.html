@@ -47,8 +47,8 @@
     {% set event_data = event.data or {} %}
     {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
     {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
-    {% set event_city = event_data.get('event_location_city') or event_data.get('event_address_text_city') or event_data.get('eventCity') or event_data.get('city') or '' %}
-    {% set event_date = event_data.get('event_date_start') or event_data.get('eventDate') or event_data.get('start_date') or event_data.get('date') or event_data.get('event_start_date') or '' %}
+    {% set event_city = event_data.get('event_location_city') or event_data.get('event_address_text_city') or event_data.get('eventCity') or event_data.get('city') or event.get('city') or '' %}
+    {% set event_date_raw = event_data.get('eventDate') or event_data.get('event_date_start') or event_data.get('start_date') or event_data.get('event_date') or event.get('start_date') or event.get('event_date') or '' %}
     {% set banner_url = event_data.get('email_header_url') or event_data.get('event_mail_link_top_banner') or event_data.get('banner_url') or '' %}
     {% set tagline = event_data.get('event_tagline') or event_data.get('tagline') or event_data.get('event_motto') or '' %}
     
@@ -72,10 +72,10 @@
         <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
         
         <div class="event-card-meta">
-          {% if event_date %}
+          {% if event_date_raw %}
           <div class="event-meta-item">
             <i data-lucide="calendar"></i>
-            <span>{{ event_date }}</span>
+            <span>{{ event_date_raw|format_date_pl if event_date_raw else '' }}</span>
           </div>
           {% endif %}
           {% if event_city %}
