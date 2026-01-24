@@ -682,10 +682,22 @@
     border-radius: var(--radius);
     padding: 1.25rem;
     transition: box-shadow 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
   }
   
   .stat-card:hover {
     box-shadow: 0 4px 12px hsl(0, 0%, 0%, 0.05);
+  }
+  
+  .stat-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
   }
   
   .stat-header {
@@ -702,6 +714,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
   
   .stat-icon i {
