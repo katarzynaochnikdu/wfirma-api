@@ -4,51 +4,45 @@
 
 {% block content %}
 <!-- EVENT HEADER BANNER -->
-<div class="event-banner" style="
-  border-radius: var(--radius-lg);
-  color: white;
-  position: relative;
-  overflow: hidden;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-  background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }});
-">
+<div class="event-header-banner">
+  <!-- Background -->
   {% if event.data.email_header_url %}
-  <div style="position: absolute; inset: 0; background-image: url('{{ event.data.email_header_url }}'); background-size: cover; background-position: center; opacity: 0.2;"></div>
+  <div class="event-header-bg" style="background-image: url('{{ event.data.email_header_url }}');"></div>
   {% endif %}
-  <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.1);"></div>
+  <div class="event-header-gradient" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %});"></div>
   
-  <div style="position: relative; z-index: 10;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
-      <a href="{{ url_for('admin_v2_bp.events_list') }}" style="display: inline-flex; align-items: center; gap: 0.25rem; color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.875rem;">
+  <!-- Content -->
+  <div class="event-header-content">
+    <!-- Top row: back + actions -->
+    <div class="event-header-top">
+      <a href="{{ url_for('admin_v2_bp.events_list') }}" class="event-header-back">
         <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
         Powrót do wydarzeń
       </a>
-      <div style="display: flex; align-items: center; gap: 0.5rem;">
-        <div class="dropdown">
-          <button class="btn-icon" style="background: rgba(255,255,255,0.2); color: white;" data-dropdown-toggle>
-            <i data-lucide="external-link" style="width: 16px; height: 16px;"></i>
-          </button>
-          <div class="dropdown-menu">
-            <a href="{{ event.backstage_url }}" target="_blank" class="dropdown-item">Backstage - Ogólne</a>
-            <a href="{{ event.backstage_orders_url }}" target="_blank" class="dropdown-item">Backstage - Zamówienia</a>
-            <a href="{{ event.backstage_attendees_url }}" target="_blank" class="dropdown-item">Backstage - Uczestnicy</a>
-          </div>
-        </div>
+      <div class="event-header-actions">
+        <a href="{{ event.backstage_url }}" target="_blank" class="event-header-btn" title="Otwórz w Backstage">
+          <i data-lucide="external-link" style="width: 18px; height: 18px;"></i>
+        </a>
+        <button class="event-header-btn" onclick="toggleHeaderCollapse()" title="Zwiń/rozwiń">
+          <i data-lucide="chevron-up" id="collapse-icon" style="width: 18px; height: 18px;"></i>
+        </button>
       </div>
     </div>
     
-    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-      <div style="display: flex; align-items: center; gap: 0.5rem;">
-        <span style="width: 10px; height: 10px; border-radius: 50%; background: hsl(160, 82%, 44%);{% if event.is_active %} animation: pulse 2s infinite;{% endif %}" title="{% if event.is_active %}Wydarzenie aktywne{% else %}Nieaktywne{% endif %}"></span>
-        <h1 style="font-size: 1.25rem; font-weight: 700;">{{ event.event_name }}</h1>
+    <!-- Event info -->
+    <div class="event-header-info">
+      <div class="event-header-title-row">
+        <span class="event-status-dot {% if event.is_active %}active{% endif %}"></span>
+        <h1 class="event-header-title">{{ event.event_name }}</h1>
       </div>
-      <div style="display: flex; align-items: center; gap: 0.75rem; color: rgba(255,255,255,0.7); font-size: 0.875rem;">
+      <div class="event-header-meta">
+        {% if event.data.eventDate %}
         <span>{{ event.data.eventDate|format_date_pl }}</span>
-        <span>•</span>
+        <span class="meta-dot">•</span>
+        {% endif %}
         <span>{{ event.data.eventCity or 'Lokalizacja nieznana' }}</span>
         {% if event.data.eventLocation %}
-        <span>•</span>
+        <span class="meta-dot">•</span>
         <span>{{ event.data.eventLocation }}</span>
         {% endif %}
       </div>
@@ -57,39 +51,39 @@
 </div>
 
 <!-- TABS -->
-<div class="tabs-container" style="margin-bottom: 1rem;">
-  <div class="tabs-list" style="display: flex; gap: 0.25rem; overflow-x: auto; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+<div class="event-tabs-container">
+  <div class="event-tabs-list">
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='sales') }}" 
-       class="tab-trigger {% if active_tab == 'sales' %}active{% endif %}">
-      <i data-lucide="trending-up" style="width: 16px; height: 16px;"></i>
-      Sprzedaż
+       class="event-tab {% if active_tab == 'sales' %}active{% endif %}">
+      <i data-lucide="trending-up"></i>
+      <span>Sprzedaż</span>
     </a>
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='payments') }}" 
-       class="tab-trigger {% if active_tab == 'payments' %}active{% endif %}">
-      <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
-      Płatności
-      {% if stats.pending > 0 %}<span class="status-badge">{{ stats.pending }}</span>{% endif %}
+       class="event-tab {% if active_tab == 'payments' %}active{% endif %}">
+      <i data-lucide="credit-card"></i>
+      <span>Płatności</span>
+      {% if stats.pending > 0 %}<span class="tab-badge tab-badge-amber">{{ stats.pending }}</span>{% endif %}
     </a>
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='orders') }}" 
-       class="tab-trigger {% if active_tab == 'orders' %}active{% endif %}">
-      <i data-lucide="shopping-cart" style="width: 16px; height: 16px;"></i>
-      Zamówienia
+       class="event-tab {% if active_tab == 'orders' %}active{% endif %}">
+      <i data-lucide="shopping-cart"></i>
+      <span>Zamówienia</span>
     </a>
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='participants') }}" 
-       class="tab-trigger {% if active_tab == 'participants' %}active{% endif %}">
-      <i data-lucide="users" style="width: 16px; height: 16px;"></i>
-      Uczestnicy
+       class="event-tab {% if active_tab == 'participants' %}active{% endif %}">
+      <i data-lucide="users"></i>
+      <span>Uczestnicy</span>
     </a>
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='communication') }}" 
-       class="tab-trigger {% if active_tab == 'communication' %}active{% endif %}">
-      <i data-lucide="mail" style="width: 16px; height: 16px;"></i>
-      Komunikacja
-      {% if stats.email_errors > 0 %}<span class="status-badge status-cancelled">{{ stats.email_errors }}</span>{% endif %}
+       class="event-tab {% if active_tab == 'communication' %}active{% endif %}">
+      <i data-lucide="mail"></i>
+      <span>Komunikacja</span>
+      {% if stats.email_errors > 0 %}<span class="tab-badge tab-badge-red">{{ stats.email_errors }}</span>{% endif %}
     </a>
     <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id, tab='config') }}" 
-       class="tab-trigger {% if active_tab == 'config' %}active{% endif %}">
-      <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
-      Konfiguracja
+       class="event-tab {% if active_tab == 'config' %}active{% endif %}">
+      <i data-lucide="settings"></i>
+      <span>Konfiguracja</span>
     </a>
   </div>
 </div>
@@ -98,89 +92,101 @@
 <div class="tab-content">
   {% if active_tab == 'sales' %}
   <!-- SALES TAB -->
-  <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
-    <div class="stat-card">
-      <div class="stat-content">
-        <span class="stat-label">Zamówienia</span>
-        <span class="stat-value">{{ stats.orders or 0 }}</span>
+  <div class="sales-stats-grid">
+    <!-- Zamówienia -->
+    <div class="sales-stat-card">
+      <div class="sales-stat-header">
+        <span class="sales-stat-label">Zamówienia</span>
+        <div class="sales-stat-icon">
+          <i data-lucide="shopping-cart"></i>
+        </div>
       </div>
-      <div class="stat-icon">
-        <i data-lucide="shopping-cart"></i>
-      </div>
+      <span class="sales-stat-value">{{ stats.orders or 0 }}</span>
     </div>
-    <div class="stat-card">
-      <div class="stat-content">
-        <span class="stat-label">Opłacone</span>
-        <span class="stat-value">{{ stats.paid or 0 }}</span>
+    
+    <!-- Opłacone -->
+    <div class="sales-stat-card {% if stats.paid > 0 %}has-success{% endif %}">
+      <div class="sales-stat-header">
+        <span class="sales-stat-label">Opłacone</span>
+        <div class="sales-stat-icon icon-success">
+          <i data-lucide="check-circle"></i>
+        </div>
       </div>
-      <div class="stat-icon green">
-        <i data-lucide="check-circle"></i>
-      </div>
+      <span class="sales-stat-value {% if stats.paid > 0 %}text-success{% endif %}">{{ stats.paid or 0 }}</span>
     </div>
-    <div class="stat-card">
-      <div class="stat-content">
-        <span class="stat-label">Oczekujące</span>
-        <span class="stat-value">{{ stats.pending or 0 }}</span>
+    
+    <!-- Oczekujące -->
+    <div class="sales-stat-card {% if stats.pending > 0 %}has-warning{% endif %}">
+      <div class="sales-stat-header">
+        <span class="sales-stat-label">Oczekujące</span>
+        <div class="sales-stat-icon icon-warning">
+          <i data-lucide="clock"></i>
+        </div>
       </div>
-      <div class="stat-icon {% if stats.pending > 0 %}amber{% endif %}">
-        <i data-lucide="clock"></i>
-      </div>
+      <span class="sales-stat-value {% if stats.pending > 0 %}text-warning{% endif %}">{{ stats.pending or 0 }}</span>
     </div>
-    <div class="stat-card">
-      <div class="stat-content">
-        <span class="stat-label">Uczestnicy</span>
-        <span class="stat-value">{{ stats.participants or 0 }}</span>
+    
+    <!-- Uczestnicy -->
+    <div class="sales-stat-card">
+      <div class="sales-stat-header">
+        <span class="sales-stat-label">Uczestnicy</span>
+        <div class="sales-stat-icon icon-info">
+          <i data-lucide="users"></i>
+        </div>
       </div>
-      <div class="stat-icon cyan">
-        <i data-lucide="users"></i>
-      </div>
+      <span class="sales-stat-value">{{ stats.participants or 0 }}</span>
     </div>
   </div>
   
-  <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
-    <div class="card">
-      <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
-        <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
-          <i data-lucide="bar-chart-3" style="width: 16px; height: 16px;"></i>
+  <div class="sales-cards-grid">
+    <!-- Przychody -->
+    <div class="card sales-revenue-card">
+      <div class="card-header">
+        <h3 class="card-title-with-icon">
+          <i data-lucide="bar-chart-3"></i>
           Przychody
         </h3>
       </div>
-      <div style="padding: 1rem;">
-        <div style="margin-bottom: 1rem;">
-          <p style="font-size: 0.875rem; color: var(--muted-foreground);">Opłacone</p>
-          <p style="font-size: 1.5rem; font-weight: 700; color: var(--success);">{{ stats.revenue|format_currency }}</p>
+      <div class="card-body">
+        <div class="revenue-item">
+          <span class="revenue-label">Opłacone</span>
+          <span class="revenue-value revenue-success">{{ stats.revenue|format_currency }}</span>
         </div>
-        <div>
-          <p style="font-size: 0.875rem; color: var(--muted-foreground);">Oczekujące</p>
-          <p style="font-size: 1.25rem; font-weight: 600; color: hsl(38, 92%, 50%);">{{ stats.pending_revenue|format_currency }}</p>
+        <div class="revenue-item">
+          <span class="revenue-label">Oczekujące</span>
+          <span class="revenue-value revenue-warning">{{ stats.pending_revenue|format_currency }}</span>
         </div>
       </div>
     </div>
     
-    <div class="card">
-      <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
-        <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
-          <i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i>
+    <!-- Problemy -->
+    <div class="card sales-problems-card">
+      <div class="card-header">
+        <h3 class="card-title-with-icon">
+          <i data-lucide="alert-triangle"></i>
           Problemy do rozwiązania
         </h3>
       </div>
-      <div style="padding: 1rem;">
-        {% if stats.pending > 0 %}
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; border-radius: var(--radius); background: hsl(38, 92%, 50%, 0.05); margin-bottom: 0.75rem;">
-          <span style="font-size: 0.875rem;">Nieopłacone zamówienia</span>
-          <span class="status-badge">{{ stats.pending }}</span>
+      <div class="card-body">
+        {% if stats.pending > 0 or stats.email_errors > 0 %}
+        <div class="problems-list">
+          {% if stats.pending > 0 %}
+          <div class="problem-item problem-warning">
+            <span class="problem-text">Nieopłacone zamówienia</span>
+            <span class="problem-badge badge-warning">{{ stats.pending }}</span>
+          </div>
+          {% endif %}
+          {% if stats.email_errors > 0 %}
+          <div class="problem-item problem-error">
+            <span class="problem-text">Błędy wysyłki</span>
+            <span class="problem-badge badge-error">{{ stats.email_errors }}</span>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
-        {% if stats.email_errors > 0 %}
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; border-radius: var(--radius); background: var(--destructive-bg);">
-          <span style="font-size: 0.875rem;">Błędy wysyłki</span>
-          <span class="status-badge status-cancelled">{{ stats.email_errors }}</span>
-        </div>
-        {% endif %}
-        {% if stats.pending == 0 and stats.email_errors == 0 %}
-        <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--success);">
-          <i data-lucide="check-circle" style="width: 16px; height: 16px;"></i>
-          <span style="font-size: 0.875rem;">Brak problemów</span>
+        {% else %}
+        <div class="no-problems">
+          <i data-lucide="check-circle"></i>
+          <span>Brak problemów</span>
         </div>
         {% endif %}
       </div>
@@ -666,35 +672,405 @@
 </div>
 
 <style>
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+  /* ===== EVENT HEADER ===== */
+  .event-header-banner {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    min-height: 140px;
   }
   
-  .tab-trigger {
+  .event-header-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center top;
+  }
+  
+  .event-header-gradient {
+    position: absolute;
+    inset: 0;
+  }
+  
+  .event-header-content {
+    position: relative;
+    z-index: 10;
+    padding: 1.25rem 1.5rem;
+    color: white;
+  }
+  
+  .event-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  
+  .event-header-back {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s;
+  }
+  
+  .event-header-back:hover {
+    color: white;
+  }
+  
+  .event-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .event-header-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+  
+  .event-header-btn:hover {
+    background: rgba(255,255,255,0.25);
+  }
+  
+  .event-header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .event-header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  
+  .event-status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.5);
+    flex-shrink: 0;
+  }
+  
+  .event-status-dot.active {
+    background: hsl(160, 82%, 50%);
+    box-shadow: 0 0 8px hsl(160, 82%, 50%);
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px hsl(160, 82%, 50%); }
+    50% { opacity: 0.7; box-shadow: 0 0 16px hsl(160, 82%, 50%); }
+  }
+  
+  .event-header-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  
+  .event-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.85);
+  }
+  
+  .meta-dot {
+    opacity: 0.5;
+  }
+  
+  /* ===== TABS ===== */
+  .event-tabs-container {
+    margin-bottom: 1.5rem;
+  }
+  
+  .event-tabs-list {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .event-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--muted-foreground);
     text-decoration: none;
     border-bottom: 2px solid transparent;
-    transition: color 0.2s, border-color 0.2s;
+    margin-bottom: -1px;
+    transition: all 0.2s;
     white-space: nowrap;
   }
   
-  .tab-trigger:hover {
+  .event-tab i {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .event-tab:hover {
     color: var(--foreground);
   }
   
-  .tab-trigger.active {
+  .event-tab.active {
     color: var(--primary);
     border-bottom-color: var(--primary);
   }
   
-  /* Form styles for config tab */
+  .tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: white;
+  }
+  
+  .tab-badge-amber {
+    background: hsl(38, 92%, 50%);
+  }
+  
+  .tab-badge-red {
+    background: hsl(0, 84%, 60%);
+  }
+  
+  /* ===== SALES STATS GRID ===== */
+  .sales-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .sales-stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: all 0.2s;
+  }
+  
+  .sales-stat-card.has-success {
+    border-color: hsl(160, 82%, 70%);
+    background: linear-gradient(135deg, hsl(160, 82%, 98%), var(--card));
+  }
+  
+  .sales-stat-card.has-warning {
+    border-color: hsl(38, 92%, 70%);
+    background: linear-gradient(135deg, hsl(38, 92%, 98%), var(--card));
+  }
+  
+  .sales-stat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  
+  .sales-stat-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  
+  .sales-stat-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  
+  .sales-stat-icon i {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .sales-stat-icon.icon-success {
+    background: hsl(160, 82%, 94%);
+    color: hsl(160, 82%, 35%);
+  }
+  
+  .sales-stat-icon.icon-warning {
+    background: hsl(38, 92%, 94%);
+    color: hsl(38, 92%, 40%);
+  }
+  
+  .sales-stat-icon.icon-info {
+    background: hsl(199, 89%, 94%);
+    color: hsl(199, 89%, 40%);
+  }
+  
+  .sales-stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--foreground);
+  }
+  
+  .sales-stat-value.text-success {
+    color: hsl(160, 82%, 35%);
+  }
+  
+  .sales-stat-value.text-warning {
+    color: hsl(38, 92%, 40%);
+  }
+  
+  /* ===== SALES CARDS ===== */
+  .sales-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+  
+  .card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .card-body {
+    padding: 1.25rem;
+  }
+  
+  .card-title-with-icon {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  
+  .card-title-with-icon i {
+    width: 18px;
+    height: 18px;
+    color: var(--muted-foreground);
+  }
+  
+  /* Revenue card */
+  .revenue-item {
+    margin-bottom: 1rem;
+  }
+  
+  .revenue-item:last-child {
+    margin-bottom: 0;
+  }
+  
+  .revenue-label {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+    margin-bottom: 0.25rem;
+  }
+  
+  .revenue-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  
+  .revenue-success {
+    color: hsl(160, 82%, 35%);
+  }
+  
+  .revenue-warning {
+    color: hsl(38, 92%, 40%);
+  }
+  
+  /* Problems card */
+  .problems-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .problem-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    border-radius: 8px;
+  }
+  
+  .problem-item.problem-warning {
+    background: hsl(38, 92%, 97%);
+    border: 1px solid hsl(38, 92%, 85%);
+  }
+  
+  .problem-item.problem-error {
+    background: hsl(0, 84%, 97%);
+    border: 1px solid hsl(0, 84%, 85%);
+  }
+  
+  .problem-text {
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  
+  .problem-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: white;
+  }
+  
+  .badge-warning {
+    background: hsl(38, 92%, 50%);
+  }
+  
+  .badge-error {
+    background: hsl(0, 84%, 60%);
+  }
+  
+  .no-problems {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: hsl(160, 82%, 35%);
+    font-size: 0.9rem;
+  }
+  
+  .no-problems i {
+    width: 18px;
+    height: 18px;
+  }
+  
+  /* ===== FORM STYLES ===== */
   .form-group {
     display: flex;
     flex-direction: column;
@@ -738,7 +1114,57 @@
   
   .link-card:hover {
     border-color: var(--primary);
-    background: hsl(var(--primary) / 0.05);
+    background: hsl(212, 100%, 97%);
+  }
+  
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 900px) {
+    .sales-stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .sales-cards-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  @media (max-width: 640px) {
+    .sales-stats-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .event-header-title {
+      font-size: 1.25rem;
+    }
   }
 </style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Reinicjalizuj ikony Lucide
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+
+// Toggle header collapse
+function toggleHeaderCollapse() {
+  const banner = document.querySelector('.event-header-banner');
+  const icon = document.getElementById('collapse-icon');
+  
+  if (banner.classList.contains('collapsed')) {
+    banner.classList.remove('collapsed');
+    icon.setAttribute('data-lucide', 'chevron-up');
+  } else {
+    banner.classList.add('collapsed');
+    icon.setAttribute('data-lucide', 'chevron-down');
+  }
+  
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+}
+</script>
 {% endblock %}
