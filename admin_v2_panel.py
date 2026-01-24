@@ -392,8 +392,8 @@ def order_detail(order_id: str):
         order["event_color"] = event_data.get("color_gradient_1", "")
         order["event_color_2"] = event_data.get("color_gradient_2", "")
     
-    # Historia zamówienia (pusta lista - szablon ma fallback)
-    order_history = []
+    # Buduj historię zamówienia z emaili
+    order_history = _build_order_history(order_id, order)
     
     return render_template(
         "admin_v2/order_detail.html",
@@ -881,6 +881,115 @@ def work_queue_retry(task_id: str):
     """Ponów pojedyncze zadanie."""
     # Placeholder - w przyszłości implementacja
     return redirect(url_for("admin_v2_bp.work_queue"))
+
+
+# ---------------------------------------------------------------------------
+# ORDER HISTORY BUILDER
+# ---------------------------------------------------------------------------
+
+def _get_emails_for_order(order_id: str):
+    """Pobiera emaile wysłane dla danego zamówienia."""
+    from pg_storage import ensure_schema, _with_conn, _put_conn, _dict_cursor
+    
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        query = """
+            SELECT id, event_order_id, direction, template_key, to_email, 
+                   subject, status, error, data, created_at
+            FROM mail_log
+            WHERE event_order_id = %s
+            ORDER BY created_at DESC
+        """
+        cur.execute(query, (order_id,))
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] _get_emails_for_order error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def _build_order_history(order_id: str, order: dict):
+    """Buduje listę zdarzeń dla historii zamówienia."""
+    history = []
+    
+    # Mapowanie typów emaili na czytelne nazwy
+    EMAIL_TYPE_LABELS = {
+        "proforma": ("Proforma wysłana", "document"),
+        "proforma_reminder": ("Przypomnienie o płatności", "email"),
+        "payment_link": ("Link do płatności wysłany", "email"),
+        "payment_confirmation": ("Potwierdzenie płatności", "payment"),
+        "registration_confirmation": ("Potwierdzenie rejestracji", "email"),
+        "ticket": ("Bilet wysłany", "email"),
+        "invoice": ("Faktura wysłana", "document"),
+        "stripe_payment_link": ("Link Stripe wysłany", "payment"),
+        "paid_confirmation": ("Potwierdzenie zapłaty", "payment"),
+        "expired": ("Sesja płatności wygasła", "status_change"),
+    }
+    
+    # Pobierz emaile dla zamówienia
+    emails = _get_emails_for_order(order_id)
+    
+    for email in emails:
+        template_key = (email.get("template_key") or "").lower()
+        created_at = email.get("created_at")
+        
+        # Znajdź pasujący typ
+        event_type = "email"
+        title = "Email wysłany"
+        
+        for key, (label, etype) in EMAIL_TYPE_LABELS.items():
+            if key in template_key:
+                title = label
+                event_type = etype
+                break
+        
+        # Jeśli nie znaleziono, użyj subject lub template_key
+        if title == "Email wysłany":
+            subject = email.get("subject") or ""
+            if subject:
+                title = subject[:50] + ("..." if len(subject) > 50 else "")
+        
+        history.append({
+            "type": event_type,
+            "title": title,
+            "description": f"Do: {email.get('to_email', '—')}",
+            "timestamp": created_at.strftime("%d.%m.%Y, %H:%M") if created_at else "—",
+            "status": email.get("status"),
+            "status_label": {"sent": "Wysłano", "delivered": "Dostarczono", "error": "Błąd", "queued": "W kolejce"}.get(email.get("status"), ""),
+        })
+    
+    # Dodaj zdarzenie płatności jeśli opłacone
+    if order.get("status") == "paid":
+        paid_at = order.get("updated_at") or order.get("created_at")
+        history.append({
+            "type": "payment",
+            "title": "Płatność potwierdzona",
+            "description": f"Kwota: {order.get('total', 0)} zł",
+            "timestamp": paid_at.strftime("%d.%m.%Y, %H:%M") if paid_at else "—",
+            "status": "paid",
+            "status_label": "Opłacone",
+        })
+    
+    # Dodaj zdarzenie utworzenia zamówienia
+    created_at = order.get("created_at")
+    history.append({
+        "type": "created",
+        "title": "Zamówienie utworzone",
+        "description": "Zamówienie zostało zarejestrowane w systemie",
+        "timestamp": created_at.strftime("%d.%m.%Y, %H:%M") if created_at else "—",
+        "status": None,
+        "status_label": "Otrzymane",
+    })
+    
+    # Sortuj od najnowszych (ale created na końcu)
+    # Historia już jest posortowana - emaile DESC, potem payment, potem created
+    return history
 
 
 # ---------------------------------------------------------------------------

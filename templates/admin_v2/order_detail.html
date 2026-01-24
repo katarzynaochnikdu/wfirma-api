@@ -228,7 +228,9 @@
           {% for event in order_history %}
           <div class="timeline-v2-item">
             <div class="timeline-v2-icon {{ event.type }}">
-              {% if event.type == 'status_change' %}
+              {% if event.type == 'created' %}
+              <i data-lucide="plus-circle"></i>
+              {% elif event.type == 'status_change' %}
               <i data-lucide="refresh-cw"></i>
               {% elif event.type == 'payment' %}
               <i data-lucide="credit-card"></i>
