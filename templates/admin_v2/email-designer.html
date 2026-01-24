@@ -191,6 +191,60 @@
         color: var(--text-secondary);
     }
 
+    /* Wide block buttons for structure */
+    .block-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .block-btn-wide {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--background);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-align: left;
+        width: 100%;
+    }
+
+    .block-btn-wide:hover {
+        background: var(--surface-hover);
+        border-color: var(--primary);
+    }
+
+    .block-btn-wide i {
+        width: 24px;
+        height: 24px;
+        color: var(--primary);
+        flex-shrink: 0;
+    }
+
+    .block-btn-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        min-width: 0;
+    }
+
+    .block-btn-name {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--foreground);
+    }
+
+    .block-btn-desc {
+        font-size: 0.6875rem;
+        color: var(--muted-foreground);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     /* Placeholder Tabs */
     .placeholder-tabs {
         display: flex;
@@ -638,6 +692,28 @@
     .editor-actions button.delete:hover {
         background: var(--color-error-light);
         color: var(--color-error);
+    }
+
+    .editor-description {
+        background: linear-gradient(135deg, var(--primary-light, #e0f2fe) 0%, var(--muted) 100%);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .editor-description strong {
+        display: block;
+        font-size: 0.8125rem;
+        color: var(--primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .editor-description p {
+        margin: 0;
+        font-size: 0.75rem;
+        color: var(--muted-foreground);
+        line-height: 1.4;
     }
 
     .editor-field {
@@ -1571,13 +1647,28 @@
         <!-- Left Panel - Block Palette -->
         <div class="palette-panel">
             <div class="palette-section">
-                <div class="palette-title">Dodaj blok</div>
-                <div class="block-grid">
-                    <button class="block-btn" onclick="addBlock('header')" title="Nagłówek z logo i banner">
+                <div class="palette-title">Struktura emaila</div>
+                <div class="block-list">
+                    <button class="block-btn-wide" onclick="addBlock('header')">
                         <i data-lucide="panel-top"></i>
-                        <span>Nagłówek</span>
+                        <div class="block-btn-info">
+                            <span class="block-btn-name">Banner wydarzenia</span>
+                            <span class="block-btn-desc">Górna grafika z gradientem kolorów</span>
+                        </div>
                     </button>
-                    <button class="block-btn" onclick="addBlock('text')" title="Blok tekstowy z placeholderami">
+                    <button class="block-btn-wide" onclick="addBlock('footer')">
+                        <i data-lucide="panel-bottom"></i>
+                        <div class="block-btn-info">
+                            <span class="block-btn-name">Stopka organizatora</span>
+                            <span class="block-btn-desc">Dane kontaktowe, link wypisania</span>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            <div class="palette-section">
+                <div class="palette-title">Treść wiadomości</div>
+                <div class="block-grid">
+                    <button class="block-btn" onclick="addBlock('text')" title="Akapit tekstu">
                         <i data-lucide="type"></i>
                         <span>Tekst</span>
                     </button>
@@ -1589,25 +1680,31 @@
                         <i data-lucide="image"></i>
                         <span>Obrazek</span>
                     </button>
-                    <button class="block-btn" onclick="addBlock('table')" title="Tabela pozycji lub podsumowanie">
+                </div>
+            </div>
+            <div class="palette-section">
+                <div class="palette-title">Dane i akcje</div>
+                <div class="block-grid">
+                    <button class="block-btn" onclick="addBlock('table')" title="Tabela pozycji zamówienia">
                         <i data-lucide="table"></i>
-                        <span>Tabela</span>
+                        <span>Pozycje</span>
                     </button>
-                    <button class="block-btn" onclick="addBlock('calendar-links')" title="Linki do kalendarzy">
+                    <button class="block-btn" onclick="addBlock('calendar-links')" title="Przyciski dodaj do kalendarza">
                         <i data-lucide="calendar-plus"></i>
                         <span>Kalendarz</span>
                     </button>
-                    <button class="block-btn" onclick="addBlock('divider')" title="Linia separatora">
+                </div>
+            </div>
+            <div class="palette-section">
+                <div class="palette-title">Formatowanie</div>
+                <div class="block-grid">
+                    <button class="block-btn" onclick="addBlock('divider')" title="Pozioma linia oddzielająca">
                         <i data-lucide="minus"></i>
-                        <span>Linia</span>
+                        <span>Separator</span>
                     </button>
-                    <button class="block-btn" onclick="addBlock('spacer')" title="Pusta przestrzeń">
-                        <i data-lucide="square"></i>
+                    <button class="block-btn" onclick="addBlock('spacer')" title="Pusta przestrzeń pionowa">
+                        <i data-lucide="move-vertical"></i>
                         <span>Odstęp</span>
-                    </button>
-                    <button class="block-btn" onclick="addBlock('footer')" title="Stopka email">
-                        <i data-lucide="panel-bottom"></i>
-                        <span>Stopka</span>
                     </button>
                 </div>
             </div>
@@ -1821,15 +1918,15 @@ const BLOCK_ICONS = {
 };
 
 const BLOCK_LABELS = {
-    'header': 'Nagłówek',
+    'header': 'Banner wydarzenia',
     'text': 'Tekst',
     'button': 'Przycisk',
     'image': 'Obrazek',
-    'table': 'Tabela',
-    'calendar-links': 'Kalendarz',
-    'divider': 'Linia',
-    'spacer': 'Odstęp',
-    'footer': 'Stopka'
+    'table': 'Pozycje zamówienia',
+    'calendar-links': 'Dodaj do kalendarza',
+    'divider': 'Separator',
+    'spacer': 'Odstęp pionowy',
+    'footer': 'Stopka organizatora'
 };
 
 // ==================== TEMPLATE MANAGEMENT ====================
@@ -2438,6 +2535,10 @@ function getEditorFieldsHtml(block) {
     switch (block.type) {
         case 'header':
             return `
+                <div class="editor-description">
+                    <strong>Banner wydarzenia</strong>
+                    <p>Górna sekcja emaila z gradientem kolorów i grafiką. Kolory i banner pobierają się automatycznie z ustawień wybranego wydarzenia.</p>
+                </div>
                 <div class="editor-switch">
                     <label>Użyj gradientu wydarzenia</label>
                     <label class="toggle-switch">
@@ -2605,6 +2706,10 @@ function getEditorFieldsHtml(block) {
             
         case 'footer':
             return `
+                <div class="editor-description">
+                    <strong>Stopka organizatora</strong>
+                    <p>Dolna sekcja emaila z danymi kontaktowymi i opcjonalnym linkiem wypisania. Używaj placeholderów dla danych organizatora.</p>
+                </div>
                 <div class="editor-field">
                     <label>Treść stopki</label>
                     <textarea id="field_footerText" placeholder="{{organizer_name}} | {{organizer_email}}">${block.content.footerText || ''}</textarea>
