@@ -123,28 +123,6 @@
   </div>
 </div>
 
-<!-- QUICK ACTIONS BAR -->
-{% if order.status not in ['cancelled', 'refunded'] %}
-<div class="operational-actions">
-  <button class="btn btn-outline" onclick="sendProforma()" {% if order.status == 'paid' %}disabled{% endif %}>
-    <i data-lucide="send"></i>
-    Wyślij proformę
-  </button>
-  <button class="btn btn-primary" onclick="markAsPaid()" {% if order.status == 'paid' %}disabled{% endif %}>
-    <i data-lucide="credit-card"></i>
-    Oznacz opłacone
-  </button>
-  <button class="btn btn-outline" onclick="openCorrectionModal()">
-    <i data-lucide="edit"></i>
-    Korekta danych
-  </button>
-</div>
-{% else %}
-<div class="order-closed-notice">
-  <i data-lucide="info" style="width: 16px; height: 16px;"></i>
-  <span>Zamówienie zostało {{ 'anulowane' if order.status == 'cancelled' else 'zwrócone' }}. Akcje operacyjne są niedostępne.</span>
-</div>
-{% endif %}
 
 <!-- MAIN GRID -->
 <div class="detail-grid">
