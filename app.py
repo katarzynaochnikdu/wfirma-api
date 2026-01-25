@@ -3182,9 +3182,28 @@ def backstage_attendee_cancel():
     }
     """
     from flask import jsonify
+    import json
+    import re
     
     try:
-        payload = request.get_json(force=True) or {}
+        # Próbuj najpierw standardowo
+        try:
+            payload = request.get_json(force=True) or {}
+        except Exception as json_err:
+            # Jeśli JSON ma trailing comma, spróbuj naprawić
+            raw_data = request.get_data(as_text=True)
+            print(f"[ATTENDEE CANCEL] Błąd parsowania JSON: {json_err}")
+            print(f"[ATTENDEE CANCEL] Raw data: {raw_data[:500]}")
+            
+            # Usuń trailing commas przed } lub ]
+            fixed_data = re.sub(r',\s*([}\]])', r'\1', raw_data)
+            try:
+                payload = json.loads(fixed_data) if fixed_data else {}
+                print(f"[ATTENDEE CANCEL] JSON naprawiony (usunięto trailing comma)")
+            except Exception as fix_err:
+                print(f"[ATTENDEE CANCEL] Nie udało się naprawić JSON: {fix_err}")
+                return jsonify({'status': 'error', 'error': f'Invalid JSON: {str(json_err)}'}), 400
+        
         print(f"[ATTENDEE CANCEL] Otrzymano webhook: {list(payload.keys())}")
         
         # Mapowanie pól z Zoho (obsługa różnych formatów nazw)

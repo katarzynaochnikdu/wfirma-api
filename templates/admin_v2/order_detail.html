@@ -534,12 +534,80 @@
   </div>
 </div>
 
+<!-- UNIVERSAL ACTION CONFIRMATION MODAL -->
+<div id="action-confirm-modal" class="modal-backdrop hidden">
+  <div class="modal-content" style="max-width: 480px;">
+    <div class="modal-header">
+      <h3 class="modal-title" id="action-modal-title">Potwierdź akcję</h3>
+      <button class="modal-close" onclick="closeActionModal()">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="action-icon-box" style="text-align: center; margin-bottom: 1rem;"></div>
+      <p id="action-modal-text" style="font-size: 0.9375rem; line-height: 1.6;"></p>
+      <div id="action-info-box" class="action-info-box" style="display: none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeActionModal()">Anuluj</button>
+      <button class="btn btn-primary" id="action-confirm-btn">Potwierdź</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast container is now global (in base.html) -->
 
 <script>
   const orderId = '{{ order.event_order_id }}';
   let pendingStatus = null;
   const currentStatus = '{{ order.status }}';
+  const isStripePayment = {{ 'true' if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower else 'false' }};
+  const isProformaPayment = {{ 'true' if 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_type or '')|string|lower else 'false' }};
+  let pendingActionCallback = null;
+
+  // ===== UNIVERSAL ACTION MODAL =====
+  function showActionModal(options) {
+    const { title, text, info, icon, iconColor, confirmText, confirmClass, onConfirm } = options;
+    
+    document.getElementById('action-modal-title').textContent = title || 'Potwierdź akcję';
+    document.getElementById('action-modal-text').innerHTML = text || '';
+    
+    const iconBox = document.getElementById('action-icon-box');
+    if (icon) {
+      iconBox.innerHTML = `<i data-lucide="${icon}" style="width: 48px; height: 48px; color: ${iconColor || 'var(--primary)'};"></i>`;
+      iconBox.style.display = 'block';
+    } else {
+      iconBox.style.display = 'none';
+    }
+    
+    const infoBox = document.getElementById('action-info-box');
+    if (info) {
+      infoBox.innerHTML = info;
+      infoBox.style.display = 'block';
+    } else {
+      infoBox.style.display = 'none';
+    }
+    
+    const confirmBtn = document.getElementById('action-confirm-btn');
+    confirmBtn.textContent = confirmText || 'Potwierdź';
+    confirmBtn.className = confirmClass || 'btn btn-primary';
+    
+    pendingActionCallback = onConfirm;
+    confirmBtn.onclick = () => {
+      if (pendingActionCallback) {
+        pendingActionCallback();
+      }
+      closeActionModal();
+    };
+    
+    document.getElementById('action-confirm-modal').classList.remove('hidden');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+  
+  function closeActionModal() {
+    document.getElementById('action-confirm-modal').classList.add('hidden');
+    pendingActionCallback = null;
+  }
 
   // Handle status change
   function handleStatusChange(newStatus) {
@@ -687,92 +755,190 @@
   }
 
   function sendReminder() {
-    if (confirm('Wysłać przypomnienie o płatności?')) {
-      fetch(`/admin-v2/orders/${orderId}/send-reminder`, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast('Przypomnienie zostało wysłane', 'success');
-            location.reload();
-          } else {
-            showToast(data.error || 'Błąd wysyłki', 'error');
-          }
-        })
-        .catch(err => showToast('Błąd wysyłki', 'error'));
+    let infoText = '';
+    if (isStripePayment) {
+      infoText = `<div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 85%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(212, 100%, 45%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(212, 100%, 30%);">
+            <strong>Płatność Stripe:</strong> Zostanie wygenerowany <strong>nowy link do płatności</strong> 
+            i wysłany do klienta. Poprzedni link (jeśli istniał) może już nie działać.
+          </div>
+        </div>
+      </div>`;
+    } else if (isProformaPayment) {
+      infoText = `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="file-text" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
+            <strong>Płatność proforma:</strong> Klient otrzyma przypomnienie o konieczności 
+            opłacenia proformy przelewem bankowym.
+          </div>
+        </div>
+      </div>`;
     }
+    
+    showActionModal({
+      title: 'Wyślij przypomnienie o płatności',
+      icon: 'send',
+      iconColor: 'hsl(212, 100%, 50%)',
+      text: 'Do klienta zostanie wysłany email z przypomnieniem o dokończeniu płatności za zamówienie.',
+      info: infoText,
+      confirmText: 'Wyślij przypomnienie',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/send-reminder`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Przypomnienie zostało wysłane', 'success');
+              location.reload();
+            } else {
+              showToast(data.error || 'Błąd wysyłki', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd wysyłki', 'error'));
+      }
+    });
   }
 
   function resendTickets() {
-    if (confirm('Wysłać ponownie bilety uczestników?')) {
-      fetch(`/admin-v2/orders/${orderId}/resend-ticket`, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast('Bilety zostały wysłane', 'success');
-          } else {
-            showToast(data.error || 'Błąd wysyłki', 'error');
-          }
-        })
-        .catch(err => showToast('Błąd wysyłki', 'error'));
-    }
+    showActionModal({
+      title: 'Wyślij potwierdzenie uczestnictwa',
+      icon: 'mail',
+      iconColor: 'hsl(142, 71%, 45%)',
+      text: 'Do wszystkich uczestników tego zamówienia zostaną wysłane emaile z potwierdzeniem rejestracji i biletem.',
+      info: `<div style="background: hsl(142, 71%, 97%); border: 1px solid hsl(142, 71%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="users" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(142, 71%, 25%);">
+            Każdy uczestnik otrzyma osobny email ze swoim biletem i danymi wydarzenia.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Wyślij bilety',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/resend-ticket`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Bilety zostały wysłane', 'success');
+              location.reload();
+            } else {
+              showToast(data.error || 'Błąd wysyłki', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd wysyłki', 'error'));
+      }
+    });
   }
 
   function cancelOrder() {
-    if (confirm('Czy na pewno chcesz anulować to zamówienie? Ta operacja może być nieodwracalna.')) {
-      fetch(`/admin-v2/orders/${orderId}/cancel`, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast('Zamówienie zostało anulowane', 'success');
-            location.reload();
-          } else {
-            showToast(data.error || 'Błąd anulowania', 'error');
-          }
-        })
-        .catch(err => showToast('Błąd anulowania', 'error'));
-    }
+    showActionModal({
+      title: 'Anuluj zamówienie',
+      icon: 'x-circle',
+      iconColor: 'hsl(38, 100%, 45%)',
+      text: 'Czy na pewno chcesz anulować to zamówienie?',
+      info: `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
+            Status zamówienia zostanie zmieniony na "Anulowane". 
+            Ta operacja nie powoduje automatycznego zwrotu płatności.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Anuluj zamówienie',
+      confirmClass: 'btn btn-outline btn-destructive-outline',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/cancel`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Zamówienie zostało anulowane', 'success');
+              location.reload();
+            } else {
+              showToast(data.error || 'Błąd anulowania', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd anulowania', 'error'));
+      }
+    });
   }
 
   function refundOrder() {
-    if (confirm('Czy na pewno chcesz wykonać ZWROT płatności?\n\nPieniądze zostaną zwrócone na konto klienta przez Stripe.\nTa operacja jest nieodwracalna.')) {
-      const reason = prompt('Podaj powód zwrotu (opcjonalnie):', 'requested_by_customer');
-      
-      const formData = new FormData();
-      formData.append('reason', reason || 'requested_by_customer');
-      
-      fetch(`/admin-v2/orders/${orderId}/refund`, { 
-        method: 'POST',
-        body: formData
-      })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast(data.message || 'Zwrot zrealizowany', 'success');
-            location.reload();
-          } else {
-            showToast(data.error || 'Błąd zwrotu', 'error');
-          }
+    showActionModal({
+      title: 'Zwrot płatności Stripe',
+      icon: 'rotate-ccw',
+      iconColor: 'hsl(0, 84%, 60%)',
+      text: 'Czy na pewno chcesz wykonać zwrot płatności?',
+      info: `<div style="background: hsl(0, 84%, 97%); border: 1px solid hsl(0, 84%, 80%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-circle" style="width: 18px; height: 18px; color: hsl(0, 84%, 50%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(0, 84%, 30%);">
+            <strong>Ta operacja jest NIEODWRACALNA!</strong><br>
+            Pieniądze zostaną zwrócone na konto klienta przez Stripe. 
+            Czas realizacji zwrotu zależy od banku klienta (zwykle 5-10 dni roboczych).
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Wykonaj zwrot',
+      confirmClass: 'btn btn-outline btn-destructive-outline',
+      onConfirm: () => {
+        const formData = new FormData();
+        formData.append('reason', 'requested_by_customer');
+        
+        fetch(`/admin-v2/orders/${orderId}/refund`, { 
+          method: 'POST',
+          body: formData
         })
-        .catch(err => showToast('Błąd zwrotu: ' + err, 'error'));
-    }
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast(data.message || 'Zwrot zrealizowany', 'success');
+              location.reload();
+            } else {
+              showToast(data.error || 'Błąd zwrotu', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd zwrotu: ' + err, 'error'));
+      }
+    });
   }
 
   function deleteOrder() {
-    if (confirm('UWAGA: Czy na pewno chcesz USUNĄĆ to zamówienie?\n\nTa operacja jest NIEODWRACALNA!\nZostaną usunięte wszystkie dane: zamówienie, uczestnicy, historia emaili.')) {
-      if (confirm('Ostatnie ostrzeżenie: Potwierdź usunięcie zamówienia ' + orderId)) {
+    showActionModal({
+      title: 'Usuń zamówienie',
+      icon: 'trash-2',
+      iconColor: 'hsl(0, 84%, 60%)',
+      text: 'Czy na pewno chcesz <strong>trwale usunąć</strong> to zamówienie?',
+      info: `<div style="background: hsl(0, 84%, 97%); border: 1px solid hsl(0, 84%, 80%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-octagon" style="width: 18px; height: 18px; color: hsl(0, 84%, 50%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(0, 84%, 30%);">
+            <strong>UWAGA! Ta operacja jest NIEODWRACALNA!</strong><br>
+            Zostaną trwale usunięte:<br>
+            • Dane zamówienia<br>
+            • Wszyscy uczestnicy<br>
+            • Historia wysłanych emaili
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Usuń zamówienie',
+      confirmClass: 'btn btn-outline btn-destructive-outline',
+      onConfirm: () => {
         fetch(`/admin-v2/orders/${orderId}/delete`, { method: 'POST' })
           .then(response => response.json())
           .then(data => {
             if (data.success) {
               showToast('Zamówienie zostało usunięte', 'success');
-              window.location.href = '/admin-v2/orders';
+              setTimeout(() => { window.location.href = '/admin-v2/orders'; }, 1500);
             } else {
               showToast(data.error || 'Błąd usuwania', 'error');
             }
           })
           .catch(err => showToast('Błąd usuwania', 'error'));
       }
-    }
+    });
   }
 
   // showToast is now global (defined in base.html)
@@ -1360,6 +1526,15 @@
   }
   .btn-refund-outline:hover {
     background: #fffbeb !important;
+  }
+
+  /* Destructive outline button (Anuluj/Usuń) */
+  .btn-destructive-outline {
+    border-color: hsl(0, 84%, 60%) !important;
+    color: hsl(0, 84%, 60%) !important;
+  }
+  .btn-destructive-outline:hover {
+    background: hsl(0, 84%, 97%) !important;
   }
 
   /* Danger button (Usuń) */
