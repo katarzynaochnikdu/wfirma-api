@@ -522,23 +522,87 @@ input[type="color"].form-input {
     </div>
     
     {% if ticket_classes %}
-    <div style="margin-top: 1rem; background: var(--muted); border-radius: var(--radius); padding: 0.75rem;">
-      <table style="width: 100%; font-size: 0.875rem;">
-        <thead>
-          <tr style="text-align: left; color: var(--muted-foreground);">
-            <th style="padding: 0.25rem 0.5rem;">Nazwa</th>
-            <th style="padding: 0.25rem 0.5rem;">ID</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for tc in ticket_classes %}
-          <tr>
-            <td style="padding: 0.25rem 0.5rem;">{{ tc.ticket_name }}</td>
-            <td style="padding: 0.25rem 0.5rem; font-family: monospace; font-size: 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div style="margin-top: 1rem;">
+      {# Rozdziel bilety na aktywne i nieaktywne #}
+      {% set ns = namespace(active=[], inactive=[]) %}
+      {% for tc in ticket_classes %}
+        {% set tc_data = tc.data if tc.data is mapping else {} %}
+        {% set is_hidden = tc_data.get('hidden', false) %}
+        {% set tc_status = tc_data.get('status', '')|lower %}
+        {% if is_hidden or tc_status in ['cancelled', 'expired', 'sold_out', 'ended'] %}
+          {% set ns.inactive = ns.inactive + [tc] %}
+        {% else %}
+          {% set ns.active = ns.active + [tc] %}
+        {% endif %}
+      {% endfor %}
+      
+      <!-- AKTYWNE BILETY -->
+      {% if ns.active %}
+      <div style="margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: hsl(160, 82%, 45%);"></span>
+          <span style="font-size: 0.8125rem; font-weight: 600; color: hsl(160, 82%, 35%);">Aktywne ({{ ns.active|length }})</span>
+        </div>
+        <div style="background: hsl(160, 82%, 97%); border: 1px solid hsl(160, 82%, 85%); border-radius: var(--radius); overflow: hidden;">
+          <table style="width: 100%; font-size: 0.875rem;">
+            <thead>
+              <tr style="text-align: left; background: hsl(160, 82%, 92%);">
+                <th style="padding: 0.5rem 0.75rem; color: hsl(160, 82%, 30%);">Nazwa</th>
+                <th style="padding: 0.5rem 0.75rem; color: hsl(160, 82%, 30%);">Cena</th>
+                <th style="padding: 0.5rem 0.75rem; color: hsl(160, 82%, 30%);">ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for tc in ns.active %}
+              {% set tc_data = tc.data if tc.data is mapping else {} %}
+              <tr style="border-top: 1px solid hsl(160, 82%, 85%);">
+                <td style="padding: 0.5rem 0.75rem; font-weight: 500;">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</td>
+                <td style="padding: 0.5rem 0.75rem;">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</td>
+                <td style="padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      
+      <!-- NIEAKTYWNE BILETY -->
+      {% if ns.inactive %}
+      <div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground);"></span>
+          <span style="font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground);">Nieaktywne ({{ ns.inactive|length }})</span>
+        </div>
+        <div style="background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; opacity: 0.7;">
+          <table style="width: 100%; font-size: 0.875rem;">
+            <thead>
+              <tr style="text-align: left; background: var(--border);">
+                <th style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">Nazwa</th>
+                <th style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">Cena</th>
+                <th style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for tc in ns.inactive %}
+              {% set tc_data = tc.data if tc.data is mapping else {} %}
+              <tr style="border-top: 1px solid var(--border);">
+                <td style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</td>
+                <td style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</td>
+                <td style="padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      
+      {% if not ns.active and not ns.inactive %}
+      <div style="padding: 1rem; text-align: center; color: var(--muted-foreground); background: var(--muted); border-radius: var(--radius);">
+        Brak typów biletów
+      </div>
+      {% endif %}
     </div>
     {% endif %}
   </div>
@@ -581,10 +645,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const editorContainer = document.getElementById('description-editor');
   const hiddenInput = document.getElementById('event_description_input');
   
-  // #region agent log
-  fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_form.html:quill-init',message:'Quill init check',data:{quillAvailable:typeof Quill!=='undefined',editorContainerExists:!!editorContainer,hiddenInputExists:!!hiddenInput,hiddenInputValue:hiddenInput?hiddenInput.value.substring(0,100):'N/A'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-  // #endregion
-  
   if (editorContainer && typeof Quill !== 'undefined') {
     descriptionEditor = new Quill('#description-editor', {
       theme: 'snow',
@@ -601,9 +661,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load existing content from hidden input
     if (hiddenInput && hiddenInput.value) {
       descriptionEditor.root.innerHTML = hiddenInput.value;
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_form.html:quill-loaded',message:'Content loaded to editor',data:{loadedContentLength:descriptionEditor.root.innerHTML.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
     }
     
     // Sync editor content to hidden input on text change
@@ -619,20 +676,11 @@ document.addEventListener('DOMContentLoaded', function() {
       form.addEventListener('submit', function() {
         if (hiddenInput && descriptionEditor) {
           hiddenInput.value = descriptionEditor.root.innerHTML;
-          // #region agent log
-          fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_form.html:form-submit',message:'Form submit - syncing editor to hidden',data:{finalHtmlLength:hiddenInput.value.length,finalHtmlPreview:hiddenInput.value.substring(0,150)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-          // #endregion
         }
       });
     }
     
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_form.html:quill-ready',message:'Quill editor initialized successfully',data:{editorReady:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
   } else {
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_form.html:quill-fail',message:'Quill initialization FAILED',data:{quillAvailable:typeof Quill!=='undefined',editorContainerExists:!!editorContainer},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Quill editor could not be initialized');
   }
 });

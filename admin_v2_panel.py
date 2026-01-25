@@ -299,10 +299,18 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     merged_data = {**event_data, **normalized}
     event["data"] = merged_data
     
-    # Mapuj linki Backstage
-    event["backstage_url"] = event_data.get("event_config_link") or "#"
-    event["backstage_orders_url"] = event_data.get("event_orders_link") or "#"
-    event["backstage_attendees_url"] = event_data.get("event_attendees_link") or "#"
+    # Generuj linki Backstage dynamicznie
+    # Portal ID i Brand ID z konfiguracji lub domyślne dla Medidesk
+    backstage_portal_id = event_data.get("backstage_portal_id") or "20101549222"
+    backstage_brand_id = "24311000000002010"  # Stałe dla Medidesk
+    event_id = event.get("event_id", "")
+    
+    # Format: https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/{page}
+    backstage_base = f"https://backstage.zoho.eu/home#/portal/{backstage_portal_id}/brand/{backstage_brand_id}/event/{event_id}"
+    
+    event["backstage_url"] = f"{backstage_base}/details" if event_id else "#"
+    event["backstage_orders_url"] = f"{backstage_base}/orders" if event_id else "#"
+    event["backstage_attendees_url"] = f"{backstage_base}/attendees" if event_id else "#"
     
     return event
 
@@ -873,11 +881,43 @@ def order_update_status(order_id: str):
     from pg_storage import update_order_status
     
     user = _get_current_admin_user()
-    new_status = request.form.get("status", "").strip()
+    
+    # #region agent log
+    import json as _json
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"admin_v2_panel.py:order_update_status","message":"Request received","data":{"order_id":order_id,"content_type":request.content_type,"form_data":dict(request.form),"is_json":request.is_json},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
+    except: pass
+    # #endregion
+    
+    # Support both form data and JSON
+    new_status = ""
+    if request.is_json:
+        json_data = request.get_json(silent=True) or {}
+        new_status = json_data.get("status", "").strip()
+    else:
+        new_status = request.form.get("status", "").strip()
+    
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"admin_v2_panel.py:order_update_status:parsed","message":"Status parsed","data":{"new_status":new_status,"order_id":order_id},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1,H2"}) + '\n')
+    except: pass
+    # #endregion
     
     valid_statuses = ["received", "pending_payment", "paid", "cancelled", "refunded"]
     if new_status not in valid_statuses:
-        return jsonify({"success": False, "error": "Nieprawidłowy status"}), 400
+        return jsonify({"success": False, "error": f"Nieprawidłowy status: '{new_status}'"}), 400
+    
+    # Jeśli zmiana na "paid" - wywołaj pełny flow z generowaniem faktury i emailami
+    if new_status == "paid":
+        # #region agent log
+        try:
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({"location":"admin_v2_panel.py:order_update_status:mark_paid","message":"Triggering mark_paid flow","data":{"order_id":order_id},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+        except: pass
+        # #endregion
+        return _handle_mark_paid(order_id, user)
     
     result = update_order_status(order_id, new_status)
     if result:
@@ -892,6 +932,184 @@ def order_update_status(order_id: str):
         return jsonify({"success": True, "status": new_status})
     
     return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+
+
+def _handle_mark_paid(order_id: str, user: dict):
+    """
+    Pełny flow oznaczania zamówienia jako opłacone:
+    1. Sprawdza czy faktura końcowa już istnieje
+    2. Generuje fakturę VAT w wFirma
+    3. Wysyła email z potwierdzeniem do klienta
+    4. Wysyła powiadomienie wewnętrzne
+    5. Zmienia status na 'paid'
+    """
+    from flask import jsonify
+    from pg_storage import update_order_status, get_wfirma_documents
+    
+    # #region agent log
+    import json as _json
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid","message":"Starting mark_paid flow","data":{"order_id":order_id},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+    except: pass
+    # #endregion
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    event_id = order.get("event_id", "")
+    event = get_event(event_id) if event_id else None
+    event_name = event.get("event_name", "") if event else ""
+    event_data = (event.get("data") if event else {}) or {}
+    
+    # Dane kupującego
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_first_name = order.get("purchaser_first_name", "") or ""
+    purchaser_last_name = order.get("purchaser_last_name", "") or ""
+    purchaser_name = f"{purchaser_first_name} {purchaser_last_name}".strip()
+    
+    total_value = float(order.get("total", 0) or 0)
+    currency_value = order.get("currency", "PLN") or "PLN"
+    
+    # 1. Sprawdź czy faktura końcowa już istnieje
+    existing_docs = get_wfirma_documents(order_id) or []
+    has_final_invoice = any((d or {}).get("document_type") == "normal" for d in existing_docs)
+    
+    errors = []
+    invoice_generated = False
+    email_sent = False
+    
+    # 2. Generuj fakturę końcową jeśli nie istnieje
+    if not has_final_invoice and total_value > 0:
+        try:
+            from backstage_engine import _create_paid_invoice
+            
+            # #region agent log
+            try:
+                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:gen_invoice","message":"Generating invoice","data":{"order_id":order_id,"total":total_value},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+            except: pass
+            # #endregion
+            
+            # Przygotuj dane zamówienia dla wFirma
+            order_data_for_invoice = {
+                "event_order_id": order_id,
+                "purchaser_email": purchaser_email,
+                "purchaser_first_name": purchaser_first_name,
+                "purchaser_last_name": purchaser_last_name,
+                "purchaser_company": order.get("purchaser_company", ""),
+                "purchaser_nip": order.get("purchaser_nip", ""),
+                "purchaser_phone": order.get("purchaser_phone", ""),
+                "total": total_value,
+                "currency": currency_value,
+                "raw": order.get("raw", {}),
+            }
+            
+            success, invoice_result, invoice_error = _create_paid_invoice(
+                order_data=order_data_for_invoice,
+                event_name=event_name,
+                send_email=False,  # Email wyślemy osobno z naszym szablonem
+            )
+            
+            if success:
+                invoice_generated = True
+                print(f"[V2 MARK-PAID] Wygenerowano fakturę dla {order_id}")
+            else:
+                errors.append(f"Błąd generowania faktury: {invoice_error or 'nieznany'}")
+                print(f"[V2 MARK-PAID] Błąd faktury: {invoice_error}")
+        except Exception as e:
+            errors.append(f"Wyjątek generowania faktury: {str(e)}")
+            print(f"[V2 MARK-PAID] Wyjątek faktury: {e}")
+    elif has_final_invoice:
+        invoice_generated = True  # Już istnieje
+    
+    # 3. Wysyłka emaila z potwierdzeniem płatności
+    if purchaser_email:
+        try:
+            from backstage_engine import _send_email_via_make
+            from email_templates import render_payment_confirmation_email
+            from pg_storage import save_mail_log
+            
+            # #region agent log
+            try:
+                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:send_email","message":"Sending confirmation email","data":{"order_id":order_id,"to":purchaser_email},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+            except: pass
+            # #endregion
+            
+            email_html = render_payment_confirmation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name,
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                purchaser_phone=order.get("purchaser_phone", "") or "",
+                total_gross=total_value,
+                event_config=event_data,
+                tickets=None,  # TODO: pobrać bilety z zamówienia
+            )
+            
+            subject = f"Potwierdzenie płatności - {event_name}"
+            
+            make_result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=subject,
+                html_content=email_html,
+            )
+            
+            if make_result.get("success"):
+                email_sent = True
+                save_mail_log(
+                    event_order_id=order_id,
+                    template_key="payment_confirmation",
+                    to_email=purchaser_email,
+                    subject=subject,
+                    status="sent",
+                    direction="purchaser",
+                )
+                print(f"[V2 MARK-PAID] Email wysłany do {purchaser_email}")
+            else:
+                errors.append(f"Błąd wysyłki email: {make_result.get('error', 'nieznany')}")
+        except Exception as e:
+            errors.append(f"Wyjątek wysyłki email: {str(e)}")
+            print(f"[V2 MARK-PAID] Wyjątek email: {e}")
+    
+    # 4. Zmień status na paid
+    update_order_status(order_id, "paid")
+    
+    # 5. Audit log
+    insert_admin_audit_log(
+        action="order_marked_paid",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={
+            "invoice_generated": invoice_generated,
+            "email_sent": email_sent,
+            "errors": errors,
+        },
+        ip=request.remote_addr,
+    )
+    
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:done","message":"Mark paid completed","data":{"order_id":order_id,"invoice_generated":invoice_generated,"email_sent":email_sent,"errors":errors},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+    except: pass
+    # #endregion
+    
+    if errors:
+        return jsonify({
+            "success": True,
+            "status": "paid",
+            "warnings": errors,
+            "message": f"Status zmieniony na opłacone. Uwagi: {'; '.join(errors)}"
+        })
+    
+    return jsonify({
+        "success": True,
+        "status": "paid",
+        "message": "Zamówienie oznaczone jako opłacone" + (", faktura wygenerowana" if invoice_generated else "") + (", email wysłany" if email_sent else "")
+    })
 
 
 @admin_v2_bp.route("/orders/<order_id>/send-reminder", methods=["POST"])
@@ -2146,6 +2364,18 @@ def event_sync_backstage(event_id: str):
     # Przygotuj porównanie: obecne vs nowe
     current_data = event.get("data") or {}
     new_data = result.get("event_data", {})
+    
+    # DEBUG: Loguj dane lokalizacji
+    print(f"[SYNC COMPARE DEBUG] Event ID: {event_id}")
+    print(f"[SYNC COMPARE DEBUG] Current data location fields:")
+    print(f"  event_location_place: {current_data.get('event_location_place')}")
+    print(f"  eventLocation: {current_data.get('eventLocation')}")
+    print(f"  event_location_city: {current_data.get('event_location_city')}")
+    print(f"  eventCity: {current_data.get('eventCity')}")
+    print(f"[SYNC COMPARE DEBUG] New data location fields:")
+    print(f"  event_location_place: {new_data.get('event_location_place')}")
+    print(f"  event_location_address: {new_data.get('event_location_address')}")
+    print(f"  event_location_city: {new_data.get('event_location_city')}")
     
     # Pola do porównania (label, klucz, typ)
     # Używamy KANONICZNYCH nazw pól ale sprawdzamy też aliasy

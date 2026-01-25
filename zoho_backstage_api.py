@@ -537,8 +537,20 @@ def sync_event_from_backstage(event_id: str, portal_id: str = None) -> Dict[str,
     if error:
         return {"success": False, "error": error}
     
+    # LOG: Surowe dane venue z API
+    raw_venue = backstage_data.get("venue")
+    print(f"[BACKSTAGE SYNC DEBUG] Raw venue from API: {raw_venue}")
+    print(f"[BACKSTAGE SYNC DEBUG] Venue type: {type(raw_venue)}")
+    
     # Mapuj dane
     event_data = map_event_to_local(backstage_data)
+    
+    # LOG: Zmapowane dane lokalizacji
+    print(f"[BACKSTAGE SYNC DEBUG] Mapped location fields:")
+    print(f"  event_location_place: {event_data.get('event_location_place')}")
+    print(f"  event_location_address: {event_data.get('event_location_address')}")
+    print(f"  event_location_city: {event_data.get('event_location_city')}")
+    print(f"  location (full): {event_data.get('location')}")
     
     ticket_classes = []
     for tc in backstage_data.get("ticket_classes", []):
@@ -546,7 +558,8 @@ def sync_event_from_backstage(event_id: str, portal_id: str = None) -> Dict[str,
     
     _log("INFO", f"Dane zsynchronizowane", {
         "event_name": backstage_data.get("name"),
-        "venue": event_data.get("venue_name"),
+        "venue": raw_venue,
+        "mapped_city": event_data.get("event_location_city"),
         "ticket_classes_count": len(ticket_classes),
     })
     
