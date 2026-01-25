@@ -1081,7 +1081,28 @@ def _handle_mark_paid(order_id: str, user: dict):
     # 4. Zmień status na paid
     update_order_status(order_id, "paid")
     
-    # 5. Audit log
+    # 5. Wyślij emaile z biletami do uczestników
+    participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0}
+    try:
+        from backstage_engine import send_participant_ticket_emails, attendee_webhooks_status
+        
+        comp = attendee_webhooks_status(order_id)
+        if comp.get("complete"):
+            participant_email_stats = send_participant_ticket_emails(
+                event_order_id=order_id,
+                event_name=event_name,
+                event_config=event_data,
+                event_id=order.get("event_id", ""),
+            )
+            print(f"[V2 MARK-PAID] Emaile do uczestników: sent={participant_email_stats.get('sent', 0)}, failed={participant_email_stats.get('failed', 0)}, skipped={participant_email_stats.get('skipped', 0)}")
+        else:
+            print(f"[V2 MARK-PAID] Pomijam emaile do uczestników - brak kompletu webhooków: expected={comp.get('expected')}, received={comp.get('received')}")
+            participant_email_stats["skipped_reason"] = "attendee_webhooks_incomplete"
+    except Exception as e:
+        errors.append(f"Błąd wysyłki biletów: {str(e)}")
+        print(f"[V2 MARK-PAID] Błąd wysyłki biletów do uczestników: {e}")
+    
+    # 7. Audit log
     insert_admin_audit_log(
         action="order_marked_paid",
         admin_user_id=user.get("id") if user else None,
@@ -1089,6 +1110,7 @@ def _handle_mark_paid(order_id: str, user: dict):
         extra={
             "invoice_generated": invoice_generated,
             "email_sent": email_sent,
+            "participant_emails": participant_email_stats,
             "errors": errors,
         },
         ip=request.remote_addr,
@@ -1109,10 +1131,13 @@ def _handle_mark_paid(order_id: str, user: dict):
             "message": f"Status zmieniony na opłacone. Uwagi: {'; '.join(errors)}"
         })
     
+    tickets_sent = participant_email_stats.get("sent", 0)
+    tickets_msg = f", bilety wysłane ({tickets_sent})" if tickets_sent > 0 else ""
+    
     return jsonify({
         "success": True,
         "status": "paid",
-        "message": "Zamówienie oznaczone jako opłacone" + (", faktura wygenerowana" if invoice_generated else "") + (", email wysłany" if email_sent else "")
+        "message": "Zamówienie oznaczone jako opłacone" + (", faktura wygenerowana" if invoice_generated else "") + (", email wysłany" if email_sent else "") + tickets_msg
     })
 
 

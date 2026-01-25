@@ -22,7 +22,7 @@
           <span class="sticky-banner-title">{{ event.event_name }}</span>
         </div>
         <span class="sticky-banner-meta">
-          {% if event.data.eventDate %}{{ event.data.eventDate|format_date_pl }}{% endif %}
+          {% if event.data.event_date_time or event.data.eventDate %}{{ (event.data.event_date_time or event.data.eventDate)|format_date_pl }}{% endif %}
           {% if event.data.event_location_city or event.data.eventCity %} • {{ event.data.event_location_city or event.data.eventCity }}{% endif %}
         </span>
       </div>

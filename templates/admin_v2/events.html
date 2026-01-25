@@ -22,7 +22,8 @@
         <i data-lucide="list"></i>
       </button>
     </div>
-    <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary">
+    <!-- UKRYTE: opcja dodawania wydarzenia tymczasowo wyłączona -->
+    <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary" style="display: none;">
       <i data-lucide="plus"></i>
       Nowe wydarzenie
     </a>
@@ -73,7 +74,7 @@
       {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
       {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
       {% set event_city = event_data.get('eventCity') or '' %}
-      {% set event_date_raw = event_data.get('eventDate') or '' %}
+      {% set event_date_raw = event_data.get('event_date_time') or event_data.get('eventDate') or '' %}
       {% set banner_url = event_data.get('email_header_url') or '' %}
       
       <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active" data-event-name="{{ event.event_name }}" data-event-date="{{ event_date_raw }}" data-event-city="{{ event_city }}" data-order-count="{{ event.order_count or 0 }}" data-participant-count="{{ event.participant_count or 0 }}">
@@ -148,7 +149,7 @@
       {% set event_color = event_data.get('color_gradient_1') or 'hsl(45, 93%, 50%)' %}
       {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(35, 93%, 50%)' %}
       {% set event_city = event_data.get('eventCity') or '' %}
-      {% set event_date_raw = event_data.get('eventDate') or '' %}
+      {% set event_date_raw = event_data.get('event_date_time') or event_data.get('eventDate') or '' %}
       {% set banner_url = event_data.get('email_header_url') or '' %}
       
       <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-config">
@@ -225,7 +226,7 @@
       {% for event in group.events %}
       {% set event_data = event.data or {} %}
       {% set event_city = event_data.get('eventCity') or '' %}
-      {% set event_date_raw = event_data.get('eventDate') or '' %}
+      {% set event_date_raw = event_data.get('event_date_time') or event_data.get('eventDate') or '' %}
       
       <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-inactive">
         <div class="event-card-header-minimal">
@@ -271,7 +272,8 @@
 <div style="text-align: center; padding: 3rem; color: var(--muted-foreground);">
   <i data-lucide="calendar" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 1rem;"></i>
   <p style="margin-bottom: 1rem;">Brak wydarzeń do wyświetlenia</p>
-  <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary">
+  <!-- UKRYTE: opcja dodawania wydarzenia tymczasowo wyłączona -->
+  <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary" style="display: none;">
     <i data-lucide="plus"></i>
     Dodaj pierwsze wydarzenie
   </a>
@@ -590,7 +592,7 @@
 .events-container.view-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 .view-list .event-card {
   display: flex;
@@ -598,69 +600,84 @@
   align-items: center;
   padding: 0;
   border-radius: var(--radius);
+  min-height: 48px;
 }
 .view-list .event-card-header-banner {
-  width: 80px;
+  width: 48px;
+  height: 48px;
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
   border-radius: var(--radius) 0 0 var(--radius);
 }
+.view-list .event-card-header-banner .event-card-banner-img,
+.view-list .event-card-header-banner .event-card-banner-fallback {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
 .view-list .event-card-header-minimal {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  margin: 0.5rem;
+  margin: 0.375rem;
   border-radius: calc(var(--radius) - 4px);
   overflow: hidden;
 }
 .view-list .event-card-body {
   flex: 1;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem;
   min-width: 0;
 }
 .view-list .event-card-title {
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .view-list .event-card-meta {
   margin-top: 0;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-shrink: 0;
 }
 .view-list .event-meta-item {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
 }
 .view-list .event-card-stats {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   padding: 0;
   border: none;
   flex-shrink: 0;
 }
 .view-list .event-stat {
   text-align: right;
+  min-width: 48px;
 }
 .view-list .event-stat-value {
-  font-size: 1.125rem;
+  font-size: 0.9375rem;
 }
 .view-list .event-stat-label {
-  font-size: 0.625rem;
+  font-size: 0.5625rem;
 }
 .view-list .event-settings-btn {
   position: relative;
   top: auto;
   right: auto;
-  margin-right: 0.75rem;
-  opacity: 0.6;
+  margin-right: 0.5rem;
+  opacity: 0.5;
+  width: 28px;
+  height: 28px;
 }
 .view-list .event-card:hover .event-settings-btn {
   opacity: 1;
 }
 .view-list .event-card-tagline {
+  display: none;
+}
+.view-list .event-config-badge {
   display: none;
 }
 
