@@ -2076,51 +2076,27 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                         </td>
                       </tr>
                       <tr><td style="height: 16px;"></td></tr>
+                      {event_datetime_section}
+                      {event_location_section}
+                      {ticket_type_section}
+                      <tr><td style="height: 16px;"></td></tr>
                     </table>
                   </td>
                 </tr>
 
-                <!-- LOKALIZACJA -->
+                <!-- DANE UCZESTNIKA -->
                 <tr>
                   <td style="padding: 0 24px 12px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #F8F9FA; border-radius: 8px;">
+                    <table cellpadding="0" cellspacing="0" style="min-width:100%!important; border-collapse: collapse; width: 100%; border: 1px solid #DEE2E6;">
                       <tr>
-                        <td style="padding: 14px 16px;">
-                          <p style="margin: 0 0 6px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Lokalizacja</p>
-                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
-                            {event_datetime_section}
-                            {event_location_section}
-                          </table>
-                        </td>
+                        <td colspan="2" style="font-size: 16px; font-weight: bold; line-height: 24px; padding: 10px 6px; color: {color_gradient_1};">Dane uczestnika</td>
                       </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- DANE WYDARZENIA -->
-                <tr>
-                  <td style="padding: 0 24px 12px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #FFFFFF; border: 1px solid #e0e0e0; border-radius: 8px;">
                       <tr>
-                        <td style="padding: 14px 16px;">
-                          <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Wydarzenie</p>
-                          <p style="margin: 0; font-size: 18px; color: #333; font-weight: bold;">{event_name}</p>
-                          <p style="margin: 6px 0 0 0; font-size: 14px; color: {color_gradient_1}; font-weight: 500;">{ticket_name}</p>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- DANE UCZESTNIKA - białe tło z obramowaniem -->
-                <tr>
-                  <td style="padding: 0 24px 12px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 8px;">
-                      <tr>
-                        <td style="padding: 14px 16px;">
-                          <p style="margin: 0 0 4px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Uczestnik</p>
-                          <p style="margin: 0; font-size: 16px; color: #333; font-weight: 500;">{participant_full_name}</p>
-                          <p style="margin: 4px 0 0 0; font-size: 14px; color: #555;">{participant_email}</p>
+                        <td style="font-size: 14px; padding: 8px 6px; vertical-align: top; width: 100%;">
+                          <p style="margin-bottom: 2px; font-weight: bold;">{participant_full_name}</p>
+                          {participant_badge_block}
+                          <p style="margin-bottom: 2px;">{participant_email}</p>
+                          <p>{participant_phone}</p>
                         </td>
                       </tr>
                     </table>
@@ -2136,6 +2112,9 @@ TEMPLATE_PARTICIPANT_TICKET = '''<!doctype html>
                           <span style="font-size: 13px; color: #888;">Wartość rezerwacji:</span>
                           <span style="font-size: 16px; color: #333; font-weight: bold; margin-left: 8px;">{ticket_price_formatted}</span>
                           {discount_info}
+                          <div style="margin-top: 6px; font-size: 12px; color: #6b7280;">
+                            Informacja: Bilet wejściowy zostanie wysłany przed wydarzeniem.
+                          </div>
                         </td>
                       </tr>
                     </table>
@@ -2235,6 +2214,9 @@ def render_participant_ticket_email(
     participant_first_name: str,
     participant_last_name: str,
     participant_email: str,
+    participant_phone: str,
+    participant_company: str = "",
+    participant_badge_name: str = "",
     ticket_name: str,
     ticket_id: str,
     ticket_price: float,
@@ -2252,6 +2234,9 @@ def render_participant_ticket_email(
     Args:
         event_name: Nazwa eventu
         participant_*: Dane uczestnika
+        participant_phone: Telefon uczestnika
+        participant_company: Firma uczestnika (opcjonalnie)
+        participant_badge_name: Nazwa na identyfikatorze (opcjonalnie)
         ticket_name: Nazwa/typ rezerwacji
         ticket_id: Numer potwierdzenia rezerwacji
         ticket_price: Wartość rezerwacji (brutto)
@@ -2280,11 +2265,37 @@ def render_participant_ticket_email(
     color_gradient_1 = event_config.get("color_gradient_1", "#2563eb")
     calendar_section = _build_calendar_section(event_id, color_gradient_1, base_url)
     
+    # Badge name (firma na identyfikatorze)
+    badge_value = participant_badge_name or participant_company or ""
+    participant_badge_block = ""
+    if badge_value:
+        participant_badge_block = (
+            f'<p style="margin: 6px 0 0 0; font-size: 12px; color: #6b7280;">Nazwa na identyfikatorze:</p>'
+            f'<span style="display:inline-block; margin-top: 4px; padding: 2px 8px; background: #eef2ff; color: #3730a3; border-radius: 999px; font-size: 12px; font-weight: 600;">{badge_value}</span>'
+        )
+    
+    # Ticket type section (układ jak w payment confirmation)
+    ticket_type_section = f'''
+                      <tr>
+                        <td style="padding: 0;">
+                          <table align="left" border="0" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                              <td style="width: 20px; vertical-align: middle;"></td>
+                              <td style="padding-left: 5px; vertical-align: middle;">
+                                <p style="margin: 0; font-weight: 600;">Typ biletu: {ticket_name or "Rezerwacja"}</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>'''
+    
     data = {
         "event_name": event_name,
         "participant_first_name": participant_first_name or "Uczestnik",
         "participant_full_name": f"{participant_first_name} {participant_last_name}".strip() or "Uczestnik",
         "participant_email": participant_email,
+        "participant_phone": participant_phone or "—",
+        "participant_badge_block": participant_badge_block,
         "ticket_name": ticket_name or "Rezerwacja",
         "ticket_id": ticket_id or "-",
         "ticket_price_formatted": price_formatted,
@@ -2292,6 +2303,7 @@ def render_participant_ticket_email(
         "calendar_section": calendar_section,
         "event_datetime_section": _build_event_datetime_section(event_config),
         "event_location_section": _build_event_location_section(event_config),
+        "ticket_type_section": ticket_type_section,
         # Event config
         "color_gradient_1": color_gradient_1,
         "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),

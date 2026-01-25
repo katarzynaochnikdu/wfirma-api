@@ -394,6 +394,7 @@ def send_participant_ticket_emails(
         participant_email = p.get("email", "")
         participant_first_name = p.get("first_name", "")
         participant_last_name = p.get("last_name", "")
+        participant_phone = p.get("phone", "")
         ticket_id = p.get("ticket_id", "")
         ticket_class_id = p.get("ticket_class_id", "")
         participant_data = p.get("data", {}) or {}
@@ -438,6 +439,9 @@ def send_participant_ticket_emails(
                 participant_first_name=participant_first_name,
                 participant_last_name=participant_last_name,
                 participant_email=participant_email,
+                participant_phone=participant_phone,
+                participant_company=participant_data.get("company") or participant_data.get("company_name") or "",
+                participant_badge_name=participant_data.get("badge_name") or "",
                 ticket_name=ticket_name,
                 ticket_id=ticket_id,
                 ticket_price=float(ticket_price) if ticket_price else 0.0,
