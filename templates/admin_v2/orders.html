@@ -108,7 +108,7 @@
       {% set payment_method = 'Online' %}
       {% if (order.total or 0)|float == 0 %}
         {% set payment_method = 'FOC' %}
-      {% elif 'pro' in (order.payment_option_name or '')|lower or 'proforma' in (order.payment_option_name or '')|lower %}
+      {% elif 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_option_name or '')|string|lower %}
         {% set payment_method = 'Pro forma' %}
       {% endif %}
       

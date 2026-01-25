@@ -86,7 +86,7 @@
       {% set current_idx = status_order.index(order.status) if order.status in status_order else -1 %}
       {% set is_cancelled = order.status == 'cancelled' %}
       {% set is_refunded = order.status == 'refunded' %}
-      {% set is_stripe_payment = 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
+      {% set is_stripe_payment = 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower %}
       
       <div class="status-stepper">
         <!-- Główna ścieżka -->
@@ -227,9 +227,9 @@
           <div class="info-item">
             <span class="info-label">Metoda płatności</span>
             <span class="info-value">
-              {% if 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
+              {% if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower %}
               <span class="payment-badge payment-online">Online</span>
-              {% elif 'pro' in (order.payment_option_name or '')|lower or 'proforma' in (order.payment_type or '')|lower %}
+              {% elif 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_type or '')|string|lower %}
               <span class="payment-badge payment-proforma">Pro forma</span>
               {% elif (order.total or 0)|float == 0 %}
               <span class="payment-badge payment-foc">FOC (bezpłatne)</span>
@@ -481,7 +481,7 @@
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
           </button>
-          {% set is_stripe_payment = 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
+          {% set is_stripe_payment = 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower %}
           {% if order.status == 'paid' and is_stripe_payment %}
           <button class="btn btn-outline btn-refund-outline" onclick="refundOrder()" title="Zwrot płatności Stripe">
             <i data-lucide="rotate-ccw"></i>

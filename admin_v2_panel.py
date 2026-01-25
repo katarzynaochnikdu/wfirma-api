@@ -1146,7 +1146,7 @@ def order_send_reminder(order_id: str):
     checkout_url = None
     expires_in = None
     expires_at_str = None
-    is_proforma = "proforma" in (order.get("payment_type") or "").lower() or "pro" in (order.get("payment_option_name") or "").lower()
+    is_proforma = "proforma" in str(order.get("payment_type") or "").lower() or "pro" in str(order.get("payment_option_name") or "").lower()
     
     if stripe_session and stripe_session.get("url"):
         checkout_url = stripe_session.get("url")
