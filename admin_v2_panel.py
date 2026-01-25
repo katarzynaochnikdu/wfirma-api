@@ -585,6 +585,9 @@ def dashboard():
     # Ostatnie zamówienia
     recent_orders = all_orders[:5]
     
+    # Ostatnie wydarzenia (aktywne, sortowane po dacie)
+    recent_events = [e for e in all_events if e.get("is_active")][:5]
+    
     # Dodaj nazwy wydarzeń do zamówień
     event_map = {e.get("event_id"): e for e in all_events}
     for order in recent_orders:
@@ -643,6 +646,7 @@ def dashboard():
         active_page="dashboard",
         stats=stats,
         recent_orders=recent_orders,
+        recent_events=recent_events,
         chart_data=chart_data,
         **_get_common_context(user),
     )

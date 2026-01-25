@@ -465,7 +465,7 @@
       </div>
       <div class="card-content">
         <div class="quick-actions">
-          {% if order.status != 'paid' %}
+          {% if order.status not in ['paid', 'cancelled', 'refunded'] %}
           <button class="btn btn-outline" onclick="sendReminder()">
             <i data-lucide="send"></i>
             Wyślij przypomnienie o płatności

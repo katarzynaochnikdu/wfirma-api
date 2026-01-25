@@ -79,8 +79,9 @@
       
       <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active" data-event-name="{{ event.event_name }}" data-event-date="{{ event_date_raw }}" data-event-city="{{ event_city }}" data-order-count="{{ event.order_count or 0 }}" data-participant-count="{{ event.participant_count or 0 }}">
         <div class="event-card-header-banner">
-          {% if banner_url %}
-          <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
+          {% if banner_url and not banner_url.startswith('https://previewengine') %}
+          <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+          <div class="event-card-banner-fallback" style="display: none; background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
           {% else %}
           <div class="event-card-banner-fallback" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
           {% endif %}
@@ -154,8 +155,9 @@
       
       <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-config">
         <div class="event-card-header-banner">
-          {% if banner_url %}
-          <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
+          {% if banner_url and not banner_url.startswith('https://previewengine') %}
+          <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+          <div class="event-card-banner-fallback" style="display: none; background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
           {% else %}
           <div class="event-card-banner-fallback" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
           {% endif %}
