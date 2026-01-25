@@ -1850,7 +1850,7 @@ TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
                             ale płatność nie została jeszcze dokończona.
                           </p>
                           <p style="margin: 0 0 24px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
-                            Twoja rezerwacja jest wciąż zarezerwowana — wystarczy kliknąć poniższy przycisk, 
+                            Twoja rejestracja jest wciąż aktualna — aby potwierdzić wystarczy kliknąć poniższy przycisk, 
                             aby dokończyć płatność i potwierdzić swoje miejsce.
                           </p>
                         </td>
