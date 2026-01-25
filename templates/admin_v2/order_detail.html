@@ -867,25 +867,82 @@
   }
 
   function cancelOrder() {
-    // Sprawdź czy zamówienie ma fakturę VAT
+    // Dane o zamówieniu
     const hasInvoice = {{ 'true' if documents and documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
+    const isPaid = {{ 'true' if order.status == 'paid' else 'false' }};
+    const isFOC = {{ 'true' if 'foc' in (order.payment_type or '')|string|lower or (order.total or 0) == 0 else 'false' }};
+    const participantCount = {{ participants|length if participants else 0 }};
+    const hasEmailedParticipants = {{ 'true' if participants and participants|selectattr('status', 'equalto', 'emailed')|list|length > 0 else 'false' }};
     
-    let infoHtml = `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+    let infoHtml = '';
+    
+    // Sekcja: Co zrobi system
+    infoHtml += `<div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Co zrobi system:</div>`;
+    
+    // Status zamówienia
+    infoHtml += `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
       <div style="display: flex; align-items: flex-start; gap: 10px;">
         <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
         <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
-          Status zamówienia zostanie zmieniony na "Anulowane". 
-          Ta operacja nie powoduje automatycznego zwrotu płatności.
+          Status zamówienia zostanie zmieniony na <strong>"Anulowane"</strong>. 
+          Ta operacja nie powoduje automatycznego zwrotu płatności przez Stripe.
         </div>
       </div>
     </div>`;
     
+    // Faktura korygująca (jeśli jest faktura VAT)
     if (hasInvoice) {
-      infoHtml += `<div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+      infoHtml += `<div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
         <div style="display: flex; align-items: flex-start; gap: 10px;">
           <i data-lucide="file-minus" style="width: 18px; height: 18px; color: hsl(212, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
           <div style="font-size: 0.8125rem; color: hsl(212, 100%, 25%);">
-            <strong>Faktura korygująca:</strong> Do wystawionej faktury VAT zostanie automatycznie wygenerowana faktura korygująca (pełna korekta).
+            <strong>Faktura korygująca:</strong> Do wystawionej faktury VAT zostanie automatycznie wygenerowana faktura korygująca (pełna korekta) w systemie wFirma.
+          </div>
+        </div>
+      </div>`;
+    }
+    
+    // Sekcja: Co dostanie klient
+    infoHtml += `<div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin: 16px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">Co dostanie klient:</div>`;
+    
+    if (isPaid && !isFOC) {
+      // Zamówienie opłacone - kupujący dostanie mail
+      infoHtml += `<div style="background: hsl(160, 82%, 95%); border: 1px solid hsl(160, 82%, 70%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="mail" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(160, 82%, 25%);">
+            <strong>Email do kupującego:</strong> Klient otrzyma email z informacją o anulowaniu zamówienia${hasInvoice ? ' oraz o wystawionej fakturze korygującej' : ''}.
+          </div>
+        </div>
+      </div>`;
+      
+      // Uczestnicy którzy dostali bilety
+      if (hasEmailedParticipants) {
+        infoHtml += `<div style="background: hsl(160, 82%, 95%); border: 1px solid hsl(160, 82%, 70%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+          <div style="display: flex; align-items: flex-start; gap: 10px;">
+            <i data-lucide="users" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+            <div style="font-size: 0.8125rem; color: hsl(160, 82%, 25%);">
+              <strong>Email do uczestników:</strong> Uczestnicy, którzy otrzymali bilety (${participantCount} os.) zostaną powiadomieni o anulowaniu ich rezerwacji.
+            </div>
+          </div>
+        </div>`;
+      }
+    } else if (isFOC) {
+      infoHtml += `<div style="background: hsl(210, 10%, 95%); border: 1px solid hsl(210, 10%, 80%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(210, 10%, 45%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(210, 10%, 35%);">
+            Zamówienie FOC (bezpłatne) — klient nie otrzyma powiadomienia email.
+          </div>
+        </div>
+      </div>`;
+    } else {
+      // Zamówienie nieopłacone
+      infoHtml += `<div style="background: hsl(210, 10%, 95%); border: 1px solid hsl(210, 10%, 80%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(210, 10%, 45%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(210, 10%, 35%);">
+            Zamówienie nieopłacone — klient nie otrzyma powiadomienia email.
           </div>
         </div>
       </div>`;
