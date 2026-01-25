@@ -3445,10 +3445,13 @@ def _build_order_history(order_id: str, order: dict):
     EMAIL_TYPE_LABELS = {
         "proforma": ("Proforma wysłana", "document"),
         "proforma_reminder": ("Przypomnienie o płatności", "email"),
+        "checkout_reminder": ("Przypomnienie o płatności", "email"),
         "payment_link": ("Link do płatności wysłany", "email"),
         "payment_confirmation": ("Potwierdzenie płatności", "payment"),
         "registration_confirmation": ("Potwierdzenie rejestracji", "email"),
         "ticket": ("Bilet wysłany", "email"),
+        "participant_ticket": ("Bilet wysłany", "email"),
+        "participant_ticket_resend": ("Bilet wysłany ponownie", "email"),
         "invoice": ("Faktura wysłana", "document"),
         "stripe_payment_link": ("Link Stripe wysłany", "payment"),
         "paid_confirmation": ("Potwierdzenie zapłaty", "payment"),

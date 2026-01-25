@@ -440,8 +440,26 @@ def event_calendar_ics(event_id: str):
     
     dtstamp = to_ical_dt(dt.datetime.utcnow())
     
-    # Opis
-    base_description = data.get("event_description") or f"Wydarzenie: {event_name}"
+    # Opis - usuń HTML i pozostaw czysty tekst
+    def strip_html(html_str: str) -> str:
+        """Usuwa tagi HTML i zwraca czysty tekst."""
+        import re
+        if not html_str:
+            return ""
+        # Zamień <br> i </p> na nowe linie
+        text = re.sub(r'<br\s*/?>', '\n', html_str, flags=re.IGNORECASE)
+        text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)
+        # Usuń wszystkie pozostałe tagi HTML
+        text = re.sub(r'<[^>]+>', '', text)
+        # Dekoduj encje HTML
+        import html
+        text = html.unescape(text)
+        # Usuń wielokrotne puste linie
+        text = re.sub(r'\n\s*\n', '\n\n', text)
+        return text.strip()
+    
+    raw_description = data.get("event_description") or f"Wydarzenie: {event_name}"
+    base_description = strip_html(raw_description)
     
     # Escape special characters for iCal
     def ical_escape(s: str) -> str:
