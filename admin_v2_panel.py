@@ -1241,13 +1241,14 @@ def order_send_reminder(order_id: str):
         template_key = "checkout_reminder"
     
     # Zapisz w mail_log
-    mail_id = save_mail_log(
+    mail_log_result = save_mail_log(
         event_order_id=order_id,
         direction="purchaser",
         template_key=template_key,
         to_email=purchaser_email,
         subject=subject,
     )
+    mail_id = mail_log_result.get("id") if mail_log_result else None
     
     # Wyślij przez Make
     result = _send_email_via_make(
@@ -1367,13 +1368,14 @@ def order_resend_ticket(order_id: str):
         subject = f"Twój bilet na {event_name}"
         
         # Zapisz w mail_log
-        mail_id = save_mail_log(
+        mail_log_result = save_mail_log(
             event_order_id=order_id,
             direction="participant",
             template_key="participant_ticket_resend",
             to_email=participant_email,
             subject=subject,
         )
+        mail_id = mail_log_result.get("id") if mail_log_result else None
         
         # Wyślij
         result = _send_email_via_make(
