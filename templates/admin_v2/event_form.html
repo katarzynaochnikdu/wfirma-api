@@ -821,9 +821,9 @@ input[type="color"].form-input {
         <select id="copy-source-event" class="form-input" onchange="loadEventFieldsForCopy()">
           <option value="">-- Wybierz wydarzenie --</option>
           {% for ev in all_events|default([]) %}
-          {% if ev.id != event.id %}
-          <option value="{{ ev.id }}" data-config='{{ ev.data|tojson|e if ev.data else "{}" }}'>
-            {{ ev.event_name or 'Wydarzenie ' ~ ev.id }}
+          {% if ev.event_id != (event.event_id if event else '') %}
+          <option value="{{ ev.event_id }}" data-config='{{ ev.data|tojson|e if ev.data else "{}" }}'>
+            {{ ev.event_name or 'Wydarzenie ' ~ ev.event_id }}
           </option>
           {% endif %}
           {% endfor %}
