@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS stripe_sessions (
   amount_total NUMERIC(12,2),
   currency TEXT,
   url TEXT,
+  expires_at TIMESTAMPTZ, -- Prawdziwy timestamp wygaśnięcia z Stripe
   raw JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -415,6 +416,9 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
 
         # 1c) Migracja events - dodanie is_active
         cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
+        
+        # 1d) Migracja stripe_sessions - dodanie expires_at (prawdziwy timestamp z Stripe)
+        cur.execute("ALTER TABLE stripe_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ")
 
         # 1d) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
         cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
@@ -1003,12 +1007,20 @@ def list_orders(
 
         cur.execute(
             f"""
-            SELECT event_order_id, event_id, purchaser_email, purchaser_first_name, purchaser_last_name,
-                   purchaser_phone, purchaser_nip, payment_option_name, payment_type, promo_code,
-                   total, currency, status, created_at, updated_at
-            FROM orders
+            SELECT o.event_order_id, o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
+                   o.purchaser_phone, o.purchaser_nip, o.payment_option_name, o.payment_type, o.promo_code,
+                   o.total, o.currency, o.status, o.created_at, o.updated_at,
+                   s.url as payment_link_url,
+                   s.expires_at as payment_link_expires_at,
+                   CASE 
+                     WHEN s.expires_at IS NULL THEN NULL
+                     WHEN s.expires_at > NOW() THEN TRUE
+                     ELSE FALSE
+                   END as payment_link_is_valid
+            FROM orders o
+            LEFT JOIN stripe_sessions s ON s.event_order_id = o.event_order_id
             {where_sql}
-            ORDER BY created_at DESC
+            ORDER BY o.created_at DESC
             LIMIT %s OFFSET %s
             """,
             params,
@@ -1270,6 +1282,7 @@ def save_stripe_session(
     amount_total: Optional[float] = None,
     currency: str = "PLN",
     raw: Optional[Dict[str, Any]] = None,
+    expires_at: Optional[int] = None,  # Unix timestamp z Stripe
 ) -> Dict[str, Any]:
     """Zapisuje Stripe checkout session."""
     ensure_schema()
@@ -1278,18 +1291,26 @@ def save_stripe_session(
     try:
         pool, conn = _with_conn()
         cur = _dict_cursor(conn)
+        
+        # Konwertuj Unix timestamp na PostgreSQL TIMESTAMPTZ
+        expires_at_ts = None
+        if expires_at:
+            from datetime import datetime, timezone
+            expires_at_ts = datetime.fromtimestamp(expires_at, tz=timezone.utc)
+        
         cur.execute(
             """
-            INSERT INTO stripe_sessions (event_order_id, checkout_session_id, url, amount_total, currency, raw)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO stripe_sessions (event_order_id, checkout_session_id, url, amount_total, currency, raw, expires_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_order_id) DO UPDATE SET
                 checkout_session_id = EXCLUDED.checkout_session_id,
                 url = EXCLUDED.url,
                 amount_total = EXCLUDED.amount_total,
                 currency = EXCLUDED.currency,
                 raw = EXCLUDED.raw,
+                expires_at = EXCLUDED.expires_at,
                 updated_at = NOW()
-            RETURNING id, event_order_id, checkout_session_id, status, url
+            RETURNING id, event_order_id, checkout_session_id, status, url, expires_at
             """,
             (
                 str(event_order_id),
@@ -1298,6 +1319,7 @@ def save_stripe_session(
                 amount_total,
                 str(currency),
                 psycopg2.extras.Json(raw or {}),  # type: ignore[attr-defined]
+                expires_at_ts,
             ),
         )
         row = cur.fetchone()

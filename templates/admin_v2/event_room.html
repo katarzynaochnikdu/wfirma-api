@@ -84,11 +84,13 @@
       <span>Komunikacja</span>
       {% if stats.email_errors > 0 %}<span class="tab-badge tab-badge-red">{{ stats.email_errors }}</span>{% endif %}
     </button>
+    {% if user_role != 'viewer' %}
     <button type="button" data-tab="config" 
        class="event-tab {% if active_tab == 'config' %}active{% endif %}">
       <i data-lucide="settings"></i>
       <span>Konfiguracja</span>
     </button>
+    {% endif %}
   </div>
 </div>
 </div><!-- END sticky-header-wrapper -->
@@ -527,10 +529,12 @@
           <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Edytuj konfigurację wydarzenia</p>
         </div>
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          {% if user_role != 'viewer' %}
           <a href="{{ url_for('admin_v2_bp.event_edit', event_id=event.event_id) }}" class="btn btn-primary">
             <i data-lucide="pencil"></i>
             Edytuj wydarzenie
           </a>
+          {% endif %}
           {% if user_role == 'admin' %}
           <button type="button" class="btn btn-outline" style="border-color: hsl(0, 84%, 60%); color: hsl(0, 84%, 60%);" onclick="deleteEventWithData()">
             <i data-lucide="trash-2"></i>

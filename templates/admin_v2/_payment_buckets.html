@@ -77,7 +77,19 @@
                   <span class="bucket-table-event">{{ order.event_name }}</span>
                 </td>
                 <td>
-                  {% if order.payment_due_date %}
+                  {% if order.payment_link_expires_at %}
+                    {% if order.payment_link_is_valid %}
+                      <span class="link-status link-valid" title="Link ważny">
+                        <i data-lucide="check-circle" style="width: 14px; height: 14px;"></i>
+                        {{ order.payment_link_expires_at.strftime('%d.%m, %H:%M') }}
+                      </span>
+                    {% else %}
+                      <span class="link-status link-expired" title="Link wygasł">
+                        <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
+                        Wygasł
+                      </span>
+                    {% endif %}
+                  {% elif order.payment_due_date %}
                     <span class="bucket-table-date">{{ order.payment_due_date.strftime('%d.%m.%Y') }}</span>
                   {% else %}
                     <span class="bucket-table-date text-muted">—</span>

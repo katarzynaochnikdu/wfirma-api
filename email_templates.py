@@ -1932,9 +1932,8 @@ TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
                   <td style="padding: 24px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
-                        <td style="font-size: 12px; color: #64748b; line-height: 1.5;">
-                          <p style="margin: 0 0 8px 0;">Masz pytania? Napisz do nas:</p>
-                          <p style="margin: 0;"><a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: none;">{md_email_kontakt}</a></p>
+                        <td style="font-size: 13px; color: #64748b; line-height: 1.5; text-align: center;">
+                          <p style="margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -2125,15 +2124,7 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
                       <tr>
                         <td align="center" style="padding-top: 16px;">
                           <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                            Nowy link ważny do: <strong>{new_expires_at}</strong>
-                          </p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td align="center" style="padding-top: 12px;">
-                          <p style="margin: 0; font-size: 11px; color: #9ca3af;">
-                            Jeśli przycisk nie działa:<br>
-                            <a href="{new_checkout_url}" style="color: {color_gradient_1}; word-break: break-all; font-size: 11px;">{new_checkout_url}</a>
+                            Link ważny do: <strong>{new_expires_at}</strong>
                           </p>
                         </td>
                       </tr>
@@ -2146,13 +2137,8 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
                   <td style="padding: 24px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
-                        <td style="font-size: 12px; color: #64748b; line-height: 1.5;">
-                          <p style="margin: 0 0 8px 0;">
-                            Jeśli nie chcesz kontynuować rezerwacji, zignoruj tę wiadomość.
-                          </p>
-                          <p style="margin: 0;">
-                            Pytania? <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: none;">{md_email_kontakt}</a>
-                          </p>
+                        <td style="font-size: 13px; color: #64748b; line-height: 1.5; text-align: center;">
+                          <p style="margin: 0;">Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a></p>
                         </td>
                       </tr>
                     </table>
@@ -2284,13 +2270,9 @@ TEMPLATE_ORDER_CANCELLED = '''<!DOCTYPE html>
           
           <!-- Footer -->
           <tr>
-            <td style="padding: 24px 32px; background: #f9fafb; border-radius: 0 0 16px 16px;">
-              <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;">
-                Pozdrawiamy,<br>
-                <strong>Zespół organizacyjny</strong>
-              </p>
-              <p style="margin: 0; font-size: 13px; color: #9ca3af;">
-                Kontakt: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1};">{md_email_kontakt}</a>
+            <td style="padding: 24px 32px; background: #f9fafb; border-radius: 0 0 16px 16px; text-align: center;">
+              <p style="margin: 0; font-size: 13px; color: #6b7280;">
+                Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>
               </p>
             </td>
           </tr>
@@ -2430,13 +2412,9 @@ TEMPLATE_PARTICIPANT_CANCELLED = '''<!DOCTYPE html>
           
           <!-- Footer -->
           <tr>
-            <td style="padding: 24px 32px; background: #f9fafb; border-radius: 0 0 16px 16px;">
-              <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;">
-                Pozdrawiamy,<br>
-                <strong>Zespół organizacyjny</strong>
-              </p>
-              <p style="margin: 0; font-size: 13px; color: #9ca3af;">
-                Kontakt: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1};">{md_email_kontakt}</a>
+            <td style="padding: 24px 32px; background: #f9fafb; border-radius: 0 0 16px 16px; text-align: center;">
+              <p style="margin: 0; font-size: 13px; color: #6b7280;">
+                Masz pytania? Skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>
               </p>
             </td>
           </tr>

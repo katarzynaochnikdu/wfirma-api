@@ -249,6 +249,7 @@ def create_checkout_session(
             }]
         
         # Parametry sesji
+        expires_at_timestamp = int(time.time()) + CHECKOUT_SESSION_TTL_SECONDS - 60
         session_params = {
             "payment_method_types": ["card", "blik", "p24"],  # Karty, BLIK, Przelewy24
             "line_items": final_line_items,
@@ -257,7 +258,7 @@ def create_checkout_session(
             "client_reference_id": event_order_id,
             # Link do płatności ważny 24h od utworzenia (Stripe Checkout Session expiry)
             # Dajemy minimalny margines -60s, żeby nie wyjść poza limit po stronie Stripe.
-            "expires_at": int(time.time()) + CHECKOUT_SESSION_TTL_SECONDS - 60,
+            "expires_at": expires_at_timestamp,
         }
         
         # Dodaj opcjonalne parametry
@@ -271,7 +272,7 @@ def create_checkout_session(
         # Utwórz sesję
         session = stripe.checkout.Session.create(**session_params)
         
-        # Zapisz do bazy
+        # Zapisz do bazy z prawdziwym expires_at
         save_stripe_session(
             event_order_id=event_order_id,
             checkout_session_id=session.id,
@@ -279,6 +280,7 @@ def create_checkout_session(
             amount_total=amount_cents / 100.0,
             currency=currency.upper(),
             raw={"session_id": session.id, "url": session.url},
+            expires_at=expires_at_timestamp,  # Prawdziwy timestamp wygaśnięcia
         )
         
         return {

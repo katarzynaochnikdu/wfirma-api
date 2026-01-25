@@ -1335,15 +1335,15 @@ def order_send_reminder(order_id: str):
     
     if stripe_session and stripe_session.get("url"):
         checkout_url = stripe_session.get("url")
-        # Sprawdź czy link nie wygasł
-        session_created = stripe_session.get("created_at")
-        if session_created:
+        # Sprawdź czy link nie wygasł (używamy prawdziwego expires_at z bazy)
+        expires_at = stripe_session.get("expires_at")
+        if expires_at:
             try:
-                if hasattr(session_created, "tzinfo") and session_created.tzinfo:
-                    now = datetime.now(session_created.tzinfo)
+                if hasattr(expires_at, "tzinfo") and expires_at.tzinfo:
+                    now = datetime.now(expires_at.tzinfo)
                 else:
                     now = datetime.now()
-                expires_at = session_created + timedelta(hours=24)
+                    
                 if now > expires_at:
                     checkout_url = None  # Link wygasł
                 else:
@@ -1353,8 +1353,35 @@ def order_send_reminder(order_id: str):
                     expires_at_str = expires_at.strftime("%d.%m.%Y, %H:%M")
             except Exception as e:
                 print(f"[order_send_reminder] Błąd obliczania expires_at: {e}")
-                expires_in = "24 godziny"
-                expires_at_str = "wkrótce"
+                # Fallback - szacuj po created_at (dla starych rekordów bez expires_at)
+                session_created = stripe_session.get("created_at")
+                if session_created:
+                    expires_at = session_created + timedelta(hours=24)
+                    expires_at_str = expires_at.strftime("%d.%m.%Y, %H:%M")
+                    expires_in = "24 godziny"
+                else:
+                    expires_in = "wkrótce"
+                    expires_at_str = "wkrótce"
+        else:
+            # Brak expires_at - fallback do starej logiki (dla starych rekordów)
+            session_created = stripe_session.get("created_at")
+            if session_created:
+                try:
+                    if hasattr(session_created, "tzinfo") and session_created.tzinfo:
+                        now = datetime.now(session_created.tzinfo)
+                    else:
+                        now = datetime.now()
+                    expires_at = session_created + timedelta(hours=24)
+                    if now > expires_at:
+                        checkout_url = None
+                    else:
+                        time_left = expires_at - now
+                        hours_left = int(time_left.total_seconds() / 3600)
+                        expires_in = f"{hours_left} godzin" if hours_left > 1 else "mniej niż godzina"
+                        expires_at_str = expires_at.strftime("%d.%m.%Y, %H:%M")
+                except Exception:
+                    expires_in = "24 godziny"
+                    expires_at_str = "wkrótce"
     
     # Jeśli nie ma aktywnego linku Stripe i nie jest to proforma - błąd
     if not checkout_url and not is_proforma:
@@ -2720,6 +2747,15 @@ def event_new():
     from pg_storage import upsert_event
     
     user = _get_current_admin_user()
+    
+    # Tylko admin może tworzyć nowe wydarzenia
+    if not _is_admin_user(user):
+        return render_template(
+            "admin_v2/base.html",
+            active_page="",
+            **_get_common_context(user),
+        ), 403
+    
     error = None
     success = None
     
@@ -2802,9 +2838,13 @@ def event_edit(event_id: str):
             **_get_common_context(user),
         ), 403
     
-    # Viewer nie może edytować
-    if request.method == "POST" and _is_viewer(user):
-        return jsonify({"success": False, "error": "Nie masz uprawnień do edycji"}), 403
+    # Viewer nie może edytować wydarzeń - blokada dla GET i POST
+    if _is_viewer(user):
+        return render_template(
+            "admin_v2/base.html",
+            active_page="",
+            **_get_common_context(user),
+        ), 403
     
     event = get_event(event_id)
     if not event:
