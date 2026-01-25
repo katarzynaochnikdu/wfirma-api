@@ -86,6 +86,7 @@
       {% set current_idx = status_order.index(order.status) if order.status in status_order else -1 %}
       {% set is_cancelled = order.status == 'cancelled' %}
       {% set is_refunded = order.status == 'refunded' %}
+      {% set is_stripe_payment = 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
       
       <div class="status-stepper">
         <!-- Główna ścieżka -->
@@ -150,9 +151,9 @@
             </button>
             <span class="stepper-label">Anuluj</span>
           </div>
-          {% if current_idx == 2 %}
+          {% if current_idx == 2 and is_stripe_payment %}
           <div class="stepper-step">
-            <button type="button" class="stepper-dot stepper-dot-muted clickable" onclick="handleStatusChange('refunded')" title="Zwróć zamówienie">
+            <button type="button" class="stepper-dot stepper-dot-muted clickable" onclick="handleStatusChange('refunded')" title="Zwrot płatności Stripe">
               <i data-lucide="rotate-ccw"></i>
             </button>
             <span class="stepper-label">Zwrot</span>
@@ -464,10 +465,12 @@
       </div>
       <div class="card-content">
         <div class="quick-actions">
+          {% if order.status != 'paid' %}
           <button class="btn btn-outline" onclick="sendReminder()">
             <i data-lucide="send"></i>
             Wyślij przypomnienie o płatności
           </button>
+          {% endif %}
           <button class="btn btn-outline" onclick="resendTickets()">
             <i data-lucide="mail"></i>
             Wyślij potwierdzenie uczestnictwa
