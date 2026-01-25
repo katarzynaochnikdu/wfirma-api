@@ -4055,7 +4055,11 @@ def event_room(event_id: str):
     pending_orders = [o for o in orders if o.get("status") == "pending_payment"]
     total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
     pending_revenue = sum(float(o.get("total") or 0) for o in pending_orders)
-    email_errors = len([e for e in emails if e.get("status") in ("failed", "error")])
+    
+    # Filtruj emaile - tylko zewnętrzne (nie internal_*) i wysłane (nie queued)
+    external_emails = [e for e in emails if not (e.get("type") or "").lower().startswith("internal")]
+    sent_emails = [e for e in external_emails if e.get("status") in ("sent", "delivered")]
+    email_errors = len([e for e in external_emails if e.get("status") in ("failed", "error", "bounced")])
     notified = len([p for p in participants if p.get("status") == "emailed"])
     
     stats = {
@@ -4066,7 +4070,7 @@ def event_room(event_id: str):
         "revenue": total_revenue,
         "pending_revenue": pending_revenue,
         "email_errors": email_errors,
-        "emails_sent": len(emails),
+        "emails_sent": len(sent_emails),
         "notified": notified,
         "pending_notification": len(participants) - notified,
         "delivery_rate": None,  # Brak danych
