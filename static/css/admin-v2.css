@@ -467,6 +467,10 @@
     color: var(--muted-foreground);
   }
   
+  .filter-select {
+    position: relative;
+  }
+  
   .filter-select select {
     width: 100%;
     padding: 0.5rem 2rem 0.5rem 0.75rem;

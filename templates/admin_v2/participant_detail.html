@@ -64,13 +64,13 @@
     </div>
   </div>
   
-  <!-- Bilet -->
+  <!-- Typ biletu (nazwa produktu) -->
   <div class="operational-status-badge operational-status-neutral">
     <div class="operational-icon-wrapper">
       <i data-lucide="ticket"></i>
     </div>
     <div class="operational-status-content">
-      <span class="operational-status-label">Bilet</span>
+      <span class="operational-status-label">Typ biletu</span>
       <div class="operational-status-value">
         <span>{{ participant.ticket_name or 'Standard' }}</span>
       </div>
@@ -320,8 +320,8 @@
       <div class="card-content">
         <div class="quick-actions">
           <button class="btn btn-outline" onclick="sendTicketEmail()">
-            <i data-lucide="ticket"></i>
-            Wyślij bilet
+            <i data-lucide="mail-check"></i>
+            Wyślij potwierdzenie rezerwacji
           </button>
           <button class="btn btn-outline" onclick="sendReminderEmail()">
             <i data-lucide="mail"></i>
@@ -364,18 +364,18 @@
   }
 
   function sendTicketEmail() {
-    if (confirm('Czy na pewno chcesz wysłać bilet do uczestnika?')) {
+    if (confirm('Czy na pewno chcesz wysłać potwierdzenie rezerwacji do uczestnika?')) {
       fetch(`/api/participants/${participantId}/send-ticket`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
           if (data.success) {
-            showToast('Bilet został wysłany', 'success');
+            showToast('Potwierdzenie rezerwacji zostało wysłane', 'success');
             location.reload();
           } else {
             showToast('Błąd wysyłki: ' + (data.error || 'Nieznany błąd'), 'error');
           }
         })
-        .catch(err => showToast('Błąd wysyłki biletu', 'error'));
+        .catch(err => showToast('Błąd wysyłki potwierdzenia', 'error'));
     }
   }
 

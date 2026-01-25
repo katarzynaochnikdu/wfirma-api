@@ -1400,7 +1400,7 @@ def order_resend_ticket(order_id: str):
             errors.append(f"Błąd generowania emaila dla {participant_email}: {e}")
             continue
         
-        subject = f"Twój bilet na {event_name}"
+        subject = f"Potwierdzenie rezerwacji na {event_name}"
         
         # Zapisz w mail_log
         mail_log_result = save_mail_log(
@@ -1511,20 +1511,31 @@ def order_cancel(order_id: str):
                 if raw_data.get("stripe_mode") == "sandbox":
                     is_sandbox = True
                 
-                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe ({'SANDBOX' if is_sandbox else 'PROD'}), wykonuję zwrot...")
+                # Dodatkowe logowanie dla debugowania
+                print(f"[CANCEL DEBUG] stripe_session keys: {list(stripe_session.keys())}")
+                print(f"[CANCEL DEBUG] checkout_session_id starts with cs_test_: {checkout_session_id.startswith('cs_test_')}")
+                print(f"[CANCEL DEBUG] raw_data.stripe_mode: {raw_data.get('stripe_mode')}")
+                
+                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe ({'SANDBOX' if is_sandbox else 'PROD'})")
+                print(f"[CANCEL] payment_intent_id={payment_intent_id}, checkout_session_id={checkout_session_id[:30]}...")
                 
                 try:
                     import stripe
                     # Użyj odpowiedniego klucza API (sandbox lub produkcja)
                     if is_sandbox:
                         stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY_SANDBOX")
+                        key_name = "SANDBOX"
                     else:
                         stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
+                        key_name = "PROD"
+                    
+                    print(f"[CANCEL] Używam klucza Stripe: {key_name}, key_exists={bool(stripe_api_key)}")
                     
                     if stripe_api_key:
                         stripe.api_key = stripe_api_key
                         
                         # Wykonaj zwrot
+                        print(f"[CANCEL] Wywołuję stripe.Refund.create(payment_intent={payment_intent_id})")
                         refund = stripe.Refund.create(
                             payment_intent=payment_intent_id,
                             reason="requested_by_customer",
@@ -1785,13 +1796,37 @@ def order_refund(order_id: str):
     if reason not in ["duplicate", "fraudulent", "requested_by_customer"]:
         reason = "requested_by_customer"
     
+    # Wykryj czy to sandbox po checkout_session_id (cs_test_*) lub raw.stripe_mode
+    checkout_session_id = stripe_session.get("checkout_session_id") or ""
+    is_sandbox = checkout_session_id.startswith("cs_test_")
+    raw_data = stripe_session.get("raw") or {}
+    if isinstance(raw_data, str):
+        try:
+            import json
+            raw_data = json.loads(raw_data)
+        except:
+            raw_data = {}
+    if raw_data.get("stripe_mode") == "sandbox":
+        is_sandbox = True
+    
+    print(f"[order_refund] order={order_id}, payment_intent={payment_intent_id}")
+    print(f"[order_refund] checkout_session_id={checkout_session_id[:30]}..., is_sandbox={is_sandbox}")
+    
     try:
         import stripe
         
-        # Użyj odpowiedniego klucza API
-        stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
+        # Użyj odpowiedniego klucza API (sandbox lub produkcja)
+        if is_sandbox:
+            stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY_SANDBOX")
+            key_name = "STRIPE_RENDER_API_KEY_SANDBOX"
+        else:
+            stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
+            key_name = "STRIPE_RENDER_API_KEY"
+        
+        print(f"[order_refund] using_key={key_name}, key_exists={bool(stripe_api_key)}")
+        
         if not stripe_api_key:
-            return jsonify({"success": False, "error": "Brak konfiguracji Stripe API"}), 500
+            return jsonify({"success": False, "error": f"Brak konfiguracji {key_name}"}), 500
         
         stripe.api_key = stripe_api_key
         
@@ -4771,7 +4806,7 @@ def template_preview(template_key: str):
         "registration_confirmation": f"Potwierdzenie rejestracji - {sample_data['event_name']}",
         "checkout_reminder": f"Przypomnienie o płatności - {sample_data['event_name']}",
         "checkout_expired_new_link": f"Nowy link do płatności - {sample_data['event_name']}",
-        "participant_ticket": f"Twój bilet na {sample_data['event_name']}",
+        "participant_ticket": f"Potwierdzenie rezerwacji na {sample_data['event_name']}",
         "internal_order_received": f"[Medidesk] Nowe zamówienie - {sample_data['event_name']}",
         "internal_order_paid": f"[Medidesk] Zamówienie opłacone - {sample_data['event_name']}",
         "internal_payment_expired": f"[Medidesk] Płatność wygasła - {sample_data['event_name']}",

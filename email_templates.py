@@ -2402,7 +2402,7 @@ TEMPLATE_PARTICIPANT_CANCELLED = '''<!DOCTYPE html>
               <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 16px; margin: 24px 0;">
                 <div style="font-size: 14px; color: #854d0e;">
                   <strong>Co to oznacza?</strong><br>
-                  Twój bilet został unieważniony i nie będziesz mógł/mogła wziąć udziału w wydarzeniu na podstawie tej rezerwacji.
+                  Twoja rezerwacja miejsca została anulowana i nie będziesz mógł/mogła wziąć udziału w wydarzeniu na jej podstawie.
                 </div>
               </div>
               

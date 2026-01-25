@@ -865,7 +865,7 @@
         <div style="display: flex; align-items: flex-start; gap: 10px;">
           <i data-lucide="users" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
           <div style="font-size: 0.8125rem; color: hsl(160, 82%, 25%);">
-            <strong>Email do uczestników:</strong> Bilety/potwierdzenia rezerwacji zostaną wysłane do ${participantCount} uczestnik${participantCount === 1 ? 'a' : 'ów'}.
+            <strong>Email do uczestników:</strong> Potwierdzenia rezerwacji zostaną wysłane do ${participantCount} uczestnik${participantCount === 1 ? 'a' : 'ów'}.
           </div>
         </div>
       </div>`;
@@ -874,7 +874,7 @@
         <div style="display: flex; align-items: flex-start; gap: 10px;">
           <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(210, 10%, 45%); flex-shrink: 0; margin-top: 2px;"></i>
           <div style="font-size: 0.8125rem; color: hsl(210, 10%, 35%);">
-            Brak uczestników w zamówieniu — bilety nie zostaną wysłane.
+            Brak uczestników w zamówieniu — emaile nie zostaną wysłane.
           </div>
         </div>
       </div>`;
@@ -961,25 +961,25 @@
 
   function resendTickets() {
     showActionModal({
-      title: 'Wyślij potwierdzenie uczestnictwa',
-      icon: 'mail',
+      title: 'Wyślij potwierdzenie rezerwacji',
+      icon: 'mail-check',
       iconColor: 'hsl(142, 71%, 45%)',
-      text: 'Do wszystkich uczestników tego zamówienia zostaną wysłane emaile z potwierdzeniem rejestracji i biletem.',
+      text: 'Do wszystkich uczestników tego zamówienia zostaną wysłane emaile z potwierdzeniem rezerwacji miejsca na wydarzeniu.',
       info: `<div style="background: hsl(142, 71%, 97%); border: 1px solid hsl(142, 71%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
         <div style="display: flex; align-items: flex-start; gap: 10px;">
-          <i data-lucide="users" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
           <div style="font-size: 0.8125rem; color: hsl(142, 71%, 25%);">
-            Każdy uczestnik otrzyma osobny email ze swoim biletem i danymi wydarzenia.
+            Każdy uczestnik otrzyma osobny email z potwierdzeniem rezerwacji. Bilet z kodem QR zostanie wysłany z Backstage przed wydarzeniem.
           </div>
         </div>
       </div>`,
-      confirmText: 'Wyślij bilety',
+      confirmText: 'Wyślij potwierdzenia',
       onConfirm: () => {
         fetch(`/admin-v2/orders/${orderId}/resend-ticket`, { method: 'POST' })
           .then(response => response.json())
           .then(data => {
             if (data.success) {
-              showToast('Bilety zostały wysłane', 'success');
+              showToast('Potwierdzenia rezerwacji zostały wysłane', 'success');
               location.reload();
             } else {
               showToast(data.error || 'Błąd wysyłki', 'error');
