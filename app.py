@@ -2074,7 +2074,25 @@ def wfirma_create_correction(
         # #endregion
         
         if invoice_result and invoice_result.get('id'):
-            print(f"[WFIRMA DEBUG] Correction created: id={invoice_result.get('id')}, number={invoice_result.get('fullnumber')}")
+            correction_id = invoice_result.get('id')
+            correction_number = invoice_result.get('fullnumber')
+            print(f"[WFIRMA DEBUG] Correction created: id={correction_id}, number={correction_number}")
+            
+            # Wyślij korektę emailem jeśli kontrahent ma email
+            if contractor_email and '@' in contractor_email:
+                try:
+                    print(f"[WFIRMA DEBUG] Sending correction email to: {contractor_email}")
+                    resp_email = wfirma_send_invoice_email(token, str(correction_id), contractor_email, company_id)
+                    print(f"[WFIRMA DEBUG] send correction email status: {resp_email.status_code}")
+                    if resp_email.status_code == 200:
+                        print(f"[WFIRMA DEBUG] Correction email sent successfully to {contractor_email}")
+                    else:
+                        print(f"[WFIRMA DEBUG] Correction email failed: {resp_email.text[:300] if resp_email.text else 'no body'}")
+                except Exception as email_ex:
+                    print(f"[WFIRMA DEBUG] Exception sending correction email: {email_ex}")
+            else:
+                print(f"[WFIRMA DEBUG] Skipping correction email - no valid contractor email")
+            
             return invoice_result, resp
         else:
             print(f"[WFIRMA DEBUG] Nie udało się utworzyć korekty: {resp.text[:500] if resp and resp.text else 'brak odpowiedzi'}")
