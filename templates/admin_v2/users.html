@@ -10,7 +10,7 @@
     <p class="page-description">Zarządzaj kontami administratorów panelu</p>
   </div>
   <div class="header-actions">
-    <a href="{{ url_for('admin_bp.user_new') }}" class="btn btn-primary">
+    <a href="{{ url_for('admin_v2_bp.user_new') }}" class="btn btn-primary">
       <i data-lucide="plus"></i>
       Nowe konto
     </a>
@@ -102,12 +102,15 @@
         <td class="text-muted">{{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Nigdy' }}</td>
         <td>
           <div style="display: flex; gap: 0.25rem;">
-            <a href="{{ url_for('admin_bp.user_access', user_id=user.id) }}" class="btn-icon" title="Edytuj uprawnienia">
+            <a href="{{ url_for('admin_v2_bp.user_edit', user_id=user.id) }}" class="btn-icon" title="Edytuj uprawnienia">
               <i data-lucide="settings"></i>
             </a>
-            <a href="{{ url_for('admin_bp.user_reset_password', user_id=user.id) }}" class="btn-icon" title="Reset hasła">
+            <button type="button" class="btn-icon" title="Reset hasła" onclick="resetPassword({{ user.id }}, '{{ user.email }}')">
               <i data-lucide="key"></i>
-            </a>
+            </button>
+            <button type="button" class="btn-icon btn-icon-danger" title="Włącz/wyłącz konto" onclick="toggleActive({{ user.id }}, {{ 'true' if user.is_active else 'false' }})">
+              <i data-lucide="{{ 'user-x' if user.is_active else 'user-check' }}"></i>
+            </button>
           </div>
         </td>
       </tr>
@@ -127,4 +130,50 @@
   </div>
   {% endif %}
 </div>
+
+<style>
+.btn-icon-danger {
+  color: hsl(0, 70%, 50%);
+}
+.btn-icon-danger:hover {
+  background: hsl(0, 70%, 97%);
+}
+</style>
+
+<script>
+function resetPassword(userId, email) {
+  if (!confirm(`Czy na pewno chcesz zresetować hasło dla ${email}? Nowe hasło zostanie wysłane na email.`)) {
+    return;
+  }
+  
+  fetch(`/admin-v2/users/${userId}/reset-password`, { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert(data.message);
+      } else {
+        alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+      }
+    })
+    .catch(err => alert('Błąd połączenia'));
+}
+
+function toggleActive(userId, currentActive) {
+  const action = currentActive ? 'dezaktywować' : 'aktywować';
+  if (!confirm(`Czy na pewno chcesz ${action} to konto?`)) {
+    return;
+  }
+  
+  fetch(`/admin-v2/users/${userId}/toggle-active`, { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();
+      } else {
+        alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+      }
+    })
+    .catch(err => alert('Błąd połączenia'));
+}
+</script>
 {% endblock %}

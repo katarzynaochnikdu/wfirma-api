@@ -27,7 +27,12 @@ from pg_storage import (
     get_admin_user_by_email,
     get_admin_user_by_id,
     list_admin_users,
+    create_admin_user,
     update_admin_user_last_login,
+    update_admin_user_password,
+    update_admin_user_active,
+    update_admin_user_access,
+    delete_admin_user,
     increment_admin_user_failed_login,
     insert_admin_audit_log,
     list_admin_audit_log,
@@ -3075,19 +3080,19 @@ def events_list():
             active_events.append(e)
     
     # Funkcja pomocnicza do grupowania po miesiącach/latach
-    def group_by_month(events_list):
-        """Grupuj wydarzenia po miesiącu/roku, sortuj malejąco."""
+    def group_by_month(events_list, ascending=False):
+        """Grupuj wydarzenia po miesiącu/roku, sortuj chronologicznie."""
         from collections import defaultdict
         from datetime import datetime
         
         groups = defaultdict(list)
         for event in events_list:
             event_data = event.get("data") or {}
-            # Pobierz datę wydarzenia
-            date_str = event_data.get("eventDate") or event_data.get("event_date") or ""
+            # Pobierz datę wydarzenia - użyj event_date_time lub eventDate
+            date_str = event_data.get("event_date_time") or event_data.get("eventDate") or event_data.get("event_date") or ""
             if date_str:
                 try:
-                    # Parsuj datę (format: YYYY-MM-DD)
+                    # Parsuj datę (format: YYYY-MM-DD lub YYYY-MM-DDTHH:MM)
                     dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
                     month_key = dt.strftime("%Y-%m")
                     month_label = dt.strftime("%B %Y").capitalize()
@@ -3106,19 +3111,22 @@ def events_list():
             else:
                 groups[("0000-00", "Bez daty")].append(event)
         
-        # Sortuj grupy malejąco po kluczu (data)
+        # Sortuj grupy chronologicznie (ascending dla aktywnych - od najbliższych)
         sorted_groups = []
-        for (key, label), events in sorted(groups.items(), key=lambda x: x[0][0], reverse=True):
-            # Sortuj wydarzenia w grupie po dacie malejąco
-            events_sorted = sorted(events, key=lambda e: (e.get("data") or {}).get("eventDate") or "", reverse=True)
+        for (key, label), events in sorted(groups.items(), key=lambda x: x[0][0], reverse=not ascending):
+            # Sortuj wydarzenia w grupie po dacie (użyj pełnej daty z czasem)
+            def get_event_datetime(e):
+                ed = e.get("data") or {}
+                return ed.get("event_date_time") or ed.get("eventDate") or ""
+            events_sorted = sorted(events, key=get_event_datetime, reverse=not ascending)
             sorted_groups.append({"key": key, "label": label, "events": events_sorted})
         
         return sorted_groups
     
-    # Pogrupuj każdą kategorię
-    active_grouped = group_by_month(active_events)
-    config_grouped = group_by_month(config_events)
-    inactive_grouped = group_by_month(inactive_events)
+    # Pogrupuj każdą kategorię (aktywne rosnąco - od najbliższych, reszta malejąco)
+    active_grouped = group_by_month(active_events, ascending=True)
+    config_grouped = group_by_month(config_events, ascending=True)
+    inactive_grouped = group_by_month(inactive_events, ascending=False)
     
     return render_template(
         "admin_v2/events.html",
@@ -3441,6 +3449,333 @@ def users_list():
         users=users,
         **_get_common_context(user),
     )
+
+
+# Opcje uprawnień do stron
+ADMIN_PAGE_OPTIONS_V2 = [
+    ("events", "Wydarzenia"),
+    ("orders", "Zamówienia"),
+    ("participants", "Uczestnicy"),
+    ("users", "Konta i uprawnienia"),
+    ("audit", "Log audytu"),
+]
+
+
+@admin_v2_bp.route("/users/new", methods=["GET", "POST"])
+@_require_permission("users")
+def user_new():
+    """Tworzenie nowego konta administratora."""
+    from werkzeug.security import generate_password_hash
+    import secrets
+    import string
+    
+    user = _get_current_admin_user()
+    events = list_events(limit=200) or []
+    error = None
+    success = None
+    
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        first_name = (request.form.get("first_name") or "").strip()
+        last_name = (request.form.get("last_name") or "").strip()
+        role = (request.form.get("role") or "user").strip().lower()
+        allowed_pages = request.form.getlist("allowed_pages") or []
+        allowed_events = request.form.getlist("allowed_events") or []
+        
+        if not email or "@" not in email:
+            error = "Podaj prawidłowy adres email"
+        elif get_admin_user_by_email(email):
+            error = "Konto z tym emailem już istnieje"
+        elif role not in ("admin", "user", "viewer"):
+            error = "Nieprawidłowa rola użytkownika"
+        else:
+            # Generuj tymczasowe hasło
+            alphabet = string.ascii_letters + string.digits
+            temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            password_hash = generate_password_hash(temp_password)
+            
+            new_user = create_admin_user(
+                email=email,
+                password_hash=password_hash,
+                first_name=first_name,
+                last_name=last_name,
+                role=role,
+                allowed_pages=allowed_pages if role != "admin" else [],
+                allowed_events=allowed_events if role == "viewer" else [],
+                must_change_password=True,
+            )
+            
+            if new_user:
+                # Wyślij email z hasłem
+                from backstage_engine import _send_email_via_make
+                email_result = _send_email_via_make(
+                    to_email=email,
+                    subject="Twoje konto w panelu administracyjnym Medidesk",
+                    html_content=f"""
+                    <p>Cześć {first_name or 'Użytkowniku'},</p>
+                    <p>Utworzono dla Ciebie konto w panelu administracyjnym.</p>
+                    <p><strong>Login:</strong> {email}<br>
+                    <strong>Hasło tymczasowe:</strong> {temp_password}</p>
+                    <p>Po pierwszym logowaniu zostaniesz poproszony o zmianę hasła.</p>
+                    <p><a href="https://wfirma-api.onrender.com/admin-v2/login">Zaloguj się tutaj</a></p>
+                    """,
+                    from_name="Panel Medidesk",
+                )
+                
+                # Log audytu
+                insert_admin_audit_log(
+                    action="create_user",
+                    admin_user_id=user["id"] if user else None,
+                    target_email=email,
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                    details=f"role={role}, email_sent={email_result.get('success', False)}"
+                )
+                
+                success = f"Konto utworzone. Hasło zostało wysłane na {email}."
+            else:
+                error = "Nie udało się utworzyć konta"
+    
+    return render_template(
+        "admin_v2/user_form.html",
+        active_page="users",
+        mode="new",
+        target_user=None,
+        events=events,
+        page_options=ADMIN_PAGE_OPTIONS_V2,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+@_require_permission("users")
+def user_edit(user_id: int):
+    """Edycja uprawnień użytkownika."""
+    user = _get_current_admin_user()
+    target_user = get_admin_user_by_id(user_id)
+    
+    if not target_user:
+        return redirect(url_for("admin_v2_bp.users_list"))
+    
+    events = list_events(limit=200) or []
+    error = None
+    success = None
+    
+    # Pobierz aktualne uprawnienia
+    allowed_current = target_user.get("allowed_pages") or []
+    if isinstance(allowed_current, str):
+        import json
+        try:
+            allowed_current = json.loads(allowed_current)
+        except:
+            allowed_current = []
+    
+    allowed_events_current = target_user.get("allowed_events") or []
+    if isinstance(allowed_events_current, str):
+        import json
+        try:
+            allowed_events_current = json.loads(allowed_events_current)
+        except:
+            allowed_events_current = []
+    
+    # Admin ma pełne uprawnienia
+    if (target_user.get("role") or "user").lower() == "admin":
+        allowed_current = [k for k, _ in ADMIN_PAGE_OPTIONS_V2]
+    
+    if request.method == "POST":
+        first_name = (request.form.get("first_name") or "").strip()
+        last_name = (request.form.get("last_name") or "").strip()
+        role = (request.form.get("role") or "user").strip().lower()
+        allowed_pages = request.form.getlist("allowed_pages") or []
+        allowed_events = request.form.getlist("allowed_events") or []
+        is_active = request.form.get("is_active") == "1"
+        
+        if role not in ("admin", "user", "viewer"):
+            error = "Nieprawidłowa rola użytkownika"
+        else:
+            ok = update_admin_user_access(
+                user_id=user_id,
+                first_name=first_name,
+                last_name=last_name,
+                role=role,
+                allowed_pages=allowed_pages if role != "admin" else [],
+                allowed_events=allowed_events if role == "viewer" else [],
+                is_active=is_active,
+            )
+            
+            if ok:
+                insert_admin_audit_log(
+                    action="update_user_access",
+                    admin_user_id=user["id"] if user else None,
+                    target_email=target_user["email"],
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                    details=f"role={role}, is_active={is_active}"
+                )
+                success = "Zapisano zmiany"
+                
+                # Odśwież dane użytkownika
+                target_user = get_admin_user_by_id(user_id) or target_user
+                allowed_current = target_user.get("allowed_pages") or []
+                if isinstance(allowed_current, str):
+                    import json
+                    try:
+                        allowed_current = json.loads(allowed_current)
+                    except:
+                        allowed_current = []
+                allowed_events_current = target_user.get("allowed_events") or []
+                if isinstance(allowed_events_current, str):
+                    import json
+                    try:
+                        allowed_events_current = json.loads(allowed_events_current)
+                    except:
+                        allowed_events_current = []
+                if (target_user.get("role") or "user").lower() == "admin":
+                    allowed_current = [k for k, _ in ADMIN_PAGE_OPTIONS_V2]
+            else:
+                error = "Nie udało się zapisać zmian"
+    
+    return render_template(
+        "admin_v2/user_form.html",
+        active_page="users",
+        mode="edit",
+        target_user=target_user,
+        events=events,
+        page_options=ADMIN_PAGE_OPTIONS_V2,
+        allowed_current=allowed_current,
+        allowed_events_current=allowed_events_current,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/users/<int:user_id>/reset-password", methods=["POST"])
+@_require_permission("users")
+def user_reset_password(user_id: int):
+    """Reset hasła użytkownika (AJAX)."""
+    from flask import jsonify
+    from werkzeug.security import generate_password_hash
+    import secrets
+    import string
+    
+    user = _get_current_admin_user()
+    target_user = get_admin_user_by_id(user_id)
+    
+    if not target_user:
+        return jsonify({"success": False, "error": "Nie znaleziono konta"}), 404
+    
+    # Generuj nowe hasło
+    alphabet = string.ascii_letters + string.digits
+    temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+    password_hash = generate_password_hash(temp_password)
+    
+    ok = update_admin_user_password(user_id, password_hash, must_change_password=True)
+    
+    if ok:
+        # Wyślij email z nowym hasłem
+        from backstage_engine import _send_email_via_make
+        email_result = _send_email_via_make(
+            to_email=target_user["email"],
+            subject="Reset hasła - Panel administracyjny Medidesk",
+            html_content=f"""
+            <p>Cześć {target_user.get('first_name') or 'Użytkowniku'},</p>
+            <p>Twoje hasło zostało zresetowane.</p>
+            <p><strong>Nowe hasło tymczasowe:</strong> {temp_password}</p>
+            <p>Po zalogowaniu zostaniesz poproszony o zmianę hasła.</p>
+            <p><a href="https://wfirma-api.onrender.com/admin-v2/login">Zaloguj się tutaj</a></p>
+            """,
+            from_name="Panel Medidesk",
+        )
+        
+        insert_admin_audit_log(
+            action="reset_password",
+            admin_user_id=user["id"] if user else None,
+            target_email=target_user["email"],
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            details=f"email_sent={email_result.get('success', False)}"
+        )
+        
+        return jsonify({"success": True, "message": f"Nowe hasło wysłane na {target_user['email']}"})
+    else:
+        return jsonify({"success": False, "error": "Nie udało się zresetować hasła"}), 500
+
+
+@admin_v2_bp.route("/users/<int:user_id>/toggle-active", methods=["POST"])
+@_require_permission("users")
+def user_toggle_active(user_id: int):
+    """Włącz/wyłącz konto (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    target_user = get_admin_user_by_id(user_id)
+    
+    if not target_user:
+        return jsonify({"success": False, "error": "Nie znaleziono konta"}), 404
+    
+    # Nie można dezaktywować własnego konta
+    if user and user["id"] == user_id:
+        return jsonify({"success": False, "error": "Nie możesz dezaktywować własnego konta"}), 400
+    
+    new_status = not target_user.get("is_active", True)
+    ok = update_admin_user_active(user_id, new_status)
+    
+    if ok:
+        insert_admin_audit_log(
+            action="toggle_user_active",
+            admin_user_id=user["id"] if user else None,
+            target_email=target_user["email"],
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            details=f"is_active={new_status}"
+        )
+        
+        return jsonify({
+            "success": True, 
+            "is_active": new_status,
+            "message": "Konto aktywowane" if new_status else "Konto dezaktywowane"
+        })
+    else:
+        return jsonify({"success": False, "error": "Nie udało się zmienić statusu"}), 500
+
+
+@admin_v2_bp.route("/users/<int:user_id>/delete", methods=["POST"])
+@_require_permission("users")
+def user_delete(user_id: int):
+    """Usuń konto (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    target_user = get_admin_user_by_id(user_id)
+    
+    if not target_user:
+        return jsonify({"success": False, "error": "Nie znaleziono konta"}), 404
+    
+    # Nie można usunąć własnego konta
+    if user and user["id"] == user_id:
+        return jsonify({"success": False, "error": "Nie możesz usunąć własnego konta"}), 400
+    
+    # Tylko admin może usuwać konta
+    if user and user.get("role") != "admin":
+        return jsonify({"success": False, "error": "Tylko administrator może usuwać konta"}), 403
+    
+    ok = delete_admin_user(user_id)
+    
+    if ok:
+        insert_admin_audit_log(
+            action="delete_user",
+            admin_user_id=user["id"] if user else None,
+            target_email=target_user["email"],
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+        )
+        
+        return jsonify({"success": True, "message": "Konto zostało usunięte"})
+    else:
+        return jsonify({"success": False, "error": "Nie udało się usunąć konta"}), 500
 
 
 @admin_v2_bp.route("/audit-log", methods=["GET"])

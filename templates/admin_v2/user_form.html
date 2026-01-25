@@ -1,0 +1,473 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}{{ 'Nowe konto' if mode == 'new' else 'Edytuj uprawnienia' }}{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ 'Nowe konto' if mode == 'new' else 'Edytuj uprawnienia' }}</h1>
+    <p class="page-description">
+      {% if mode == 'new' %}
+      Utwórz nowe konto administratora
+      {% else %}
+      {{ target_user.email }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('admin_v2_bp.users_list') }}" class="btn btn-ghost">
+      <i data-lucide="arrow-left"></i>
+      Powrót do listy
+    </a>
+  </div>
+</div>
+
+<!-- MESSAGES -->
+{% if error %}
+<div class="alert alert-error" style="margin-bottom: 24px;">
+  <i data-lucide="alert-circle"></i>
+  <span>{{ error }}</span>
+</div>
+{% endif %}
+
+{% if success %}
+<div class="alert alert-success" style="margin-bottom: 24px;">
+  <i data-lucide="check-circle"></i>
+  <span>{{ success }}</span>
+</div>
+{% endif %}
+
+<!-- FORM -->
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">{{ 'Dane nowego konta' if mode == 'new' else 'Dane i uprawnienia' }}</h3>
+  </div>
+  <div class="card-content">
+    <form method="post" class="form-grid">
+      
+      {% if mode == 'new' %}
+      <!-- Email (tylko przy tworzeniu) -->
+      <div class="form-group">
+        <label for="email">Email <span class="required">*</span></label>
+        <input type="email" id="email" name="email" required placeholder="user@example.com"
+               value="{{ request.form.get('email', '') }}">
+        <div class="form-hint">Będzie używany jako login</div>
+      </div>
+      {% else %}
+      <!-- Email (readonly przy edycji) -->
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" value="{{ target_user.email }}" disabled class="input-disabled">
+      </div>
+      {% endif %}
+      
+      <!-- Imię i nazwisko -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="first_name">Imię</label>
+          <input type="text" id="first_name" name="first_name" placeholder="Jan"
+                 value="{{ request.form.get('first_name') or (target_user.first_name if target_user else '') }}">
+        </div>
+        <div class="form-group">
+          <label for="last_name">Nazwisko</label>
+          <input type="text" id="last_name" name="last_name" placeholder="Kowalski"
+                 value="{{ request.form.get('last_name') or (target_user.last_name if target_user else '') }}">
+        </div>
+      </div>
+      
+      <!-- Rola -->
+      <div class="form-group">
+        <label for="role">Rola <span class="required">*</span></label>
+        <select id="role" name="role" onchange="toggleSections()" title="Wybierz rolę użytkownika">
+          {% set current_role = request.form.get('role') or (target_user.role if target_user else 'user') %}
+          <option value="admin" {{ 'selected' if current_role == 'admin' }}>Administrator (pełny dostęp)</option>
+          <option value="user" {{ 'selected' if current_role == 'user' }}>Użytkownik (wybrane karty)</option>
+          <option value="viewer" {{ 'selected' if current_role == 'viewer' }}>Viewer (tylko podgląd wybranych wydarzeń)</option>
+        </select>
+        <div class="form-hint">Administrator ma pełny dostęp do wszystkich funkcji</div>
+      </div>
+      
+      <!-- Uprawnienia do kart (dla user) -->
+      <div id="pages-section" class="form-group" style="display: none;">
+        <label>Uprawnienia do kart</label>
+        <div class="permissions-grid">
+          {% for key, label in page_options %}
+          <label class="permission-item">
+            <input type="checkbox" name="allowed_pages" value="{{ key }}"
+                   {{ 'checked' if key in (allowed_current or []) }}>
+            <span>{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="form-hint">Wybierz karty, do których użytkownik będzie miał dostęp</div>
+      </div>
+      
+      <!-- Uprawnienia do wydarzeń (dla viewer) -->
+      <div id="events-section" class="form-group" style="display: none;">
+        <label>Dostęp do wydarzeń</label>
+        <div class="events-permissions-grid">
+          {% for event in events %}
+          <label class="permission-item">
+            <input type="checkbox" name="allowed_events" value="{{ event.event_id }}"
+                   {{ 'checked' if event.event_id in (allowed_events_current or []) }}>
+            <span>{{ event.event_name }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="form-hint">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji)</div>
+      </div>
+      
+      {% if mode == 'edit' %}
+      <!-- Status konta -->
+      <div class="form-group">
+        <label>Status konta</label>
+        <div class="toggle-container">
+          <label class="toggle-switch" title="Status konta">
+            <input type="checkbox" name="is_active" value="1" {{ 'checked' if target_user.is_active }} title="Włącz lub wyłącz konto">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">{{ 'Aktywne' if target_user.is_active else 'Nieaktywne' }}</span>
+        </div>
+      </div>
+      {% endif %}
+      
+      <!-- Submit -->
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="save"></i>
+          {{ 'Utwórz konto i wyślij hasło' if mode == 'new' else 'Zapisz zmiany' }}
+        </button>
+        <a href="{{ url_for('admin_v2_bp.users_list') }}" class="btn btn-ghost">Anuluj</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if mode == 'edit' %}
+<!-- DANGER ZONE -->
+<div class="card" style="margin-top: 24px; border-color: hsl(0, 70%, 90%);">
+  <div class="card-header" style="background: hsl(0, 70%, 97%);">
+    <h3 class="card-title" style="color: hsl(0, 70%, 40%);">
+      <i data-lucide="alert-triangle" style="width: 18px; height: 18px;"></i>
+      Strefa niebezpieczna
+    </h3>
+  </div>
+  <div class="card-content">
+    <div class="danger-actions">
+      <div class="danger-action">
+        <div class="danger-info">
+          <strong>Reset hasła</strong>
+          <span>Wygeneruj nowe hasło i wyślij je na email użytkownika</span>
+        </div>
+        <button type="button" class="btn btn-outline" onclick="resetPassword()">
+          <i data-lucide="key"></i>
+          Reset hasła
+        </button>
+      </div>
+      
+      <div class="danger-action">
+        <div class="danger-info">
+          <strong>Usuń konto</strong>
+          <span>Tej operacji nie można cofnąć</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-danger-outline" onclick="deleteUser()">
+          <i data-lucide="trash-2"></i>
+          Usuń konto
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.form-group .required {
+  color: hsl(0, 70%, 50%);
+}
+
+.form-group input,
+.form-group select {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px hsla(212, 100%, 50%, 0.1);
+}
+
+.form-group .input-disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.permissions-grid,
+.events-permissions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  background: var(--muted);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.permission-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--background);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  transition: background 0.2s;
+}
+
+.permission-item:hover {
+  background: hsl(212, 100%, 97%);
+}
+
+.permission-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: hsl(210, 10%, 80%);
+  transition: 0.3s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: hsl(160, 82%, 44%);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+}
+
+.toggle-label {
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.danger-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.danger-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--background);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.danger-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.danger-info strong {
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.danger-info span {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+}
+
+.alert-error {
+  background: hsl(0, 70%, 97%);
+  border: 1px solid hsl(0, 70%, 85%);
+  color: hsl(0, 70%, 35%);
+}
+
+.alert-success {
+  background: hsl(160, 82%, 95%);
+  border: 1px solid hsl(160, 82%, 70%);
+  color: hsl(160, 82%, 25%);
+}
+
+.alert i {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.btn-danger-outline {
+  border-color: hsl(0, 70%, 70%);
+  color: hsl(0, 70%, 45%);
+}
+
+.btn-danger-outline:hover {
+  background: hsl(0, 70%, 97%);
+  border-color: hsl(0, 70%, 50%);
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .danger-action {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+</style>
+
+<script>
+function toggleSections() {
+  const role = document.getElementById('role').value;
+  const pagesSection = document.getElementById('pages-section');
+  const eventsSection = document.getElementById('events-section');
+  
+  pagesSection.style.display = (role === 'user') ? 'block' : 'none';
+  eventsSection.style.display = (role === 'viewer') ? 'block' : 'none';
+}
+
+// Uruchom przy ładowaniu
+document.addEventListener('DOMContentLoaded', function() {
+  toggleSections();
+  lucide.createIcons();
+});
+
+{% if mode == 'edit' %}
+const userId = {{ target_user.id }};
+
+function resetPassword() {
+  if (!confirm('Czy na pewno chcesz zresetować hasło? Nowe hasło zostanie wysłane na email użytkownika.')) {
+    return;
+  }
+  
+  fetch(`/admin-v2/users/${userId}/reset-password`, { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert(data.message);
+      } else {
+        alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+      }
+    })
+    .catch(err => alert('Błąd połączenia'));
+}
+
+function deleteUser() {
+  if (!confirm('Czy na pewno chcesz usunąć to konto? Tej operacji nie można cofnąć!')) {
+    return;
+  }
+  
+  fetch(`/admin-v2/users/${userId}/delete`, { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        window.location.href = '{{ url_for("admin_v2_bp.users_list") }}';
+      } else {
+        alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+      }
+    })
+    .catch(err => alert('Błąd połączenia'));
+}
+{% endif %}
+</script>
+{% endblock %}
