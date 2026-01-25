@@ -375,6 +375,21 @@
   background: var(--muted);
   border-radius: 9999px;
 }
+
+/* Danger button for delete */
+.btn-icon-danger {
+  color: hsl(0, 84%, 60%);
+  background: transparent;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-icon-danger:hover {
+  background: hsl(0, 84%, 60%, 0.1);
+  color: hsl(0, 84%, 50%);
+}
 </style>
 {% endblock %}
 
@@ -651,13 +666,18 @@
           </span>
           {% endif %}
         </td>
-        <td class="text-right">
+        <td class="text-right" style="display: flex; gap: 4px; justify-content: flex-end;">
           {% if email.status == 'error' or email.status == 'bounced' %}
           <form method="POST" action="{{ url_for('admin_v2_bp.email_retry', email_id=email.id) }}" style="margin: 0; display: inline;">
             <button type="submit" class="btn-icon" title="Ponów wysyłkę">
               <i data-lucide="refresh-cw"></i>
             </button>
           </form>
+          {% endif %}
+          {% if user_role == 'admin' %}
+          <button type="button" class="btn-icon btn-icon-danger" title="Usuń wpis" onclick="deleteEmail({{ email.id }}, '{{ email.recipient }}')">
+            <i data-lucide="trash-2"></i>
+          </button>
           {% endif %}
         </td>
       </tr>
@@ -1073,5 +1093,38 @@ document.querySelectorAll('.sortable-header').forEach(header => {
     rows.forEach(row => tbody.appendChild(row));
   });
 });
+
+// Delete email from history (admin only)
+function deleteEmail(emailId, recipient) {
+  if (!confirm(`Czy na pewno chcesz usunąć wpis wysyłki do "${recipient}"?\n\nTa operacja jest nieodwracalna.`)) {
+    return;
+  }
+  
+  fetch(`/admin-v2/communication/${emailId}/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Remove row from table
+        const btn = document.querySelector(`button[onclick*="deleteEmail(${emailId}"]`);
+        if (btn) {
+          const row = btn.closest('tr');
+          if (row) row.remove();
+        }
+        // Show success toast if available
+        if (typeof showToast === 'function') {
+          showToast('Wpis został usunięty', 'success');
+        }
+      } else {
+        alert(data.error || 'Błąd usuwania wpisu');
+      }
+    })
+    .catch(err => {
+      console.error('Delete email error:', err);
+      alert('Błąd komunikacji z serwerem');
+    });
+}
 </script>
 {% endblock %}

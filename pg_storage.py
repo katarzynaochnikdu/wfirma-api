@@ -1494,6 +1494,25 @@ def list_pending_mail_tasks(limit: int = 50) -> List[Dict[str, Any]]:
             _put_conn(pool, conn)
 
 
+def delete_mail_log(mail_id: int) -> bool:
+    """Usuwa wpis z logu wysyłek."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM mail_log WHERE id = %s", (int(mail_id),))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] delete_mail_log error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 # ---------------------------------------------------------------------------
 # TOKEN MONITOR STATE + ADVISORY LOCK
 # ---------------------------------------------------------------------------

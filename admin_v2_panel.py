@@ -4524,6 +4524,32 @@ def email_retry(email_id: int):
         return jsonify({"success": False, "error": result.get("error", "Błąd wysyłki")}), 500
 
 
+@admin_v2_bp.route("/communication/<int:email_id>/delete", methods=["POST"])
+@_require_permission("admin")
+def email_delete(email_id: int):
+    """Usuń wpis z historii wysyłek (tylko admin)."""
+    from flask import jsonify
+    from pg_storage import delete_mail_log
+    
+    user = _get_current_admin_user()
+    
+    result = delete_mail_log(email_id)
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="email_delete",
+        admin_user_id=user.get("id") if user else None,
+        target_id=str(email_id),
+        extra={"success": result},
+        ip=request.remote_addr,
+    )
+    
+    if result:
+        return jsonify({"success": True, "message": "Wpis został usunięty"})
+    else:
+        return jsonify({"success": False, "error": "Nie znaleziono wpisu"}), 404
+
+
 @admin_v2_bp.route("/communication/export", methods=["GET"])
 @_require_permission("orders")
 def communication_export():
