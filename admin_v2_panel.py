@@ -1190,20 +1190,33 @@ def order_send_reminder(order_id: str):
     event_name = event.get("event_name", "Wydarzenie")
     
     if is_proforma and not checkout_url:
-        # Dla proformy bez Stripe - prosty email z przypomnieniem
-        from email_templates import render_proforma_sent_email
+        # Dla proformy bez Stripe - email z przypomnieniem o proformie
+        from email_templates import render_proforma_reservation_email
         proforma_number = order.get("proforma_number", "")
+        
+        # Pobierz bilety z zamówienia
+        tickets = []
+        order_data = order.get("data") or {}
+        if "tickets" in order_data:
+            tickets = order_data.get("tickets", [])
+        elif "items" in order_data:
+            tickets = order_data.get("items", [])
+        
         try:
-            html = render_proforma_sent_email(
-                buyer_name=f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip(),
+            html = render_proforma_reservation_email(
                 event_name=event_name,
+                purchaser_first_name=order.get("purchaser_first_name", ""),
+                purchaser_last_name=order.get("purchaser_last_name", ""),
+                purchaser_email=purchaser_email,
+                purchaser_phone=order.get("purchaser_phone", ""),
+                event_config=event_config,
+                tickets=tickets,
                 proforma_number=proforma_number,
-                total=total_value,
-                payment_deadline=order.get("payment_due_date") or "7 dni",
-                checkout_url="",  # brak linku Stripe
             )
         except Exception as e:
             print(f"[order_send_reminder] Błąd renderowania emaila proforma: {e}")
+            import traceback
+            traceback.print_exc()
             return jsonify({"success": False, "error": f"Błąd generowania emaila: {e}"}), 500
         subject = f"Przypomnienie: Proforma {proforma_number} - {event_name}"
         template_key = "proforma_reminder"

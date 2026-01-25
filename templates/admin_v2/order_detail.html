@@ -471,10 +471,12 @@
             Wyślij przypomnienie o płatności
           </button>
           {% endif %}
+          {% if order.status == 'paid' %}
           <button class="btn btn-outline" onclick="resendTickets()">
             <i data-lucide="mail"></i>
             Wyślij potwierdzenie uczestnictwa
           </button>
+          {% endif %}
           <button class="btn btn-outline btn-destructive-outline" onclick="cancelOrder()">
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
