@@ -1497,12 +1497,29 @@ def order_cancel(order_id: str):
             if stripe_session and stripe_session.get("payment_intent_id"):
                 is_stripe_payment = True
                 payment_intent_id = stripe_session.get("payment_intent_id")
+                checkout_session_id = stripe_session.get("checkout_session_id") or ""
                 
-                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe, wykonuję zwrot (with_refund={with_refund})...")
+                # Wykryj czy to sandbox po checkout_session_id (cs_test_*) lub raw.stripe_mode
+                is_sandbox = checkout_session_id.startswith("cs_test_")
+                raw_data = stripe_session.get("raw") or {}
+                if isinstance(raw_data, str):
+                    try:
+                        import json
+                        raw_data = json.loads(raw_data)
+                    except:
+                        raw_data = {}
+                if raw_data.get("stripe_mode") == "sandbox":
+                    is_sandbox = True
+                
+                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe ({'SANDBOX' if is_sandbox else 'PROD'}), wykonuję zwrot...")
                 
                 try:
                     import stripe
-                    stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
+                    # Użyj odpowiedniego klucza API (sandbox lub produkcja)
+                    if is_sandbox:
+                        stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY_SANDBOX")
+                    else:
+                        stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
                     
                     if stripe_api_key:
                         stripe.api_key = stripe_api_key
@@ -1518,7 +1535,8 @@ def order_cancel(order_id: str):
                         refund_currency = refund.currency.upper()
                         print(f"[CANCEL] Refund utworzony: {refund.id}, kwota: {refund_amount} {refund_currency}")
                     else:
-                        refund_error = "Brak konfiguracji STRIPE_RENDER_API_KEY"
+                        key_name = "STRIPE_RENDER_API_KEY_SANDBOX" if is_sandbox else "STRIPE_RENDER_API_KEY"
+                        refund_error = f"Brak konfiguracji {key_name}"
                         print(f"[CANCEL] Błąd refundu: {refund_error}")
                 except Exception as e:
                     refund_error = f"Błąd Stripe: {str(e)}"
@@ -3297,17 +3315,33 @@ def participants_list():
     )
 
 
-@admin_v2_bp.route("/participants/<int:participant_id>", methods=["GET"])
+@admin_v2_bp.route("/participants/<participant_id>", methods=["GET"])
 @_require_permission("orders")
-def participant_detail(participant_id: int):
+def participant_detail(participant_id):
     """Szczegóły uczestnika."""
-    print(f"[PARTICIPANT DETAIL] Called with participant_id={participant_id}")
+    print(f"[PARTICIPANT DETAIL] Called with participant_id={participant_id} (type={type(participant_id).__name__})")
     user = _get_current_admin_user()
     
-    # Pobierz uczestnika z danymi zamówienia i wydarzenia
-    participant = get_participant_by_id(participant_id)
-    print(f"[PARTICIPANT DETAIL] get_participant_by_id returned: {participant is not None}")
+    from pg_storage import get_participant_by_attendee_id
+    
+    participant = None
+    
+    # Strategia 1: Spróbuj jako ID bazy danych (małe liczby)
+    try:
+        participant_id_int = int(participant_id)
+        if participant_id_int < 1000000000:  # Małe ID = prawdopodobnie z bazy
+            participant = get_participant_by_id(participant_id_int)
+            print(f"[PARTICIPANT DETAIL] get_participant_by_id({participant_id_int}) returned: {participant is not None}")
+    except (ValueError, TypeError):
+        pass
+    
+    # Strategia 2: Spróbuj jako attendee_id z Zoho (duże liczby)
     if not participant:
+        participant = get_participant_by_attendee_id(str(participant_id))
+        print(f"[PARTICIPANT DETAIL] get_participant_by_attendee_id({participant_id}) returned: {participant is not None}")
+    
+    if not participant:
+        print(f"[PARTICIPANT DETAIL] Participant not found by any method, redirecting to list")
         return redirect(url_for("admin_v2_bp.participants_list"))
     
     # Rozpakuj dane wydarzenia (bezpieczne parsowanie JSONB)

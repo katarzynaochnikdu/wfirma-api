@@ -1957,29 +1957,29 @@ def wfirma_create_correction(
     Returns:
         (correction_dict|None, response)
     """
-    api_url = "https://api2.wfirma.pl/invoicecorrections/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    # Endpoint: invoices/correct/{invoice_id}
+    api_url = f"https://api2.wfirma.pl/invoices/correct/{source_invoice_id}?inputFormat=json&outputFormat=json&oauth_version=2"
     if company_id:
         api_url += f"&company_id={company_id}"
     headers = get_wfirma_headers(token)
     
-    # Dla pełnej korekty w wFirma wystarczy podać ID faktury źródłowej
-    # i ustawić correction=1. wFirma automatycznie wyzeruje pozycje.
+    # Parametry korekty - pełna korekta z opisem
     correction_payload = {
-        "invoice": {
-            "id": str(source_invoice_id)
-        },
-        "parameters": {
-            "correction_description": correction_description
+        "invoices": {
+            "parameters": {
+                "correction_description": correction_description,
+                "correction_type": "full"  # Pełna korekta zeruje wszystkie pozycje
+            }
         }
     }
     
     resp = None
     try:
-        request_body = {"invoicecorrections": correction_payload}
         print(f"[WFIRMA DEBUG] Creating correction for invoice {source_invoice_id}")
-        print(f"[WFIRMA DEBUG] Correction request body: {json.dumps(request_body, indent=2)}")
+        print(f"[WFIRMA DEBUG] Correction URL: {api_url}")
+        print(f"[WFIRMA DEBUG] Correction request body: {json.dumps(correction_payload, indent=2)}")
         
-        resp = requests.post(api_url, headers=headers, json=request_body)
+        resp = requests.post(api_url, headers=headers, json=correction_payload)
         print(f"[WFIRMA DEBUG] Correction response status: {resp.status_code}")
         print(f"[WFIRMA DEBUG] Correction response: {resp.text[:1000] if resp.text else 'empty'}")
         
@@ -1987,7 +1987,17 @@ def wfirma_create_correction(
             result = resp.json()
             status = result.get('status', {}).get('code')
             if status == 'OK':
-                # Odpowiedź: invoicecorrections.0.invoicecorrection
+                # Odpowiedź może być: invoices.0.invoice lub invoicecorrections.0.invoicecorrection
+                # Sprawdź obie struktury
+                invoices = result.get('invoices', {})
+                if isinstance(invoices, dict):
+                    for key in invoices:
+                        if key.isdigit():
+                            invoice = invoices[key].get('invoice', {})
+                            if invoice:
+                                print(f"[WFIRMA DEBUG] Correction created: id={invoice.get('id')}, number={invoice.get('fullnumber')}")
+                                return invoice, resp
+                
                 corrections = result.get('invoicecorrections', {})
                 if isinstance(corrections, dict):
                     for key in corrections:

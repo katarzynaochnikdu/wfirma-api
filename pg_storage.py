@@ -2233,6 +2233,7 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict[str, Any]]:
     ensure_schema()
     pool = None
     conn = None
+    print(f"[DB] get_participant_by_id: searching for id={participant_id}")
     try:
         pool, conn = _with_conn()
         cur = _dict_cursor(conn)
@@ -2254,10 +2255,53 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict[str, Any]]:
         )
         row = cur.fetchone()
         if not row:
+            print(f"[DB] get_participant_by_id: no row found for id={participant_id}")
             return None
+        print(f"[DB] get_participant_by_id: found participant email={row.get('email')}, event_order_id={row.get('event_order_id')}")
         return dict(row)
     except Exception as e:
         print(f"[DB] get_participant_by_id error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_participant_by_attendee_id(attendee_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Pobiera szczegóły uczestnika po Zoho attendee_id (zapisanym w data->attendee_id).
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    print(f"[DB] get_participant_by_attendee_id: searching for attendee_id={attendee_id}")
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT p.id as participant_id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
+                   p.ticket_id, p.ticket_class_id, p.status, p.data, p.created_at, p.updated_at,
+                   o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
+                   o.purchaser_company, o.purchaser_nip, o.purchaser_phone,
+                   o.status as order_status, o.payment_option_name, o.payment_type, o.total,
+                   o.created_at as order_created_at, o.paid_at,
+                   e.event_name, e.data as event_data
+            FROM participants p
+            JOIN orders o ON p.event_order_id = o.event_order_id
+            LEFT JOIN events e ON o.event_id = e.event_id
+            WHERE p.data->>'attendee_id' = %s
+            """,
+            (str(attendee_id),),
+        )
+        row = cur.fetchone()
+        if not row:
+            print(f"[DB] get_participant_by_attendee_id: no row found for attendee_id={attendee_id}")
+            return None
+        print(f"[DB] get_participant_by_attendee_id: found participant id={row.get('participant_id')}, email={row.get('email')}")
+        return dict(row)
+    except Exception as e:
+        print(f"[DB] get_participant_by_attendee_id error: {e}")
         return None
     finally:
         if pool is not None and conn is not None:
