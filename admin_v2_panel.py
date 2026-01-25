@@ -4787,6 +4787,20 @@ def _get_system_email_templates() -> Dict[str, List[Dict[str, Any]]]:
                 "color": "purple",
             },
             {
+                "key": "proforma_reminder",
+                "name": "Przypomnienie: Proforma",
+                "description": "Przypomnienie o płatności proformy (termin ważności)",
+                "icon": "clock",
+                "color": "amber",
+            },
+            {
+                "key": "proforma_paid",
+                "name": "Potwierdzenie płatności proformy",
+                "description": "Wysyłany po zaksięgowaniu płatności proformy",
+                "icon": "check-circle",
+                "color": "green",
+            },
+            {
                 "key": "payment_confirmation",
                 "name": "Potwierdzenie płatności",
                 "description": "Wysyłany po udanej płatności z podziękowaniem",
