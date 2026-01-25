@@ -35,77 +35,227 @@
   </form>
 </div>
 
-<!-- ACTIVE EVENTS SECTION -->
-{% if active_events %}
-<div style="margin-bottom: 2rem;">
-  <h2 class="section-header">
-    <span class="active-dot"></span>
-    Aktywne wydarzenia ({{ active_events|length }})
-  </h2>
-  <div class="events-grid">
-    {% for event in active_events %}
-    {% set event_data = event.data or {} %}
-    {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
-    {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
-    {# Pola znormalizowane przez _normalize_event_data() w Python #}
-    {% set event_city = event_data.get('eventCity') or '' %}
-    {% set event_date_raw = event_data.get('eventDate') or '' %}
-    {% set banner_url = event_data.get('email_header_url') or '' %}
-    
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
-      <!-- Banner -->
-      <div class="event-card-header-banner">
-        {% if banner_url %}
-        <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
-        {% else %}
-        <div class="event-card-banner-fallback" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
-        {% endif %}
-        
-        <!-- Settings button -->
-        <span class="event-settings-btn" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config';" title="Konfiguracja">
-          <i data-lucide="settings"></i>
-        </span>
-      </div>
-      
-      <!-- Body -->
-      <div class="event-card-body">
-        <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
-        
-        <div class="event-card-meta">
-          {% if event_date_raw %}
-          <div class="event-meta-item">
-            <i data-lucide="calendar"></i>
-            <span>{{ event_date_raw|format_date_pl if event_date_raw else '' }}</span>
-          </div>
-          {% endif %}
-          {% if event_city %}
-          <div class="event-meta-item">
-            <i data-lucide="map-pin"></i>
-            <span>{{ event_city }}</span>
-          </div>
-          {% endif %}
-        </div>
-        
-        <!-- Stats -->
-        <div class="event-card-stats">
-          <div class="event-stat">
-            <div class="event-stat-value">{{ event.order_count or 0 }}</div>
-            <div class="event-stat-label">Zamówień</div>
-          </div>
-          <div class="event-stat">
-            <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
-            <div class="event-stat-label">Uczestników</div>
-          </div>
-        </div>
-      </div>
-    </a>
-    {% endfor %}
+<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+<!-- SEKCJA 1: AKTYWNE WYDARZENIA -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+{% if active_grouped %}
+<div class="events-section events-section-active" style="margin-bottom: 2.5rem;">
+  <div class="section-header-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 2px solid hsl(160, 82%, 70%);">
+    <h2 style="font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.75rem; margin: 0; color: hsl(160, 82%, 30%);">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: hsl(160, 82%, 45%);"></span>
+      Aktywne wydarzenia
+      <span style="font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground);">({{ active_events|length }})</span>
+    </h2>
   </div>
+  
+  {% for group in active_grouped %}
+  <div class="month-group" style="margin-bottom: 1.5rem;">
+    <h3 style="font-size: 0.875rem; font-weight: 600; color: hsl(160, 82%, 35%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="calendar" style="width: 14px; height: 14px;"></i>
+      {{ group.label }}
+      <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ group.events|length }})</span>
+    </h3>
+    <div class="events-grid">
+      {% for event in group.events %}
+      {% set event_data = event.data or {} %}
+      {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
+      {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
+      {% set event_city = event_data.get('eventCity') or '' %}
+      {% set event_date_raw = event_data.get('eventDate') or '' %}
+      {% set banner_url = event_data.get('email_header_url') or '' %}
+      
+      <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
+        <div class="event-card-header-banner">
+          {% if banner_url %}
+          <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
+          {% else %}
+          <div class="event-card-banner-fallback" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
+          {% endif %}
+          <span class="event-settings-btn" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config';" title="Konfiguracja">
+            <i data-lucide="settings"></i>
+          </span>
+        </div>
+        <div class="event-card-body">
+          <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
+          <div class="event-card-meta">
+            {% if event_date_raw %}
+            <div class="event-meta-item">
+              <i data-lucide="calendar"></i>
+              <span>{{ event_date_raw|format_date_pl if event_date_raw else '' }}</span>
+            </div>
+            {% endif %}
+            {% if event_city %}
+            <div class="event-meta-item">
+              <i data-lucide="map-pin"></i>
+              <span>{{ event_city }}</span>
+            </div>
+            {% endif %}
+          </div>
+          <div class="event-card-stats">
+            <div class="event-stat">
+              <div class="event-stat-value">{{ event.order_count or 0 }}</div>
+              <div class="event-stat-label">Zamówień</div>
+            </div>
+            <div class="event-stat">
+              <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
+              <div class="event-stat-label">Uczestników</div>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+<!-- SEKCJA 2: W KONFIGURACJI (nieopublikowane) -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+{% if config_grouped %}
+<div class="events-section events-section-config" style="margin-bottom: 2.5rem;">
+  <div class="section-header-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 2px solid hsl(45, 93%, 60%);">
+    <h2 style="font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.75rem; margin: 0; color: hsl(45, 93%, 30%);">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: hsl(45, 93%, 50%);"></span>
+      W konfiguracji
+      <span style="font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground);">({{ config_events|length }})</span>
+    </h2>
+  </div>
+  
+  {% for group in config_grouped %}
+  <div class="month-group" style="margin-bottom: 1.5rem;">
+    <h3 style="font-size: 0.875rem; font-weight: 600; color: hsl(45, 93%, 35%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="calendar" style="width: 14px; height: 14px;"></i>
+      {{ group.label }}
+      <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ group.events|length }})</span>
+    </h3>
+    <div class="events-grid">
+      {% for event in group.events %}
+      {% set event_data = event.data or {} %}
+      {% set event_color = event_data.get('color_gradient_1') or 'hsl(45, 93%, 50%)' %}
+      {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(35, 93%, 50%)' %}
+      {% set event_city = event_data.get('eventCity') or '' %}
+      {% set event_date_raw = event_data.get('eventDate') or '' %}
+      {% set banner_url = event_data.get('email_header_url') or '' %}
+      
+      <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-config">
+        <div class="event-card-header-banner">
+          {% if banner_url %}
+          <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
+          {% else %}
+          <div class="event-card-banner-fallback" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }});"></div>
+          {% endif %}
+          <span class="event-config-badge">
+            <i data-lucide="settings" style="width: 12px; height: 12px;"></i>
+            Konfiguracja
+          </span>
+          <span class="event-settings-btn" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}?tab=config';" title="Konfiguracja">
+            <i data-lucide="settings"></i>
+          </span>
+        </div>
+        <div class="event-card-body">
+          <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
+          <div class="event-card-meta">
+            {% if event_date_raw %}
+            <div class="event-meta-item">
+              <i data-lucide="calendar"></i>
+              <span>{{ event_date_raw|format_date_pl if event_date_raw else '' }}</span>
+            </div>
+            {% endif %}
+            {% if event_city %}
+            <div class="event-meta-item">
+              <i data-lucide="map-pin"></i>
+              <span>{{ event_city }}</span>
+            </div>
+            {% endif %}
+          </div>
+          <div class="event-card-stats">
+            <div class="event-stat">
+              <div class="event-stat-value">{{ event.order_count or 0 }}</div>
+              <div class="event-stat-label">Zamówień</div>
+            </div>
+            <div class="event-stat">
+              <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
+              <div class="event-stat-label">Uczestników</div>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+<!-- SEKCJA 3: NIEAKTYWNE WYDARZENIA -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+{% if inactive_grouped %}
+<div class="events-section events-section-inactive" style="margin-bottom: 2rem;">
+  <div class="section-header-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 2px solid var(--border);">
+    <h2 style="font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.75rem; margin: 0; color: var(--muted-foreground);">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: var(--muted-foreground);"></span>
+      Nieaktywne wydarzenia
+      <span style="font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground);">({{ inactive_events|length }})</span>
+    </h2>
+  </div>
+  
+  {% for group in inactive_grouped %}
+  <div class="month-group" style="margin-bottom: 1.5rem;">
+    <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="calendar" style="width: 14px; height: 14px;"></i>
+      {{ group.label }}
+      <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ group.events|length }})</span>
+    </h3>
+    <div class="events-grid">
+      {% for event in group.events %}
+      {% set event_data = event.data or {} %}
+      {% set event_city = event_data.get('eventCity') or '' %}
+      {% set event_date_raw = event_data.get('eventDate') or '' %}
+      
+      <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-inactive">
+        <div class="event-card-header-minimal">
+          <div style="background: linear-gradient(135deg, hsl(215, 16%, 47%), hsl(215, 16%, 57%)); height: 0.5rem;"></div>
+        </div>
+        <div class="event-card-body">
+          <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
+          <div class="event-card-meta">
+            {% if event_date_raw %}
+            <div class="event-meta-item">
+              <i data-lucide="calendar"></i>
+              <span>{{ event_date_raw|format_date_pl if event_date_raw else '' }}</span>
+            </div>
+            {% endif %}
+            {% if event_city %}
+            <div class="event-meta-item">
+              <i data-lucide="map-pin"></i>
+              <span>{{ event_city }}</span>
+            </div>
+            {% endif %}
+          </div>
+          <div class="event-card-stats">
+            <div class="event-stat">
+              <div class="event-stat-value">{{ event.order_count or 0 }}</div>
+              <div class="event-stat-label">Zamówień</div>
+            </div>
+            <div class="event-stat">
+              <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
+              <div class="event-stat-label">Uczestników</div>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
 </div>
 {% endif %}
 
 <!-- EMPTY STATE -->
-{% if not active_events and not inactive_events %}
+{% if not active_events and not config_events and not inactive_events %}
 <div style="text-align: center; padding: 3rem; color: var(--muted-foreground);">
   <i data-lucide="calendar" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 1rem;"></i>
   <p style="margin-bottom: 1rem;">Brak wydarzeń do wyświetlenia</p>
@@ -113,43 +263,6 @@
     <i data-lucide="plus"></i>
     Dodaj pierwsze wydarzenie
   </a>
-</div>
-{% endif %}
-
-<!-- INACTIVE EVENTS -->
-{% if inactive_events %}
-<div style="margin-top: 2rem;">
-  <h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--muted-foreground);">
-    Nieaktywne wydarzenia ({{ inactive_events|length }})
-  </h2>
-  <div class="events-grid">
-    {% for event in inactive_events %}
-    {% set event_data = event.data or {} %}
-    
-    <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-inactive">
-      <!-- Minimal header (thin line) -->
-      <div class="event-card-header-minimal">
-        <div style="background: linear-gradient(135deg, hsl(215, 16%, 47%), hsl(215, 16%, 57%)); height: 0.5rem;"></div>
-      </div>
-      
-      <!-- Body -->
-      <div class="event-card-body">
-        <h3 class="event-card-title">{{ event.event_name or 'Bez nazwy' }}</h3>
-        
-        <div class="event-card-stats">
-          <div class="event-stat">
-            <div class="event-stat-value">{{ event.order_count or 0 }}</div>
-            <div class="event-stat-label">Zamówień</div>
-          </div>
-          <div class="event-stat">
-            <div class="event-stat-value">{{ event.participant_count or 0 }}</div>
-            <div class="event-stat-label">Uczestników</div>
-          </div>
-        </div>
-      </div>
-    </a>
-    {% endfor %}
-  </div>
 </div>
 {% endif %}
 
@@ -178,6 +291,38 @@
   box-shadow: 
     0 10px 15px -3px rgba(0, 0, 0, 0.1),
     0 0 0 2px hsl(212 100% 50% / 0.4);
+}
+
+/* === CONFIG CARD === */
+.event-card-config {
+  transition: all 0.2s ease;
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 0 0 2px hsl(45 93% 50% / 0.3);
+}
+
+.event-card-config:hover {
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 0 0 2px hsl(45 93% 50% / 0.5);
+}
+
+/* === CONFIG BADGE === */
+.event-config-badge {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  background: hsl(45, 93%, 50%);
+  color: hsl(45, 93%, 15%);
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 4px;
+  z-index: 10;
 }
 
 /* === INACTIVE CARD === */

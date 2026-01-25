@@ -523,21 +523,15 @@
       <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
         <div>
           <h3 style="font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.25rem;">Zarządzanie wydarzeniem</h3>
-          <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Edytuj konfigurację lub pobierz aktualne dane z Backstage</p>
+          <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin: 0;">Edytuj konfigurację wydarzenia</p>
         </div>
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-          <button type="button" id="sync-backstage-btn" onclick="syncFromBackstage()" class="btn btn-outline">
-            <i data-lucide="cloud-download"></i>
-            Pobierz z Backstage
-          </button>
           <a href="{{ url_for('admin_v2_bp.event_edit', event_id=event.event_id) }}" class="btn btn-primary">
             <i data-lucide="pencil"></i>
             Edytuj wydarzenie
           </a>
         </div>
       </div>
-      <!-- Status synchronizacji -->
-      <div id="sync-status" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius);"></div>
     </div>
   </div>
   
@@ -897,7 +891,7 @@
       <div style="padding: 2rem; text-align: center; color: var(--muted-foreground);">
         <i data-lucide="ticket" style="width: 32px; height: 32px; opacity: 0.3; margin-bottom: 0.5rem;"></i>
         <p style="margin-bottom: 1rem;">Brak typów biletów</p>
-        <p style="font-size: 0.8125rem;">Użyj przycisku "Pobierz z Backstage" aby zsynchronizować typy biletów</p>
+        <p style="font-size: 0.8125rem;">Przejdź do edycji wydarzenia aby pobrać typy biletów z Backstage</p>
       </div>
       {% endif %}
     </div>

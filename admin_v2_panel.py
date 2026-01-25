@@ -300,17 +300,21 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     event["data"] = merged_data
     
     # Generuj linki Backstage dynamicznie
-    # Portal ID i Brand ID z konfiguracji lub domyślne dla Medidesk
+    # Portal ID z konfiguracji lub domyślne dla Medidesk
     backstage_portal_id = event_data.get("backstage_portal_id") or "20101549222"
-    backstage_brand_id = "24311000000002010"  # Stałe dla Medidesk
-    event_id = event.get("event_id", "")
+    # Użyj backstage_event_id (Zoho ID) zamiast lokalnego event_id
+    backstage_event_id = event_data.get("backstage_event_id") or event.get("event_id", "")
     
-    # Format: https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/{page}
-    backstage_base = f"https://backstage.zoho.eu/home#/portal/{backstage_portal_id}/brand/{backstage_brand_id}/event/{event_id}"
-    
-    event["backstage_url"] = f"{backstage_base}/details" if event_id else "#"
-    event["backstage_orders_url"] = f"{backstage_base}/orders" if event_id else "#"
-    event["backstage_attendees_url"] = f"{backstage_base}/attendees" if event_id else "#"
+    # Format: https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/{page}
+    if backstage_event_id:
+        backstage_base = f"https://backstage.zoho.eu/portal/{backstage_portal_id}/events/{backstage_event_id}"
+        event["backstage_url"] = f"{backstage_base}/overview"
+        event["backstage_orders_url"] = f"{backstage_base}/orders"
+        event["backstage_attendees_url"] = f"{backstage_base}/attendees"
+    else:
+        event["backstage_url"] = "#"
+        event["backstage_orders_url"] = "#"
+        event["backstage_attendees_url"] = "#"
     
     return event
 
@@ -2747,12 +2751,8 @@ def events_list():
     elif status_filter == "completed":
         all_events = [e for e in all_events if not e.get("is_active", True)]
     
-    # Podziel na aktywne i nieaktywne
-    active_events = [e for e in all_events if e.get("is_active", True)]
-    inactive_events = [e for e in all_events if not e.get("is_active", True)]
-    
-    # Dodaj statystyki i normalizuj dane wydarzeń
-    for event in active_events + inactive_events:
+    # Dodaj statystyki i normalizuj dane dla wszystkich wydarzeń
+    for event in all_events:
         event_id = event.get("event_id")
         orders = list_orders(event_id=event_id, limit=500)
         event["order_count"] = len(orders)
@@ -2760,11 +2760,81 @@ def events_list():
         # Normalizuj pola z Backstage
         _normalize_event_data(event)
     
+    # Podziel na 3 kategorie:
+    # 1. Aktywne - is_active=True i opublikowane (backstage_status != "unpublished")
+    # 2. W konfiguracji - nieopublikowane (backstage_status == "unpublished")
+    # 3. Nieaktywne - is_active=False
+    active_events = []
+    config_events = []
+    inactive_events = []
+    
+    for e in all_events:
+        event_data = e.get("data") or {}
+        backstage_status = event_data.get("backstage_status", "").lower()
+        is_active = e.get("is_active", True)
+        
+        if not is_active:
+            inactive_events.append(e)
+        elif backstage_status == "unpublished":
+            config_events.append(e)
+        else:
+            active_events.append(e)
+    
+    # Funkcja pomocnicza do grupowania po miesiącach/latach
+    def group_by_month(events_list):
+        """Grupuj wydarzenia po miesiącu/roku, sortuj malejąco."""
+        from collections import defaultdict
+        from datetime import datetime
+        
+        groups = defaultdict(list)
+        for event in events_list:
+            event_data = event.get("data") or {}
+            # Pobierz datę wydarzenia
+            date_str = event_data.get("eventDate") or event_data.get("event_date") or ""
+            if date_str:
+                try:
+                    # Parsuj datę (format: YYYY-MM-DD)
+                    dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+                    month_key = dt.strftime("%Y-%m")
+                    month_label = dt.strftime("%B %Y").capitalize()
+                    # Polskie nazwy miesięcy
+                    pl_months = {
+                        "January": "Styczeń", "February": "Luty", "March": "Marzec",
+                        "April": "Kwiecień", "May": "Maj", "June": "Czerwiec",
+                        "July": "Lipiec", "August": "Sierpień", "September": "Wrzesień",
+                        "October": "Październik", "November": "Listopad", "December": "Grudzień"
+                    }
+                    for en, pl in pl_months.items():
+                        month_label = month_label.replace(en, pl)
+                    groups[(month_key, month_label)].append(event)
+                except Exception:
+                    groups[("0000-00", "Bez daty")].append(event)
+            else:
+                groups[("0000-00", "Bez daty")].append(event)
+        
+        # Sortuj grupy malejąco po kluczu (data)
+        sorted_groups = []
+        for (key, label), events in sorted(groups.items(), key=lambda x: x[0][0], reverse=True):
+            # Sortuj wydarzenia w grupie po dacie malejąco
+            events_sorted = sorted(events, key=lambda e: (e.get("data") or {}).get("eventDate") or "", reverse=True)
+            sorted_groups.append({"key": key, "label": label, "events": events_sorted})
+        
+        return sorted_groups
+    
+    # Pogrupuj każdą kategorię
+    active_grouped = group_by_month(active_events)
+    config_grouped = group_by_month(config_events)
+    inactive_grouped = group_by_month(inactive_events)
+    
     return render_template(
         "admin_v2/events.html",
         active_page="events",
         active_events=active_events,
+        config_events=config_events,
         inactive_events=inactive_events,
+        active_grouped=active_grouped,
+        config_grouped=config_grouped,
+        inactive_grouped=inactive_grouped,
         **_get_common_context(user),
     )
 

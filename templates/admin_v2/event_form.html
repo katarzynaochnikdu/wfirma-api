@@ -278,7 +278,7 @@ input[type="color"].form-input {
         <i data-lucide="refresh-cw"></i>
         Pobierz z Backstage
       </button>
-      <a href="https://backstage.zoho.eu/home#/portal/20101549222/brand/24311000000002010/event/{{ event.event_id }}/details" 
+      <a href="{{ event.backstage_url or 'https://backstage.zoho.eu/portal/20101549222/events/' ~ (event.data.backstage_event_id or event.event_id) ~ '/overview' }}" 
          target="_blank" rel="noopener noreferrer"
          class="btn btn-outline btn-sm">
         <i data-lucide="external-link"></i>
@@ -454,65 +454,119 @@ input[type="color"].form-input {
       Te ustawienia są przechowywane lokalnie i używane w panelu oraz emailach.
     </p>
     
-    <!-- Branding -->
-    <div style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="color: hsl(212, 100%, 30%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
-        <i data-lucide="palette" style="width: 14px; height: 14px;"></i>
-        Branding
-      </label>
-      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-        <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem;">Kolor 1 (gradient)</label>
-          <input type="color" name="color_gradient_1" class="form-input" style="height: 44px; padding: 0.25rem;"
-                 value="{{ event_data.color_gradient_1 if event_data else '#2563eb' }}">
-        </div>
-        <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem;">Kolor 2 (gradient)</label>
-          <input type="color" name="color_gradient_2" class="form-input" style="height: 44px; padding: 0.25rem;"
-                 value="{{ event_data.color_gradient_2 if event_data else '#1e40af' }}">
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label class="form-label" style="font-size: 0.75rem;">URL bannera (email)</label>
-          <input type="url" name="event_mail_link_top_banner" class="form-input"
-                 value="{{ event_data.event_mail_link_top_banner if event_data else '' }}" placeholder="https://...">
+    <!-- Wszystkie pola ułożone pionowo -->
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+      
+      <!-- Kolor 1 (hex) -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Kolor 1 (hex)</label>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <input type="text" name="color_gradient_1" class="form-input" style="flex: 1;"
+                 value="{{ event_data.color_gradient_1 if event_data else '#269571' }}" placeholder="np. #269571"
+                 oninput="this.nextElementSibling.value = this.value">
+          <input type="color" style="width: 44px; height: 38px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;"
+                 value="{{ event_data.color_gradient_1 if event_data else '#269571' }}"
+                 oninput="this.previousElementSibling.value = this.value; this.previousElementSibling.name && (this.previousElementSibling.value = this.value)">
         </div>
       </div>
-    </div>
-    
-    <!-- Linki i kontakt -->
-    <div style="padding-top: 1rem; border-top: 1px dashed hsl(212, 100%, 80%);">
-      <label class="form-label" style="color: hsl(212, 100%, 30%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
-        <i data-lucide="link" style="width: 14px; height: 14px;"></i>
-        Linki i kontakt
-      </label>
-      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
-        <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem;">URL wydarzenia</label>
-          <input type="url" name="url_event" class="form-input"
-                 value="{{ event_data.url_event if event_data else '' }}" placeholder="https://...">
-        </div>
-        <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem;">Email kontaktowy</label>
-          <input type="email" name="md_email_kontakt" class="form-input"
-                 value="{{ event_data.md_email_kontakt if event_data else 'konferencje@medidesk.com' }}" placeholder="konferencje@medidesk.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem; display: flex; align-items: center; gap: 0.35rem;">
-            <i data-lucide="check-circle" style="width: 12px; height: 12px; color: hsl(160, 82%, 40%);"></i>
-            Strona sukcesu
-          </label>
-          <input type="url" name="url_success" class="form-input"
-                 value="{{ event_data.url_success if event_data else '' }}" placeholder="https://... (przekierowanie po płatności)">
-        </div>
-        <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem; display: flex; align-items: center; gap: 0.35rem;">
-            <i data-lucide="x-circle" style="width: 12px; height: 12px; color: hsl(0, 84%, 50%);"></i>
-            Strona anulowania
-          </label>
-          <input type="url" name="url_cancel" class="form-input"
-                 value="{{ event_data.url_cancel if event_data else '' }}" placeholder="https://... (przekierowanie po anulowaniu)">
+      
+      <!-- Kolor 2 (hex) -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Kolor 2 (hex)</label>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <input type="text" name="color_gradient_2" class="form-input" style="flex: 1;"
+                 value="{{ event_data.color_gradient_2 if event_data else '#47005f' }}" placeholder="np. #47005f"
+                 oninput="this.nextElementSibling.value = this.value">
+          <input type="color" style="width: 44px; height: 38px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;"
+                 value="{{ event_data.color_gradient_2 if event_data else '#47005f' }}"
+                 oninput="this.previousElementSibling.value = this.value">
         </div>
       </div>
+      
+      <!-- Kąt gradientu -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Kąt gradientu</label>
+        <input type="number" name="gradient_angle" class="form-input"
+               value="{{ event_data.gradient_angle if event_data else '90' }}" placeholder="np. 90">
+      </div>
+      
+      <!-- Link mapa hotel (grafika) -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Link mapa hotel (grafika)</label>
+        <input type="url" name="map_hotel_link" class="form-input"
+               value="{{ event_data.map_hotel_link if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Logo (link) -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Logo (link)</label>
+        <input type="url" name="logo_url" class="form-input"
+               value="{{ event_data.logo_url if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Logo (białe) link -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Logo (białe) link</label>
+        <input type="url" name="logo_white_url" class="form-input"
+               value="{{ event_data.logo_white_url if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Logo (kolor) link -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Logo (kolor) link</label>
+        <input type="url" name="logo_color_url" class="form-input"
+               value="{{ event_data.logo_color_url if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Zdjęcie 1 (link) -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Zdjęcie 1 (link)</label>
+        <input type="url" name="photo_1_url" class="form-input"
+               value="{{ event_data.photo_1_url if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Baner mail (góra) link -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Baner mail (góra) link</label>
+        <input type="url" name="event_mail_link_top_banner" class="form-input"
+               value="{{ event_data.event_mail_link_top_banner if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Baner mail (dół) link -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Baner mail (dół) link</label>
+        <input type="url" name="event_mail_link_bottom_banner" class="form-input"
+               value="{{ event_data.event_mail_link_bottom_banner if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- URL wydarzenia (public) -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">URL wydarzenia (public)</label>
+        <input type="url" name="url_event" class="form-input"
+               value="{{ event_data.url_event if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- URL success -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">URL success</label>
+        <input type="url" name="url_success" class="form-input"
+               value="{{ event_data.url_success if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- URL cancel -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">URL cancel</label>
+        <input type="url" name="url_cancel" class="form-input"
+               value="{{ event_data.url_cancel if event_data else '' }}" placeholder="https://...">
+      </div>
+      
+      <!-- Email kontaktowy -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Email kontaktowy</label>
+        <input type="email" name="md_email_kontakt" class="form-input"
+               value="{{ event_data.md_email_kontakt if event_data else 'konferencje@medidesk.com' }}" placeholder="konferencje@medidesk.com">
+      </div>
+      
     </div>
   </div>
 
