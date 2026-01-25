@@ -564,7 +564,28 @@ input[type="color"].form-input {
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Email kontaktowy</label>
         <input type="email" name="md_email_kontakt" class="form-input"
-               value="{{ event_data.md_email_kontakt if event_data else 'konferencje@medidesk.com' }}" placeholder="konferencje@medidesk.com">
+               value="{{ event_data.md_email_kontakt if event_data else '' }}" placeholder="np. eventy@medidesk.com">
+      </div>
+      
+      <!-- Telefon kontaktowy -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Telefon kontaktowy</label>
+        <input type="tel" name="md_phone_kontakt" class="form-input"
+               value="{{ event_data.md_phone_kontakt if event_data else '' }}" placeholder="np. +48 123 456 789">
+      </div>
+      
+      <!-- Email techniczny -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Email techniczny</label>
+        <input type="email" name="md_email_technical" class="form-input"
+               value="{{ event_data.md_email_technical if event_data else '' }}" placeholder="np. adminzoho@medidesk.com">
+      </div>
+      
+      <!-- Telefon techniczny -->
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.8125rem;">Telefon techniczny</label>
+        <input type="tel" name="md_phone_technical" class="form-input"
+               value="{{ event_data.md_phone_technical if event_data else '' }}" placeholder="np. +48 123 456 789">
       </div>
       
     </div>
