@@ -58,6 +58,8 @@
     'label': 'Opłacone' if order.status == 'paid' else ('Oczekuje' if order.status == 'pending_payment' else ('Anulowane' if order.status == 'cancelled' else 'Zwrócone')),
     'detail': order.paid_at|format_date_pl if order.status == 'paid' and order.paid_at else ('termin: ' ~ order.payment_due_date|format_date_pl if order.payment_due_date else '')
   } %}
+  {% set payment_method = order.payment_option_name or order.payment_type or '' %}
+  {% set payment_method_display = 'Stripe' if 'online' in (payment_method|string|lower) or 'stripe' in (payment_method|string|lower) else ('Proforma' if 'proforma' in (payment_method|string|lower) or 'pro' in (payment_method|string|lower) else ('FOC' if 'foc' in (payment_method|string|lower) or (order.total or 0) == 0 else (payment_method or 'Nieokreślona'))) %}
   <div class="operational-status-badge operational-status-{{ payment_status.type }}">
     <div class="operational-icon-wrapper">
       <i data-lucide="credit-card"></i>
@@ -68,6 +70,7 @@
         <i data-lucide="{{ payment_status.icon }}"></i>
         <span>{{ payment_status.label }}</span>
       </div>
+      <span class="operational-status-detail" style="font-weight: 500;">{{ payment_method_display }}</span>
       {% if payment_status.detail %}
       <span class="operational-status-detail">{{ payment_status.detail }}</span>
       {% endif %}
