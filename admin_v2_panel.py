@@ -1361,12 +1361,30 @@ def document_download_pdf(doc_id: int):
     if not invoice_id:
         return jsonify({"success": False, "error": "Brak ID dokumentu wFirma"}), 400
     
-    # Pobierz token wFirma
+    # Pobierz token wFirma i sprawdź czy nie wygasł
+    import time
     wfirma_token = get_wfirma_token("md")
     if not wfirma_token or not wfirma_token.get("access_token"):
         return jsonify({"success": False, "error": "Brak tokenu wFirma - skonfiguruj integrację"}), 500
     
+    # Sprawdź czy access token nie wygasł
     access_token = wfirma_token["access_token"]
+    expires_at = wfirma_token.get("access_token_expires_at", 0)
+    
+    if time.time() >= expires_at:
+        # Token wygasł - odśwież go
+        print(f"[document_download_pdf] Access token wygasł, odświeżam...")
+        try:
+            from app import refresh_access_token
+            new_token = refresh_access_token(company="md")
+            if new_token:
+                access_token = new_token
+                print(f"[document_download_pdf] Token odświeżony pomyślnie")
+            else:
+                return jsonify({"success": False, "error": "Nie udało się odświeżyć tokenu wFirma - sprawdź integrację"}), 500
+        except Exception as refresh_err:
+            print(f"[document_download_pdf] Błąd odświeżania tokenu: {refresh_err}")
+            return jsonify({"success": False, "error": f"Błąd odświeżania tokenu: {refresh_err}"}), 500
     
     try:
         # Pobierz PDF z wFirma API
