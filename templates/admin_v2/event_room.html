@@ -478,7 +478,8 @@
       <tbody>
         {% for email in emails %}
         {% set email_type_key = email.type|lower|replace('_ok', '') if email.type else '' %}
-        {% set is_internal = email_type_key.startswith('internal') %}
+        {% set recipient = email.recipient|lower if email.recipient else '' %}
+        {% set is_internal = email_type_key.startswith('internal') or 'admin' in recipient or recipient.endswith('@medidesk.com') %}
         {% if not is_internal %}
         <tr>
           <td class="text-muted">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
