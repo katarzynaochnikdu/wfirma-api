@@ -1247,7 +1247,6 @@ def order_send_reminder(order_id: str):
         template_key=template_key,
         to_email=purchaser_email,
         subject=subject,
-        status="queued",
     )
     
     # Wyślij przez Make
@@ -1374,7 +1373,6 @@ def order_resend_ticket(order_id: str):
             template_key="participant_ticket_resend",
             to_email=participant_email,
             subject=subject,
-            status="queued",
         )
         
         # Wyślij
