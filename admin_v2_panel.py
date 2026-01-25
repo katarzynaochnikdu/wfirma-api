@@ -1453,10 +1453,10 @@ def order_resend_ticket(order_id: str):
 @admin_v2_bp.route("/orders/<order_id>/cancel", methods=["POST"])
 @_require_permission("orders")
 def order_cancel(order_id: str):
-    """Anuluje zamówienie, generuje korektę jeśli była faktura, wysyła emaile."""
+    """Anuluje zamówienie, generuje korektę jeśli była faktura, wykonuje refund Stripe, wysyła emaile."""
     from flask import jsonify
     from datetime import datetime
-    from pg_storage import update_order_status, get_wfirma_documents, save_wfirma_document, get_participants_for_order, save_mail_log, get_event
+    from pg_storage import update_order_status, get_wfirma_documents, save_wfirma_document, get_participants_for_order, save_mail_log, get_event, get_stripe_session_by_order_id
     from backstage_engine import _send_email_via_make
     from email_templates import render_order_cancelled_email, render_participant_cancelled_email
     
@@ -1474,6 +1474,54 @@ def order_cancel(order_id: str):
     correction_number = None
     correction_error = None
     emails_sent = {"purchaser": False, "participants": 0}
+    
+    # Automatyczny zwrot Stripe (jeśli było opłacone przez Stripe)
+    refund_created = False
+    refund_amount = None
+    refund_currency = None
+    refund_error = None
+    is_stripe_payment = False
+    
+    # Sprawdź czy to płatność Stripe
+    payment_type = str(order.get("payment_type") or "").lower()
+    payment_option = str(order.get("payment_option_name") or "").lower()
+    is_proforma = "proforma" in payment_type or "pro" in payment_option
+    
+    if was_paid and not is_proforma:
+        # Sprawdź czy mamy sesję Stripe z payment_intent_id
+        try:
+            stripe_session = get_stripe_session_by_order_id(order_id)
+            if stripe_session and stripe_session.get("payment_intent_id"):
+                is_stripe_payment = True
+                payment_intent_id = stripe_session.get("payment_intent_id")
+                
+                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe, wykonuję automatyczny refund...")
+                
+                try:
+                    import stripe
+                    stripe_api_key = os.environ.get("STRIPE_RENDER_API_KEY")
+                    
+                    if stripe_api_key:
+                        stripe.api_key = stripe_api_key
+                        
+                        # Wykonaj zwrot
+                        refund = stripe.Refund.create(
+                            payment_intent=payment_intent_id,
+                            reason="requested_by_customer",
+                        )
+                        
+                        refund_created = True
+                        refund_amount = refund.amount / 100.0
+                        refund_currency = refund.currency.upper()
+                        print(f"[CANCEL] Refund utworzony: {refund.id}, kwota: {refund_amount} {refund_currency}")
+                    else:
+                        refund_error = "Brak konfiguracji STRIPE_RENDER_API_KEY"
+                        print(f"[CANCEL] Błąd refundu: {refund_error}")
+                except Exception as e:
+                    refund_error = f"Błąd Stripe: {str(e)}"
+                    print(f"[CANCEL] Wyjątek przy refundzie: {e}")
+        except Exception as e:
+            print(f"[CANCEL] Błąd sprawdzania sesji Stripe: {e}")
     
     # Pobierz dane wydarzenia
     event_id = order.get("event_id", "")
@@ -1636,6 +1684,11 @@ def order_cancel(order_id: str):
             "correction_created": correction_created,
             "correction_number": correction_number,
             "correction_error": correction_error,
+            "is_stripe_payment": is_stripe_payment,
+            "refund_created": refund_created,
+            "refund_amount": refund_amount,
+            "refund_currency": refund_currency,
+            "refund_error": refund_error,
             "emails_sent": emails_sent,
         },
         ip=request.remote_addr,
@@ -1643,20 +1696,27 @@ def order_cancel(order_id: str):
     
     # Buduj komunikat
     message = "Zamówienie zostało anulowane"
+    if refund_created:
+        message += f", zwrot Stripe: {refund_amount:.2f} {refund_currency}"
     if correction_created:
         message += f", wygenerowano korektę: {correction_number}"
     if emails_sent["purchaser"]:
         message += ", email do kupującego wysłany"
     if emails_sent["participants"] > 0:
         message += f", emaile do {emails_sent['participants']} uczestników wysłane"
+    if refund_error:
+        message += f". Uwaga (zwrot): {refund_error}"
     if correction_error:
-        message += f". Uwaga: {correction_error}"
+        message += f". Uwaga (korekta): {correction_error}"
     
     return jsonify({
         "success": True,
         "message": message,
         "correction_created": correction_created,
         "correction_number": correction_number,
+        "refund_created": refund_created,
+        "refund_amount": refund_amount,
+        "refund_currency": refund_currency,
         "emails_sent": emails_sent,
     })
 

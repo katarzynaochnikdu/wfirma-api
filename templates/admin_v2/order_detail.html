@@ -967,9 +967,7 @@
     
     // Status zamówienia - komunikat zależny od typu płatności
     let statusMessage = 'Status zamówienia zostanie zmieniony na <strong>"Anulowane"</strong>.';
-    if (isStripe && isPaid) {
-      statusMessage += ' Ta operacja nie powoduje automatycznego zwrotu płatności przez Stripe.';
-    } else if (isProforma) {
+    if (isProforma) {
       statusMessage += ' Zamówienie na fakturę proforma — nie wymaga zwrotu przez system płatności online.';
     } else if (isFOC) {
       statusMessage += ' Zamówienie bezpłatne (FOC).';
@@ -983,6 +981,18 @@
         </div>
       </div>
     </div>`;
+    
+    // Automatyczny zwrot Stripe (jeśli płatność Stripe i opłacone)
+    if (isStripe && isPaid && !isProforma) {
+      infoHtml += `<div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="credit-card" style="width: 18px; height: 18px; color: hsl(212, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(212, 100%, 25%);">
+            <strong>Automatyczny zwrot Stripe:</strong> Płatność zostanie automatycznie zwrócona na konto klienta poprzez Stripe. Klient otrzyma środki w ciągu 5-10 dni roboczych.
+          </div>
+        </div>
+      </div>`;
+    }
     
     // Faktura korygująca (jeśli jest faktura VAT)
     if (hasInvoice) {
@@ -1042,13 +1052,23 @@
       </div>`;
     }
     
+    // Dynamiczny tekst przycisku
+    let confirmButtonText = 'Anuluj zamówienie';
+    if (isStripe && isPaid && !isProforma && hasInvoice) {
+      confirmButtonText = 'Anuluj, zwróć i wygeneruj korektę';
+    } else if (isStripe && isPaid && !isProforma) {
+      confirmButtonText = 'Anuluj i zwróć płatność';
+    } else if (hasInvoice) {
+      confirmButtonText = 'Anuluj i wygeneruj korektę';
+    }
+    
     showActionModal({
       title: 'Anuluj zamówienie',
       icon: 'x-circle',
       iconColor: 'hsl(38, 100%, 45%)',
       text: 'Czy na pewno chcesz anulować to zamówienie?',
       info: infoHtml,
-      confirmText: hasInvoice ? 'Anuluj i wygeneruj korektę' : 'Anuluj zamówienie',
+      confirmText: confirmButtonText,
       confirmClass: 'btn btn-outline btn-destructive-outline',
       onConfirm: () => {
         fetch(`/admin-v2/orders/${orderId}/cancel`, { method: 'POST' })
