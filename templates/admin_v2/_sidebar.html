@@ -19,8 +19,8 @@
         </defs>
       </svg>
       <div class="sidebar-logo-text">
-        <p class="sidebar-title">Admin Panel V2</p>
-        <p class="sidebar-subtitle">Zarządzanie</p>
+        <p class="sidebar-title">Wydarzenia Medidesk</p>
+        <p class="sidebar-subtitle">Panel administracyjny</p>
       </div>
     </div>
     <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebar-toggle-btn" title="Zwiń/rozwiń menu">
@@ -54,10 +54,12 @@
       <i data-lucide="users"></i>
       <span>Uczestnicy</span>
     </a>
+    {% if user_role == 'admin' %}
     <a href="{{ url_for('admin_v2_bp.communication') }}" class="nav-item{% if active_page == 'communication' %} active{% endif %}">
       <i data-lucide="mail"></i>
       <span>Komunikacja</span>
     </a>
+    {% endif %}
     {% endif %}
   </nav>
 
@@ -66,10 +68,6 @@
     <a href="{{ url_for('admin_v2_bp.settings') }}" class="nav-item{% if active_page == 'settings' %} active{% endif %}">
       <i data-lucide="settings"></i>
       <span>Ustawienia</span>
-    </a>
-    <a href="/admin/events" class="nav-item" title="Przejdź do starego panelu">
-      <i data-lucide="arrow-left-circle"></i>
-      <span>Stary panel</span>
     </a>
     <button class="nav-item nav-logout" onclick="logout()">
       <i data-lucide="log-out"></i>

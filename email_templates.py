@@ -2,6 +2,7 @@
 Szablony email dla Render - bazowane na Make.com HTML templates.
 Obsługuje 3 warianty: osobiste, NIP poprawny, NIP niepoprawny.
 """
+import os
 from typing import Dict, Any, Optional, List
 
 
@@ -1697,7 +1698,7 @@ def _build_calendar_section(event_id: str, color_gradient_1: str = "#2563eb", ba
     
     # Domyślny URL jeśli nie podano
     if not base_url:
-        base_url = "https://wfirma-api.onrender.com"
+        base_url = os.environ.get("PANEL_BASE_URL", "https://wfirma-api.onrender.com")
     
     calendar_url = f"{base_url}/api/events/{event_id}/calendar.ics"
     

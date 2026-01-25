@@ -9,12 +9,14 @@
     <h1 class="page-title">Zamówienia</h1>
     <p class="page-description">Przeglądaj i zarządzaj zamówieniami</p>
   </div>
+  {% if user_role == 'admin' %}
   <div class="header-actions">
     <a href="{{ url_for('admin_v2_bp.orders_export', status=request.args.get('status', ''), event_id=request.args.get('event_id', '')) }}" class="btn btn-outline">
       <i data-lucide="download"></i>
       Eksportuj CSV
     </a>
   </div>
+  {% endif %}
 </div>
 
 <!-- FILTERS CARD -->

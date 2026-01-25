@@ -97,11 +97,13 @@ def _user_has_event_access(user: Optional[Dict[str, Any]], event_id: str) -> boo
     if not user:
         return False
     role = (user.get("role") or "").strip().lower()
-    # Admin i user mają dostęp do wszystkich wydarzeń
-    if role in ("admin", "user"):
+    # Admin ma dostęp do wszystkich wydarzeń
+    if role == "admin":
         return True
-    # Viewer ma dostęp tylko do wydarzeń z allowed_events
-    if role == "viewer":
+    # User i viewer - sprawdzamy allowed_events
+    # Jeśli lista jest pusta lub None - user ma dostęp do wszystkich
+    # Jeśli lista zawiera wydarzenia - user ma dostęp tylko do nich
+    if role in ("user", "viewer"):
         allowed_event_ids = user.get("allowed_events") or []
         if isinstance(allowed_event_ids, str):
             import json
@@ -110,6 +112,10 @@ def _user_has_event_access(user: Optional[Dict[str, Any]], event_id: str) -> boo
             except:
                 allowed_event_ids = []
         allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        # Jeśli lista pusta - dostęp do wszystkich
+        if not allowed_event_ids:
+            return True
+        # Jeśli lista niepusta - sprawdź czy event_id jest na liście
         return str(event_id) in allowed_event_ids
     return False
 
@@ -187,6 +193,40 @@ def _require_permission(page: str):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+def _require_admin(f):
+    """Dekorator wymagający roli admin (blokuje user i viewer)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        from flask import jsonify
+        user = _get_current_admin_user()
+        
+        # Sprawdź czy to request AJAX/API (oczekuje JSON)
+        is_ajax = (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest" or
+            request.content_type == "application/json" or
+            request.path.startswith("/admin-v2/api/")
+        )
+        
+        if not user:
+            if is_ajax:
+                return jsonify({"success": False, "error": "Sesja wygasła. Zaloguj się ponownie."}), 401
+            return redirect(url_for("admin_v2_bp.login"))
+        
+        role = (user.get("role") or "").strip().lower() or "admin"
+        if role != "admin":
+            if is_ajax:
+                return jsonify({"success": False, "error": "Dostęp tylko dla administratorów."}), 403
+            return render_template(
+                "admin_v2/base.html",
+                active_page="",
+                **_get_common_context(user),
+            ), 403
+        
+        request.admin_user = user
+        return f(*args, **kwargs)
+    return decorated
 
 
 def _get_common_context(user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -792,9 +832,9 @@ def orders_list():
 
 
 @admin_v2_bp.route("/orders/export", methods=["GET"])
-@_require_permission("orders")
+@_require_admin
 def orders_export():
-    """Eksport zamówień do CSV."""
+    """Eksport zamówień do CSV (tylko admin)."""
     import csv
     import io
     from flask import Response
@@ -849,9 +889,9 @@ def orders_export():
 
 
 @admin_v2_bp.route("/participants/export", methods=["GET"])
-@_require_permission("orders")
+@_require_admin
 def participants_export():
-    """Eksport uczestników do CSV."""
+    """Eksport uczestników do CSV (tylko admin)."""
     import csv
     import io
     from flask import Response
@@ -2258,9 +2298,9 @@ def document_download_pdf(doc_id: int):
 # ---------------------------------------------------------------------------
 
 @admin_v2_bp.route("/email-designer", methods=["GET"])
-@_require_permission("events")
+@_require_admin
 def email_designer():
-    """Email Designer - projektowanie szablonów email."""
+    """Email Designer - projektowanie szablonów email (tylko admin)."""
     user = _get_current_admin_user()
     
     # Pobierz wydarzenia dla dropdowna
@@ -2289,9 +2329,9 @@ def email_designer():
 
 
 @admin_v2_bp.route("/api/templates", methods=["GET"])
-@_require_permission("events")
+@_require_admin
 def api_templates_list():
-    """API: Lista szablonów emaili."""
+    """API: Lista szablonów emaili (tylko admin)."""
     from flask import jsonify
     from pg_storage import list_email_templates, count_email_templates
     
@@ -2328,9 +2368,9 @@ def api_templates_list():
 
 
 @admin_v2_bp.route("/api/templates/<int:template_id>", methods=["GET"])
-@_require_permission("events")
+@_require_admin
 def api_template_get(template_id: int):
-    """API: Pobierz szablon."""
+    """API: Pobierz szablon (tylko admin)."""
     from flask import jsonify
     from pg_storage import get_email_template
     
@@ -2346,9 +2386,9 @@ def api_template_get(template_id: int):
 
 
 @admin_v2_bp.route("/api/templates", methods=["POST"])
-@_require_permission("events")
+@_require_admin
 def api_template_create():
-    """API: Utwórz nowy szablon."""
+    """API: Utwórz nowy szablon (tylko admin)."""
     from flask import jsonify
     from pg_storage import save_email_template
     
@@ -2406,9 +2446,9 @@ def api_template_create():
 
 
 @admin_v2_bp.route("/api/templates/<int:template_id>", methods=["PUT"])
-@_require_permission("events")
+@_require_admin
 def api_template_update(template_id: int):
-    """API: Aktualizuj szablon."""
+    """API: Aktualizuj szablon (tylko admin)."""
     from flask import jsonify
     from pg_storage import save_email_template, get_email_template
     
@@ -2468,9 +2508,9 @@ def api_template_update(template_id: int):
 
 
 @admin_v2_bp.route("/api/templates/<int:template_id>", methods=["DELETE"])
-@_require_permission("events")
+@_require_admin
 def api_template_delete(template_id: int):
-    """API: Usuń szablon."""
+    """API: Usuń szablon (tylko admin)."""
     from flask import jsonify
     from pg_storage import delete_email_template, get_email_template
     
@@ -2515,9 +2555,9 @@ def api_template_delete(template_id: int):
 
 
 @admin_v2_bp.route("/api/templates/<int:template_id>/duplicate", methods=["POST"])
-@_require_permission("events")
+@_require_admin
 def api_template_duplicate(template_id: int):
-    """API: Duplikuj szablon."""
+    """API: Duplikuj szablon (tylko admin)."""
     from flask import jsonify
     from pg_storage import duplicate_email_template, get_email_template
     
@@ -3867,13 +3907,15 @@ def user_new():
                 last_name=last_name,
                 role=role,
                 allowed_pages=allowed_pages if role != "admin" else [],
-                allowed_events=allowed_events if role == "viewer" else [],
+                allowed_events=allowed_events if role in ("user", "viewer") else [],
                 must_change_password=True,
             )
             
             if new_user:
                 # Wyślij email z hasłem
                 from backstage_engine import _send_email_via_make
+                panel_url = os.environ.get("PANEL_BASE_URL", "https://wfirma-api.onrender.com")
+                login_url = f"{panel_url}/admin-v2/login"
                 email_result = _send_email_via_make(
                     to_email=email,
                     subject="Twoje konto w panelu administracyjnym Medidesk",
@@ -3883,7 +3925,7 @@ def user_new():
                     <p><strong>Login:</strong> {email}<br>
                     <strong>Hasło tymczasowe:</strong> {temp_password}</p>
                     <p>Po pierwszym logowaniu zostaniesz poproszony o zmianę hasła.</p>
-                    <p><a href="https://wfirma-api.onrender.com/admin-v2/login">Zaloguj się tutaj</a></p>
+                    <p><a href="{login_url}">Zaloguj się tutaj</a></p>
                     """,
                     template_type="admin_account_created",
                 )
@@ -3967,7 +4009,7 @@ def user_edit(user_id: int):
                 last_name=last_name,
                 role=role,
                 allowed_pages=allowed_pages if role != "admin" else [],
-                allowed_events=allowed_events if role == "viewer" else [],
+                allowed_events=allowed_events if role in ("user", "viewer") else [],
                 is_active=is_active,
             )
             
@@ -4043,6 +4085,8 @@ def user_reset_password(user_id: int):
     if ok:
         # Wyślij email z nowym hasłem
         from backstage_engine import _send_email_via_make
+        panel_url = os.environ.get("PANEL_BASE_URL", "https://wfirma-api.onrender.com")
+        login_url = f"{panel_url}/admin-v2/login"
         email_result = _send_email_via_make(
             to_email=target_user["email"],
             subject="Reset hasła - Panel administracyjny Medidesk",
@@ -4051,7 +4095,7 @@ def user_reset_password(user_id: int):
             <p>Twoje hasło zostało zresetowane.</p>
             <p><strong>Nowe hasło tymczasowe:</strong> {temp_password}</p>
             <p>Po zalogowaniu zostaniesz poproszony o zmianę hasła.</p>
-            <p><a href="https://wfirma-api.onrender.com/admin-v2/login">Zaloguj się tutaj</a></p>
+            <p><a href="{login_url}">Zaloguj się tutaj</a></p>
             """,
             template_type="admin_password_reset",
         )
@@ -4733,9 +4777,9 @@ def _get_template_usage_stats() -> Dict[str, int]:
 
 
 @admin_v2_bp.route("/communication", methods=["GET"])
-@_require_permission("orders")
+@_require_admin
 def communication():
-    """Historia wysyłek i komunikacji."""
+    """Historia wysyłek i komunikacji (tylko admin)."""
     from datetime import datetime, timedelta
     from pg_storage import list_email_templates
     
@@ -4824,9 +4868,9 @@ def communication():
 
 
 @admin_v2_bp.route("/communication/<int:email_id>/retry", methods=["POST"])
-@_require_permission("orders")
+@_require_admin
 def email_retry(email_id: int):
-    """Ponów wysyłkę emaila."""
+    """Ponów wysyłkę emaila (tylko admin)."""
     from flask import jsonify
     from pg_storage import get_mail_task, update_mail_task_status
     from backstage_engine import _send_email_via_make
@@ -4891,7 +4935,7 @@ def email_retry(email_id: int):
 
 
 @admin_v2_bp.route("/communication/<int:email_id>/delete", methods=["POST"])
-@_require_permission("admin")
+@_require_admin
 def email_delete(email_id: int):
     """Usuń wpis z historii wysyłek (tylko admin)."""
     from flask import jsonify
@@ -4917,9 +4961,9 @@ def email_delete(email_id: int):
 
 
 @admin_v2_bp.route("/communication/export", methods=["GET"])
-@_require_permission("orders")
+@_require_admin
 def communication_export():
-    """Eksport historii komunikacji do CSV."""
+    """Eksport historii komunikacji do CSV (tylko admin)."""
     import csv
     import io
     from flask import Response
@@ -4962,10 +5006,10 @@ def communication_export():
 
 
 @admin_v2_bp.route("/templates/<template_key>/preview", methods=["GET"])
-@_require_permission("orders")
+@_require_admin
 def template_preview(template_key: str):
     """
-    Podgląd szablonu emaila z przykładowymi danymi.
+    Podgląd szablonu emaila z przykładowymi danymi (tylko admin).
     Zwraca HTML szablonu gotowy do wyświetlenia w modalu.
     """
     from flask import jsonify

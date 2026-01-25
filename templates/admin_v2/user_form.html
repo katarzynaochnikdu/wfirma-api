@@ -82,7 +82,7 @@
         <select id="role" name="role" onchange="toggleSections()" title="Wybierz rolę użytkownika">
           {% set current_role = request.form.get('role') or (target_user.role if target_user else 'user') %}
           <option value="admin" {{ 'selected' if current_role == 'admin' }}>Administrator (pełny dostęp)</option>
-          <option value="user" {{ 'selected' if current_role == 'user' }}>Użytkownik (wybrane karty)</option>
+          <option value="user" {{ 'selected' if current_role == 'user' }}>Użytkownik (wybrane karty i wydarzenia)</option>
           <option value="viewer" {{ 'selected' if current_role == 'viewer' }}>Viewer (tylko podgląd wybranych wydarzeń)</option>
         </select>
         <div class="form-hint">Administrator ma pełny dostęp do wszystkich funkcji</div>
@@ -103,7 +103,7 @@
         <div class="form-hint">Wybierz karty, do których użytkownik będzie miał dostęp</div>
       </div>
       
-      <!-- Uprawnienia do wydarzeń (dla viewer) -->
+      <!-- Uprawnienia do wydarzeń (dla user i viewer) -->
       <div id="events-section" class="form-group" style="display: none;">
         <label>Dostęp do wydarzeń</label>
         <div class="events-permissions-grid">
@@ -115,7 +115,7 @@
           </label>
           {% endfor %}
         </div>
-        <div class="form-hint">Viewer widzi tylko wybrane wydarzenia i ich zamówienia (bez możliwości edycji)</div>
+        <div class="form-hint">Jeśli nie wybierzesz żadnego - użytkownik będzie miał dostęp do wszystkich. Viewer ma tylko podgląd (bez możliwości edycji).</div>
       </div>
       
       {% if mode == 'edit' %}
@@ -423,7 +423,7 @@ function toggleSections() {
   const eventsSection = document.getElementById('events-section');
   
   pagesSection.style.display = (role === 'user') ? 'block' : 'none';
-  eventsSection.style.display = (role === 'viewer') ? 'block' : 'none';
+  eventsSection.style.display = (role === 'user' || role === 'viewer') ? 'block' : 'none';
 }
 
 // Uruchom przy ładowaniu

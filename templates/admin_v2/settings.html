@@ -105,6 +105,7 @@
     </div>
   </a>
   
+  {% if user_role == 'admin' %}
   <a href="{{ url_for('admin_v2_bp.email_designer') }}" class="card quick-link-card">
     <div class="quick-link-icon" style="background: hsl(160, 82%, 44%, 0.1);">
       <i data-lucide="palette" style="width: 24px; height: 24px; color: hsl(160, 82%, 44%);"></i>
@@ -114,6 +115,7 @@
       <p style="font-size: 0.75rem; color: var(--muted-foreground);">Kreator wiadomości</p>
     </div>
   </a>
+  {% endif %}
   
   <a href="{{ url_for('admin_v2_bp.work_queue') }}" class="card quick-link-card">
     <div class="quick-link-icon" style="background: hsl(0, 84%, 60%, 0.1);">
