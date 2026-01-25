@@ -310,319 +310,318 @@ input[type="color"].form-input {
 {% endif %}
 
 
-<form method="POST" id="event-form" class="card" style="padding: 1.5rem;">
-  <!-- INFO O SYNCHRONIZACJI -->
-  <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: var(--radius); background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 85%);">
-    <p style="font-size: 0.875rem; color: hsl(212, 100%, 30%); display: flex; align-items: center; gap: 0.5rem; margin: 0;">
-      <i data-lucide="info" style="width: 16px; height: 16px;"></i>
-      <span>Pola oznaczone <span style="color: hsl(160, 82%, 35%); font-weight: 600;">●</span> są synchronizowane z Zoho Backstage. Pozostałe pola są tylko lokalne.</span>
-    </p>
-  </div>
+<form method="POST" id="event-form">
 
-  <!-- PODSTAWOWE INFORMACJE (SYNCHRONIZOWANE) -->
-  <div style="margin-bottom: 2rem;">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="refresh-cw" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%);"></i>
-      Dane synchronizowane z Zoho
-    </h3>
+  {% if event %}
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <!-- SEKCJA 1: DANE Z ZOHO BACKSTAGE (tylko podgląd) -->
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem; border: 2px solid hsl(160, 82%, 85%); background: linear-gradient(135deg, hsl(160, 82%, 98%) 0%, white 100%);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+      <h3 style="font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: hsl(160, 82%, 30%);">
+        <i data-lucide="cloud" style="width: 20px; height: 20px;"></i>
+        Dane z Zoho Backstage
+      </h3>
+      <span style="font-size: 0.75rem; padding: 0.25rem 0.75rem; background: hsl(160, 82%, 90%); color: hsl(160, 82%, 25%); border-radius: 999px; font-weight: 500;">
+        Tylko podgląd
+      </span>
+    </div>
+    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="info" style="width: 14px; height: 14px;"></i>
+      Te dane są pobierane z Zoho Backstage. Aby je edytować, użyj przycisku "Edytuj w Backstage" powyżej.
+    </p>
     
-    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+    <!-- Podstawowe info -->
+    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-bottom: 1.25rem;">
       <div class="form-group">
-        <label class="form-label">
-          <span style="color: hsl(160, 82%, 35%);">●</span> Nazwa wydarzenia *
-        </label>
-        <input type="text" name="event_name" class="form-input" required
-               value="{{ event.event_name if event else '' }}"
-               placeholder="np. Kongres Zdrowia 2026">
+        <label class="form-label" style="color: hsl(160, 82%, 30%);">Nazwa wydarzenia</label>
+        <input type="text" name="event_name" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
+               value="{{ event.event_name if event else '' }}">
       </div>
       
-      {% if not event %}
       <div class="form-group">
-        <label class="form-label">ID wydarzenia *</label>
-        <input type="text" name="event_id" class="form-input" required
-               placeholder="np. kongres-zdrowia-2026"
-               pattern="[a-z0-9\-]+" title="Tylko małe litery, cyfry i myślniki">
-        <small style="color: var(--muted-foreground);">ID musi być unikalne (małe litery, cyfry, myślniki)</small>
-      </div>
-      {% endif %}
-      
-      <div class="form-group">
-        <label class="form-label">
-          <span style="color: hsl(160, 82%, 35%);">●</span> Data rozpoczęcia
-        </label>
-        <input type="datetime-local" name="event_date_time" class="form-input"
+        <label class="form-label" style="color: hsl(160, 82%, 30%);">Data rozpoczęcia</label>
+        <input type="datetime-local" name="event_date_time" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
                value="{{ event_data.event_date_time[:16] if event_data and event_data.event_date_time else '' }}">
       </div>
       
       <div class="form-group">
-        <label class="form-label">
-          <span style="color: hsl(160, 82%, 35%);">●</span> Data zakończenia
-        </label>
-        <input type="datetime-local" name="event_end_date_time" class="form-input"
+        <label class="form-label" style="color: hsl(160, 82%, 30%);">Data zakończenia</label>
+        <input type="datetime-local" name="event_end_date_time" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
                value="{{ event_data.event_end_date_time[:16] if event_data and event_data.event_end_date_time else '' }}">
       </div>
     </div>
     
-    <div class="form-group" style="margin-top: 1rem;">
-      <label class="form-label">
-        <span style="color: hsl(160, 82%, 35%);">●</span> Opis wydarzenia
-      </label>
-      <!-- WYSIWYG Editor Container -->
-      <div class="quill-wrapper">
-        <div id="description-editor"></div>
+    <!-- Opis -->
+    <div class="form-group" style="margin-bottom: 1.25rem;">
+      <label class="form-label" style="color: hsl(160, 82%, 30%);">Opis wydarzenia</label>
+      <div style="padding: 1rem; background: hsl(160, 82%, 97%); border: 1px solid hsl(160, 82%, 80%); border-radius: var(--radius); min-height: 80px; font-size: 0.875rem; line-height: 1.6;">
+        {{ event_data.event_description|safe if event_data and event_data.event_description else '<span style="color: var(--muted-foreground); font-style: italic;">Brak opisu</span>'|safe }}
       </div>
-      <!-- Hidden input for form submission -->
       <input type="hidden" name="event_description" id="event_description_input" value="{{ event_data.event_description|e if event_data and event_data.event_description else '' }}">
-      <small style="color: var(--muted-foreground); margin-top: 0.25rem;">
-        <i data-lucide="info" style="width: 12px; height: 12px; display: inline; vertical-align: -2px;"></i>
-        Użyj narzędzi formatowania powyżej (pogrubienie, kursywa, listy)
-      </small>
     </div>
     
-    <div class="form-group" style="margin-top: 1rem;">
-      <label class="form-label">
-        <span style="color: hsl(160, 82%, 35%);">●</span> Podsumowanie wydarzenia
+    <!-- Podsumowanie -->
+    <div class="form-group" style="margin-bottom: 1.25rem;">
+      <label class="form-label" style="color: hsl(160, 82%, 30%);">Podsumowanie wydarzenia</label>
+      <input type="text" name="event_summary" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
+             value="{{ event_data.event_summary if event_data else '' }}">
+    </div>
+    
+    <!-- Lokalizacja -->
+    <div style="padding-top: 1rem; border-top: 1px dashed hsl(160, 82%, 80%);">
+      <label class="form-label" style="color: hsl(160, 82%, 30%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="map-pin" style="width: 14px; height: 14px;"></i>
+        Lokalizacja
       </label>
-      <input type="text" name="event_summary" class="form-input"
-             value="{{ event_data.event_summary if event_data else '' }}"
-             placeholder="np. 15-16 marca 2026, Warszawa">
-      <small style="color: var(--muted-foreground);">Krótki tekst wyświetlany na kartach wydarzeń</small>
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem; color: var(--muted-foreground);">Nazwa miejsca</label>
+          <input type="text" name="event_location_place" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
+                 value="{{ event_data.event_location_place if event_data else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem; color: var(--muted-foreground);">Adres</label>
+          <input type="text" name="event_location_address" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
+                 value="{{ event_data.event_location_address if event_data else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem; color: var(--muted-foreground);">Miasto</label>
+          <input type="text" name="event_location_city" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
+                 value="{{ event_data.event_location_city if event_data else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem; color: var(--muted-foreground);">Kod pocztowy</label>
+          <input type="text" name="event_location_zip" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
+                 value="{{ event_data.event_location_zip if event_data else '' }}">
+        </div>
+      </div>
     </div>
   </div>
-
-  <!-- LOKALIZACJA (TYLKO LOKALNIE) -->
-  <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-      <i data-lucide="map-pin" style="width: 18px; height: 18px;"></i>
-      Lokalizacja
+  {% else %}
+  <!-- Nowe wydarzenie - pola edytowalne -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+    <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="plus-circle" style="width: 20px; height: 20px;"></i>
+      Nowe wydarzenie
     </h3>
-    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
-      <i data-lucide="alert-circle" style="width: 12px; height: 12px; display: inline;"></i>
-      Te dane nie są synchronizowane — edytuj lokalizację w Backstage i użyj "Pobierz z Backstage"
-    </p>
     
     <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
       <div class="form-group">
-        <label class="form-label" style="color: var(--muted-foreground);">Nazwa miejsca</label>
-        <input type="text" name="event_location_place" class="form-input" disabled
-               value="{{ event_data.event_location_place if event_data else '' }}"
-               placeholder="np. Hotel Marriott">
+        <label class="form-label">Nazwa wydarzenia *</label>
+        <input type="text" name="event_name" class="form-input" required placeholder="np. Kongres Zdrowia 2026">
       </div>
-      
       <div class="form-group">
-        <label class="form-label" style="color: var(--muted-foreground);">Adres</label>
-        <input type="text" name="event_location_address" class="form-input" disabled
-               value="{{ event_data.event_location_address if event_data else '' }}"
-               placeholder="np. ul. Główna 123">
+        <label class="form-label">ID wydarzenia *</label>
+        <input type="text" name="event_id" class="form-input" required placeholder="np. kongres-zdrowia-2026"
+               pattern="[a-z0-9\-]+" title="Tylko małe litery, cyfry i myślniki">
+        <small style="color: var(--muted-foreground);">ID musi być unikalne (małe litery, cyfry, myślniki)</small>
       </div>
-      
       <div class="form-group">
-        <label class="form-label" style="color: var(--muted-foreground);">Kod pocztowy</label>
-        <input type="text" name="event_location_zip" class="form-input" disabled
-               value="{{ event_data.event_location_zip if event_data else '' }}"
-               placeholder="np. 00-001">
+        <label class="form-label">Data rozpoczęcia</label>
+        <input type="datetime-local" name="event_date_time" class="form-input">
       </div>
-      
       <div class="form-group">
-        <label class="form-label" style="color: var(--muted-foreground);">Miasto</label>
-        <input type="text" name="event_location_city" class="form-input" disabled
-               value="{{ event_data.event_location_city if event_data else '' }}"
-               placeholder="np. Warszawa">
+        <label class="form-label">Data zakończenia</label>
+        <input type="datetime-local" name="event_end_date_time" class="form-input">
       </div>
     </div>
-  </div>
-
-  <!-- BRANDING (TYLKO LOKALNIE) -->
-  <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="palette" style="width: 18px; height: 18px;"></i>
-      Branding (tylko lokalne)
-    </h3>
-    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
-      Ustawienia wyglądu używane w panelu i emailach
-    </p>
-    
-    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-      <div class="form-group">
-        <label class="form-label">Kolor 1 (gradient)</label>
-        <input type="color" name="color_gradient_1" class="form-input" style="height: 40px; padding: 0.25rem;"
-               value="{{ event_data.color_gradient_1 if event_data else '#2563eb' }}">
-      </div>
-      
-      <div class="form-group">
-        <label class="form-label">Kolor 2 (gradient)</label>
-        <input type="color" name="color_gradient_2" class="form-input" style="height: 40px; padding: 0.25rem;"
-               value="{{ event_data.color_gradient_2 if event_data else '#1e40af' }}">
-      </div>
-      
-      <div class="form-group" style="grid-column: 1 / -1;">
-        <label class="form-label">URL bannera (email)</label>
-        <input type="url" name="event_mail_link_top_banner" class="form-input"
-               value="{{ event_data.event_mail_link_top_banner if event_data else '' }}"
-               placeholder="https://...">
-      </div>
+    <div class="form-group" style="margin-top: 1rem;">
+      <label class="form-label">Opis wydarzenia</label>
+      <textarea name="event_description" class="form-input" rows="4" placeholder="Opis wydarzenia..."></textarea>
     </div>
   </div>
+  {% endif %}
 
-  <!-- LINKI I KONTAKT (TYLKO LOKALNIE) -->
-  <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="link" style="width: 18px; height: 18px;"></i>
-      Linki i kontakt (tylko lokalne)
-    </h3>
-    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
-      Używane w emailach i panelu
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <!-- SEKCJA 2: DANE LOKALNE (edytowalne) -->
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem; border: 2px solid hsl(212, 100%, 85%); background: linear-gradient(135deg, hsl(212, 100%, 98%) 0%, white 100%);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+      <h3 style="font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: hsl(212, 100%, 30%);">
+        <i data-lucide="settings" style="width: 20px; height: 20px;"></i>
+        Ustawienia lokalne
+      </h3>
+      <span style="font-size: 0.75rem; padding: 0.25rem 0.75rem; background: hsl(212, 100%, 90%); color: hsl(212, 100%, 25%); border-radius: 999px; font-weight: 500;">
+        Edytowalne
+      </span>
+    </div>
+    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.25rem;">
+      Te ustawienia są przechowywane lokalnie i używane w panelu oraz emailach.
     </p>
     
-    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
-      <div class="form-group">
-        <label class="form-label">URL wydarzenia</label>
-        <input type="url" name="url_event" class="form-input"
-               value="{{ event_data.url_event if event_data else '' }}"
-               placeholder="https://...">
+    <!-- Branding -->
+    <div style="margin-bottom: 1.5rem;">
+      <label class="form-label" style="color: hsl(212, 100%, 30%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="palette" style="width: 14px; height: 14px;"></i>
+        Branding
+      </label>
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem;">Kolor 1 (gradient)</label>
+          <input type="color" name="color_gradient_1" class="form-input" style="height: 44px; padding: 0.25rem;"
+                 value="{{ event_data.color_gradient_1 if event_data else '#2563eb' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem;">Kolor 2 (gradient)</label>
+          <input type="color" name="color_gradient_2" class="form-input" style="height: 44px; padding: 0.25rem;"
+                 value="{{ event_data.color_gradient_2 if event_data else '#1e40af' }}">
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label" style="font-size: 0.75rem;">URL bannera (email)</label>
+          <input type="url" name="event_mail_link_top_banner" class="form-input"
+                 value="{{ event_data.event_mail_link_top_banner if event_data else '' }}" placeholder="https://...">
+        </div>
       </div>
-      
-      <div class="form-group">
-        <label class="form-label">Email kontaktowy</label>
-        <input type="email" name="md_email_kontakt" class="form-input"
-               value="{{ event_data.md_email_kontakt if event_data else 'konferencje@medidesk.com' }}"
-               placeholder="konferencje@medidesk.com">
+    </div>
+    
+    <!-- Linki i kontakt -->
+    <div style="padding-top: 1rem; border-top: 1px dashed hsl(212, 100%, 80%);">
+      <label class="form-label" style="color: hsl(212, 100%, 30%); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="link" style="width: 14px; height: 14px;"></i>
+        Linki i kontakt
+      </label>
+      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem;">URL wydarzenia</label>
+          <input type="url" name="url_event" class="form-input"
+                 value="{{ event_data.url_event if event_data else '' }}" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem;">Email kontaktowy</label>
+          <input type="email" name="md_email_kontakt" class="form-input"
+                 value="{{ event_data.md_email_kontakt if event_data else 'konferencje@medidesk.com' }}" placeholder="konferencje@medidesk.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem; display: flex; align-items: center; gap: 0.35rem;">
+            <i data-lucide="check-circle" style="width: 12px; height: 12px; color: hsl(160, 82%, 40%);"></i>
+            Strona sukcesu
+          </label>
+          <input type="url" name="url_success" class="form-input"
+                 value="{{ event_data.url_success if event_data else '' }}" placeholder="https://... (przekierowanie po płatności)">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.75rem; display: flex; align-items: center; gap: 0.35rem;">
+            <i data-lucide="x-circle" style="width: 12px; height: 12px; color: hsl(0, 84%, 50%);"></i>
+            Strona anulowania
+          </label>
+          <input type="url" name="url_cancel" class="form-input"
+                 value="{{ event_data.url_cancel if event_data else '' }}" placeholder="https://... (przekierowanie po anulowaniu)">
+        </div>
       </div>
     </div>
   </div>
 
   {% if event %}
-  <!-- TYPY BILETÓW -->
-  <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="ticket" style="width: 18px; height: 18px;"></i>
-      Typy biletów
-    </h3>
-    <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 1rem;">
-      Pobierz typy biletów z Zoho Backstage do mapowania w systemie
-    </p>
-    
-    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-      <button type="button" id="fetchTicketsBtn" class="btn btn-outline" onclick="fetchTicketTypes()">
-        <i data-lucide="download"></i>
-        Pobierz typy biletów z Backstage
-      </button>
-      
-      <span id="ticketsStatus" style="font-size: 0.875rem; color: var(--muted-foreground);">
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <!-- SEKCJA 3: TYPY BILETÓW (z Zoho) -->
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem; border: 2px solid hsl(280, 60%, 85%); background: linear-gradient(135deg, hsl(280, 60%, 98%) 0%, white 100%);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+      <h3 style="font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin: 0; color: hsl(280, 60%, 30%);">
+        <i data-lucide="ticket" style="width: 20px; height: 20px;"></i>
+        Typy biletów
         {% if ticket_classes %}
-          <span style="color: hsl(160, 82%, 35%);">✓</span> {{ ticket_classes|length }} typ(ów) biletów
+        <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ ticket_classes|length }})</span>
+        {% endif %}
+      </h3>
+      <button type="button" id="fetchTicketsBtn" class="btn btn-outline btn-sm" onclick="fetchTicketTypes()" style="border-color: hsl(280, 60%, 70%); color: hsl(280, 60%, 35%);">
+        <i data-lucide="download"></i>
+        Pobierz z Backstage
+      </button>
+    </div>
+    <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.25rem;">
+      <span id="ticketsStatus">
+        {% if ticket_classes %}
+        Bilety pobrane z Zoho Backstage. Kliknij "Pobierz z Backstage" aby zaktualizować.
         {% else %}
-          Brak typów biletów
+        Brak biletów. Kliknij "Pobierz z Backstage" aby pobrać typy biletów.
         {% endif %}
       </span>
-    </div>
+    </p>
     
     {% if ticket_classes %}
-    <div style="margin-top: 1rem;">
-      {# Rozdziel bilety na aktywne i nieaktywne #}
-      {% set ns = namespace(active=[], inactive=[]) %}
-      {% for tc in ticket_classes %}
+    {# Rozdziel bilety na aktywne i nieaktywne #}
+    {% set ns = namespace(active=[], inactive=[]) %}
+    {% for tc in ticket_classes %}
+      {% set tc_data = tc.data if tc.data is mapping else {} %}
+      {% set is_hidden = tc_data.get('hidden', false) %}
+      {% set tc_status = tc_data.get('status', '')|lower %}
+      {% if is_hidden or tc_status in ['cancelled', 'expired', 'sold_out', 'ended'] %}
+        {% set ns.inactive = ns.inactive + [tc] %}
+      {% else %}
+        {% set ns.active = ns.active + [tc] %}
+      {% endif %}
+    {% endfor %}
+    
+    <!-- AKTYWNE BILETY -->
+    {% if ns.active %}
+    <div style="margin-bottom: 1.25rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: hsl(160, 82%, 45%);"></span>
+        <span style="font-size: 0.875rem; font-weight: 600; color: hsl(160, 82%, 30%);">Aktywne ({{ ns.active|length }})</span>
+      </div>
+      <div style="display: grid; gap: 0.5rem;">
+        {% for tc in ns.active %}
         {% set tc_data = tc.data if tc.data is mapping else {} %}
-        {% set is_hidden = tc_data.get('hidden', false) %}
-        {% set tc_status = tc_data.get('status', '')|lower %}
-        {% if is_hidden or tc_status in ['cancelled', 'expired', 'sold_out', 'ended'] %}
-          {% set ns.inactive = ns.inactive + [tc] %}
-        {% else %}
-          {% set ns.active = ns.active + [tc] %}
-        {% endif %}
-      {% endfor %}
-      
-      <!-- AKTYWNE BILETY -->
-      {% if ns.active %}
-      <div style="margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <span style="width: 8px; height: 8px; border-radius: 50%; background: hsl(160, 82%, 45%);"></span>
-          <span style="font-size: 0.8125rem; font-weight: 600; color: hsl(160, 82%, 35%);">Aktywne ({{ ns.active|length }})</span>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: hsl(160, 82%, 97%); border: 1px solid hsl(160, 82%, 85%); border-radius: var(--radius);">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <i data-lucide="ticket" style="width: 16px; height: 16px; color: hsl(160, 82%, 40%);"></i>
+            <div>
+              <span style="font-weight: 500;">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</span>
+              <span style="font-size: 0.8125rem; color: var(--muted-foreground); margin-left: 0.5rem;">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</span>
+            </div>
+          </div>
+          <code style="font-size: 0.7rem; color: var(--muted-foreground); background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">{{ tc.ticket_class_id }}</code>
         </div>
-        <div style="background: hsl(160, 82%, 97%); border: 1px solid hsl(160, 82%, 85%); border-radius: var(--radius); overflow: hidden;">
-          <table style="width: 100%; font-size: 0.875rem;">
-            <thead>
-              <tr style="text-align: left; background: hsl(160, 82%, 92%);">
-                <th style="padding: 0.5rem 0.75rem; color: hsl(160, 82%, 30%);">Nazwa</th>
-                <th style="padding: 0.5rem 0.75rem; color: hsl(160, 82%, 30%);">Cena</th>
-                <th style="padding: 0.5rem 0.75rem; color: hsl(160, 82%, 30%);">ID</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for tc in ns.active %}
-              {% set tc_data = tc.data if tc.data is mapping else {} %}
-              <tr style="border-top: 1px solid hsl(160, 82%, 85%);">
-                <td style="padding: 0.5rem 0.75rem; font-weight: 500;">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</td>
-                <td style="padding: 0.5rem 0.75rem;">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</td>
-                <td style="padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        {% endfor %}
       </div>
-      {% endif %}
+    </div>
+    {% endif %}
       
-      <!-- NIEAKTYWNE BILETY -->
-      {% if ns.inactive %}
-      <div>
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground);"></span>
-          <span style="font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground);">Nieaktywne ({{ ns.inactive|length }})</span>
-        </div>
-        <div style="background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; opacity: 0.7;">
-          <table style="width: 100%; font-size: 0.875rem;">
-            <thead>
-              <tr style="text-align: left; background: var(--border);">
-                <th style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">Nazwa</th>
-                <th style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">Cena</th>
-                <th style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">ID</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for tc in ns.inactive %}
-              {% set tc_data = tc.data if tc.data is mapping else {} %}
-              <tr style="border-top: 1px solid var(--border);">
-                <td style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</td>
-                <td style="padding: 0.5rem 0.75rem; color: var(--muted-foreground);">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</td>
-                <td style="padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.75rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+    <!-- NIEAKTYWNE BILETY -->
+    {% if ns.inactive %}
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: var(--muted-foreground);"></span>
+        <span style="font-size: 0.875rem; font-weight: 600; color: var(--muted-foreground);">Nieaktywne ({{ ns.inactive|length }})</span>
       </div>
-      {% endif %}
-      
-      {% if not ns.active and not ns.inactive %}
-      <div style="padding: 1rem; text-align: center; color: var(--muted-foreground); background: var(--muted); border-radius: var(--radius);">
-        Brak typów biletów
+      <div style="display: grid; gap: 0.5rem;">
+        {% for tc in ns.inactive %}
+        {% set tc_data = tc.data if tc.data is mapping else {} %}
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); opacity: 0.7;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <i data-lucide="ticket" style="width: 16px; height: 16px; color: var(--muted-foreground);"></i>
+            <div>
+              <span style="font-weight: 500; color: var(--muted-foreground);">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</span>
+              <span style="font-size: 0.8125rem; color: var(--muted-foreground); margin-left: 0.5rem;">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</span>
+            </div>
+          </div>
+          <code style="font-size: 0.7rem; color: var(--muted-foreground); background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">{{ tc.ticket_class_id }}</code>
+        </div>
+        {% endfor %}
       </div>
-      {% endif %}
+    </div>
+    {% endif %}
+    
+    {% if not ns.active and not ns.inactive %}
+    <div style="padding: 2rem; text-align: center; color: var(--muted-foreground);">
+      <i data-lucide="ticket" style="width: 32px; height: 32px; opacity: 0.3; margin-bottom: 0.5rem;"></i>
+      <p>Brak typów biletów</p>
+    </div>
+    {% endif %}
+    {% else %}
+    <div style="padding: 2rem; text-align: center; color: var(--muted-foreground);">
+      <i data-lucide="ticket" style="width: 32px; height: 32px; opacity: 0.3; margin-bottom: 0.5rem;"></i>
+      <p>Brak typów biletów</p>
+      <p style="font-size: 0.8125rem;">Kliknij "Pobierz z Backstage" aby pobrać typy biletów</p>
     </div>
     {% endif %}
   </div>
   {% endif %}
 
-  <!-- STATUS (SYNCHRONIZOWANY) -->
-  <div style="margin-bottom: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-      <i data-lucide="refresh-cw" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%);"></i>
-      Status
-    </h3>
-    
-    <div class="form-group">
-      <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-        <input type="checkbox" name="is_active" value="1" 
-               {% if not event or event.is_active %}checked{% endif %}
-               style="width: 18px; height: 18px;">
-        <span><span style="color: hsl(160, 82%, 35%);">●</span> Wydarzenie aktywne</span>
-      </label>
-      <small style="color: var(--muted-foreground); display: block; margin-top: 0.25rem;">
-        Status jest synchronizowany z Zoho Backstage
-      </small>
-    </div>
-  </div>
+  <!-- Status wydarzenia (ukryty input) -->
+  <input type="hidden" name="is_active" value="{% if not event or event.is_active %}1{% else %}0{% endif %}">
 
 </form>
 {% endblock %}
