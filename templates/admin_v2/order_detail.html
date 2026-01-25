@@ -871,6 +871,8 @@
     const hasInvoice = {{ 'true' if documents and documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
     const isPaid = {{ 'true' if order.status == 'paid' else 'false' }};
     const isFOC = {{ 'true' if 'foc' in (order.payment_type or '')|string|lower or (order.total or 0) == 0 else 'false' }};
+    const isProforma = {{ 'true' if 'proforma' in (order.payment_type or '')|string|lower or 'pro' in (order.payment_option_name or '')|string|lower else 'false' }};
+    const isStripe = {{ 'true' if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower else 'false' }};
     const participantCount = {{ participants|length if participants else 0 }};
     const hasEmailedParticipants = {{ 'true' if participants and participants|selectattr('status', 'equalto', 'emailed')|list|length > 0 else 'false' }};
     
@@ -879,13 +881,21 @@
     // Sekcja: Co zrobi system
     infoHtml += `<div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Co zrobi system:</div>`;
     
-    // Status zamówienia
+    // Status zamówienia - komunikat zależny od typu płatności
+    let statusMessage = 'Status zamówienia zostanie zmieniony na <strong>"Anulowane"</strong>.';
+    if (isStripe && isPaid) {
+      statusMessage += ' Ta operacja nie powoduje automatycznego zwrotu płatności przez Stripe.';
+    } else if (isProforma) {
+      statusMessage += ' Zamówienie na fakturę proforma — nie wymaga zwrotu przez system płatności online.';
+    } else if (isFOC) {
+      statusMessage += ' Zamówienie bezpłatne (FOC).';
+    }
+    
     infoHtml += `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
       <div style="display: flex; align-items: flex-start; gap: 10px;">
         <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
         <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
-          Status zamówienia zostanie zmieniony na <strong>"Anulowane"</strong>. 
-          Ta operacja nie powoduje automatycznego zwrotu płatności przez Stripe.
+          ${statusMessage}
         </div>
       </div>
     </div>`;
