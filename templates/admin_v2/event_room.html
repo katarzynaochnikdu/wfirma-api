@@ -2290,9 +2290,6 @@ function goToParticipantDetail(event, participantId) {
   if (event.target.tagName === 'INPUT' || event.target.tagName === 'A') {
     return;
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_room.html:goToParticipantDetail',message:'Navigation attempt',data:{participantId:participantId,typeofId:typeof participantId,targetUrl:'/admin-v2/participants/'+participantId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H2'})}).catch(()=>{});
-  // #endregion
   console.log('[DEBUG] goToParticipantDetail called with:', participantId, typeof participantId);
   window.location.href = '/admin-v2/participants/' + participantId;
 }

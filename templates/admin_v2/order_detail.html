@@ -714,39 +714,69 @@
 
   // Quick actions
   function sendProforma() {
-    if (confirm('Czy na pewno chcesz wysłać proformę?')) {
-      fetch(`/admin-v2/orders/${orderId}/send-proforma`, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast('Proforma została wysłana', 'success');
-            location.reload();
-          } else {
-            showToast(data.error || 'Błąd wysyłki proformy', 'error');
-          }
-        })
-        .catch(err => showToast('Błąd wysyłki proformy', 'error'));
-    }
+    showActionModal({
+      title: 'Wyślij proformę',
+      icon: 'file-text',
+      iconColor: 'hsl(38, 100%, 45%)',
+      text: 'Do klienta zostanie wysłana faktura proforma z danymi do przelewu bankowego.',
+      info: `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
+            Po otrzymaniu przelewu należy ręcznie oznaczyć zamówienie jako opłacone.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Wyślij proformę',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/send-proforma`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Proforma została wysłana', 'success');
+              location.reload();
+            } else {
+              showToast(data.error || 'Błąd wysyłki proformy', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd wysyłki proformy', 'error'));
+      }
+    });
   }
 
   function markAsPaid() {
-    if (confirm('Czy na pewno chcesz oznaczyć zamówienie jako opłacone?')) {
-      fetch(`/admin-v2/orders/${orderId}/status`, { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'paid' })
-      })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast('Zamówienie zostało oznaczone jako opłacone', 'success');
-            location.reload();
-          } else {
-            showToast(data.error || 'Błąd zmiany statusu', 'error');
-          }
+    showActionModal({
+      title: 'Oznacz jako opłacone',
+      icon: 'check-circle',
+      iconColor: 'hsl(142, 71%, 45%)',
+      text: 'Czy na pewno chcesz oznaczyć to zamówienie jako opłacone?',
+      info: `<div style="background: hsl(142, 71%, 97%); border: 1px solid hsl(142, 71%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="file-check" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(142, 71%, 25%);">
+            Zostanie wygenerowana faktura VAT w systemie wFirma i wysłane potwierdzenie do uczestników.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Oznacz jako opłacone',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/status`, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'paid' })
         })
-        .catch(err => showToast('Błąd zmiany statusu', 'error'));
-    }
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Zamówienie zostało oznaczone jako opłacone', 'success');
+              location.reload();
+            } else {
+              showToast(data.error || 'Błąd zmiany statusu', 'error');
+            }
+          })
+          .catch(err => showToast('Błąd zmiany statusu', 'error'));
+      }
+    });
   }
 
   function openCorrectionModal() {

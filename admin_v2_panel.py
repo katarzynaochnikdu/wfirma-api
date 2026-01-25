@@ -3003,16 +3003,12 @@ def participants_list():
 @_require_permission("orders")
 def participant_detail(participant_id: int):
     """Szczegóły uczestnika."""
-    # #region agent log
-    import json as _json; open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log','a').write(_json.dumps({"location":"admin_v2_panel.py:participant_detail","message":"Endpoint called","data":{"participant_id":participant_id,"type":str(type(participant_id))},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H3-H4"})+'\n')
-    # #endregion
+    print(f"[PARTICIPANT DETAIL] Called with participant_id={participant_id}")
     user = _get_current_admin_user()
     
     # Pobierz uczestnika z danymi zamówienia i wydarzenia
     participant = get_participant_by_id(participant_id)
-    # #region agent log
-    open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log','a').write(_json.dumps({"location":"admin_v2_panel.py:participant_detail:after_get","message":"Participant fetched","data":{"found":participant is not None,"participant_id":participant_id},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H4"})+'\n')
-    # #endregion
+    print(f"[PARTICIPANT DETAIL] get_participant_by_id returned: {participant is not None}")
     if not participant:
         return redirect(url_for("admin_v2_bp.participants_list"))
     
@@ -3077,7 +3073,7 @@ def participant_detail(participant_id: int):
             "type": "registration",
             "title": "Rejestracja uczestnika",
             "description": f"Uczestnik został zarejestrowany w ramach zamówienia",
-            "timestamp": participant["created_at"].strftime("%d.%m.%Y, %H:%M") if hasattr(participant["created_at"], "strftime") else str(participant["created_at"]),
+            "timestamp": _format_datetime_pl(participant["created_at"]),
         })
     
     # Dodaj emaile
@@ -3093,7 +3089,7 @@ def participant_detail(participant_id: int):
                 "error": "Błąd",
                 "bounced": "Odrzucono",
             }.get(email.get("status"), email.get("status")),
-            "timestamp": email.get("sent_at").strftime("%d.%m.%Y, %H:%M") if email.get("sent_at") and hasattr(email["sent_at"], "strftime") else "",
+            "timestamp": _format_datetime_pl(email.get("sent_at")),
         })
     
     # Sortuj historię po czasie (najnowsze na górze)
@@ -3480,6 +3476,31 @@ def _get_emails_for_order(order_id: str):
             _put_conn(pool, conn)
 
 
+def _format_datetime_pl(dt):
+    """Formatuje datetime do polskiej strefy czasowej (Europe/Warsaw)."""
+    if not dt:
+        return "—"
+    try:
+        from datetime import timezone, timedelta
+        # Polska strefa czasowa: UTC+1 (zima) lub UTC+2 (lato)
+        # Uproszczona wersja - użyj UTC+1 (CET)
+        if dt.tzinfo is None:
+            # Załóż że jest w UTC
+            from datetime import datetime as dt_module
+            utc_dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            utc_dt = dt
+        # Konwertuj do CET (UTC+1)
+        cet = timezone(timedelta(hours=1))
+        local_dt = utc_dt.astimezone(cet)
+        return local_dt.strftime("%d.%m.%Y, %H:%M")
+    except Exception:
+        # Fallback - formatuj bez konwersji
+        if hasattr(dt, "strftime"):
+            return dt.strftime("%d.%m.%Y, %H:%M")
+        return str(dt)
+
+
 def _build_order_history(order_id: str, order: dict):
     """Buduje listę zdarzeń dla historii zamówienia."""
     from datetime import datetime
@@ -3540,7 +3561,7 @@ def _build_order_history(order_id: str, order: dict):
             "type": event_type,
             "title": title,
             "description": f"Do: {email.get('to_email', '—')}",
-            "timestamp": created_at.strftime("%d.%m.%Y, %H:%M") if created_at else "—",
+            "timestamp": _format_datetime_pl(created_at),
             "_sort_date": created_at or datetime.min,
             "status": email.get("status"),
             "status_label": {"sent": "Wysłano", "delivered": "Dostarczono", "error": "Błąd", "queued": "W kolejce"}.get(email.get("status"), ""),
@@ -3553,7 +3574,7 @@ def _build_order_history(order_id: str, order: dict):
             "type": "payment",
             "title": "Płatność potwierdzona",
             "description": f"Kwota: {order.get('total', 0)} zł",
-            "timestamp": paid_at.strftime("%d.%m.%Y, %H:%M") if paid_at else "—",
+            "timestamp": _format_datetime_pl(paid_at),
             "_sort_date": paid_at or datetime.min,
             "status": "paid",
             "status_label": "Opłacone",
@@ -3565,7 +3586,7 @@ def _build_order_history(order_id: str, order: dict):
         "type": "created",
         "title": "Zamówienie utworzone",
         "description": "Zamówienie zostało zarejestrowane w systemie",
-        "timestamp": created_at.strftime("%d.%m.%Y, %H:%M") if created_at else "—",
+        "timestamp": _format_datetime_pl(created_at),
         "_sort_date": created_at or datetime.min,
         "status": None,
         "status_label": "Otrzymane",
