@@ -3351,6 +3351,18 @@ def get_cached_stats(key: str) -> Optional[Dict[str, Any]]:
             _put_conn(pool, conn)
 
 
+def _convert_decimals(obj):
+    """Rekurencyjnie konwertuje Decimal na float w strukturze danych."""
+    from decimal import Decimal
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: _convert_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_decimals(item) for item in obj]
+    return obj
+
+
 def set_cached_stats(key: str, value: Dict[str, Any], ttl_minutes: int = 5) -> bool:
     """
     Zapisuje wartość do cache dashboardu.
@@ -3367,6 +3379,9 @@ def set_cached_stats(key: str, value: Dict[str, Any], ttl_minutes: int = 5) -> b
     pool = None
     conn = None
     try:
+        # Konwertuj Decimal na float przed serializacją JSON
+        value_converted = _convert_decimals(value)
+        
         pool, conn = _with_conn()
         cur = conn.cursor()
         cur.execute(
@@ -3378,7 +3393,7 @@ def set_cached_stats(key: str, value: Dict[str, Any], ttl_minutes: int = 5) -> b
             """,
             (
                 str(key),
-                psycopg2.extras.Json(value),
+                psycopg2.extras.Json(value_converted),
                 int(ttl_minutes),
                 int(ttl_minutes),
             ),

@@ -1363,7 +1363,7 @@ TEMPLATE_PROFORMA_REMINDER = '''<!doctype html>
                             <tr>
                               <td style="padding: 12px 16px;">
                                 <p style="margin: 0; font-size: 14px; color: #374151;">
-                                  Jeśli nie masz pro-formy, sprawdź folder SPAM i skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>.
+                                  Jeśli nie masz pro-formy, sprawdź folder SPAM lub skontaktuj się z nami: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: underline;">{md_email_kontakt}</a>.
                                 </p>
                               </td>
                             </tr>

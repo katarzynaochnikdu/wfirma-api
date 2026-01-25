@@ -1473,6 +1473,27 @@ def order_send_reminder(order_id: str):
         elif "items" in order_data:
             tickets = order_data.get("items", [])
         
+        # Jeśli brak biletów w danych, utwórz wpis na podstawie wartości zamówienia
+        if not tickets:
+            total_value = float(order.get("total") or 0)
+            participants_count = 0
+            try:
+                from pg_storage import get_participants_for_order
+                participants = get_participants_for_order(order_id) or []
+                participants_count = len(participants)
+            except:
+                pass
+            
+            if total_value > 0:
+                qty = participants_count if participants_count > 0 else 1
+                unit_price = total_value / qty
+                tickets = [{
+                    "name": "Udział w wydarzeniu",
+                    "quantity": qty,
+                    "price": unit_price,
+                    "total_gross": total_value,
+                }]
+        
         # Oblicz payment_due_date jeśli istnieje
         payment_due_str = None
         if order.get("payment_due_date"):

@@ -625,6 +625,24 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                 tickets_for_email = []
     except Exception:
         tickets_for_email = []
+    
+    # Fallback: jeśli brak biletów, utwórz wpis na podstawie wartości zamówienia
+    if not tickets_for_email and total:
+        try:
+            total_f = float(total or 0)
+            if total_f > 0:
+                from pg_storage import get_participants_for_order
+                participants = get_participants_for_order(event_order_id) or []
+                qty = len(participants) if participants else 1
+                unit_price = total_f / qty
+                tickets_for_email = [{
+                    "name": "Udział w wydarzeniu",
+                    "quantity": qty,
+                    "price": unit_price,
+                    "total_gross": total_f,
+                }]
+        except Exception:
+            pass
 
     comp = attendee_webhooks_status(event_order_id)
     if not comp.get("complete"):
