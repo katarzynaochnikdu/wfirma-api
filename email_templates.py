@@ -726,8 +726,11 @@ def render_stripe_payment_email(
                 t.get("name")
                 or t.get("ticket_name")
                 or t.get("ticketName")
-                or "Bilet"
+                or "Rezerwacja"
             )
+            # Usuń słowo "Bilet" z nazwy jeśli jest
+            if name and isinstance(name, str):
+                name = name.replace("Bilet ", "").replace("bilet ", "")
             qty = t.get("quantity", 1)
             try:
                 qty_num = int(qty) if qty is not None else 1
@@ -976,8 +979,11 @@ def render_foc_confirmation_email(
                 t.get("name")
                 or t.get("ticket_name")
                 or t.get("ticketName")
-                or "Bilet"
+                or "Rezerwacja"
             )
+            # Usuń słowo "Bilet" z nazwy jeśli jest
+            if name and isinstance(name, str):
+                name = name.replace("Bilet ", "").replace("bilet ", "")
             qty = t.get("quantity", 1)
             try:
                 qty_num = int(qty) if qty is not None else 1
@@ -1203,8 +1209,11 @@ def render_proforma_reservation_email(
                 t.get("name")
                 or t.get("ticket_name")
                 or t.get("ticketName")
-                or "Bilet"
+                or "Rezerwacja"
             )
+            # Usuń słowo "Bilet" z nazwy jeśli jest
+            if name and isinstance(name, str):
+                name = name.replace("Bilet ", "").replace("bilet ", "")
             qty = t.get("quantity", 1)
             try:
                 qty_num = int(qty) if qty is not None else 1
@@ -1456,8 +1465,11 @@ def render_payment_confirmation_email(
                 t.get("name")
                 or t.get("ticket_name")
                 or t.get("ticketName")
-                or "Bilet"
+                or "Rezerwacja"
             )
+            # Usuń słowo "Bilet" z nazwy jeśli jest
+            if name and isinstance(name, str):
+                name = name.replace("Bilet ", "").replace("bilet ", "")
             qty = t.get("quantity", 1)
             try:
                 qty_num = int(qty) if qty is not None else 1
@@ -1975,7 +1987,10 @@ def render_checkout_reminder_email(
     if tickets:
         ticket_lines = []
         for t in tickets:
-            name = t.get("name", "Bilet")
+            name = t.get("name", "Rezerwacja")
+            # Usuń słowo "Bilet" z nazwy jeśli jest
+            if name and isinstance(name, str):
+                name = name.replace("Bilet ", "").replace("bilet ", "")
             qty = t.get("quantity", 1)
             price = t.get("price", 0)
             line = f'<p style="margin: 0 0 8px 0; font-size: 14px; color: #374151;">{qty}× {name} — {format_currency(price * qty)}</p>'

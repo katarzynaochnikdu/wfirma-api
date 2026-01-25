@@ -505,7 +505,8 @@
       </div>
     </div>
 
-    <!-- QUICK ACTIONS (legacy - kept for sidebar) -->
+    <!-- QUICK ACTIONS (tylko dla user i admin) -->
+    {% if user_role != 'viewer' %}
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">Szybkie akcje</h3>
@@ -543,6 +544,7 @@
         </div>
       </div>
     </div>
+    {% endif %}
 
     <!-- TECHNICAL DATA (debug) -->
     <div class="card">

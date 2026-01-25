@@ -92,11 +92,40 @@ def _user_has_permission(user: Optional[Dict[str, Any]], page: str) -> bool:
     return page in allowed
 
 
+def _user_has_event_access(user: Optional[Dict[str, Any]], event_id: str) -> bool:
+    """Sprawdza czy user ma dostęp do konkretnego wydarzenia."""
+    if not user:
+        return False
+    role = (user.get("role") or "").strip().lower()
+    # Admin i user mają dostęp do wszystkich wydarzeń
+    if role in ("admin", "user"):
+        return True
+    # Viewer ma dostęp tylko do wydarzeń z allowed_events
+    if role == "viewer":
+        allowed_event_ids = user.get("allowed_events") or []
+        if isinstance(allowed_event_ids, str):
+            import json
+            try:
+                allowed_event_ids = json.loads(allowed_event_ids)
+            except:
+                allowed_event_ids = []
+        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        return str(event_id) in allowed_event_ids
+    return False
+
+
 def _is_admin_user(user: Optional[Dict[str, Any]]) -> bool:
     """Czy user ma rolę admin (pełny dostęp)."""
     if not user:
         return False
     return (user.get("role") or "").strip().lower() == "admin"
+
+
+def _is_viewer(user: Optional[Dict[str, Any]]) -> bool:
+    """Czy user ma rolę viewer (tylko odczyt)."""
+    if not user:
+        return False
+    return (user.get("role") or "").strip().lower() == "viewer"
 
 
 def _get_user_initials(user: Optional[Dict[str, Any]]) -> str:
@@ -587,6 +616,33 @@ def dashboard():
         }
         set_cached_stats("dashboard_main_stats", cache_data, ttl_minutes=5)
     
+    # FILTROWANIE WEDŁUG UPRAWNIEŃ UŻYTKOWNIKA (dla viewer)
+    role = (user.get("role") or "").lower()
+    if role == "viewer":
+        allowed_event_ids = user.get("allowed_events") or []
+        if isinstance(allowed_event_ids, str):
+            import json
+            try:
+                allowed_event_ids = json.loads(allowed_event_ids)
+            except:
+                allowed_event_ids = []
+        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        # Filtruj wydarzenia
+        all_events = [e for e in all_events if str(e.get("event_id")) in allowed_event_ids]
+        # Filtruj zamówienia (tylko z dozwolonych wydarzeń)
+        all_orders = [o for o in all_orders if str(o.get("event_id")) in allowed_event_ids]
+        paid_orders = [o for o in paid_orders if str(o.get("event_id")) in allowed_event_ids]
+        # Przelicz statystyki
+        stats = {
+            "total_orders": len(all_orders),
+            "total_participants": sum(
+                sum((count_participants_by_status(o.get("event_order_id")) or {}).values())
+                for o in all_orders
+            ),
+            "total_revenue": f"{sum(float(o.get('total') or 0) for o in paid_orders):,.2f}".replace(",", " "),
+            "active_events": len([e for e in all_events if e.get("is_active", True)]),
+        }
+    
     # Ostatnie zamówienia
     recent_orders = all_orders[:5]
     
@@ -675,6 +731,22 @@ def orders_list():
         limit=200,
     )
     events = list_events(limit=100)
+    
+    # FILTROWANIE WEDŁUG UPRAWNIEŃ UŻYTKOWNIKA (dla viewer)
+    role = (user.get("role") or "").lower()
+    if role == "viewer":
+        allowed_event_ids = user.get("allowed_events") or []
+        if isinstance(allowed_event_ids, str):
+            import json
+            try:
+                allowed_event_ids = json.loads(allowed_event_ids)
+            except:
+                allowed_event_ids = []
+        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        # Filtruj wydarzenia w dropdown
+        events = [e for e in events if str(e.get("event_id")) in allowed_event_ids]
+        # Filtruj zamówienia
+        orders = [o for o in orders if str(o.get("event_id")) in allowed_event_ids]
     
     # Filtrowanie tekstowe
     if q_filter:
@@ -812,7 +884,7 @@ def participants_export():
             p.get("last_name", ""),
             p.get("email", ""),
             p.get("event_name", ""),
-            p.get("ticket_class_name") or p.get("ticket_class_id") or "Bilet Standard",
+            (p.get("ticket_class_name") or p.get("ticket_class_id") or "Standard").replace("Bilet ", "").replace("bilet ", ""),
             p.get("status", ""),
             created.strftime("%Y-%m-%d %H:%M") if created else "",
         ])
@@ -838,6 +910,15 @@ def order_detail(order_id: str):
     if not order:
         return redirect(url_for("admin_v2_bp.orders_list"))
     
+    # Sprawdź dostęp do wydarzenia zamówienia (dla viewer)
+    order_event_id = order.get("event_id")
+    if order_event_id and not _user_has_event_access(user, order_event_id):
+        return render_template(
+            "admin_v2/base.html",
+            active_page="",
+            **_get_common_context(user),
+        ), 403
+    
     # Pobierz uczestników
     participants = get_participants_for_order(order_id) or []
     
@@ -845,9 +926,12 @@ def order_detail(order_id: str):
     for p in participants:
         ticket_name = p.get("ticket_class_name") or ""
         ticket_id = p.get("ticket_class_id") or ""
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name:
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
         if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-            ticket_name = "Bilet Standard"
-        p["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
+            ticket_name = "Standard"
+        p["ticket_name"] = ticket_name or ticket_id or "Standard"
     
     # Pobierz dokumenty wFirma
     wfirma_documents = get_wfirma_documents(order_id) or []
@@ -917,6 +1001,19 @@ def order_update_status(order_id: str):
             _f.write(_json.dumps({"location":"admin_v2_panel.py:order_update_status:parsed","message":"Status parsed","data":{"new_status":new_status,"order_id":order_id},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1,H2"}) + '\n')
     except: pass
     # #endregion
+    
+    # Pobierz zamówienie żeby sprawdzić dostęp
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może zmieniać statusu
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do zmiany statusu"}), 403
     
     valid_statuses = ["received", "pending_payment", "paid", "cancelled", "refunded"]
     if new_status not in valid_statuses:
@@ -1167,6 +1264,14 @@ def order_send_reminder(order_id: str):
     if not order:
         return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
     
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może wysyłać przypomnień
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do wysyłania przypomnień"}), 403
+    
     # Sprawdź status (tylko pending_payment lub received)
     if order.get("status") not in ["pending_payment", "received"]:
         return jsonify({"success": False, "error": "Zamówienie nie oczekuje na płatność"}), 400
@@ -1368,7 +1473,10 @@ def order_resend_ticket(order_id: str):
             continue
         
         # Pobierz dane biletu
-        ticket_name = participant.get("ticket_class_name") or participant.get("ticket_name") or "Bilet Standard"
+        ticket_name = participant.get("ticket_class_name") or participant.get("ticket_name") or "Standard"
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name and isinstance(ticket_name, str):
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
         ticket_id = participant.get("ticket_id", "")
         
         # Oblicz cenę biletu (średnia z zamówienia jeśli nie ma szczegółów)
@@ -1465,6 +1573,14 @@ def order_cancel(order_id: str):
     
     if not order:
         return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może anulować
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do anulowania zamówień"}), 403
     
     if order.get("status") in ["cancelled", "refunded"]:
         return jsonify({"success": False, "error": "Zamówienie jest już anulowane lub zwrócone"}), 400
@@ -1779,6 +1895,14 @@ def order_refund(order_id: str):
     if not order:
         return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
     
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może wykonywać zwrotów
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do wykonywania zwrotów"}), 403
+    
     if order.get("status") != "paid":
         return jsonify({"success": False, "error": "Zamówienie nie jest opłacone (status: {})".format(order.get("status"))}), 400
     
@@ -1888,9 +2012,19 @@ def order_send_proforma(order_id: str):
     from flask import jsonify
     from pg_storage import get_order
     
+    user = _get_current_admin_user()
+    
     order = get_order(order_id)
     if not order:
         return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może wysyłać proform
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do wysyłania proform"}), 403
     
     try:
         from email_templates import render_proforma_sent_email
@@ -1954,11 +2088,18 @@ def order_delete(order_id: str):
     
     user = _get_current_admin_user()
     
-    # Sprawdź czy użytkownik ma uprawnienia (nie viewer)
-    if user and user.get("role") == "viewer":
-        return jsonify({"success": False, "error": "Brak uprawnień do usuwania"}), 403
+    # Tylko admin może usuwać zamówienia
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może usuwać zamówienia"}), 403
     
     order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
     if not order:
         return jsonify({"success": False, "error": "Zamówienie nie istnieje lub zostało już usunięte"}), 404
     
@@ -2488,7 +2629,7 @@ def api_event_preview_data(event_id: str):
             "participant_email": sample_participant.get("email") or "anna.nowak@example.com",
             "participant_company": sample_participant.get("company") or "Firma Uczestnika",
             "participant_position": sample_participant.get("position") or "Specjalista",
-            "ticket_name": sample_participant.get("ticket_name") or "Bilet Standard",
+            "ticket_name": sample_participant.get("ticket_name") or "Standard",
             "ticket_code": sample_participant.get("ticket_code") or "TICKET-123456",
             
             # Płatność
@@ -2606,6 +2747,18 @@ def event_edit(event_id: str):
     from pg_storage import upsert_event
     
     user = _get_current_admin_user()
+    
+    # Sprawdź dostęp do tego konkretnego wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return render_template(
+            "admin_v2/base.html",
+            active_page="",
+            **_get_common_context(user),
+        ), 403
+    
+    # Viewer nie może edytować
+    if request.method == "POST" and _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do edycji"}), 403
     
     event = get_event(event_id)
     if not event:
@@ -2736,6 +2889,14 @@ def event_delete(event_id: str):
     
     user = _get_current_admin_user()
     
+    # Tylko admin może usuwać wydarzenia
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może usuwać wydarzenia"}), 403
+    
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu do tego wydarzenia"}), 403
+    
     # Sprawdź czy wydarzenie istnieje
     event = get_event(event_id)
     if not event:
@@ -2777,6 +2938,23 @@ def event_sync_backstage(event_id: str):
     from flask import jsonify
     
     user = _get_current_admin_user()
+    
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu do tego wydarzenia"}), 403
+    
+    # Viewer nie może synchronizować (tylko podgląd)
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do synchronizacji"}), 403
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu do tego wydarzenia"}), 403
+    
+    # Viewer może przeglądać dane z Backstage (readonly)
+    # Nie blokujemy tego endpointu dla viewer
     
     # Sprawdź czy wydarzenie istnieje
     event = get_event(event_id)
@@ -2928,6 +3106,24 @@ def event_apply_backstage(event_id: str):
     
     user = _get_current_admin_user()
     
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu do tego wydarzenia"}), 403
+    
+    # Viewer nie może aplikować zmian
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do edycji"}), 403
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu do tego wydarzenia"}), 403
+    
+    # Viewer nie może aplikować zmian
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do edycji"}), 403
+    
     # Sprawdź czy wydarzenie istnieje
     event = get_event(event_id)
     if not event:
@@ -3028,6 +3224,14 @@ def event_sync_tickets(event_id: str):
     
     user = _get_current_admin_user()
     
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu do tego wydarzenia"}), 403
+    
+    # Viewer nie może synchronizować
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do synchronizacji"}), 403
+    
     # Sprawdź czy wydarzenie istnieje
     event = get_event(event_id)
     if not event:
@@ -3124,6 +3328,20 @@ def events_list():
     q_filter = request.args.get("q", "").strip().lower()
     
     all_events = list_events(limit=500)
+    
+    # FILTROWANIE WEDŁUG UPRAWNIEŃ UŻYTKOWNIKA (dla viewer)
+    role = (user.get("role") or "").lower()
+    if role == "viewer":
+        allowed_event_ids = user.get("allowed_events") or []
+        if isinstance(allowed_event_ids, str):
+            import json
+            try:
+                allowed_event_ids = json.loads(allowed_event_ids)
+            except:
+                allowed_event_ids = []
+        # Konwertuj na stringi dla bezpiecznego porównania
+        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        all_events = [e for e in all_events if str(e.get("event_id")) in allowed_event_ids]
     
     # Filtrowanie tekstowe
     if q_filter:
@@ -3244,6 +3462,20 @@ def participants_list():
     # Pobierz wydarzenia do filtra
     events = list_events(limit=200)
     
+    # FILTROWANIE WEDŁUG UPRAWNIEŃ UŻYTKOWNIKA (dla viewer)
+    role = (user.get("role") or "").lower()
+    if role == "viewer":
+        allowed_event_ids = user.get("allowed_events") or []
+        if isinstance(allowed_event_ids, str):
+            import json
+            try:
+                allowed_event_ids = json.loads(allowed_event_ids)
+            except:
+                allowed_event_ids = []
+        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        # Filtruj wydarzenia w dropdown
+        events = [e for e in events if str(e.get("event_id")) in allowed_event_ids]
+    
     # Pobierz uczestników - jeśli wybrany event, tylko z niego
     all_participants = []
     if event_id_filter:
@@ -3256,7 +3488,7 @@ def participants_list():
             p["event_color"] = event_data.get("color_gradient_1", "hsl(212, 100%, 42%)")
             p["event_color_2"] = event_data.get("color_gradient_2", "hsl(195, 100%, 42%)")
     else:
-        # Pobierz z wszystkich aktywnych wydarzeń
+        # Pobierz z wszystkich aktywnych wydarzeń (już przefiltrowanych według uprawnień)
         for event in events:
             if event.get("is_active", True):
                 event_participants = get_participants_for_event(event.get("event_id")) or []
@@ -3296,10 +3528,13 @@ def participants_list():
         # Preferuj nazwę biletu, ale nie pokazuj długich ID numerycznych
         ticket_name = p.get("ticket_class_name") or ""
         ticket_id = p.get("ticket_class_id") or ""
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name:
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
         # Jeśli ticket_id wygląda jak długi numer (>10 cyfr), nie pokazuj go
         if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-            ticket_name = "Bilet Standard"
-        p["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
+            ticket_name = "Standard"
+        p["ticket_name"] = ticket_name or ticket_id or "Standard"
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = p.get("company") or ""
     
@@ -3379,12 +3614,15 @@ def participant_detail(participant_id):
     participant["dietary"] = p_data.get("dietary") or p_data.get("dieta") or ""
     participant["notes"] = p_data.get("notes") or p_data.get("uwagi") or ""
     
-    # Mapuj nazwę biletu
+    # Mapuj nazwę biletu i usuń słowo "Bilet"
     ticket_name = participant.get("ticket_class_name") or ""
     ticket_id = participant.get("ticket_class_id") or ""
+    # Usuń słowo "Bilet" z nazwy jeśli jest
+    if ticket_name:
+        ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
     if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-        ticket_name = "Bilet Standard"
-    participant["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
+        ticket_name = "Standard"
+    participant["ticket_name"] = ticket_name or ticket_id or "Standard"
     
     # Pobierz historię komunikacji dla uczestnika
     from pg_storage import get_mail_log_by_email
@@ -3651,7 +3889,7 @@ def user_new():
                     target_email=email,
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent", "")[:500],
-                    details=f"role={role}, email_sent={email_result.get('success', False)}"
+                    data={"role": role, "email_sent": email_result.get('success', False)}
                 )
                 
                 success = f"Konto utworzone. Hasło zostało wysłane na {email}."
@@ -3734,7 +3972,7 @@ def user_edit(user_id: int):
                     target_email=target_user["email"],
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent", "")[:500],
-                    details=f"role={role}, is_active={is_active}"
+                    data={"role": role, "is_active": is_active}
                 )
                 success = "Zapisano zmiany"
                 
@@ -3818,7 +4056,7 @@ def user_reset_password(user_id: int):
             target_email=target_user["email"],
             ip=request.remote_addr,
             user_agent=request.headers.get("User-Agent", "")[:500],
-            details=f"email_sent={email_result.get('success', False)}"
+            data={"email_sent": email_result.get('success', False)}
         )
         
         return jsonify({"success": True, "message": f"Nowe hasło wysłane na {target_user['email']}"})
@@ -3852,7 +4090,7 @@ def user_toggle_active(user_id: int):
             target_email=target_user["email"],
             ip=request.remote_addr,
             user_agent=request.headers.get("User-Agent", "")[:500],
-            details=f"is_active={new_status}"
+            data={"is_active": new_status}
         )
         
         return jsonify({
@@ -4751,7 +4989,7 @@ def template_preview(template_key: str):
         "event_city": "Warszawa",
         "event_location": "Hotel Marriott, ul. Jerozolimskie 65/79",
         "tickets": [
-            {"name": "Bilet Standard", "quantity": 2, "price": 615.00, "total_gross": 1230.00},
+            {"name": "Standard", "quantity": 2, "price": 615.00, "total_gross": 1230.00},
         ],
         "payment_url": "https://checkout.stripe.com/example",
         "order_number": "ORD-2026-001234",
@@ -5263,6 +5501,14 @@ def event_room(event_id: str):
     """Dashboard pojedynczego wydarzenia z zakładkami."""
     user = _get_current_admin_user()
     
+    # Sprawdź dostęp do tego konkretnego wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return render_template(
+            "admin_v2/base.html",
+            active_page="",
+            **_get_common_context(user),
+        ), 403
+    
     event = get_event(event_id)
     if not event:
         return redirect(url_for("admin_v2_bp.events_list"))
@@ -5337,9 +5583,12 @@ def event_room(event_id: str):
         # Preferuj nazwę biletu, ale nie pokazuj długich ID numerycznych
         ticket_name = p.get("ticket_class_name") or ""
         ticket_id = p.get("ticket_class_id") or ""
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name:
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
         if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-            ticket_name = "Bilet Standard"
-        p["ticket_name"] = ticket_name or ticket_id or "Bilet Standard"
+            ticket_name = "Standard"
+        p["ticket_name"] = ticket_name or ticket_id or "Standard"
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = ""  # Brak w danych
     

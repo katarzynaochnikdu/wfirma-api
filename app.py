@@ -1916,6 +1916,15 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
     try:
         # KLUCZOWE: Wrapper "invoices"!
         request_body = {"invoices": {"invoice": invoice_payload}}
+        
+        # #region agent log
+        import json as _json
+        try:
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({"location":"app.py:wfirma_create_invoice:request_body","message":"Full request to wFirma API","data":{"api_url":api_url,"has_send_in_payload":"send" in invoice_payload,"has_email_in_payload":"email" in invoice_payload,"invoice_type":invoice_payload.get('type'),"payload_keys":list(invoice_payload.keys())},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H2,H3,H4"}) + '\n')
+        except: pass
+        # #endregion
+        
         # LOG: pełny request body
         try:
             import json as json_lib
@@ -1974,6 +1983,16 @@ def wfirma_create_correction(
         # Pobierz contractor_id z oryginalnej faktury
         contractor_data = original_invoice.get('contractor', {})
         contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
+        contractor_email = contractor_data.get('email') if isinstance(contractor_data, dict) else None
+        
+        # #region agent log
+        import json as _json
+        try:
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:contractor_data","message":"Contractor data from original invoice","data":{"contractor_id":contractor_id,"contractor_email":contractor_email,"has_email":bool(contractor_email)},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
+        except: pass
+        # #endregion
+        
         if not contractor_id:
             print(f"[WFIRMA DEBUG] Nie można odczytać kontrahenta z faktury oryginalnej")
             return None, None
@@ -2027,10 +2046,24 @@ def wfirma_create_correction(
             "invoicecontents": invoice_contents_dict
         }
         
+        # #region agent log
+        try:
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:payload_before_send","message":"Correction payload BEFORE adding send parameter","data":{"has_send_param":"send" in correction_payload,"has_email_param":"email" in correction_payload,"contractor_email":contractor_email,"payload_keys":list(correction_payload.keys())},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
+        except: pass
+        # #endregion
+        
         print(f"[WFIRMA DEBUG] Correction payload: contractor_id={contractor_id}, parent_id={source_invoice_id}, positions={len(positions)}")
         
         # 5) Utwórz fakturę korygującą
         invoice_result, resp = wfirma_create_invoice(token, correction_payload, company_id)
+        
+        # #region agent log
+        try:
+            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:after_create","message":"Correction created result","data":{"success":bool(invoice_result),"invoice_id":invoice_result.get('id') if invoice_result else None,"invoice_number":invoice_result.get('fullnumber') if invoice_result else None,"resp_status":resp.status_code if resp else None,"resp_preview":resp.text[:300] if resp and resp.text else None},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1,H2,H3,H4"}) + '\n')
+        except: pass
+        # #endregion
         
         if invoice_result and invoice_result.get('id'):
             print(f"[WFIRMA DEBUG] Correction created: id={invoice_result.get('id')}, number={invoice_result.get('fullnumber')}")

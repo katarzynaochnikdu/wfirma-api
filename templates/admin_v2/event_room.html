@@ -518,6 +518,7 @@
   <div id="tab-config" class="tab-panel {% if active_tab == 'config' %}active{% endif %}">
   
   <!-- AKCJE -->
+  {% if user_role != 'viewer' %}
   <div class="card" style="margin-bottom: 1rem; background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}10, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}10);">
     <div style="padding: 1rem;">
       <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
@@ -530,14 +531,17 @@
             <i data-lucide="pencil"></i>
             Edytuj wydarzenie
           </a>
+          {% if user_role == 'admin' %}
           <button type="button" class="btn btn-outline" style="border-color: hsl(0, 84%, 60%); color: hsl(0, 84%, 60%);" onclick="deleteEventWithData()">
             <i data-lucide="trash-2"></i>
             Usuń wydarzenie
           </button>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
+  {% endif %}
   
   <!-- Basic Data -->
   <div class="card" style="margin-bottom: 1rem;">

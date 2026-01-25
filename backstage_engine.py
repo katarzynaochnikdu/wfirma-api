@@ -423,8 +423,11 @@ def send_participant_ticket_emails(
         ticket_name = (
             ticket_name_map.get(ticket_class_id)
             or participant_data.get("ticket_name")
-            or "Bilet"
+            or "Rezerwacja"
         )
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name and isinstance(ticket_name, str):
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
         ticket_price = participant_data.get("price_gross", 0)
         discount_amount = participant_data.get("discount_amount", 0)
         
@@ -1039,7 +1042,10 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
                 vat_rate = 23.0
         
         # Pobierz nazwę biletu - najpierw z ticket class, potem domyślna
-        ticket_name = t.get("ticketName") or t.get("ticket_name") or f"Bilet ({ticket_class_id[:8]}...)" if ticket_class_id else "Bilet"
+        ticket_name = t.get("ticketName") or t.get("ticket_name") or f"Rezerwacja ({ticket_class_id[:8]}...)" if ticket_class_id else "Rezerwacja"
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name and isinstance(ticket_name, str):
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
         
         tickets.append({
             "ticket_class_id": str(ticket_class_id),
@@ -1378,8 +1384,8 @@ def _enrich_tickets_with_names(tickets: List[Dict[str, Any]], event_id: str) -> 
                 unknown_ids.append(ticket_class_id)
             enriched_ticket["unknown"] = True
             # Popraw nazwę jeśli to tylko ID
-            if enriched_ticket.get("name", "").startswith("Bilet ("):
-                enriched_ticket["name"] = f"Bilet (nierozpoznany: {ticket_class_id[:12]}...)"
+            if enriched_ticket.get("name", "").startswith("Rezerwacja ("):
+                enriched_ticket["name"] = f"Nierozpoznany ({ticket_class_id[:12]}...)"
         
         enriched.append(enriched_ticket)
     
@@ -1410,7 +1416,10 @@ def _build_invoice_positions(tickets: List[Dict[str, Any]], event_name: str = ""
     
     positions = []
     for t in tickets:
-        name = t.get("name") or "Bilet"
+        name = t.get("name") or "Rezerwacja"
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if name and isinstance(name, str):
+            name = name.replace("Bilet ", "").replace("bilet ", "")
         if event_name:
             name = f"{name} - {event_name}"
         
@@ -2139,7 +2148,10 @@ def _handle_stripe_flow(
         items: List[Dict[str, Any]] = []
         for t in tickets:
             try:
-                name = (t.get("name") or "Bilet").strip()
+                name = (t.get("name") or "Rezerwacja").strip()
+                # Usuń słowo "Bilet" z nazwy jeśli jest
+                if name:
+                    name = name.replace("Bilet ", "").replace("bilet ", "")
                 qty = t.get("quantity", 1)
                 try:
                     qty_i = int(qty) if qty is not None else 1

@@ -315,7 +315,7 @@ input[type="color"].form-input {
       <p class="page-description" style="margin: 0; font-size: 0.8125rem;">{{ event.event_name if event else 'Wypełnij dane nowego wydarzenia' }}</p>
     </div>
     <div class="sticky-header-actions">
-      {% if event %}
+      {% if event and user_role != 'viewer' %}
       <button type="button" class="btn btn-outline btn-sm" onclick="syncFromBackstage()" id="sync-btn">
         <i data-lucide="refresh-cw"></i>
         Pobierz z Backstage
@@ -340,12 +340,14 @@ input[type="color"].form-input {
       {% endif %}
       {% endif %}
       <a href="{% if event %}{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}{% else %}{{ url_for('admin_v2_bp.events_list') }}{% endif %}" class="btn btn-outline btn-sm">
-        Anuluj
+        {% if user_role == 'viewer' %}Powrót{% else %}Anuluj{% endif %}
       </a>
+      {% if user_role != 'viewer' %}
       <button type="submit" form="event-form" class="btn btn-primary btn-sm">
         <i data-lucide="save"></i>
         {{ 'Zapisz zmiany' if event else 'Utwórz wydarzenie' }}
       </button>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -714,10 +716,12 @@ input[type="color"].form-input {
         <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ ticket_classes|length }})</span>
         {% endif %}
       </h3>
+      {% if user_role != 'viewer' %}
       <button type="button" id="fetchTicketsBtn" class="btn btn-outline btn-sm" onclick="fetchTicketTypes()" style="border-color: hsl(280, 60%, 70%); color: hsl(280, 60%, 35%);">
         <i data-lucide="download"></i>
         Pobierz z Backstage
       </button>
+      {% endif %}
     </div>
     <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.25rem;">
       <span id="ticketsStatus">
