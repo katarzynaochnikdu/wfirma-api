@@ -168,37 +168,89 @@
     </div>
   </div>
   
-  <!-- Email Status -->
-  {% set last_email = emails|first if emails else none %}
-  {% set email_status = {
-    'type': 'success' if last_email and last_email.status in ['delivered', 'sent'] else ('warning' if last_email and last_email.status == 'queued' else ('error' if last_email and last_email.status in ['error', 'bounced', 'failed'] else 'neutral')),
-    'icon': 'check-circle' if last_email and last_email.status in ['delivered', 'sent'] else ('clock' if last_email and last_email.status == 'queued' else ('alert-triangle' if last_email and last_email.status in ['error', 'bounced', 'failed'] else 'mail-x')),
-    'label': 'Wysłano' if last_email and last_email.status in ['delivered', 'sent'] else ('W kolejce' if last_email and last_email.status == 'queued' else ('Błąd' if last_email and last_email.status in ['error', 'bounced', 'failed'] else 'Nie wysłano')),
-    'detail': last_email.created_at|format_date_pl if last_email and last_email.created_at else ''
-  } %}
-  <div class="operational-status-badge operational-status-{{ email_status.type }}">
-    <div class="operational-icon-wrapper">
-      <i data-lucide="mail"></i>
-    </div>
-    <div class="operational-status-content">
-      <span class="operational-status-label">Komunikacja</span>
-      <div class="operational-status-value">
-        <i data-lucide="{{ email_status.icon }}"></i>
-        <span>{{ email_status.label }}</span>
-      </div>
-      {% if email_status.detail %}
-      <span class="operational-status-detail">{{ email_status.detail }}</span>
-      {% endif %}
-    </div>
-  </div>
 </div>
 
 
-<!-- MAIN GRID -->
-<div class="detail-grid">
+<!-- MAIN GRID - 2 KOLUMNY -->
+<div class="detail-grid-two-col">
   
-  <!-- LEFT COLUMN -->
-  <div class="detail-main">
+  <!-- KOLUMNA 1: Płatność + Status + Informacje -->
+  <div class="detail-col-left">
+    
+    <!-- Płatność i Status w jednym wierszu -->
+    <div class="status-cards-row">
+      <!-- Payment Card -->
+      <div class="status-card status-card-{{ payment_status.type }}">
+        <div class="status-card-icon">
+          <i data-lucide="credit-card"></i>
+        </div>
+        <div class="status-card-content">
+          <span class="status-card-label">Płatność</span>
+          <div class="status-card-value">
+            <i data-lucide="{{ payment_status.icon }}"></i>
+            <span>{{ payment_status.label }}</span>
+          </div>
+          <span class="status-card-detail">{{ payment_method_display }}</span>
+          {% if payment_status.detail %}
+          <span class="status-card-detail-secondary">{{ payment_status.detail }}</span>
+          {% endif %}
+        </div>
+      </div>
+      
+      <!-- Status Card with Stepper -->
+      <div class="status-card status-card-stepper">
+        <div class="status-card-icon">
+          <i data-lucide="git-branch"></i>
+        </div>
+        <div class="status-card-content">
+          <span class="status-card-label">Status</span>
+          <div class="status-stepper-compact">
+            {% set status_order = ['received', 'pending_payment', 'paid'] %}
+            {% set current_idx = status_order.index(order.status) if order.status in status_order else -1 %}
+            {% set is_cancelled = order.status == 'cancelled' %}
+            {% set is_refunded = order.status == 'refunded' %}
+            {% set is_stripe_payment = 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower %}
+            
+            <div class="stepper-dots">
+              <button type="button" class="stepper-dot-mini {% if current_idx >= 0 %}completed{% endif %}" disabled title="Otrzymane">
+                <i data-lucide="inbox"></i>
+              </button>
+              <span class="stepper-line {% if current_idx >= 1 %}completed{% endif %}"></span>
+              <button type="button" class="stepper-dot-mini stepper-warning {% if current_idx >= 1 %}completed{% endif %} {% if current_idx < 1 and not is_cancelled and not is_refunded %}clickable{% endif %}" 
+                      onclick="{% if current_idx < 1 and not is_cancelled and not is_refunded %}handleStatusChange('pending_payment'){% endif %}" title="Oczekuje">
+                <i data-lucide="clock"></i>
+              </button>
+              <span class="stepper-line {% if current_idx >= 2 %}completed{% endif %}"></span>
+              <button type="button" class="stepper-dot-mini stepper-success {% if current_idx >= 2 %}completed{% endif %} {% if current_idx < 2 and not is_cancelled and not is_refunded %}clickable{% endif %}" 
+                      onclick="{% if current_idx < 2 and not is_cancelled and not is_refunded %}handleStatusChange('paid'){% endif %}" title="Opłacone">
+                <i data-lucide="check-circle"></i>
+              </button>
+              <span class="stepper-divider"></span>
+              {% if is_cancelled %}
+              <button type="button" class="stepper-dot-mini stepper-danger completed" disabled title="Anulowane">
+                <i data-lucide="x-circle"></i>
+              </button>
+              {% elif is_refunded %}
+              <button type="button" class="stepper-dot-mini stepper-muted completed" disabled title="Zwrócone">
+                <i data-lucide="rotate-ccw"></i>
+              </button>
+              {% else %}
+              <button type="button" class="stepper-dot-mini stepper-danger clickable" onclick="handleStatusChange('cancelled')" title="Anuluj">
+                <i data-lucide="x-circle"></i>
+              </button>
+              {% endif %}
+            </div>
+            <div class="stepper-current-label">
+              {% if is_cancelled %}Anulowane
+              {% elif is_refunded %}Zwrócone
+              {% elif current_idx == 2 %}Opłacone
+              {% elif current_idx == 1 %}Oczekuje na płatność
+              {% else %}Otrzymane{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <!-- ORDER INFO CARD -->
     <div class="card">
@@ -344,11 +396,11 @@
 
   </div>
 
-  <!-- RIGHT COLUMN - SIDEBAR -->
-  <div class="detail-sidebar">
+  <!-- KOLUMNA 2: Historia zamówienia -->
+  <div class="detail-col-right">
     
     <!-- TIMELINE -->
-    <div class="card">
+    <div class="card card-timeline">
       <div class="card-header">
         <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
           <i data-lucide="clock" style="width: 18px; height: 18px;"></i>
@@ -1218,6 +1270,272 @@
 </script>
 
 <style>
+  /* ===== 2-COLUMN LAYOUT ===== */
+  .detail-grid-two-col {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 1.5rem;
+    margin-top: 1rem;
+  }
+  
+  @media (max-width: 1200px) {
+    .detail-grid-two-col {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  .detail-col-left {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .detail-col-right {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  /* Cała prawa kolumna sticky */
+  .detail-col-right {
+    position: sticky;
+    top: 1rem;
+    align-self: flex-start;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+  
+  /* Historia scrollowalna gdy za długa */
+  .card-timeline .card-content {
+    max-height: 350px;
+    overflow-y: auto;
+  }
+  
+  /* ===== STATUS CARDS ROW ===== */
+  .status-cards-row {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 1rem;
+  }
+  
+  @media (max-width: 768px) {
+    .status-cards-row {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  .status-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  
+  .status-card-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  
+  .status-card-icon i {
+    width: 22px;
+    height: 22px;
+  }
+  
+  .status-card-success .status-card-icon {
+    background: hsl(142, 71%, 92%);
+    color: hsl(142, 71%, 35%);
+  }
+  
+  .status-card-warning .status-card-icon {
+    background: hsl(38, 92%, 92%);
+    color: hsl(38, 92%, 35%);
+  }
+  
+  .status-card-error .status-card-icon {
+    background: hsl(0, 84%, 92%);
+    color: hsl(0, 84%, 45%);
+  }
+  
+  .status-card-neutral .status-card-icon {
+    background: hsl(215, 16%, 92%);
+    color: hsl(215, 16%, 45%);
+  }
+  
+  .status-card-stepper .status-card-icon {
+    background: hsl(212, 100%, 92%);
+    color: hsl(212, 100%, 40%);
+  }
+  
+  .status-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .status-card-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted-foreground);
+    font-weight: 600;
+  }
+  
+  .status-card-value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  
+  .status-card-value i {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .status-card-success .status-card-value { color: hsl(142, 71%, 35%); }
+  .status-card-warning .status-card-value { color: hsl(38, 92%, 35%); }
+  .status-card-error .status-card-value { color: hsl(0, 84%, 45%); }
+  
+  .status-card-detail {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  
+  .status-card-detail-secondary {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    opacity: 0.8;
+  }
+  
+  /* ===== COMPACT STEPPER ===== */
+  .status-stepper-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  
+  .stepper-dots {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  
+  .stepper-dot-mini {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted-foreground);
+    transition: all 0.2s;
+    cursor: default;
+    padding: 0;
+  }
+  
+  .stepper-dot-mini i {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .stepper-dot-mini.completed {
+    background: hsl(212, 100%, 50%);
+    border-color: hsl(212, 100%, 50%);
+    color: white;
+  }
+  
+  .stepper-dot-mini.clickable {
+    cursor: pointer;
+  }
+  
+  .stepper-dot-mini.clickable:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  
+  .stepper-dot-mini.stepper-warning.completed {
+    background: hsl(38, 92%, 50%);
+    border-color: hsl(38, 92%, 50%);
+  }
+  
+  .stepper-dot-mini.stepper-success.completed {
+    background: hsl(142, 71%, 45%);
+    border-color: hsl(142, 71%, 45%);
+  }
+  
+  .stepper-dot-mini.stepper-danger.completed {
+    background: hsl(0, 84%, 60%);
+    border-color: hsl(0, 84%, 60%);
+  }
+  
+  .stepper-dot-mini.stepper-muted.completed {
+    background: hsl(215, 16%, 50%);
+    border-color: hsl(215, 16%, 50%);
+  }
+  
+  .stepper-dot-mini.stepper-warning.clickable:hover {
+    border-color: hsl(38, 92%, 50%);
+    color: hsl(38, 92%, 40%);
+    background: hsl(38, 92%, 95%);
+  }
+  
+  .stepper-dot-mini.stepper-success.clickable:hover {
+    border-color: hsl(142, 71%, 45%);
+    color: hsl(142, 71%, 35%);
+    background: hsl(142, 71%, 95%);
+  }
+  
+  .stepper-dot-mini.stepper-danger.clickable:hover {
+    border-color: hsl(0, 84%, 60%);
+    color: hsl(0, 84%, 50%);
+    background: hsl(0, 84%, 95%);
+  }
+  
+  .stepper-line {
+    width: 16px;
+    height: 2px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  
+  .stepper-line.completed {
+    background: hsl(212, 100%, 50%);
+  }
+  
+  .stepper-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 8px;
+  }
+  
+  .stepper-current-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  
+  /* ===== HIDE OLD OPERATIONAL BAR ===== */
+  .operational-bar {
+    display: none;
+  }
+
   /* ===== STICKY ORDER BANNER ===== */
   .order-sticky-banner {
     display: flex;
