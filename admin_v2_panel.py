@@ -1067,7 +1067,9 @@ def _handle_mark_paid(order_id: str, user: dict):
             make_result = _send_email_via_make(
                 to_email=purchaser_email,
                 subject=subject,
-                html_content=email_html,
+                body_html=email_html,
+                event_order_id=order_id,
+                template_type="payment_confirmation",
             )
             
             if make_result.get("success"):
@@ -1788,13 +1790,13 @@ def order_send_proforma(order_id: str):
         )
         
         # Wyślij przez Make webhook
-        from send_email import send_email_via_make
-        result = send_email_via_make(
+        from backstage_engine import _send_email_via_make
+        result = _send_email_via_make(
             to_email=buyer_email,
             subject=f"Faktura proforma {proforma_number} - {event_name}",
-            html_content=html_content,
-            order_id=order_id,
-            template_key="proforma_resent",
+            body_html=html_content,
+            event_order_id=order_id,
+            template_type="proforma_resent",
         )
         
         if result.get("success"):
@@ -3511,7 +3513,7 @@ def user_new():
                 email_result = _send_email_via_make(
                     to_email=email,
                     subject="Twoje konto w panelu administracyjnym Medidesk",
-                    html_content=f"""
+                    body_html=f"""
                     <p>Cześć {first_name or 'Użytkowniku'},</p>
                     <p>Utworzono dla Ciebie konto w panelu administracyjnym.</p>
                     <p><strong>Login:</strong> {email}<br>
@@ -3519,7 +3521,7 @@ def user_new():
                     <p>Po pierwszym logowaniu zostaniesz poproszony o zmianę hasła.</p>
                     <p><a href="https://wfirma-api.onrender.com/admin-v2/login">Zaloguj się tutaj</a></p>
                     """,
-                    from_name="Panel Medidesk",
+                    template_type="admin_account_created",
                 )
                 
                 # Log audytu
@@ -3680,14 +3682,14 @@ def user_reset_password(user_id: int):
         email_result = _send_email_via_make(
             to_email=target_user["email"],
             subject="Reset hasła - Panel administracyjny Medidesk",
-            html_content=f"""
+            body_html=f"""
             <p>Cześć {target_user.get('first_name') or 'Użytkowniku'},</p>
             <p>Twoje hasło zostało zresetowane.</p>
             <p><strong>Nowe hasło tymczasowe:</strong> {temp_password}</p>
             <p>Po zalogowaniu zostaniesz poproszony o zmianę hasła.</p>
             <p><a href="https://wfirma-api.onrender.com/admin-v2/login">Zaloguj się tutaj</a></p>
             """,
-            from_name="Panel Medidesk",
+            template_type="admin_password_reset",
         )
         
         insert_admin_audit_log(

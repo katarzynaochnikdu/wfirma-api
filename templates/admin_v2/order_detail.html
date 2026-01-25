@@ -774,7 +774,7 @@
   
   function markAsPaidWithDetails() {
     const participantCount = {{ participants|length if participants else 0 }};
-    const hasInvoice = {{ 'true' if documents and documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
+    const hasInvoice = {{ 'true' if wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
     const purchaserEmail = '{{ order.purchaser_email or "" }}';
     
     let infoHtml = '';
@@ -952,13 +952,13 @@
 
   function cancelOrder() {
     // Dane o zamówieniu
-    const hasInvoice = {{ 'true' if documents and documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
+    const hasInvoice = {{ 'true' if wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
     const isPaid = {{ 'true' if order.status == 'paid' else 'false' }};
     const isFOC = {{ 'true' if 'foc' in (order.payment_type or '')|string|lower or (order.total or 0) == 0 else 'false' }};
     const isProforma = {{ 'true' if 'proforma' in (order.payment_type or '')|string|lower or 'pro' in (order.payment_option_name or '')|string|lower else 'false' }};
     const isStripe = {{ 'true' if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower else 'false' }};
     const participantCount = {{ participants|length if participants else 0 }};
-    const hasEmailedParticipants = {{ 'true' if participants and participants|selectattr('status', 'equalto', 'emailed')|list|length > 0 else 'false' }};
+    const hasParticipants = participantCount > 0;
     
     let infoHtml = '';
     
@@ -1010,13 +1010,13 @@
         </div>
       </div>`;
       
-      // Uczestnicy którzy dostali bilety
-      if (hasEmailedParticipants) {
+      // Uczestnicy - jeśli zamówienie opłacone i są uczestnicy
+      if (hasParticipants) {
         infoHtml += `<div style="background: hsl(160, 82%, 95%); border: 1px solid hsl(160, 82%, 70%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
           <div style="display: flex; align-items: flex-start; gap: 10px;">
             <i data-lucide="users" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
             <div style="font-size: 0.8125rem; color: hsl(160, 82%, 25%);">
-              <strong>Email do uczestników:</strong> Uczestnicy, którzy otrzymali bilety (${participantCount} os.) zostaną powiadomieni o anulowaniu ich rezerwacji.
+              <strong>Email do uczestników:</strong> ${participantCount} uczestnik${participantCount === 1 ? '' : participantCount < 5 ? 'ów' : 'ów'} zostanie powiadomion${participantCount === 1 ? 'y' : 'ych'} o anulowaniu rezerwacji.
             </div>
           </div>
         </div>`;
