@@ -530,6 +530,10 @@
             <i data-lucide="pencil"></i>
             Edytuj wydarzenie
           </a>
+          <button type="button" class="btn btn-outline" style="border-color: hsl(0, 84%, 60%); color: hsl(0, 84%, 60%);" onclick="deleteEventWithData()">
+            <i data-lucide="trash-2"></i>
+            Usuń wydarzenie
+          </button>
         </div>
       </div>
     </div>
@@ -1927,6 +1931,50 @@
 
 {% block extra_scripts %}
 <script>
+// ===== DELETE EVENT WITH DATA =====
+async function deleteEventWithData() {
+  const eventName = '{{ event.event_name|e }}';
+  const ordersCount = {{ stats.orders or 0 }};
+  const participantsCount = {{ stats.participants or 0 }};
+  
+  const warningMsg = `UWAGA! Ta operacja jest NIEODWRACALNA!\n\n` +
+    `Usunięcie wydarzenia "${eventName}" spowoduje trwałe usunięcie:\n` +
+    `• ${ordersCount} zamówień\n` +
+    `• ${participantsCount} uczestników\n` +
+    `• Wszystkich powiązanych emaili i dokumentów\n\n` +
+    `Czy na pewno chcesz kontynuować?`;
+  
+  if (!confirm(warningMsg)) return;
+  
+  // Drugie potwierdzenie
+  const confirmText = prompt(`Aby potwierdzić usunięcie, wpisz "USUŃ":`);
+  if (confirmText !== 'USUŃ') {
+    showToast('Anulowano usuwanie wydarzenia', 'info');
+    return;
+  }
+  
+  try {
+    const resp = await fetch('/admin-v2/events/{{ event.event_id }}/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      showToast(data.message || 'Wydarzenie zostało usunięte', 'success');
+      // Przekieruj do listy wydarzeń
+      setTimeout(() => {
+        window.location.href = '/admin-v2/events';
+      }, 1500);
+    } else {
+      showToast(data.error || 'Błąd usuwania wydarzenia', 'error');
+    }
+  } catch (err) {
+    showToast('Błąd połączenia: ' + err.message, 'error');
+  }
+}
+
 // Reinicjalizuj ikony Lucide
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {

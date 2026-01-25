@@ -3160,6 +3160,158 @@ def backstage_attendee():
         }), 500
 
 
+@app.route('/api/backstage/attendee_cancel', methods=['POST'])
+@require_api_key
+def backstage_attendee_cancel():
+    """
+    Endpoint do obsługi anulowania rezerwacji przez uczestnika z Zoho Backstage.
+    
+    Zoho Backstage wysyła webhook gdy uczestnik sam anuluje swoją rezerwację.
+    
+    Body (JSON):
+    {
+        "attendee_id": "...",
+        "order_id": "...",
+        "ticket_id": "...",
+        "ticket_class": "...",
+        "event": "...",
+        "email": "...",
+        "name": "...",
+        "last_name": "...",
+        ...
+    }
+    """
+    from flask import jsonify
+    
+    try:
+        payload = request.get_json(force=True) or {}
+        print(f"[ATTENDEE CANCEL] Otrzymano webhook: {list(payload.keys())}")
+        
+        # Mapowanie pól z Zoho (obsługa różnych formatów nazw)
+        attendee_id = (
+            payload.get("attendee_id") or 
+            payload.get("Attendee ID") or 
+            payload.get("attendeeId") or
+            ""
+        )
+        
+        order_id = (
+            payload.get("order_id") or 
+            payload.get("orderId") or 
+            payload.get("Order ID") or
+            ""
+        )
+        
+        ticket_id = (
+            payload.get("ticket_id") or 
+            payload.get("ticketId") or 
+            payload.get("Ticket ID") or
+            ""
+        )
+        
+        ticket_class = (
+            payload.get("ticket_class") or 
+            payload.get("ticketClass") or 
+            payload.get("Ticket class") or
+            ""
+        )
+        
+        event_id = (
+            payload.get("event") or 
+            payload.get("event_id") or 
+            payload.get("brand_id") or
+            ""
+        )
+        
+        email = (
+            payload.get("email") or 
+            payload.get("emailId") or 
+            payload.get("Email address") or
+            ""
+        )
+        
+        first_name = payload.get("name") or payload.get("first_name") or ""
+        last_name = payload.get("last_name") or payload.get("lastName") or ""
+        
+        print(f"[ATTENDEE CANCEL] Anulowanie: attendee={attendee_id}, order={order_id}, ticket={ticket_id}, email={email}")
+        
+        if not order_id and not ticket_id:
+            return jsonify({
+                'status': 'error',
+                'error': 'Brak order_id lub ticket_id',
+                'received_keys': list(payload.keys())
+            }), 400
+        
+        # Zaktualizuj status uczestnika na "cancelled"
+        from pg_storage import get_participants_for_order, save_participant
+        
+        participant_updated = False
+        
+        if order_id:
+            participants = get_participants_for_order(order_id) or []
+            
+            for p in participants:
+                # Znajdź uczestnika po ticket_id lub email
+                if (ticket_id and p.get("ticket_id") == ticket_id) or \
+                   (email and p.get("email", "").lower() == email.lower()):
+                    
+                    # Aktualizuj status na cancelled
+                    existing_data = p.get("data") or {}
+                    existing_data["cancelled"] = True
+                    existing_data["cancelled_at"] = int(__import__('time').time())
+                    existing_data["cancelled_source"] = "zoho_attendee_cancel_webhook"
+                    existing_data["attendee_id"] = attendee_id
+                    
+                    save_participant(
+                        event_order_id=order_id,
+                        ticket_id=p.get("ticket_id"),
+                        ticket_class_id=p.get("ticket_class_id"),
+                        email=p.get("email"),
+                        first_name=p.get("first_name"),
+                        last_name=p.get("last_name"),
+                        phone=p.get("phone"),
+                        status="cancelled",
+                        data=existing_data,
+                    )
+                    participant_updated = True
+                    print(f"[ATTENDEE CANCEL] Uczestnik {p.get('email')} oznaczony jako anulowany")
+                    break
+        
+        # Loguj w audit
+        from admin_v2_panel import insert_admin_audit_log
+        insert_admin_audit_log(
+            action="attendee_cancelled_by_webhook",
+            admin_user_id=None,
+            target_id=order_id or ticket_id,
+            extra={
+                "attendee_id": attendee_id,
+                "ticket_id": ticket_id,
+                "email": email,
+                "name": f"{first_name} {last_name}".strip(),
+                "source": "zoho_backstage",
+            },
+            ip=request.remote_addr,
+        )
+        
+        return jsonify({
+            'status': 'ok',
+            'attendee_id': attendee_id,
+            'order_id': order_id,
+            'ticket_id': ticket_id,
+            'participant_updated': participant_updated,
+            'message': 'Rezerwacja uczestnika anulowana' if participant_updated else 'Nie znaleziono uczestnika do anulowania',
+        }), 200
+        
+    except Exception as e:
+        print(f"[ATTENDEE CANCEL] Błąd: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 # ---------------------------------------------------------------------------
 # PARTICIPANTS - uczestnicy wydarzeń (przypisani do biletów)
 # ---------------------------------------------------------------------------

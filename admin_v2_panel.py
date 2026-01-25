@@ -2367,6 +2367,49 @@ def event_edit(event_id: str):
     )
 
 
+@admin_v2_bp.route("/events/<event_id>/delete", methods=["POST"])
+@_require_permission("events")
+def event_delete(event_id: str):
+    """Usuwa wydarzenie wraz ze wszystkimi powiązanymi danymi (zamówienia, uczestnicy, maile)."""
+    from flask import jsonify
+    from pg_storage import delete_event_cascade
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy wydarzenie istnieje
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    event_name = event.get("event_name", event_id)
+    
+    try:
+        # Kaskadowe usuwanie
+        deleted = delete_event_cascade(event_id)
+        
+        # Audit log
+        insert_admin_audit_log(
+            action="event_deleted_cascade",
+            admin_user_id=user.get("id") if user else None,
+            target_id=event_id,
+            extra={
+                "event_name": event_name,
+                "deleted_counts": deleted,
+            },
+            ip=request.remote_addr,
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": f"Wydarzenie '{event_name}' zostało usunięte",
+            "deleted": deleted,
+        })
+        
+    except Exception as e:
+        print(f"[event_delete] Error: {e}")
+        return jsonify({"success": False, "error": f"Błąd usuwania: {e}"}), 500
+
+
 @admin_v2_bp.route("/events/<event_id>/sync-backstage", methods=["POST"])
 @_require_permission("events")
 def event_sync_backstage(event_id: str):

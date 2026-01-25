@@ -548,6 +548,7 @@ def upsert_event(event_id: str, event_name: str, status: str, notes: str, data: 
 
 
 def delete_event(event_id: str) -> None:
+    """Usuwa wydarzenie (bez kaskadowego usuwania powiązanych danych)."""
     ensure_schema()
     pool = None
     conn = None
@@ -555,6 +556,86 @@ def delete_event(event_id: str) -> None:
         pool, conn = _with_conn()
         cur = conn.cursor()
         cur.execute("DELETE FROM events WHERE event_id=%s", (str(event_id),))
+        conn.commit()
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def delete_event_cascade(event_id: str) -> Dict[str, int]:
+    """
+    Usuwa wydarzenie wraz ze wszystkimi powiązanymi danymi:
+    - uczestnikami (participants)
+    - zamówieniami (orders)
+    - logami maili (mail_log)
+    - typami biletów (event_ticket_classes)
+    - sesjami Stripe (stripe_checkout_sessions)
+    
+    Zwraca słownik z liczbą usuniętych rekordów.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    deleted = {
+        "participants": 0,
+        "orders": 0,
+        "mail_logs": 0,
+        "ticket_classes": 0,
+        "stripe_sessions": 0,
+        "events": 0,
+    }
+    
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        # 1. Pobierz wszystkie zamówienia dla tego wydarzenia
+        cur.execute("SELECT event_order_id FROM orders WHERE event_id=%s", (str(event_id),))
+        order_ids = [row[0] for row in cur.fetchall()]
+        
+        # 2. Usuń uczestników powiązanych z zamówieniami
+        if order_ids:
+            cur.execute(
+                "DELETE FROM participants WHERE event_order_id = ANY(%s)",
+                (order_ids,)
+            )
+            deleted["participants"] = cur.rowcount
+            
+            # 3. Usuń logi maili powiązane z zamówieniami
+            cur.execute(
+                "DELETE FROM mail_log WHERE event_order_id = ANY(%s)",
+                (order_ids,)
+            )
+            deleted["mail_logs"] = cur.rowcount
+            
+            # 4. Usuń sesje Stripe powiązane z zamówieniami
+            cur.execute(
+                "DELETE FROM stripe_checkout_sessions WHERE event_order_id = ANY(%s)",
+                (order_ids,)
+            )
+            deleted["stripe_sessions"] = cur.rowcount
+        
+        # 5. Usuń zamówienia
+        cur.execute("DELETE FROM orders WHERE event_id=%s", (str(event_id),))
+        deleted["orders"] = cur.rowcount
+        
+        # 6. Usuń typy biletów
+        cur.execute("DELETE FROM event_ticket_classes WHERE event_id=%s", (str(event_id),))
+        deleted["ticket_classes"] = cur.rowcount
+        
+        # 7. Usuń wydarzenie
+        cur.execute("DELETE FROM events WHERE event_id=%s", (str(event_id),))
+        deleted["events"] = cur.rowcount
+        
+        conn.commit()
+        print(f"[DB] delete_event_cascade: event_id={event_id}, deleted={deleted}")
+        return deleted
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"[DB] delete_event_cascade error: {e}")
+        raise
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
