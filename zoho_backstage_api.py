@@ -434,7 +434,7 @@ def map_event_to_local(backstage_event: Dict[str, Any]) -> Dict[str, Any]:
         "event_location_city": venue.get("city", ""),
         "event_location_state": venue.get("state", ""),
         "event_location_country": venue.get("country", ""),
-        "event_location_zip": "",  # Backstage nie zwraca kodu pocztowego bezpośrednio
+        "event_location_zip": "00-000",  # Backstage nie zwraca kodu pocztowego - wartość domyślna do ręcznego uzupełnienia
         "location": location_full,  # Pełny adres jako fallback
         
         # Aliasy dla kompatybilności z V2 (eventLocation, eventCity, eventAddress)

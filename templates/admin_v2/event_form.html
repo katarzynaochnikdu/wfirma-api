@@ -391,9 +391,13 @@ input[type="color"].form-input {
                  value="{{ event_data.event_location_city if event_data else '' }}">
         </div>
         <div class="form-group">
-          <label class="form-label" style="font-size: 0.75rem; color: var(--muted-foreground);">Kod pocztowy</label>
-          <input type="text" name="event_location_zip" class="form-input" style="background: hsl(160, 82%, 97%); border-color: hsl(160, 82%, 80%);" readonly
-                 value="{{ event_data.event_location_zip if event_data else '' }}">
+          <label class="form-label" style="font-size: 0.75rem; color: hsl(212, 100%, 35%); display: flex; align-items: center; gap: 0.35rem;">
+            <i data-lucide="edit-3" style="width: 10px; height: 10px;"></i>
+            Kod pocztowy
+          </label>
+          <input type="text" name="event_location_zip" class="form-input" style="background: hsl(212, 100%, 97%); border-color: hsl(212, 100%, 70%);"
+                 value="{{ event_data.event_location_zip if event_data else '00-000' }}" placeholder="00-000">
+          <small style="font-size: 0.7rem; color: hsl(212, 100%, 40%);">Backstage nie zwraca kodu pocztowego - uzupełnij ręcznie</small>
         </div>
       </div>
     </div>
