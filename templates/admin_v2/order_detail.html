@@ -466,6 +466,10 @@
       <div class="card-content">
         <div class="quick-actions">
           {% if order.status not in ['paid', 'cancelled', 'refunded'] %}
+          <button class="btn btn-primary" onclick="markAsPaidFromQuickActions()">
+            <i data-lucide="check-circle"></i>
+            Oznacz jako opłacone
+          </button>
           <button class="btn btn-outline" onclick="sendReminder()">
             <i data-lucide="send"></i>
             Wyślij przypomnienie o płatności
@@ -617,6 +621,18 @@
   function handleStatusChange(newStatus) {
     if (newStatus === currentStatus) return;
     
+    // Dla 'paid' użyj rozbudowanego modalu z informacjami
+    if (newStatus === 'paid') {
+      markAsPaidWithDetails();
+      return;
+    }
+    
+    // Dla 'cancelled' użyj rozbudowanego modalu
+    if (newStatus === 'cancelled') {
+      cancelOrder();
+      return;
+    }
+    
     pendingStatus = newStatus;
     
     const statusLabels = {
@@ -631,7 +647,7 @@
     const confirmText = document.getElementById('status-confirm-text');
     
     // Show warning for destructive changes
-    if (newStatus === 'cancelled' || newStatus === 'refunded') {
+    if (newStatus === 'refunded') {
       warningBox.style.display = 'block';
       warningBox.innerHTML = `
         <i data-lucide="alert-triangle" style="width: 20px; height: 20px;"></i>
@@ -748,20 +764,88 @@
     });
   }
 
+  function markAsPaidFromQuickActions() {
+    markAsPaidWithDetails();
+  }
+  
   function markAsPaid() {
+    markAsPaidWithDetails();
+  }
+  
+  function markAsPaidWithDetails() {
+    const participantCount = {{ participants|length if participants else 0 }};
+    const hasInvoice = {{ 'true' if documents and documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
+    const purchaserEmail = '{{ order.purchaser_email or "" }}';
+    
+    let infoHtml = '';
+    
+    // Sekcja: Co zrobi system
+    infoHtml += `<div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Co zrobi system:</div>`;
+    
+    // 1. Zmiana statusu
+    infoHtml += `<div style="background: hsl(142, 71%, 97%); border: 1px solid hsl(142, 71%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+      <div style="display: flex; align-items: flex-start; gap: 10px;">
+        <i data-lucide="check-circle" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+        <div style="font-size: 0.8125rem; color: hsl(142, 71%, 25%);">
+          Status zamówienia zostanie zmieniony na <strong>"Opłacone"</strong>.
+        </div>
+      </div>
+    </div>`;
+    
+    // 2. Faktura VAT
+    if (!hasInvoice) {
+      infoHtml += `<div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="file-text" style="width: 18px; height: 18px; color: hsl(212, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(212, 100%, 25%);">
+            <strong>Faktura VAT:</strong> Zostanie wygenerowana faktura końcowa w systemie wFirma.
+          </div>
+        </div>
+      </div>`;
+    }
+    
+    // Sekcja: Co dostanie klient
+    infoHtml += `<div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin: 16px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">Co dostanie klient:</div>`;
+    
+    // 3. Email do kupującego
+    if (purchaserEmail) {
+      infoHtml += `<div style="background: hsl(160, 82%, 95%); border: 1px solid hsl(160, 82%, 70%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="mail" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(160, 82%, 25%);">
+            <strong>Email do kupującego:</strong> Potwierdzenie płatności zostanie wysłane na <strong>${purchaserEmail}</strong>.
+          </div>
+        </div>
+      </div>`;
+    }
+    
+    // 4. Emaile do uczestników
+    if (participantCount > 0) {
+      infoHtml += `<div style="background: hsl(160, 82%, 95%); border: 1px solid hsl(160, 82%, 70%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="users" style="width: 18px; height: 18px; color: hsl(160, 82%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(160, 82%, 25%);">
+            <strong>Email do uczestników:</strong> Bilety/potwierdzenia rezerwacji zostaną wysłane do ${participantCount} uczestnik${participantCount === 1 ? 'a' : 'ów'}.
+          </div>
+        </div>
+      </div>`;
+    } else {
+      infoHtml += `<div style="background: hsl(210, 10%, 95%); border: 1px solid hsl(210, 10%, 80%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(210, 10%, 45%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(210, 10%, 35%);">
+            Brak uczestników w zamówieniu — bilety nie zostaną wysłane.
+          </div>
+        </div>
+      </div>`;
+    }
+    
     showActionModal({
       title: 'Oznacz jako opłacone',
       icon: 'check-circle',
       iconColor: 'hsl(142, 71%, 45%)',
       text: 'Czy na pewno chcesz oznaczyć to zamówienie jako opłacone?',
-      info: `<div style="background: hsl(142, 71%, 97%); border: 1px solid hsl(142, 71%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
-        <div style="display: flex; align-items: flex-start; gap: 10px;">
-          <i data-lucide="file-check" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
-          <div style="font-size: 0.8125rem; color: hsl(142, 71%, 25%);">
-            Zostanie wygenerowana faktura VAT w systemie wFirma i wysłane potwierdzenie do uczestników.
-          </div>
-        </div>
-      </div>`,
+      info: infoHtml,
       confirmText: 'Oznacz jako opłacone',
       onConfirm: () => {
         fetch(`/admin-v2/orders/${orderId}/status`, { 
@@ -772,7 +856,7 @@
           .then(response => response.json())
           .then(data => {
             if (data.success) {
-              showToast('Zamówienie zostało oznaczone jako opłacone', 'success');
+              showToast(data.message || 'Zamówienie zostało oznaczone jako opłacone', 'success');
               location.reload();
             } else {
               showToast(data.error || 'Błąd zmiany statusu', 'error');
