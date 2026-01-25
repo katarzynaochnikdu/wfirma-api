@@ -5801,6 +5801,7 @@ def workflow_create_invoice():
                 "zip": gus_first.get('kodPocztowy') or "",
                 "city": gus_first.get('miejscowosc') or "",
                 "country": "PL",
+                "email": email_address or "",
             }
             contractor_source = 'gus'
             print(f"[WORKFLOW] Tworzę kontrahenta z danych GUS: {contractor_payload.get('name')}")
@@ -5817,6 +5818,7 @@ def workflow_create_invoice():
                     "zip": purchaser_zip,
                     "city": purchaser_city,
                     "country": "PL",
+                    "email": email_address or "",
                 }
                 contractor_source = 'purchaser_fallback'
             else:
@@ -5874,6 +5876,7 @@ def workflow_create_invoice():
             "zip": purchaser_zip,
             "city": purchaser_city,
             "country": "PL",
+            "email": email_address or "",
         }
         contractor_source = 'purchaser'
         
