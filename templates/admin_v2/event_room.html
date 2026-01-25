@@ -638,11 +638,19 @@
       <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
         <div class="form-group">
           <label class="form-label">Email kontaktowy</label>
-          <input type="text" class="form-input" value="{{ event.data.md_email_kontakt }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.md_email_kontakt or '—' }}" disabled>
         </div>
         <div class="form-group">
           <label class="form-label">Telefon kontaktowy</label>
-          <input type="text" class="form-input" value="{{ event.data.md_mobile_kontakt }}" disabled>
+          <input type="text" class="form-input" value="{{ event.data.md_phone_kontakt or event.data.md_mobile_kontakt or '—' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email techniczny</label>
+          <input type="text" class="form-input" value="{{ event.data.md_email_technical or '—' }}" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Telefon techniczny</label>
+          <input type="text" class="form-input" value="{{ event.data.md_phone_technical or '—' }}" disabled>
         </div>
       </div>
     </div>
