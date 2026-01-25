@@ -154,13 +154,6 @@
             </button>
             <span class="stepper-label">Anuluj</span>
           </div>
-          {% if current_idx == 2 and is_stripe_payment %}
-          <div class="stepper-step">
-            <button type="button" class="stepper-dot stepper-dot-muted clickable" onclick="handleStatusChange('refunded')" title="Zwrot płatności Stripe">
-              <i data-lucide="rotate-ccw"></i>
-            </button>
-            <span class="stepper-label">Zwrot</span>
-          </div>
           {% endif %}
           {% endif %}
         </div>
@@ -540,13 +533,6 @@
           <button class="btn btn-outline btn-destructive-outline" onclick="cancelOrder()">
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
-          </button>
-          {% endif %}
-          {% set is_stripe_payment = 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower %}
-          {% if order.status == 'paid' and is_stripe_payment %}
-          <button class="btn btn-outline btn-refund-outline" onclick="refundOrder()" title="Zwrot płatności Stripe">
-            <i data-lucide="rotate-ccw"></i>
-            Zwrot płatności
           </button>
           {% endif %}
           {% if user_role == 'admin' %}
@@ -1037,14 +1023,14 @@
       </div>
     </div>`;
     
-    // Automatyczny zwrot Stripe (jeśli płatność Stripe i opłacone)
+    // Checkbox zwrotu Stripe (jeśli płatność Stripe i opłacone)
     if (isStripe && isPaid && !isProforma) {
       infoHtml += `<div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
         <div style="display: flex; align-items: flex-start; gap: 10px;">
-          <i data-lucide="credit-card" style="width: 18px; height: 18px; color: hsl(212, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
-          <div style="font-size: 0.8125rem; color: hsl(212, 100%, 25%);">
-            <strong>Automatyczny zwrot Stripe:</strong> Płatność zostanie automatycznie zwrócona na konto klienta poprzez Stripe. Klient otrzyma środki w ciągu 5-10 dni roboczych.
-          </div>
+          <input type="checkbox" id="cancel-with-refund" checked style="width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; accent-color: hsl(212, 100%, 45%);">
+          <label for="cancel-with-refund" style="font-size: 0.8125rem; color: hsl(212, 100%, 25%); cursor: pointer;">
+            <strong>Zwrot płatności Stripe:</strong> Płatność zostanie automatycznie zwrócona na konto klienta. Klient otrzyma środki w ciągu 5-10 dni roboczych.
+          </label>
         </div>
       </div>`;
     }
@@ -1126,7 +1112,17 @@
       confirmText: confirmButtonText,
       confirmClass: 'btn btn-outline btn-destructive-outline',
       onConfirm: () => {
-        fetch(`/admin-v2/orders/${orderId}/cancel`, { method: 'POST' })
+        // Sprawdź czy checkbox zwrotu jest zaznaczony
+        const refundCheckbox = document.getElementById('cancel-with-refund');
+        const withRefund = refundCheckbox ? refundCheckbox.checked : false;
+        
+        const formData = new FormData();
+        formData.append('with_refund', withRefund ? '1' : '0');
+        
+        fetch(`/admin-v2/orders/${orderId}/cancel`, { 
+          method: 'POST',
+          body: formData
+        })
           .then(response => response.json())
           .then(data => {
             if (data.success) {
@@ -1294,21 +1290,6 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-  }
-  
-  /* Cała prawa kolumna sticky */
-  .detail-col-right {
-    position: sticky;
-    top: 1rem;
-    align-self: flex-start;
-    max-height: calc(100vh - 2rem);
-    overflow-y: auto;
-  }
-  
-  /* Historia scrollowalna gdy za długa */
-  .card-timeline .card-content {
-    max-height: 350px;
-    overflow-y: auto;
   }
   
   /* ===== STATUS CARDS ROW ===== */

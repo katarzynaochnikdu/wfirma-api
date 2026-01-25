@@ -1475,7 +1475,10 @@ def order_cancel(order_id: str):
     correction_error = None
     emails_sent = {"purchaser": False, "participants": 0}
     
-    # Automatyczny zwrot Stripe (jeśli było opłacone przez Stripe)
+    # Parametr czy wykonać zwrot Stripe (domyślnie tak dla płatności Stripe)
+    with_refund = request.form.get("with_refund", "1") == "1"
+    
+    # Zwrot Stripe (jeśli było opłacone przez Stripe i użytkownik zaznaczył checkbox)
     refund_created = False
     refund_amount = None
     refund_currency = None
@@ -1487,7 +1490,7 @@ def order_cancel(order_id: str):
     payment_option = str(order.get("payment_option_name") or "").lower()
     is_proforma = "proforma" in payment_type or "pro" in payment_option
     
-    if was_paid and not is_proforma:
+    if was_paid and not is_proforma and with_refund:
         # Sprawdź czy mamy sesję Stripe z payment_intent_id
         try:
             stripe_session = get_stripe_session_by_order_id(order_id)
@@ -1495,7 +1498,7 @@ def order_cancel(order_id: str):
                 is_stripe_payment = True
                 payment_intent_id = stripe_session.get("payment_intent_id")
                 
-                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe, wykonuję automatyczny refund...")
+                print(f"[CANCEL] Zamówienie {order_id} - płatność Stripe, wykonuję zwrot (with_refund={with_refund})...")
                 
                 try:
                     import stripe
@@ -1685,6 +1688,7 @@ def order_cancel(order_id: str):
             "correction_number": correction_number,
             "correction_error": correction_error,
             "is_stripe_payment": is_stripe_payment,
+            "with_refund_requested": with_refund,
             "refund_created": refund_created,
             "refund_amount": refund_amount,
             "refund_currency": refund_currency,
