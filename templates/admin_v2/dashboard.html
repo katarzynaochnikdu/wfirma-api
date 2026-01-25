@@ -16,49 +16,49 @@
 </div>
 
 <!-- STATS GRID -->
-<div class="stats-grid">
-  <!-- Stat 1 -->
+<div class="stats-grid dashboard-stats">
+  <!-- Stat 1: Zamówienia -->
   <div class="stat-card">
-    <div class="stat-header">
-      <div class="stat-icon blue">
-        <i data-lucide="shopping-cart"></i>
-      </div>
+    <div class="stat-content">
+      <span class="stat-label">Wszystkie zamówienia</span>
+      <span class="stat-value">{{ stats.total_orders or 0 }}</span>
     </div>
-    <div class="stat-value">{{ stats.total_orders or 0 }}</div>
-    <div class="stat-label">Wszystkie zamówienia</div>
+    <div class="stat-icon blue">
+      <i data-lucide="shopping-cart"></i>
+    </div>
   </div>
   
-  <!-- Stat 2 -->
+  <!-- Stat 2: Uczestnicy -->
   <div class="stat-card">
-    <div class="stat-header">
-      <div class="stat-icon green">
-        <i data-lucide="users"></i>
-      </div>
+    <div class="stat-content">
+      <span class="stat-label">Uczestnicy</span>
+      <span class="stat-value">{{ stats.total_participants or 0 }}</span>
     </div>
-    <div class="stat-value">{{ stats.total_participants or 0 }}</div>
-    <div class="stat-label">Uczestnicy</div>
+    <div class="stat-icon green">
+      <i data-lucide="users"></i>
+    </div>
   </div>
   
-  <!-- Stat 3 -->
-  <div class="stat-card">
-    <div class="stat-header">
-      <div class="stat-icon cyan">
-        <i data-lucide="credit-card"></i>
-      </div>
+  <!-- Stat 3: Przychód (szersze) -->
+  <div class="stat-card stat-card-wide">
+    <div class="stat-content">
+      <span class="stat-label">Łączny przychód</span>
+      <span class="stat-value stat-value-currency">{{ stats.total_revenue|default('0', true) }} zł</span>
     </div>
-    <div class="stat-value">{{ stats.total_revenue|default('0', true) }} zł</div>
-    <div class="stat-label">Łączny przychód</div>
+    <div class="stat-icon cyan">
+      <i data-lucide="credit-card"></i>
+    </div>
   </div>
   
-  <!-- Stat 4 -->
+  <!-- Stat 4: Wydarzenia -->
   <div class="stat-card">
-    <div class="stat-header">
-      <div class="stat-icon blue">
-        <i data-lucide="calendar"></i>
-      </div>
+    <div class="stat-content">
+      <span class="stat-label">Aktywne wydarzenia</span>
+      <span class="stat-value">{{ stats.active_events or 0 }}</span>
     </div>
-    <div class="stat-value">{{ stats.active_events or 0 }}</div>
-    <div class="stat-label">Aktywne wydarzenia</div>
+    <div class="stat-icon blue">
+      <i data-lucide="calendar"></i>
+    </div>
   </div>
 </div>
 
