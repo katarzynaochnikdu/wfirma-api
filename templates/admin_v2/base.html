@@ -149,5 +149,96 @@
     }
   </script>
   {% block extra_scripts %}{% endblock %}
+
+  <!-- FOOTER -->
+  <footer class="app-footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <img src="/static/digitalunity-logo.svg" alt="Digital Unity" class="footer-logo">
+        <span class="footer-divider">|</span>
+        <span class="footer-text">Powered by Digital Unity</span>
+      </div>
+      <div class="footer-contact">
+        <a href="https://www.digitalunity.pl" target="_blank" class="footer-link">
+          <i data-lucide="globe" style="width: 14px; height: 14px;"></i>
+          www.digitalunity.pl
+        </a>
+        <span class="footer-divider">•</span>
+        <a href="mailto:katarzyna.ochnik@digitalunity.pl" class="footer-link">
+          <i data-lucide="mail" style="width: 14px; height: 14px;"></i>
+          katarzyna.ochnik@digitalunity.pl
+        </a>
+        <span class="footer-divider">•</span>
+        <a href="tel:+48888469553" class="footer-link">
+          <i data-lucide="phone" style="width: 14px; height: 14px;"></i>
+          +48 888 469 553
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <style>
+    .app-footer {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      color: rgba(255, 255, 255, 0.7);
+      padding: 1rem 2rem;
+      margin-top: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .footer-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .footer-logo {
+      height: 24px;
+      width: auto;
+      opacity: 0.9;
+    }
+    .footer-text {
+      font-size: 0.8125rem;
+      font-weight: 500;
+    }
+    .footer-contact {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .footer-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      color: rgba(255, 255, 255, 0.7);
+      text-decoration: none;
+      font-size: 0.75rem;
+      transition: color 0.2s;
+    }
+    .footer-link:hover {
+      color: #fff;
+    }
+    .footer-divider {
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 0.75rem;
+    }
+    @media (max-width: 768px) {
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+      .footer-contact {
+        justify-content: center;
+      }
+    }
+  </style>
 </body>
 </html>
