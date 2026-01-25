@@ -1283,26 +1283,38 @@ def order_resend_ticket(order_id: str):
     from pg_storage import get_participants_for_order, save_mail_log
     from backstage_engine import _send_email_via_make
     from email_templates import render_participant_ticket_email
+    import traceback
     
-    user = _get_current_admin_user()
-    order = get_order(order_id)
+    print(f"[order_resend_ticket] START order_id={order_id}")
     
-    if not order:
-        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
-    
-    # Sprawdź status (tylko paid)
-    if order.get("status") != "paid":
-        return jsonify({"success": False, "error": "Zamówienie nie jest opłacone"}), 400
-    
-    # Pobierz wydarzenie
-    event = get_event(order.get("event_id"))
-    if not event:
-        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
-    
-    # Pobierz uczestników
-    participants = get_participants_for_order(order_id)
-    if not participants:
-        return jsonify({"success": False, "error": "Brak uczestników w zamówieniu"}), 404
+    try:
+        user = _get_current_admin_user()
+        order = get_order(order_id)
+        print(f"[order_resend_ticket] order found: {order is not None}, status: {order.get('status') if order else 'N/A'}")
+        
+        if not order:
+            return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+        
+        # Sprawdź status (tylko paid)
+        if order.get("status") != "paid":
+            return jsonify({"success": False, "error": "Zamówienie nie jest opłacone"}), 400
+        
+        # Pobierz wydarzenie
+        event = get_event(order.get("event_id"))
+        print(f"[order_resend_ticket] event found: {event is not None}")
+        if not event:
+            return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+        
+        # Pobierz uczestników
+        participants = get_participants_for_order(order_id)
+        print(f"[order_resend_ticket] participants count: {len(participants) if participants else 0}")
+        
+        if not participants:
+            return jsonify({"success": False, "error": "Brak uczestników w zamówieniu"}), 404
+    except Exception as e:
+        print(f"[order_resend_ticket] SETUP ERROR: {e}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Błąd inicjalizacji: {e}"}), 500
     
     event_config = event.get("data") or {}
     event_name = event.get("event_name", "Wydarzenie")
@@ -2218,11 +2230,15 @@ def event_new():
                 except Exception as e:
                     error = f"Błąd tworzenia wydarzenia: {e}"
     
+    # Pobierz listę wszystkich wydarzeń dla funkcji "Kopiuj z innego"
+    all_events = list_events()
+    
     return render_template(
         "admin_v2/event_form.html",
         active_page="events",
         event=None,
         event_data=None,
+        all_events=all_events,
         error=error,
         success=success,
         **_get_common_context(user),
@@ -2336,12 +2352,16 @@ def event_edit(event_id: str):
     from pg_storage import get_ticket_classes
     ticket_classes = get_ticket_classes(event_id)
     
+    # Pobierz listę wszystkich wydarzeń dla funkcji "Kopiuj z innego"
+    all_events = list_events()
+    
     return render_template(
         "admin_v2/event_form.html",
         active_page="events",
         event=event,
         event_data=event_data,
         ticket_classes=ticket_classes,
+        all_events=all_events,
         error=error,
         **_get_common_context(user),
     )

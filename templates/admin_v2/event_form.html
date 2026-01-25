@@ -488,9 +488,15 @@ input[type="color"].form-input {
         <i data-lucide="settings" style="width: 20px; height: 20px;"></i>
         Ustawienia lokalne
       </h3>
-      <span style="font-size: 0.75rem; padding: 0.25rem 0.75rem; background: hsl(212, 100%, 90%); color: hsl(212, 100%, 25%); border-radius: 999px; font-weight: 500;">
-        Edytowalne
-      </span>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openCopyFromEventModal()" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">
+          <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
+          Kopiuj z innego
+        </button>
+        <span style="font-size: 0.75rem; padding: 0.25rem 0.75rem; background: hsl(212, 100%, 90%); color: hsl(212, 100%, 25%); border-radius: 999px; font-weight: 500;">
+          Edytowalne
+        </span>
+      </div>
     </div>
     <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.25rem;">
       Te ustawienia są przechowywane lokalnie i używane w panelu oraz emailach.
@@ -795,10 +801,180 @@ input[type="color"].form-input {
   <input type="hidden" name="is_active" value="{% if not event or event.is_active %}1{% else %}0{% endif %}">
 
 </form>
+
+<!-- MODAL: Kopiuj z innego wydarzenia -->
+<div id="copy-from-event-modal" class="modal-overlay hidden">
+  <div class="modal-container" style="max-width: 600px;">
+    <div class="modal-header">
+      <h3 class="modal-title">
+        <i data-lucide="copy" style="width: 20px; height: 20px;"></i>
+        Kopiuj ustawienia z innego wydarzenia
+      </h3>
+      <button class="modal-close" onclick="closeCopyFromEventModal()">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <!-- Krok 1: Wybór wydarzenia -->
+      <div id="copy-step-1">
+        <label class="form-label" style="margin-bottom: 0.5rem;">Wybierz wydarzenie źródłowe:</label>
+        <select id="copy-source-event" class="form-input" onchange="loadEventFieldsForCopy()">
+          <option value="">-- Wybierz wydarzenie --</option>
+          {% for ev in all_events|default([]) %}
+          {% if ev.id != event.id %}
+          <option value="{{ ev.id }}" data-config='{{ ev.data|tojson|e if ev.data else "{}" }}'>
+            {{ ev.event_name or 'Wydarzenie ' ~ ev.id }}
+          </option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      
+      <!-- Krok 2: Wybór pól do skopiowania -->
+      <div id="copy-step-2" class="hidden" style="margin-top: 1rem;">
+        <label class="form-label" style="margin-bottom: 0.5rem;">Wybierz pola do skopiowania:</label>
+        <div class="copy-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; max-height: 300px; overflow-y: auto; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted);">
+          <!-- Branding -->
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="color_gradient_1" checked> Kolor 1</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="color_gradient_2" checked> Kolor 2</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="gradient_angle" checked> Kąt gradientu</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="map_hotel_link"> Link mapa hotel</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="logo_url" checked> Logo (link)</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="logo_white_url" checked> Logo (białe)</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="logo_color_url" checked> Logo (kolor)</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="photo_1_url"> Zdjęcie 1</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="event_mail_link_top_banner" checked> Baner mail (góra)</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="event_mail_link_bottom_banner" checked> Baner mail (dół)</label>
+          <!-- URLs -->
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="url_event"> URL wydarzenia</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="url_success"> URL success</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="url_cancel"> URL cancel</label>
+          <!-- Kontakt -->
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="md_email_kontakt" checked> Email kontaktowy</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="md_phone_kontakt" checked> Telefon kontaktowy</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="md_email_technical" checked> Email techniczny</label>
+          <label class="copy-field-checkbox"><input type="checkbox" name="copy_field" value="md_phone_technical" checked> Telefon techniczny</label>
+        </div>
+        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="selectAllCopyFields(true)">Zaznacz wszystko</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="selectAllCopyFields(false)">Odznacz wszystko</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeCopyFromEventModal()">Anuluj</button>
+      <button class="btn btn-primary" id="copy-confirm-btn" onclick="applyCopiedFields()" disabled>
+        <i data-lucide="check" style="width: 16px; height: 16px;"></i>
+        Zastosuj
+      </button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
+<style>
+/* Copy fields modal */
+.copy-field-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  transition: background 0.15s ease;
+}
+.copy-field-checkbox:hover {
+  background: var(--background);
+}
+.copy-field-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+</style>
 <script>
+// ===== COPY FROM EVENT MODAL =====
+let selectedSourceConfig = null;
+
+function openCopyFromEventModal() {
+  document.getElementById('copy-from-event-modal').classList.remove('hidden');
+  document.getElementById('copy-source-event').value = '';
+  document.getElementById('copy-step-2').classList.add('hidden');
+  document.getElementById('copy-confirm-btn').disabled = true;
+  selectedSourceConfig = null;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeCopyFromEventModal() {
+  document.getElementById('copy-from-event-modal').classList.add('hidden');
+  selectedSourceConfig = null;
+}
+
+function loadEventFieldsForCopy() {
+  const select = document.getElementById('copy-source-event');
+  const selectedOption = select.options[select.selectedIndex];
+  const step2 = document.getElementById('copy-step-2');
+  const confirmBtn = document.getElementById('copy-confirm-btn');
+  
+  if (!selectedOption || !selectedOption.value) {
+    step2.classList.add('hidden');
+    confirmBtn.disabled = true;
+    selectedSourceConfig = null;
+    return;
+  }
+  
+  try {
+    selectedSourceConfig = JSON.parse(selectedOption.dataset.config || '{}');
+  } catch (e) {
+    selectedSourceConfig = {};
+  }
+  
+  step2.classList.remove('hidden');
+  confirmBtn.disabled = false;
+}
+
+function selectAllCopyFields(checked) {
+  const checkboxes = document.querySelectorAll('input[name="copy_field"]');
+  checkboxes.forEach(cb => cb.checked = checked);
+}
+
+function applyCopiedFields() {
+  if (!selectedSourceConfig) {
+    showToast('Nie wybrano wydarzenia źródłowego', 'error');
+    return;
+  }
+  
+  const checkboxes = document.querySelectorAll('input[name="copy_field"]:checked');
+  let copiedCount = 0;
+  
+  checkboxes.forEach(cb => {
+    const fieldName = cb.value;
+    const value = selectedSourceConfig[fieldName];
+    
+    if (value !== undefined && value !== null) {
+      // Znajdź input w formularzu
+      const input = document.querySelector(`[name="${fieldName}"]`);
+      if (input) {
+        input.value = value;
+        copiedCount++;
+        
+        // Dla kolorów - synchronizuj też color picker
+        if (fieldName === 'color_gradient_1' || fieldName === 'color_gradient_2') {
+          const colorPicker = document.querySelector(`input[type="color"][onchange*="${fieldName}"]`);
+          if (colorPicker) {
+            colorPicker.value = value.startsWith('#') ? value : '#' + value;
+          }
+        }
+      }
+    }
+  });
+  
+  closeCopyFromEventModal();
+  showToast(`Skopiowano ${copiedCount} pól z wybranego wydarzenia`, 'success');
+}
+
 // ===== URL OPEN BUTTON =====
 function openUrlFromInput(btn) {
   const input = btn.parentElement.querySelector('.url-input');
