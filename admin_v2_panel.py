@@ -1328,6 +1328,104 @@ def order_delete(order_id: str):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@admin_v2_bp.route("/documents/<int:doc_id>/pdf", methods=["GET"])
+@_require_permission("orders")
+def document_download_pdf(doc_id: int):
+    """Pobiera PDF dokumentu wFirma."""
+    from flask import Response, jsonify
+    from pg_storage import get_wfirma_token
+    import requests
+    
+    # Pobierz dokument z bazy
+    from pg_storage import ensure_schema, _with_conn, _dict_cursor, _put_conn
+    
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            "SELECT * FROM wfirma_documents WHERE id = %s",
+            (doc_id,),
+        )
+        doc = cur.fetchone()
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+    
+    if not doc:
+        return jsonify({"success": False, "error": "Dokument nie istnieje"}), 404
+    
+    invoice_id = doc.get("wfirma_invoice_id")
+    if not invoice_id:
+        return jsonify({"success": False, "error": "Brak ID dokumentu wFirma"}), 400
+    
+    # Pobierz token wFirma
+    wfirma_token = get_wfirma_token("md")
+    if not wfirma_token or not wfirma_token.get("access_token"):
+        return jsonify({"success": False, "error": "Brak tokenu wFirma - skonfiguruj integrację"}), 500
+    
+    access_token = wfirma_token["access_token"]
+    
+    try:
+        # Pobierz PDF z wFirma API
+        api_url = f"https://api2.wfirma.pl/invoices/download/{invoice_id}"
+        params = {
+            "inputFormat": "json",
+            "outputFormat": "json",
+            "oauth_version": "2",
+        }
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/pdf"
+        }
+        body = {
+            "invoices": {
+                "parameters": {
+                    "parameter": [
+                        {"name": "page", "value": "invoice"},
+                        {"name": "address", "value": "0"},
+                        {"name": "leaflet", "value": "0"},
+                        {"name": "duplicate", "value": "0"}
+                    ]
+                }
+            }
+        }
+        
+        resp = requests.post(api_url, headers=headers, params=params, json=body, stream=True, timeout=30)
+        
+        if resp.status_code == 200 and 'pdf' in resp.headers.get('Content-Type', '').lower():
+            # Nazwa pliku
+            doc_number = doc.get("wfirma_number", "dokument").replace("/", "-")
+            filename = f"{doc_number}.pdf"
+            
+            return Response(
+                resp.content,
+                mimetype='application/pdf',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Content-Type': 'application/pdf'
+                }
+            )
+        else:
+            error_msg = f"wFirma zwróciło błąd: {resp.status_code}"
+            try:
+                error_data = resp.json()
+                if "status" in error_data:
+                    error_msg = error_data.get("status", {}).get("message", error_msg)
+            except:
+                pass
+            return jsonify({"success": False, "error": error_msg}), 500
+            
+    except requests.Timeout:
+        return jsonify({"success": False, "error": "Timeout podczas pobierania PDF"}), 504
+    except Exception as e:
+        print(f"[document_download_pdf] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # EMAIL DESIGNER
 # ---------------------------------------------------------------------------

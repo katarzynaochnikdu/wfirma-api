@@ -19,11 +19,13 @@
     <code style="font-size: 0.875rem; color: var(--muted-foreground);">{{ order.event_order_id }}</code>
   </div>
   <div class="header-actions">
-    <button class="btn btn-outline">
+    {% if wfirma_documents %}
+    <button class="btn btn-outline" onclick="downloadLatestDocument()">
       <i data-lucide="download"></i>
-      Pobierz fakturę
+      Pobierz dokument
     </button>
-    <button class="btn btn-outline">
+    {% endif %}
+    <button class="btn btn-outline" onclick="sendReminder()">
       <i data-lucide="send"></i>
       Wyślij email
     </button>
@@ -67,13 +69,15 @@
   </div>
   
   <!-- Document Status -->
-  {% set has_invoice = wfirma_documents and wfirma_documents|selectattr('doc_type', 'equalto', 'Faktura VAT')|list|length > 0 %}
-  {% set has_proforma = wfirma_documents and wfirma_documents|selectattr('doc_type', 'equalto', 'Proforma')|list|length > 0 %}
+  {% set has_invoice = wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'Faktura VAT')|list|length > 0 %}
+  {% set has_proforma = wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'Proforma')|list|length > 0 %}
+  {% set invoice_doc = wfirma_documents|selectattr('document_type', 'equalto', 'Faktura VAT')|first if has_invoice else none %}
+  {% set proforma_doc = wfirma_documents|selectattr('document_type', 'equalto', 'Proforma')|first if has_proforma else none %}
   {% set document_status = {
     'type': 'success' if has_invoice else ('warning' if has_proforma else 'neutral'),
     'icon': 'check-circle' if has_invoice else ('clock' if has_proforma else 'file-x'),
     'label': 'Faktura VAT' if has_invoice else ('Proforma' if has_proforma else 'Brak dokumentów'),
-    'detail': (wfirma_documents|selectattr('doc_type', 'equalto', 'Faktura VAT')|first).number if has_invoice else ((wfirma_documents|selectattr('doc_type', 'equalto', 'Proforma')|first).number if has_proforma else '')
+    'detail': invoice_doc.wfirma_number if invoice_doc else (proforma_doc.wfirma_number if proforma_doc else '')
   } %}
   <div class="operational-status-badge operational-status-{{ document_status.type }}">
     <div class="operational-icon-wrapper">
@@ -446,17 +450,19 @@
         <div class="document-list">
           {% if wfirma_documents %}
             {% for doc in wfirma_documents %}
+            {% set doc_type = doc.document_type or doc.doc_type or 'Dokument' %}
+            {% set is_invoice = 'Faktura' in doc_type %}
             <div class="document-item">
               <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: {% if 'Faktura' in (doc.doc_type or '') %}hsl(160, 70%, 92%){% else %}hsl(45, 90%, 92%){% endif %}; display: flex; align-items: center; justify-content: center;">
-                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: {% if 'Faktura' in (doc.doc_type or '') %}hsl(160, 82%, 35%){% else %}hsl(45, 90%, 40%){% endif %};"></i>
+                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: {% if is_invoice %}hsl(160, 70%, 92%){% else %}hsl(45, 90%, 92%){% endif %}; display: flex; align-items: center; justify-content: center;">
+                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: {% if is_invoice %}hsl(160, 82%, 35%){% else %}hsl(45, 90%, 40%){% endif %};"></i>
                 </div>
                 <div>
-                  <p class="document-name">{{ doc.doc_type or 'Dokument' }}</p>
-                  <p class="document-meta">{{ doc.number or doc.doc_id or '—' }}</p>
+                  <p class="document-name">{{ doc_type }}</p>
+                  <p class="document-meta">{{ doc.wfirma_number or doc.number or '—' }}</p>
                 </div>
               </div>
-              <button class="btn btn-ghost" style="padding: 0.5rem;">
+              <button class="btn btn-ghost" style="padding: 0.5rem;" onclick="downloadDocument({{ doc.id }})" title="Pobierz PDF">
                 <i data-lucide="download" style="width: 16px; height: 16px;"></i>
               </button>
             </div>
@@ -633,6 +639,24 @@
       showToast('Błąd zmiany statusu', 'error');
       closeStatusModal();
     });
+  }
+
+  // Document download
+  function downloadDocument(docId) {
+    window.open(`/admin-v2/documents/${docId}/pdf`, '_blank');
+  }
+  
+  function downloadLatestDocument() {
+    {% if wfirma_documents %}
+    const latestDocId = {{ (wfirma_documents|first).id if wfirma_documents else 'null' }};
+    if (latestDocId) {
+      downloadDocument(latestDocId);
+    } else {
+      showToast('Brak dokumentów do pobrania', 'error');
+    }
+    {% else %}
+    showToast('Brak dokumentów do pobrania', 'error');
+    {% endif %}
   }
 
   // Quick actions
