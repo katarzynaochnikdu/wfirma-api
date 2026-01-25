@@ -18,28 +18,34 @@
     </div>
     <code style="font-size: 0.875rem; color: var(--muted-foreground);">{{ order.event_order_id }}</code>
   </div>
-  <div class="header-actions">
-    {% if wfirma_documents %}
-    <button class="btn btn-outline" onclick="downloadLatestDocument()">
-      <i data-lucide="download"></i>
-      Pobierz dokument
-    </button>
-    {% endif %}
-    <button class="btn btn-outline" onclick="sendReminder()">
-      <i data-lucide="send"></i>
-      Wyślij email
-    </button>
-  </div>
 </div>
 
-<!-- EVENT BANNER -->
-<div class="event-banner" style="background: linear-gradient(135deg, {{ order.event_color or '#0065D7' }}, {{ order.event_color_2 or '#00A1D7' }});">
-  <div class="event-banner-content">
-    <span class="event-banner-label">Wydarzenie</span>
-    <span class="event-banner-title">{{ order.event_name or 'Nieznane wydarzenie' }}</span>
+<!-- Sentinel do wykrywania scroll (przed bannerem) -->
+<div id="bannerSentinel" style="height: 1px;"></div>
+<!-- STICKY EVENT BANNER -->
+<div class="order-sticky-banner" id="stickyBanner" style="background: linear-gradient(135deg, {{ order.event_color or '#0065D7' }}, {{ order.event_color_2 or '#00A1D7' }});">
+  <div class="sticky-banner-content">
+    <div class="sticky-banner-event">
+      <span class="sticky-banner-label">Wydarzenie</span>
+      <span class="sticky-banner-title">{{ order.event_name or 'Nieznane wydarzenie' }}</span>
+    </div>
+    <!-- Dane kupującego - pojawiają się przy scroll -->
+    <div class="sticky-banner-buyer" id="stickyBuyerInfo">
+      <div class="sticky-buyer-avatar">{{ (order.purchaser_first_name or 'N')[0] }}{{ (order.purchaser_last_name or 'N')[0] }}</div>
+      <div class="sticky-buyer-details">
+        <span class="sticky-buyer-name">{{ order.purchaser_first_name }} {{ order.purchaser_last_name }}</span>
+        <span class="sticky-buyer-email">{{ order.purchaser_email }}</span>
+      </div>
+      {% if order.company_name or order.nip %}
+      <div class="sticky-buyer-company">
+        <i data-lucide="building-2"></i>
+        <span>{{ order.company_name or ('NIP: ' ~ order.nip) }}</span>
+      </div>
+      {% endif %}
+    </div>
   </div>
-  <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=order.event_id) }}" class="event-banner-link">
-    Zobacz dashboard →
+  <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=order.event_id) }}" class="sticky-banner-link">
+    Dashboard →
   </a>
 </div>
 
@@ -68,30 +74,27 @@
     </div>
   </div>
   
-  <!-- Document Status -->
-  {% set has_invoice = wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'Faktura VAT')|list|length > 0 %}
-  {% set has_proforma = wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'Proforma')|list|length > 0 %}
-  {% set invoice_doc = wfirma_documents|selectattr('document_type', 'equalto', 'Faktura VAT')|first if has_invoice else none %}
-  {% set proforma_doc = wfirma_documents|selectattr('document_type', 'equalto', 'Proforma')|first if has_proforma else none %}
-  {% set document_status = {
-    'type': 'success' if has_invoice else ('warning' if has_proforma else 'neutral'),
-    'icon': 'check-circle' if has_invoice else ('clock' if has_proforma else 'file-x'),
-    'label': 'Faktura VAT' if has_invoice else ('Proforma' if has_proforma else 'Brak dokumentów'),
-    'detail': invoice_doc.wfirma_number if invoice_doc else (proforma_doc.wfirma_number if proforma_doc else '')
-  } %}
-  <div class="operational-status-badge operational-status-{{ document_status.type }}">
+  <!-- Status Selector -->
+  <div class="operational-status-badge operational-status-selector">
     <div class="operational-icon-wrapper">
-      <i data-lucide="file-text"></i>
+      <i data-lucide="git-branch"></i>
     </div>
     <div class="operational-status-content">
-      <span class="operational-status-label">Dokumenty</span>
-      <div class="operational-status-value">
-        <i data-lucide="{{ document_status.icon }}"></i>
-        <span>{{ document_status.label }}</span>
+      <span class="operational-status-label">Status zamówienia</span>
+      <div class="status-mini-pills">
+        <button type="button" class="mini-pill {% if order.status == 'received' %}active{% endif %}" onclick="handleStatusChange('received')" title="Otrzymane" {% if order.status == 'received' %}disabled{% endif %}>
+          <i data-lucide="inbox"></i>
+        </button>
+        <button type="button" class="mini-pill mini-pill-warning {% if order.status == 'pending_payment' %}active{% endif %}" onclick="handleStatusChange('pending_payment')" title="Oczekuje" {% if order.status == 'pending_payment' %}disabled{% endif %}>
+          <i data-lucide="clock"></i>
+        </button>
+        <button type="button" class="mini-pill mini-pill-success {% if order.status == 'paid' %}active{% endif %}" onclick="handleStatusChange('paid')" title="Opłacone" {% if order.status == 'paid' %}disabled{% endif %}>
+          <i data-lucide="check-circle"></i>
+        </button>
+        <button type="button" class="mini-pill mini-pill-danger {% if order.status == 'cancelled' %}active{% endif %}" onclick="handleStatusChange('cancelled')" title="Anulowane" {% if order.status == 'cancelled' %}disabled{% endif %}>
+          <i data-lucide="x-circle"></i>
+        </button>
       </div>
-      {% if document_status.detail %}
-      <span class="operational-status-detail">{{ document_status.detail }}</span>
-      {% endif %}
     </div>
   </div>
   
@@ -168,73 +171,6 @@
         {% endif %}
       </div>
       <div class="card-content">
-        
-        <!-- Status flow pills -->
-        <div class="status-flow-section">
-          <label class="status-flow-label">Status zamówienia</label>
-          
-          <!-- Main flow: received → pending → paid -->
-          <div class="status-flow-pills">
-            <button type="button" 
-                    class="status-pill {% if order.status == 'received' %}active{% endif %}" 
-                    data-status="received"
-                    onclick="handleStatusChange('received')"
-                    {% if order.status == 'received' %}disabled{% endif %}>
-              <i data-lucide="inbox"></i>
-              <span>Otrzymane</span>
-            </button>
-            
-            <div class="status-flow-arrow">
-              <i data-lucide="chevron-right"></i>
-            </div>
-            
-            <button type="button" 
-                    class="status-pill {% if order.status == 'pending_payment' %}active{% endif %}" 
-                    data-status="pending_payment"
-                    onclick="handleStatusChange('pending_payment')"
-                    {% if order.status == 'pending_payment' %}disabled{% endif %}>
-              <i data-lucide="clock"></i>
-              <span>Oczekuje</span>
-            </button>
-            
-            <div class="status-flow-arrow">
-              <i data-lucide="chevron-right"></i>
-            </div>
-            
-            <button type="button" 
-                    class="status-pill status-pill-success {% if order.status == 'paid' %}active{% endif %}" 
-                    data-status="paid"
-                    onclick="handleStatusChange('paid')"
-                    {% if order.status == 'paid' %}disabled{% endif %}>
-              <i data-lucide="check-circle"></i>
-              <span>Opłacone</span>
-            </button>
-          </div>
-          
-          <!-- Destructive actions (separated) -->
-          <div class="status-destructive-row">
-            <span class="status-destructive-label">Akcje końcowe:</span>
-            <button type="button" 
-                    class="status-pill status-pill-danger {% if order.status == 'cancelled' %}active{% endif %}" 
-                    data-status="cancelled"
-                    onclick="handleStatusChange('cancelled')"
-                    {% if order.status == 'cancelled' %}disabled{% endif %}>
-              <i data-lucide="x-circle"></i>
-              <span>Anulowane</span>
-            </button>
-            <button type="button" 
-                    class="status-pill status-pill-muted {% if order.status == 'refunded' %}active{% endif %}" 
-                    data-status="refunded"
-                    onclick="handleStatusChange('refunded')"
-                    {% if order.status == 'refunded' %}disabled{% endif %}>
-              <i data-lucide="rotate-ccw"></i>
-              <span>Zwrócone</span>
-            </button>
-          </div>
-        </div>
-
-        <hr style="border: none; border-top: 1px solid var(--border); margin: 1.5rem 0;">
-
         <div class="info-grid">
           <div class="info-item">
             <span class="info-label">Wartość zamówienia</span>
@@ -797,11 +733,262 @@
     if (typeof lucide !== 'undefined') {
       lucide.createIcons();
     }
+    
+    // Sticky banner logic
+    initStickyBanner();
   });
+  
+  function initStickyBanner() {
+    const banner = document.getElementById('stickyBanner');
+    const sentinel = document.getElementById('bannerSentinel');
+    
+    if (!banner || !sentinel) return;
+    
+    // Create placeholder element (inserted after banner to reserve space when sticky)
+    const placeholder = document.createElement('div');
+    placeholder.className = 'banner-placeholder';
+    banner.parentNode.insertBefore(placeholder, banner.nextSibling);
+    
+    // Use IntersectionObserver for smooth detection
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) {
+            // Sentinel scrolled out of view - make banner sticky
+            banner.classList.add('is-sticky');
+            placeholder.classList.add('active');
+            // Re-init icons for buyer company
+            setTimeout(() => {
+              if (typeof lucide !== 'undefined') lucide.createIcons();
+            }, 50);
+          } else {
+            // Sentinel visible - remove sticky
+            banner.classList.remove('is-sticky');
+            placeholder.classList.remove('active');
+          }
+        });
+      },
+      { 
+        threshold: 0,
+        rootMargin: '0px 0px 0px 0px'
+      }
+    );
+    
+    observer.observe(sentinel);
+  }
 </script>
 
 <style>
-  /* ===== STATUS FLOW PILLS ===== */
+  /* ===== STICKY ORDER BANNER ===== */
+  .order-sticky-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    position: relative;
+    z-index: 100;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .order-sticky-banner.is-sticky {
+    position: fixed;
+    top: 0;
+    left: var(--sidebar-width, 260px);
+    right: 0;
+    border-radius: 0;
+    margin-bottom: 0;
+    padding: 0.75rem 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    z-index: 1000;
+  }
+  
+  .sticky-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    flex: 1;
+  }
+  
+  .sticky-banner-event {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  
+  .sticky-banner-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255,255,255,0.7);
+  }
+  
+  .sticky-banner-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: white;
+  }
+  
+  .order-sticky-banner.is-sticky .sticky-banner-title {
+    font-size: 0.9rem;
+  }
+  
+  /* Buyer info - hidden by default, visible on sticky */
+  .sticky-banner-buyer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    opacity: 0;
+    max-width: 0;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .order-sticky-banner.is-sticky .sticky-banner-buyer {
+    opacity: 1;
+    max-width: 500px;
+  }
+  
+  .sticky-buyer-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  
+  .sticky-buyer-details {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  
+  .sticky-buyer-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+  }
+  
+  .sticky-buyer-email {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.7);
+    white-space: nowrap;
+  }
+  
+  .sticky-buyer-company {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(255,255,255,0.15);
+    border-radius: 6px;
+    color: white;
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  
+  .sticky-buyer-company i {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .sticky-banner-link {
+    color: rgba(255,255,255,0.9);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.1);
+    transition: background 0.2s;
+    white-space: nowrap;
+  }
+  
+  .sticky-banner-link:hover {
+    background: rgba(255,255,255,0.2);
+    color: white;
+  }
+  
+  /* Placeholder when banner is sticky */
+  .banner-placeholder {
+    height: 0;
+    transition: height 0.3s ease;
+  }
+  
+  .banner-placeholder.active {
+    height: 76px; /* height of banner + margin */
+  }
+  
+  /* ===== MINI STATUS PILLS (Operational Bar) ===== */
+  .operational-status-selector {
+    min-width: 180px;
+  }
+  
+  .status-mini-pills {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+  
+  .mini-pill {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border);
+    background: var(--background);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  
+  .mini-pill i {
+    width: 14px;
+    height: 14px;
+  }
+  
+  .mini-pill:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: hsl(var(--primary) / 0.05);
+  }
+  
+  .mini-pill.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+  }
+  
+  .mini-pill-warning.active {
+    background: hsl(38, 92%, 50%);
+    border-color: hsl(38, 92%, 50%);
+  }
+  
+  .mini-pill-success.active {
+    background: hsl(142, 71%, 45%);
+    border-color: hsl(142, 71%, 45%);
+  }
+  
+  .mini-pill-danger.active {
+    background: hsl(0, 84%, 60%);
+    border-color: hsl(0, 84%, 60%);
+  }
+  
+  .mini-pill:disabled {
+    cursor: default;
+  }
+  
+  /* ===== STATUS FLOW PILLS (legacy - can remove) ===== */
   .status-flow-section {
     margin-bottom: 0.5rem;
   }

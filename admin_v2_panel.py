@@ -884,34 +884,39 @@ def order_send_reminder(order_id: str):
     if not event:
         return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
     
-    # Pobierz sesję Stripe (jeśli istnieje)
+    # Pobierz sesję Stripe (jeśli istnieje) - opcjonalna dla proforma
     stripe_session = get_stripe_session_by_order_id(order_id)
-    if not stripe_session or not stripe_session.get("url"):
-        return jsonify({"success": False, "error": "Brak linku do płatności Stripe"}), 400
+    checkout_url = None
+    expires_in = None
+    expires_at_str = None
+    is_proforma = "proforma" in (order.get("payment_type") or "").lower() or "pro" in (order.get("payment_option_name") or "").lower()
     
-    # Sprawdź czy link nie wygasł
-    session_created = stripe_session.get("created_at")
-    if session_created:
-        try:
-            if hasattr(session_created, "tzinfo") and session_created.tzinfo:
-                # aware datetime
-                now = datetime.now(session_created.tzinfo)
-            else:
-                now = datetime.now()
-            expires_at = session_created + timedelta(hours=24)
-            if now > expires_at:
-                return jsonify({"success": False, "error": "Link do płatności wygasł. Należy utworzyć nową sesję Stripe."}), 400
-            time_left = expires_at - now
-            hours_left = int(time_left.total_seconds() / 3600)
-            expires_in = f"{hours_left} godzin" if hours_left > 1 else "mniej niż godzina"
-            expires_at_str = expires_at.strftime("%d.%m.%Y, %H:%M")
-        except Exception as e:
-            print(f"[order_send_reminder] Błąd obliczania expires_at: {e}")
-            expires_in = "24 godziny"
-            expires_at_str = "wkrótce"
-    else:
-        expires_in = "24 godziny"
-        expires_at_str = "wkrótce"
+    if stripe_session and stripe_session.get("url"):
+        checkout_url = stripe_session.get("url")
+        # Sprawdź czy link nie wygasł
+        session_created = stripe_session.get("created_at")
+        if session_created:
+            try:
+                if hasattr(session_created, "tzinfo") and session_created.tzinfo:
+                    now = datetime.now(session_created.tzinfo)
+                else:
+                    now = datetime.now()
+                expires_at = session_created + timedelta(hours=24)
+                if now > expires_at:
+                    checkout_url = None  # Link wygasł
+                else:
+                    time_left = expires_at - now
+                    hours_left = int(time_left.total_seconds() / 3600)
+                    expires_in = f"{hours_left} godzin" if hours_left > 1 else "mniej niż godzina"
+                    expires_at_str = expires_at.strftime("%d.%m.%Y, %H:%M")
+            except Exception as e:
+                print(f"[order_send_reminder] Błąd obliczania expires_at: {e}")
+                expires_in = "24 godziny"
+                expires_at_str = "wkrótce"
+    
+    # Jeśli nie ma aktywnego linku Stripe i nie jest to proforma - błąd
+    if not checkout_url and not is_proforma:
+        return jsonify({"success": False, "error": "Brak aktywnego linku do płatności. Utwórz nową sesję Stripe."}), 400
     
     # Pobierz email kupującego
     purchaser_email = order.get("purchaser_email")
@@ -925,29 +930,51 @@ def order_send_reminder(order_id: str):
     except Exception:
         total_value = 0.0
     
-    try:
-        html = render_checkout_reminder_email(
-            event_name=event.get("event_name", "Wydarzenie"),
-            purchaser_first_name=order.get("purchaser_first_name", ""),
-            purchaser_last_name=order.get("purchaser_last_name", ""),
-            purchaser_email=purchaser_email,
-            total_gross=total_value,
-            checkout_url=stripe_session.get("url"),
-            expires_at=expires_at_str,
-            expires_in=expires_in,
-            event_config=event_config,
-        )
-    except Exception as e:
-        print(f"[order_send_reminder] Błąd renderowania emaila: {e}")
-        return jsonify({"success": False, "error": f"Błąd generowania emaila: {e}"}), 500
+    event_name = event.get("event_name", "Wydarzenie")
     
-    subject = f"Przypomnienie o płatności - {event.get('event_name', 'Wydarzenie')}"
+    if is_proforma and not checkout_url:
+        # Dla proformy bez Stripe - prosty email z przypomnieniem
+        from email_templates import render_proforma_sent_email
+        proforma_number = order.get("proforma_number", "")
+        try:
+            html = render_proforma_sent_email(
+                buyer_name=f"{order.get('purchaser_first_name', '')} {order.get('purchaser_last_name', '')}".strip(),
+                event_name=event_name,
+                proforma_number=proforma_number,
+                total=total_value,
+                payment_deadline=order.get("payment_due_date") or "7 dni",
+                checkout_url="",  # brak linku Stripe
+            )
+        except Exception as e:
+            print(f"[order_send_reminder] Błąd renderowania emaila proforma: {e}")
+            return jsonify({"success": False, "error": f"Błąd generowania emaila: {e}"}), 500
+        subject = f"Przypomnienie: Proforma {proforma_number} - {event_name}"
+        template_key = "proforma_reminder"
+    else:
+        # Dla Stripe - standardowy email z linkiem
+        try:
+            html = render_checkout_reminder_email(
+                event_name=event_name,
+                purchaser_first_name=order.get("purchaser_first_name", ""),
+                purchaser_last_name=order.get("purchaser_last_name", ""),
+                purchaser_email=purchaser_email,
+                total_gross=total_value,
+                checkout_url=checkout_url,
+                expires_at=expires_at_str,
+                expires_in=expires_in,
+                event_config=event_config,
+            )
+        except Exception as e:
+            print(f"[order_send_reminder] Błąd renderowania emaila: {e}")
+            return jsonify({"success": False, "error": f"Błąd generowania emaila: {e}"}), 500
+        subject = f"Przypomnienie o płatności - {event_name}"
+        template_key = "checkout_reminder"
     
     # Zapisz w mail_log
     mail_id = save_mail_log(
         event_order_id=order_id,
         direction="purchaser",
-        template_key="checkout_reminder",
+        template_key=template_key,
         to_email=purchaser_email,
         subject=subject,
         status="queued",
@@ -959,7 +986,7 @@ def order_send_reminder(order_id: str):
         subject=subject,
         body_html=html,
         event_order_id=order_id,
-        template_type="checkout_reminder",
+        template_type=template_key,
         mail_id=mail_id,
     )
     
