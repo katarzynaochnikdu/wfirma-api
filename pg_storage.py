@@ -2242,9 +2242,9 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict[str, Any]]:
             SELECT p.id as participant_id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
                    p.ticket_id, p.ticket_class_id, p.status, p.data, p.created_at, p.updated_at,
                    o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
-                   o.purchaser_company, o.purchaser_nip, o.purchaser_phone,
+                   o.purchaser_nip, o.purchaser_phone, o.raw,
                    o.status as order_status, o.payment_option_name, o.payment_type, o.total,
-                   o.created_at as order_created_at, o.paid_at,
+                   o.created_at as order_created_at,
                    e.event_name, e.data as event_data
             FROM participants p
             JOIN orders o ON p.event_order_id = o.event_order_id
@@ -2257,8 +2257,17 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict[str, Any]]:
         if not row:
             print(f"[DB] get_participant_by_id: no row found for id={participant_id}")
             return None
-        print(f"[DB] get_participant_by_id: found participant email={row.get('email')}, event_order_id={row.get('event_order_id')}")
-        return dict(row)
+        result = dict(row)
+        # Pobierz purchaser_company z raw (jeśli nie ma kolumny)
+        raw = result.get("raw") or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except:
+                raw = {}
+        result["purchaser_company"] = raw.get("purchaser", {}).get("company") or raw.get("purchaserCompany") or ""
+        print(f"[DB] get_participant_by_id: found participant email={result.get('email')}, event_order_id={result.get('event_order_id')}")
+        return result
     except Exception as e:
         print(f"[DB] get_participant_by_id error: {e}")
         return None
@@ -2283,9 +2292,9 @@ def get_participant_by_attendee_id(attendee_id: str) -> Optional[Dict[str, Any]]
             SELECT p.id as participant_id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
                    p.ticket_id, p.ticket_class_id, p.status, p.data, p.created_at, p.updated_at,
                    o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
-                   o.purchaser_company, o.purchaser_nip, o.purchaser_phone,
+                   o.purchaser_nip, o.purchaser_phone, o.raw,
                    o.status as order_status, o.payment_option_name, o.payment_type, o.total,
-                   o.created_at as order_created_at, o.paid_at,
+                   o.created_at as order_created_at,
                    e.event_name, e.data as event_data
             FROM participants p
             JOIN orders o ON p.event_order_id = o.event_order_id
@@ -2298,8 +2307,17 @@ def get_participant_by_attendee_id(attendee_id: str) -> Optional[Dict[str, Any]]
         if not row:
             print(f"[DB] get_participant_by_attendee_id: no row found for attendee_id={attendee_id}")
             return None
-        print(f"[DB] get_participant_by_attendee_id: found participant id={row.get('participant_id')}, email={row.get('email')}")
-        return dict(row)
+        result = dict(row)
+        # Pobierz purchaser_company z raw (jeśli nie ma kolumny)
+        raw = result.get("raw") or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except:
+                raw = {}
+        result["purchaser_company"] = raw.get("purchaser", {}).get("company") or raw.get("purchaserCompany") or ""
+        print(f"[DB] get_participant_by_attendee_id: found participant id={result.get('participant_id')}, email={result.get('email')}")
+        return result
     except Exception as e:
         print(f"[DB] get_participant_by_attendee_id error: {e}")
         return None
