@@ -291,19 +291,18 @@
             <span class="info-label">Termin ważności płatności</span>
             {% if is_proforma_payment %}
               {% if user_role == 'admin' %}
-              <div class="value-with-details" style="gap: 0.5rem; align-items: center;">
+              <div class="proforma-due-date-control">
                 <input
                   type="date"
                   id="proforma-due-date"
-                  class="form-input"
-                  style="max-width: 170px;"
+                  class="form-input form-input-sm"
                   value="{{ order.payment_due_date.strftime('%Y-%m-%d') if order.payment_due_date else '' }}"
                 >
-                <button class="btn btn-outline btn-sm" type="button" onclick="saveProformaDueDate()">
+                <button class="btn btn-outline btn-xs" type="button" onclick="saveProformaDueDate()">
                   Zapisz
                 </button>
                 {% if order.payment_due_date %}
-                <button class="btn btn-outline btn-sm" type="button" onclick="clearProformaDueDate()">
+                <button class="btn btn-ghost btn-xs" type="button" onclick="clearProformaDueDate()">
                   Wyczyść
                 </button>
                 {% endif %}

@@ -385,6 +385,31 @@
     color: var(--foreground);
   }
   
+  .btn-xs {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    height: auto;
+    min-height: unset;
+  }
+  
+  .form-input-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8125rem;
+    height: auto;
+    min-height: unset;
+  }
+  
+  .proforma-due-date-control {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+  
+  .proforma-due-date-control .form-input-sm {
+    max-width: 140px;
+  }
+  
   /* ============================================
      CARDS
      ============================================ */
