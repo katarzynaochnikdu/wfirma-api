@@ -1161,55 +1161,29 @@ def _handle_mark_paid(order_id: str, user: dict):
             
             subject = f"Potwierdzenie płatności - {event_name}"
             
-            # #region agent log
-            try:
-                import json as _json, time
-                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:before_send","message":"Before _send_email_via_make","data":{"order_id":order_id,"to":purchaser_email,"has_mail_id":False},"timestamp":time.time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
-            except: pass
-            # #endregion
+            # NAJPIERW zapisz do mail_log żeby mieć mail_id
+            mail_log_result = save_mail_log(
+                event_order_id=order_id,
+                template_key="payment_confirmation",
+                to_email=purchaser_email,
+                subject=subject,
+                direction="purchaser",
+            )
+            mail_id = mail_log_result.get("id") if mail_log_result else None
             
+            # POTEM wyślij email z mail_id
             make_result = _send_email_via_make(
                 to_email=purchaser_email,
                 subject=subject,
                 body_html=email_html,
                 event_order_id=order_id,
                 template_type="payment_confirmation",
+                mail_id=mail_id,
             )
-            
-            # #region agent log
-            try:
-                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:after_send","message":"After _send_email_via_make","data":{"success":make_result.get("success")},"timestamp":time.time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
-            except: pass
-            # #endregion
             
             if make_result.get("success"):
                 email_sent = True
-                
-                # #region agent log
-                try:
-                    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                        _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:before_save_log","message":"Before save_mail_log (AFTER send!)","data":{"order_id":order_id},"timestamp":time.time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
-                except: pass
-                # #endregion
-                
-                mail_log_result = save_mail_log(
-                    event_order_id=order_id,
-                    template_key="payment_confirmation",
-                    to_email=purchaser_email,
-                    subject=subject,
-                    direction="purchaser",
-                )
-                
-                # #region agent log
-                try:
-                    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                        _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:after_save_log","message":"After save_mail_log","data":{"result_type":str(type(mail_log_result)),"has_id":mail_log_result.get("id") if isinstance(mail_log_result,dict) else None},"timestamp":time.time(),"sessionId":"debug-session","hypothesisId":"H2"}) + '\n')
-                except: pass
-                # #endregion
-                
-                print(f"[V2 MARK-PAID] Email wysłany do {purchaser_email}")
+                print(f"[V2 MARK-PAID] Email wysłany do {purchaser_email}, mail_id={mail_id}")
             else:
                 errors.append(f"Błąd wysyłki email: {make_result.get('error', 'nieznany')}")
         except Exception as e:

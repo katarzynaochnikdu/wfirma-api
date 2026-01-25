@@ -460,12 +460,25 @@ def send_participant_ticket_emails(
             "ticket_id": ticket_id[:20] + "..." if len(ticket_id) > 20 else ticket_id,
         })
         
+        # NAJPIERW zapisz do mail_log żeby mieć mail_id
+        from pg_storage import save_mail_log
+        mail_log_result = save_mail_log(
+            event_order_id=event_order_id,
+            direction="participant",
+            template_key="participant_ticket",
+            to_email=participant_email,
+            subject=subject,
+        )
+        mail_id = mail_log_result.get("id") if mail_log_result else None
+        
+        # POTEM wyślij z mail_id dla callbacka
         result = _send_email_via_make(
             to_email=participant_email,
             subject=subject,
             body_html=body_html,
             event_order_id=event_order_id,
             template_type="participant_ticket",
+            mail_id=mail_id,
         )
         
         if result.get("success"):

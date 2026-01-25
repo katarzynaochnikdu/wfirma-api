@@ -94,6 +94,7 @@ def _send_email_via_make_stripe(
     body_html: str,
     event_order_id: str = "",
     template_type: str = "",
+    mail_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Wysyła email przez webhook Make.com (dla Stripe webhooków).
@@ -102,7 +103,11 @@ def _send_email_via_make_stripe(
         print(f"[STRIPE EMAIL] Make webhook nie skonfigurowany")
         return {"success": False, "error": "Make webhook nie skonfigurowany"}
     
-    print(f"[STRIPE EMAIL] Wysyłam email przez Make | to={to_email}, template={template_type}")
+    print(f"[STRIPE EMAIL] Wysyłam email przez Make | to={to_email}, template={template_type}, mail_id={mail_id}")
+    
+    # Callback URL dla Make.com do potwierdzenia wysyłki
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://wfirma-api.onrender.com")
+    callback_url = f"{base_url}/api/email/confirm-sent"
     
     try:
         payload = {
@@ -111,6 +116,8 @@ def _send_email_via_make_stripe(
             "body_html": body_html,
             "event_order_id": event_order_id,
             "template_type": template_type,
+            "mail_id": mail_id,
+            "callback_url": callback_url,
         }
         
         headers = {
@@ -550,8 +557,8 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
         
-        # Zapisz do logu
-        save_mail_log(
+        # NAJPIERW zapisz do logu żeby mieć mail_id
+        mail_log_result = save_mail_log(
             event_order_id=event_order_id,
             direction="purchaser",
             template_key="payment_confirmation",
@@ -559,15 +566,17 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             subject=purchaser_subject,
             data=mail_task["data"],
         )
+        mail_id = mail_log_result.get("id") if mail_log_result else None
         
-        # Wyślij email do kupującego przez Make
-        print(f"[STRIPE] Wysyłam potwierdzenie płatności do kupującego: {purchaser_email}")
+        # POTEM wyślij email do kupującego przez Make z mail_id
+        print(f"[STRIPE] Wysyłam potwierdzenie płatności do kupującego: {purchaser_email}, mail_id={mail_id}")
         result = _send_email_via_make_stripe(
             to_email=purchaser_email,
             subject=purchaser_subject,
             body_html=purchaser_body_html,
             event_order_id=event_order_id,
             template_type="payment_confirmation",
+            mail_id=mail_id,
         )
         
         if result.get("success"):
