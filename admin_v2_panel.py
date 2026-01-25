@@ -216,22 +216,47 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     
     # Zrekonstruuj event_date_time i event_end_date_time dla formularza edycji
     # Format datetime-local: YYYY-MM-DDTHH:MM
-    reconstructed_start_datetime = ""
-    reconstructed_end_datetime = ""
     
-    if start_date:
-        time_part = raw_start_time or "00:00"
-        if len(time_part) == 5:  # HH:MM
-            reconstructed_start_datetime = f"{start_date}T{time_part}"
-        elif len(time_part) >= 8:  # HH:MM:SS
-            reconstructed_start_datetime = f"{start_date}T{time_part[:5]}"
+    def _ensure_iso_datetime(value: str, fallback_date: str = "", fallback_time: str = "00:00") -> str:
+        """Konwertuje datę do formatu ISO YYYY-MM-DDTHH:MM dla datetime-local input."""
+        if not value and not fallback_date:
+            return ""
+        
+        # Już poprawny format ISO (2026-02-05T10:00 lub 2026-02-05T10:00:00)
+        if value and len(value) >= 16 and value[4] == "-" and value[7] == "-" and value[10] == "T":
+            return value[:16]  # YYYY-MM-DDTHH:MM
+        
+        # Format polski DD-MM-YYYY HH:MM lub DD.MM.YYYY HH:MM
+        import re
+        polish_match = re.match(r"(\d{2})[-./](\d{2})[-./](\d{4})[\sT]?(\d{2}):(\d{2})", value or "")
+        if polish_match:
+            day, month, year, hour, minute = polish_match.groups()
+            return f"{year}-{month}-{day}T{hour}:{minute}"
+        
+        # Format ISO bez T (2026-02-05 10:00)
+        iso_space_match = re.match(r"(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2})", value or "")
+        if iso_space_match:
+            year, month, day, hour, minute = iso_space_match.groups()
+            return f"{year}-{month}-{day}T{hour}:{minute}"
+        
+        # Fallback: użyj date i time
+        if fallback_date:
+            time_part = fallback_time or "00:00"
+            if len(time_part) >= 5:
+                return f"{fallback_date}T{time_part[:5]}"
+        
+        return ""
     
-    if end_date:
-        time_part = raw_end_time or "00:00"
-        if len(time_part) == 5:
-            reconstructed_end_datetime = f"{end_date}T{time_part}"
-        elif len(time_part) >= 8:
-            reconstructed_end_datetime = f"{end_date}T{time_part[:5]}"
+    reconstructed_start_datetime = _ensure_iso_datetime(
+        event_data.get("event_date_time") or "",
+        start_date,
+        raw_start_time
+    )
+    reconstructed_end_datetime = _ensure_iso_datetime(
+        event_data.get("event_end_date_time") or "",
+        end_date,
+        raw_end_time
+    )
     
     normalized = {
         # Data i czas - rozpoczęcie (używamy formatu ISO YYYY-MM-DD, filtr format_date_pl sformatuje)
@@ -240,9 +265,9 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
         # Data i czas - zakończenie
         "eventEndDate": end_date or "",
         "eventEndTime": raw_end_time or "",
-        # Format datetime-local dla formularza edycji (jeśli brak oryginalnych)
-        "event_date_time": event_data.get("event_date_time") or reconstructed_start_datetime,
-        "event_end_date_time": event_data.get("event_end_date_time") or reconstructed_end_datetime,
+        # Format datetime-local dla formularza edycji (zawsze ISO)
+        "event_date_time": reconstructed_start_datetime,
+        "event_end_date_time": reconstructed_end_datetime,
         # Stary format tekstowy (dla kompatybilności wstecznej)
         "event_day_text_1": event_data.get("event_day_text_1") or "",
         # Czy wielodniowe
@@ -816,7 +841,17 @@ def order_detail(order_id: str):
     
     # Buduj historię zamówienia z emaili
     order_history = _build_order_history(order_id, order)
-    emails = _get_emails_for_order(order_id)
+    
+    # Pobierz emaile i przefiltruj wewnętrzne (do admina, @medidesk.com)
+    all_emails = _get_emails_for_order(order_id)
+    emails = [
+        e for e in all_emails
+        if not (
+            (e.get("to_email") or "").lower().endswith("@medidesk.com") or
+            "admin" in (e.get("to_email") or "").lower() or
+            (e.get("template_key") or "").startswith("internal_")
+        )
+    ]
     
     return render_template(
         "admin_v2/order_detail.html",
@@ -1973,7 +2008,6 @@ def event_edit(event_id: str):
         return redirect(url_for("admin_v2_bp.events_list"))
     
     error = None
-    success = None
     webhook_sent = False
     
     if request.method == "POST":
@@ -2052,9 +2086,10 @@ def event_edit(event_id: str):
                 else:
                     print(f"[EVENT EDIT] Webhook skipped: ZOHO_FLOW_EVENT_UPDATE_WEBHOOK not configured")
                 
-                success = "Wydarzenie zostało zaktualizowane" + (" i zsynchronizowane z Zoho" if webhook_sent else "")
-                # Odśwież dane
-                event = get_event(event_id)
+                # Po zapisie przekieruj do event room
+                from flask import flash
+                flash("Wydarzenie zostało zaktualizowane" + (" i zsynchronizowane z Zoho" if webhook_sent else ""), "success")
+                return redirect(url_for("admin_v2_bp.event_room", event_id=event_id))
             except Exception as e:
                 error = f"Błąd aktualizacji: {e}"
     
@@ -2073,7 +2108,6 @@ def event_edit(event_id: str):
         event_data=event_data,
         ticket_classes=ticket_classes,
         error=error,
-        success=success,
         **_get_common_context(user),
     )
 
@@ -2593,10 +2627,16 @@ def participants_list():
 @_require_permission("orders")
 def participant_detail(participant_id: int):
     """Szczegóły uczestnika."""
+    # #region agent log
+    import json as _json; open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log','a').write(_json.dumps({"location":"admin_v2_panel.py:participant_detail","message":"Endpoint called","data":{"participant_id":participant_id,"type":str(type(participant_id))},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H3-H4"})+'\n')
+    # #endregion
     user = _get_current_admin_user()
     
     # Pobierz uczestnika z danymi zamówienia i wydarzenia
     participant = get_participant_by_id(participant_id)
+    # #region agent log
+    open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log','a').write(_json.dumps({"location":"admin_v2_panel.py:participant_detail:after_get","message":"Participant fetched","data":{"found":participant is not None,"participant_id":participant_id},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H4"})+'\n')
+    # #endregion
     if not participant:
         return redirect(url_for("admin_v2_bp.participants_list"))
     
@@ -3086,7 +3126,17 @@ def _build_order_history(order_id: str, order: dict):
     emails = _get_emails_for_order(order_id)
     
     for email in emails:
-        template_key = (email.get("template_key") or "").lower()
+        # Pomijaj emaile wewnętrzne (do admina, @medidesk.com)
+        to_email = (email.get("to_email") or "").lower()
+        template_key_raw = email.get("template_key") or ""
+        if (
+            to_email.endswith("@medidesk.com") or
+            "admin" in to_email or
+            template_key_raw.startswith("internal_")
+        ):
+            continue
+        
+        template_key = template_key_raw.lower()
         created_at = email.get("created_at")
         
         # Znajdź pasujący typ
@@ -4153,6 +4203,10 @@ def event_room(event_id: str):
     
     # Buduj strukturę buckets dla zakładki Płatności
     buckets = _build_payment_buckets(orders)
+    
+    # Pobierz typy biletów dla tego wydarzenia
+    from pg_storage import get_ticket_classes
+    ticket_classes = get_ticket_classes(event_id) or []
 
     return render_template(
         "admin_v2/event_room.html",
@@ -4164,5 +4218,6 @@ def event_room(event_id: str):
         participants=participants,
         emails=emails,
         buckets=buckets,
+        ticket_classes=ticket_classes,
         **_get_common_context(user),
     )

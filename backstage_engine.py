@@ -123,6 +123,16 @@ def _send_email_via_make(
         
         if response.status_code in (200, 201, 202):
             _log("INFO", "Email wysłany przez Make pomyślnie!", {"to": to_email})
+            
+            # Aktualizuj status maila na "sent" (nie czekając na callback)
+            if mail_id:
+                try:
+                    from pg_storage import update_mail_task_status
+                    update_mail_task_status(mail_id, "sent", None)
+                    _log("DEBUG", f"Status maila {mail_id} zaktualizowany na 'sent'")
+                except Exception as upd_err:
+                    _log("WARNING", f"Nie udało się zaktualizować statusu maila: {upd_err}")
+            
             return {
                 "success": True,
                 "message": f"Email wysłany przez Make do {to_email}",

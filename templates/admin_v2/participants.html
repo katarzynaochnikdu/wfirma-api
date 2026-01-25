@@ -9,16 +9,6 @@
     <h1 class="page-title">Uczestnicy</h1>
     <p class="page-description">Zarządzaj wszystkimi uczestnikami wydarzeń</p>
   </div>
-  <div class="header-actions">
-    <button class="btn btn-outline" id="send-message-btn-header" onclick="openBulkMessageModal()" disabled>
-      <i data-lucide="mail"></i>
-      Wyślij wiadomość (<span id="selected-count-header">0</span>)
-    </button>
-    <a href="{{ url_for('admin_v2_bp.participants_export', event_id=request.args.get('event_id', '')) }}" class="btn btn-outline">
-      <i data-lucide="download"></i>
-      Eksportuj CSV
-    </a>
-  </div>
 </div>
 
 <!-- STATS -->
@@ -83,17 +73,42 @@
 
 <!-- DATA TABLE -->
 <div class="card">
-  <table class="data-table">
+  <table class="data-table sortable-table">
     <thead>
       <tr>
         <th style="width: 40px;">
           <input type="checkbox" class="checkbox" id="select-all-participants" onchange="toggleSelectAll(this.checked)">
         </th>
-        <th>Uczestnik</th>
-        <th>Wydarzenie</th>
-        <th>Bilet</th>
-        <th class="text-center">Status</th>
-        <th class="text-right">Data</th>
+        <th class="sortable-header" data-sort="name">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Uczestnik
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header" data-sort="event">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Wydarzenie
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header" data-sort="ticket">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Bilet
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-center" data-sort="status">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+            Status
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-right" data-sort="date">
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.375rem;">
+            Data
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
       </tr>
     </thead>
     <tbody>
@@ -176,6 +191,25 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<style>
+/* Sortable headers */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.sortable-header:hover {
+  background-color: var(--muted);
+}
+
+.sortable-header.sorted-asc i[data-lucide="arrow-up-down"],
+.sortable-header.sorted-desc i[data-lucide="arrow-up-down"] {
+  color: var(--primary);
+  opacity: 1;
+}
+</style>
+
 <script>
 // Participant selection state
 var selectedParticipants = [];
@@ -201,13 +235,6 @@ function updateParticipantSelection() {
     });
   });
   
-  // Update header button
-  var btn = document.getElementById('send-message-btn-header');
-  var countEl = document.getElementById('selected-count-header');
-  
-  countEl.textContent = selectedParticipants.length;
-  btn.disabled = selectedParticipants.length === 0;
-  
   // Update select all checkbox state
   var selectAllCb = document.getElementById('select-all-participants');
   var allCheckboxes = document.querySelectorAll('.participant-checkbox');
@@ -224,22 +251,6 @@ function updateParticipantSelection() {
   }
 }
 
-function openBulkMessageModal() {
-  if (selectedParticipants.length === 0) {
-    showToast('Zaznacz uczestników do wysyłki', 'warning');
-    return;
-  }
-  
-  // Get current event name if filtered
-  var eventSelect = document.querySelector('select[name="event_id"]');
-  var eventName = null;
-  if (eventSelect && eventSelect.value) {
-    eventName = eventSelect.options[eventSelect.selectedIndex].text;
-  }
-  
-  openSendMessageModal(selectedParticipants, eventName);
-}
-
 // Navigate to participant detail
 function goToParticipant(event, participantId) {
   // Don't navigate if clicking on a link or checkbox
@@ -249,11 +260,80 @@ function goToParticipant(event, participantId) {
   window.location.href = '/admin-v2/participants/' + participantId;
 }
 
-// Re-init Lucide icons
+// Re-init Lucide icons and setup sorting
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
+  
+  // Sortowanie tabeli
+  const table = document.querySelector('.sortable-table');
+  if (!table) return;
+  
+  const headers = table.querySelectorAll('.sortable-header');
+  const tbody = table.querySelector('tbody');
+  
+  headers.forEach((header) => {
+    header.addEventListener('click', function() {
+      const sortKey = this.dataset.sort;
+      const rows = Array.from(tbody.querySelectorAll('tr.clickable-row'));
+      
+      if (rows.length === 0) return;
+      
+      // Toggle direction
+      const isAsc = this.classList.contains('sorted-asc');
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      this.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
+      
+      // Get column index (skip checkbox column)
+      const headerIndex = Array.from(this.parentNode.children).indexOf(this);
+      
+      rows.sort((a, b) => {
+        const aCell = a.children[headerIndex];
+        const bCell = b.children[headerIndex];
+        
+        if (!aCell || !bCell) return 0;
+        
+        let aVal, bVal;
+        
+        if (sortKey === 'date') {
+          // Data - parsuj z formatu DD.MM.YYYY HH:MM
+          const aText = aCell.textContent.replace(/\s+/g, ' ').trim();
+          const bText = bCell.textContent.replace(/\s+/g, ' ').trim();
+          const parseDate = (text) => {
+            const match = text.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2}):(\d{2})?/);
+            if (match) {
+              return new Date(match[3], parseInt(match[2])-1, match[1], match[4] || 0, match[5] || 0);
+            }
+            return new Date(0);
+          };
+          aVal = parseDate(aText);
+          bVal = parseDate(bText);
+          return isAsc ? bVal - aVal : aVal - bVal;
+        } else if (sortKey === 'status') {
+          // Status - po title ikony
+          const aIcon = aCell.querySelector('[title]');
+          const bIcon = bCell.querySelector('[title]');
+          aVal = aIcon ? aIcon.getAttribute('title') : '';
+          bVal = bIcon ? bIcon.getAttribute('title') : '';
+          return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+        } else {
+          // Tekstowe - po treści komórki
+          aVal = aCell.textContent.trim().toLowerCase();
+          bVal = bCell.textContent.trim().toLowerCase();
+          return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+        }
+      });
+      
+      // Przenieś posortowane wiersze
+      rows.forEach(row => tbody.appendChild(row));
+      
+      // Re-init icons po sortowaniu
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+    });
+  });
 });
 </script>
 {% endblock %}

@@ -3,80 +3,54 @@
 {% block title %}{{ event.event_name }}{% endblock %}
 
 {% block content %}
-<!-- STICKY HEADER WRAPPER -->
-<div class="sticky-header-wrapper" id="sticky-header-wrapper">
-  
-  <!-- COMPACT STICKY HEADER (pokazuje się przy scrollowaniu) -->
-  <div class="event-sticky-header" id="event-sticky-header" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }});">
-    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="sticky-back-btn" title="Powrót do wydarzeń">
-      <i data-lucide="chevron-left"></i>
-    </a>
-    <div class="sticky-event-info">
-      <span class="sticky-event-name">{{ event.event_name }}</span>
-      <span class="sticky-meta-separator">•</span>
-      <span class="sticky-event-meta">
-        {% if event.data.eventDate %}
-          {{ event.data.eventDate|format_date_pl }}
-          {% if event.data.eventEndDate and event.data.eventEndDate != event.data.eventDate %}
-           — {{ event.data.eventEndDate|format_date_pl }}
-          {% endif %}
-        {% endif %}
-        {% if event.data.event_location_city or event.data.eventCity %} • {{ event.data.event_location_city or event.data.eventCity }}{% endif %}
-      </span>
-    </div>
-    <a href="{{ event.backstage_url }}" target="_blank" class="sticky-backstage-btn" title="Otwórz w Backstage">
-      <i data-lucide="external-link"></i>
-    </a>
-  </div>
+<!-- Sentinel do wykrywania scroll (przed bannerem) -->
+<div id="bannerSentinel" style="height: 1px;"></div>
 
-  <!-- EVENT HEADER BANNER (pełna wersja) -->
-  <div class="event-header-banner" id="event-header-banner">
-    <!-- Background -->
-    {% if event.data.email_header_url %}
-    <div class="event-header-bg" style="background-image: url('{{ event.data.email_header_url }}');"></div>
-    {% endif %}
-    <div class="event-header-gradient" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }}{% if event.data.email_header_url %}cc{% endif %});"></div>
-    
-    <!-- Content -->
-    <div class="event-header-content">
-      <!-- Top row: back + actions -->
-      <div class="event-header-top">
-        <a href="{{ url_for('admin_v2_bp.events_list') }}" class="event-header-back">
-          <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
-          Powrót do wydarzeń
-        </a>
-        <div class="event-header-actions">
-          <a href="{{ event.backstage_url }}" target="_blank" class="event-header-btn" title="Otwórz w Backstage">
-            <i data-lucide="external-link" style="width: 18px; height: 18px;"></i>
-          </a>
-        </div>
-      </div>
-      
-      <!-- Event info -->
-      <div class="event-header-info">
-        <div class="event-header-title-row">
+<!-- STICKY EVENT BANNER -->
+<div class="event-sticky-banner" id="stickyBanner" style="background: linear-gradient(135deg, {{ event.data.color_gradient_1 or '#0065D7' }}, {{ event.data.color_gradient_2 or event.data.color_gradient_1 or '#0065D7' }});">
+  {% if event.data.email_header_url %}
+  <div class="event-banner-bg" style="background-image: url('{{ event.data.email_header_url }}');"></div>
+  {% endif %}
+  <div class="sticky-banner-content">
+    <div class="sticky-banner-main">
+      <a href="{{ url_for('admin_v2_bp.events_list') }}" class="sticky-back-link">
+        <i data-lucide="arrow-left"></i>
+      </a>
+      <div class="sticky-banner-event">
+        <div class="sticky-banner-title-row">
           <span class="event-status-dot {% if event.is_active %}active{% endif %}"></span>
-          <h1 class="event-header-title">{{ event.event_name }}</h1>
+          <span class="sticky-banner-title">{{ event.event_name }}</span>
         </div>
-        <div class="event-header-meta">
-          {% if event.data.eventDate %}
-          <span>
-            {{ event.data.eventDate|format_date_pl }}
-            {% if event.data.eventEndDate and event.data.eventEndDate != event.data.eventDate %}
-             — {{ event.data.eventEndDate|format_date_pl }}
-            {% endif %}
-          </span>
-          <span class="meta-dot">•</span>
-          {% endif %}
-          <span>{{ event.data.event_location_city or event.data.eventCity or 'Lokalizacja nieznana' }}</span>
-          {% if event.data.eventLocation %}
-          <span class="meta-dot">•</span>
-          <span>{{ event.data.eventLocation }}</span>
-          {% endif %}
-        </div>
+        <span class="sticky-banner-meta">
+          {% if event.data.eventDate %}{{ event.data.eventDate|format_date_pl }}{% endif %}
+          {% if event.data.event_location_city or event.data.eventCity %} • {{ event.data.event_location_city or event.data.eventCity }}{% endif %}
+        </span>
+      </div>
+    </div>
+    
+    <!-- Statystyki - pojawiają się przy scroll -->
+    <div class="sticky-banner-stats" id="stickyBannerStats">
+      <div class="sticky-stat">
+        <span class="sticky-stat-value">{{ stats.orders }}</span>
+        <span class="sticky-stat-label">zamówień</span>
+      </div>
+      <div class="sticky-stat">
+        <span class="sticky-stat-value">{{ stats.participants }}</span>
+        <span class="sticky-stat-label">uczestników</span>
+      </div>
+      <div class="sticky-stat">
+        <span class="sticky-stat-value">{{ "%.0f"|format(stats.revenue) }} zł</span>
+        <span class="sticky-stat-label">przychód</span>
       </div>
     </div>
   </div>
+  <a href="{{ event.backstage_url }}" target="_blank" class="sticky-banner-link">
+    Backstage →
+  </a>
+</div>
+
+<!-- TABS CONTAINER -->
+<div class="sticky-header-wrapper" id="sticky-header-wrapper">
 
   <!-- TABS (JavaScript switching without reload) -->
   <div class="event-tabs-container" id="event-tabs-container">
@@ -96,11 +70,13 @@
        class="event-tab {% if active_tab == 'orders' %}active{% endif %}">
       <i data-lucide="shopping-cart"></i>
       <span>Zamówienia</span>
+      {% if stats.orders > 0 %}<span class="tab-badge tab-badge-green">{{ stats.paid }}/{{ stats.orders }}</span>{% endif %}
     </button>
     <button type="button" data-tab="participants" 
        class="event-tab {% if active_tab == 'participants' %}active{% endif %}">
       <i data-lucide="users"></i>
       <span>Uczestnicy</span>
+      {% if stats.participants > 0 %}<span class="tab-badge tab-badge-green">{{ stats.notified or 0 }}/{{ stats.participants }}</span>{% endif %}
     </button>
     <button type="button" data-tab="communication" 
        class="event-tab {% if active_tab == 'communication' %}active{% endif %}">
@@ -815,6 +791,100 @@
       </div>
     </div>
   </div>
+  
+  <!-- TICKET CLASSES -->
+  <div class="card" style="margin-top: 1rem;">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="ticket" style="width: 16px; height: 16px;"></i>
+        Typy biletów
+        {% if ticket_classes %}
+        <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ ticket_classes|length }})</span>
+        {% endif %}
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      {% if ticket_classes %}
+        {# Rozdziel bilety na aktywne i nieaktywne na podstawie status i hidden #}
+        {% set ns = namespace(active=[], inactive=[]) %}
+        {% for tc in ticket_classes %}
+          {% set tc_data = tc.data if tc.data is mapping else {} %}
+          {% set is_hidden = tc_data.get('hidden', false) %}
+          {% set tc_status = tc_data.get('status', '')|lower %}
+          {% if is_hidden or tc_status in ['cancelled', 'expired', 'sold_out', 'ended'] %}
+            {% set ns.inactive = ns.inactive + [tc] %}
+          {% else %}
+            {% set ns.active = ns.active + [tc] %}
+          {% endif %}
+        {% endfor %}
+        {% set active_tickets = ns.active %}
+        {% set inactive_tickets = ns.inactive %}
+        
+        <!-- AKTYWNE BILETY -->
+        {% if active_tickets %}
+        <div style="margin-bottom: 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: hsl(160, 82%, 45%);"></span>
+            <span style="font-size: 0.8125rem; font-weight: 600; color: hsl(160, 82%, 35%);">Aktywne ({{ active_tickets|length }})</span>
+          </div>
+          <div style="display: grid; gap: 0.5rem;">
+            {% for tc in active_tickets %}
+            {% set tc_data = tc.data if tc.data is mapping else {} %}
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: hsl(160, 82%, 97%); border: 1px solid hsl(160, 82%, 85%); border-radius: var(--radius);">
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i data-lucide="ticket" style="width: 16px; height: 16px; color: hsl(160, 82%, 40%);"></i>
+                <div>
+                  <span style="font-weight: 500;">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</span>
+                  <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</span>
+                </div>
+              </div>
+              <code style="font-size: 0.7rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</code>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        
+        <!-- NIEAKTYWNE BILETY -->
+        {% if inactive_tickets %}
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground);"></span>
+            <span style="font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground);">Nieaktywne ({{ inactive_tickets|length }})</span>
+          </div>
+          <div style="display: grid; gap: 0.5rem;">
+            {% for tc in inactive_tickets %}
+            {% set tc_data = tc.data if tc.data is mapping else {} %}
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); opacity: 0.7;">
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i data-lucide="ticket" style="width: 16px; height: 16px; color: var(--muted-foreground);"></i>
+                <div>
+                  <span style="font-weight: 500; color: var(--muted-foreground);">{{ tc.ticket_name or tc_data.ticket_name or 'Bilet' }}</span>
+                  <span style="font-size: 0.75rem; color: var(--muted-foreground); margin-left: 0.5rem;">{{ tc_data.price|default(0) }} {{ tc_data.currency|default('PLN') }}</span>
+                </div>
+              </div>
+              <code style="font-size: 0.7rem; color: var(--muted-foreground);">{{ tc.ticket_class_id }}</code>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        
+        {% if not active_tickets and not inactive_tickets %}
+        <div style="padding: 2rem; text-align: center; color: var(--muted-foreground);">
+          <i data-lucide="ticket" style="width: 32px; height: 32px; opacity: 0.3; margin-bottom: 0.5rem;"></i>
+          <p>Brak typów biletów</p>
+        </div>
+        {% endif %}
+      {% else %}
+      <div style="padding: 2rem; text-align: center; color: var(--muted-foreground);">
+        <i data-lucide="ticket" style="width: 32px; height: 32px; opacity: 0.3; margin-bottom: 0.5rem;"></i>
+        <p style="margin-bottom: 1rem;">Brak typów biletów</p>
+        <p style="font-size: 0.8125rem;">Użyj przycisku "Pobierz z Backstage" aby zsynchronizować typy biletów</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
   </div>
 </div>
 
@@ -823,89 +893,203 @@
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  /* ===== STICKY HEADER WRAPPER ===== */
-  .sticky-header-wrapper {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: var(--background);
-    margin: -1.5rem -1.5rem 1.5rem -1.5rem;
-    padding: 1.5rem 1.5rem 0 1.5rem;
-  }
-  
-  /* Compact sticky header - ukryty domyślnie */
-  .event-sticky-header {
-    display: none;
+  /* ===== STICKY EVENT BANNER (jak w order_detail) ===== */
+  .event-sticky-banner {
+    position: relative;
+    display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: 1.25rem 1.5rem;
     border-radius: 12px;
+    margin-bottom: 1.5rem;
     color: white;
-    margin-bottom: 1rem;
+    z-index: 100;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
   }
   
-  /* Gdy scrolled: pokaż compact, ukryj banner */
-  .sticky-header-wrapper.scrolled .event-sticky-header {
+  .event-banner-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0.3;
+    z-index: 0;
+  }
+  
+  .event-sticky-banner.is-sticky {
+    position: fixed;
+    top: 0;
+    left: var(--sidebar-width, 260px);
+    right: 0;
+    border-radius: 0;
+    margin-bottom: 0;
+    padding: 0.75rem 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    z-index: 1000;
+  }
+  
+  .sticky-banner-content {
     display: flex;
+    align-items: center;
+    gap: 2rem;
+    flex: 1;
+    position: relative;
+    z-index: 1;
   }
   
-  .sticky-header-wrapper.scrolled .event-header-banner {
-    display: none;
+  .sticky-banner-main {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
   
-  /* Zapobiegaj layout shift - wrapper ma stałą minimalną zawartość */
-  .sticky-header-wrapper.scrolled {
-    padding-bottom: 0;
-  }
-  
-  .sticky-back-btn,
-  .sticky-backstage-btn {
+  .sticky-back-link {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255,255,255,0.15);
     color: white;
     text-decoration: none;
     transition: background 0.2s;
-    flex-shrink: 0;
   }
   
-  .sticky-back-btn:hover,
-  .sticky-backstage-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
+  .sticky-back-link:hover {
+    background: rgba(255,255,255,0.25);
   }
   
-  .sticky-back-btn i,
-  .sticky-backstage-btn i {
-    width: 18px;
-    height: 18px;
+  .sticky-back-link i {
+    width: 16px;
+    height: 16px;
   }
   
-  .sticky-event-info {
+  .sticky-banner-event {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  
+  .sticky-banner-title-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    flex: 1;
-    justify-content: center;
-    min-width: 0;
-    padding: 0 1rem;
   }
   
-  .sticky-event-name {
+  .event-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.4);
+  }
+  
+  .event-status-dot.active {
+    background: hsl(160, 82%, 50%);
+    box-shadow: 0 0 8px hsl(160, 82%, 50%);
+  }
+  
+  .sticky-banner-title {
+    font-size: 1.125rem;
     font-weight: 600;
-    font-size: 0.9375rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: white;
   }
   
-  .sticky-meta-separator {
-    opacity: 0.6;
-    flex-shrink: 0;
+  .event-sticky-banner.is-sticky .sticky-banner-title {
+    font-size: 0.95rem;
   }
+  
+  .sticky-banner-meta {
+    font-size: 0.8125rem;
+    color: rgba(255,255,255,0.8);
+  }
+  
+  /* Stats - hidden by default, visible on sticky */
+  .sticky-banner-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    opacity: 0;
+    max-width: 0;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .event-sticky-banner.is-sticky .sticky-banner-stats {
+    opacity: 1;
+    max-width: 400px;
+  }
+  
+  .sticky-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0 0.75rem;
+    border-left: 1px solid rgba(255,255,255,0.2);
+  }
+  
+  .sticky-stat:first-child {
+    border-left: none;
+  }
+  
+  .sticky-stat-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    white-space: nowrap;
+  }
+  
+  .sticky-stat-label {
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  
+  .sticky-banner-link {
+    position: relative;
+    z-index: 1;
+    color: rgba(255,255,255,0.9);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 0.5rem 0.875rem;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.15);
+    transition: background 0.2s;
+    white-space: nowrap;
+  }
+  
+  .sticky-banner-link:hover {
+    background: rgba(255,255,255,0.25);
+    color: white;
+  }
+  
+  /* Placeholder when banner is sticky */
+  .banner-placeholder {
+    height: 0;
+    transition: height 0.3s ease;
+  }
+  
+  .banner-placeholder.active {
+    height: 90px;
+  }
+
+  /* ===== TABS STICKY WRAPPER ===== */
+  .sticky-header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 99;
+    background: var(--background);
+    margin: 0 -1.5rem 1.5rem -1.5rem;
+    padding: 0 1.5rem;
+  }
+  
+  /* Legacy styles - hide old header elements */
+  .event-sticky-header { display: none !important; }
+  .event-header-banner { display: none !important; }
   
   .sticky-event-meta {
     font-size: 0.8125rem;
@@ -1401,6 +1585,10 @@
   
   .tab-badge-red {
     background: hsl(0, 84%, 60%);
+  }
+  
+  .tab-badge-green {
+    background: hsl(160, 82%, 40%);
   }
   
   /* ===== SALES STATS GRID ===== */
@@ -1942,34 +2130,45 @@ async function applyBackstageChanges() {
 
 // ===== STICKY HEADER SCROLL =====
 function initStickyHeader() {
-  var wrapper = document.getElementById('sticky-header-wrapper');
-  var banner = document.getElementById('event-header-banner');
+  var banner = document.getElementById('stickyBanner');
+  var sentinel = document.getElementById('bannerSentinel');
+  var tabsWrapper = document.getElementById('sticky-header-wrapper');
   
-  if (!wrapper || !banner) return;
+  if (!banner || !sentinel) return;
   
-  // Użyj IntersectionObserver - stabilniejszy niż scroll events
-  // Obserwuj "sentinel" element na górze strony
-  var sentinel = document.createElement('div');
-  sentinel.style.cssText = 'position: absolute; top: 120px; height: 1px; width: 1px; pointer-events: none;';
-  document.body.insertBefore(sentinel, document.body.firstChild);
+  // Create placeholder element (inserted after banner to reserve space when sticky)
+  var placeholder = document.createElement('div');
+  placeholder.className = 'banner-placeholder';
+  banner.parentNode.insertBefore(placeholder, banner.nextSibling);
   
+  // Use IntersectionObserver for smooth detection
   var observer = new IntersectionObserver(function(entries) {
     entries.forEach(function(entry) {
-      // Gdy sentinel wyjdzie z viewport (scrolled past) - pokaż compact
       if (!entry.isIntersecting) {
-        wrapper.classList.add('scrolled');
+        // Sentinel scrolled out of view - make banner sticky
+        banner.classList.add('is-sticky');
+        placeholder.classList.add('active');
+        // Offset tabs wrapper when banner is sticky
+        if (tabsWrapper) {
+          tabsWrapper.style.top = '52px';
+        }
+        // Re-init icons
+        setTimeout(function() {
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }, 50);
       } else {
-        wrapper.classList.remove('scrolled');
-      }
-      
-      // Re-init icons po zmianie
-      if (typeof lucide !== 'undefined') {
-        requestAnimationFrame(function() { lucide.createIcons(); });
+        // Sentinel visible - remove sticky
+        banner.classList.remove('is-sticky');
+        placeholder.classList.remove('active');
+        // Reset tabs wrapper position
+        if (tabsWrapper) {
+          tabsWrapper.style.top = '0';
+        }
       }
     });
   }, {
     threshold: 0,
-    rootMargin: '0px'
+    rootMargin: '0px 0px 0px 0px'
   });
   
   observer.observe(sentinel);
@@ -2032,6 +2231,10 @@ function goToParticipantDetail(event, participantId) {
   if (event.target.tagName === 'INPUT' || event.target.tagName === 'A') {
     return;
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event_room.html:goToParticipantDetail',message:'Navigation attempt',data:{participantId:participantId,typeofId:typeof participantId,targetUrl:'/admin-v2/participants/'+participantId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H2'})}).catch(()=>{});
+  // #endregion
+  console.log('[DEBUG] goToParticipantDetail called with:', participantId, typeof participantId);
   window.location.href = '/admin-v2/participants/' + participantId;
 }
 

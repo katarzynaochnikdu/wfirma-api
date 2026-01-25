@@ -4,6 +4,41 @@
 
 {% block extra_head %}
 <style>
+/* ===== STICKY HEADER FOR EVENT EDIT ===== */
+.event-edit-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--background);
+  margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.sticky-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sticky-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-sm {
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+}
+
+.btn-sm i {
+  width: 14px;
+  height: 14px;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -166,23 +201,28 @@ input[type="color"].form-input {
 {% endblock %}
 
 {% block content %}
-<!-- PAGE HEADER -->
-<div class="page-header">
-  <div>
-    <h1 class="page-title">{{ 'Edytuj wydarzenie' if event else 'Nowe wydarzenie' }}</h1>
-    <p class="page-description">{{ event.event_name if event else 'Wypełnij dane nowego wydarzenia' }}</p>
-  </div>
-  <div class="page-actions" style="display: flex; gap: 0.5rem;">
-    {% if event %}
-    <button type="button" class="btn btn-outline" onclick="syncFromBackstage()" id="sync-btn">
-      <i data-lucide="refresh-cw"></i>
-      Pobierz z Backstage
-    </button>
-    {% endif %}
-    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline">
-      <i data-lucide="arrow-left"></i>
-      Powrót
-    </a>
+<!-- STICKY PAGE HEADER -->
+<div class="event-edit-sticky-header">
+  <div class="sticky-header-content">
+    <div>
+      <h1 class="page-title" style="margin: 0; font-size: 1.125rem;">{{ 'Edytuj wydarzenie' if event else 'Nowe wydarzenie' }}</h1>
+      <p class="page-description" style="margin: 0; font-size: 0.8125rem;">{{ event.event_name if event else 'Wypełnij dane nowego wydarzenia' }}</p>
+    </div>
+    <div class="sticky-header-actions">
+      {% if event %}
+      <button type="button" class="btn btn-outline btn-sm" onclick="syncFromBackstage()" id="sync-btn">
+        <i data-lucide="refresh-cw"></i>
+        Pobierz z Backstage
+      </button>
+      {% endif %}
+      <a href="{% if event %}{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}{% else %}{{ url_for('admin_v2_bp.events_list') }}{% endif %}" class="btn btn-outline btn-sm">
+        Anuluj
+      </a>
+      <button type="submit" form="event-form" class="btn btn-primary btn-sm">
+        <i data-lucide="save"></i>
+        {{ 'Zapisz zmiany' if event else 'Utwórz wydarzenie' }}
+      </button>
+    </div>
   </div>
 </div>
 
@@ -199,14 +239,8 @@ input[type="color"].form-input {
 </div>
 {% endif %}
 
-{% if success %}
-<div class="alert alert-success" style="margin-bottom: 1rem; padding: 1rem; border-radius: var(--radius); background: hsl(160, 82%, 95%); border: 1px solid hsl(160, 82%, 44%); color: hsl(160, 82%, 25%);">
-  <i data-lucide="check-circle"></i>
-  {{ success }}
-</div>
-{% endif %}
 
-<form method="POST" class="card" style="padding: 1.5rem;">
+<form method="POST" id="event-form" class="card" style="padding: 1.5rem;">
   <!-- INFO O SYNCHRONIZACJI -->
   <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: var(--radius); background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 85%);">
     <p style="font-size: 0.875rem; color: hsl(212, 100%, 30%); display: flex; align-items: center; gap: 0.5rem; margin: 0;">
@@ -448,14 +482,6 @@ input[type="color"].form-input {
     </div>
   </div>
 
-  <!-- AKCJE -->
-  <div style="display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline">Anuluj</a>
-    <button type="submit" class="btn btn-primary">
-      <i data-lucide="save"></i>
-      {{ 'Zapisz zmiany' if event else 'Utwórz wydarzenie' }}
-    </button>
-  </div>
 </form>
 {% endblock %}
 

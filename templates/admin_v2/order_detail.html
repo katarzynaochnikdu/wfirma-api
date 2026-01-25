@@ -382,33 +382,9 @@
             </div>
             {% endfor %}
           {% else %}
-            <div class="document-item">
-              <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(45, 90%, 92%); display: flex; align-items: center; justify-content: center;">
-                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(45, 90%, 40%);"></i>
-                </div>
-                <div>
-                  <p class="document-name">Proforma</p>
-                  <p class="document-meta">PF/2025/001234</p>
-                </div>
-              </div>
-              <button class="btn btn-ghost" style="padding: 0.5rem;">
-                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
-              </button>
-            </div>
-            <div class="document-item">
-              <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                <div style="width: 40px; height: 40px; border-radius: var(--radius); background: hsl(160, 70%, 92%); display: flex; align-items: center; justify-content: center;">
-                  <i data-lucide="file-text" style="width: 20px; height: 20px; color: hsl(160, 82%, 35%);"></i>
-                </div>
-                <div>
-                  <p class="document-name">Faktura VAT</p>
-                  <p class="document-meta">FV/2025/000892</p>
-                </div>
-              </div>
-              <button class="btn btn-ghost" style="padding: 0.5rem;">
-                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
-              </button>
+            <div style="padding: 1.5rem; text-align: center; color: var(--muted-foreground);">
+              <i data-lucide="file-x" style="width: 32px; height: 32px; opacity: 0.4; margin-bottom: 0.5rem;"></i>
+              <p style="margin: 0; font-size: 0.875rem;">Brak dokumentów</p>
             </div>
           {% endif %}
         </div>

@@ -2106,7 +2106,7 @@ def get_participants_for_event(event_id: str) -> List[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT p.id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
+            SELECT p.id as participant_id, p.event_order_id, p.email, p.first_name, p.last_name, p.phone,
                    p.ticket_id, p.ticket_class_id, p.status, p.data, p.created_at,
                    o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
                    o.status as order_status, o.payment_option_name
