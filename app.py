@@ -115,10 +115,11 @@ def empty_order_list():
 
 
 @app.route('/Empty_list_1.jpg', methods=['GET'])
+@app.route('/Empty_list_1.png', methods=['GET'])
 def empty_list_1():
-    """Serwuje obrazek pustej listy (JPG)."""
-    image_path = os.path.join(os.path.dirname(__file__), 'Empty_list_1.jpg')
-    return send_file(image_path, mimetype='image/jpeg')
+    """Serwuje obrazek pustej listy (PNG) - działa dla obu URLi (.jpg i .png)."""
+    image_path = os.path.join(os.path.dirname(__file__), 'Empty_list_1.png')
+    return send_file(image_path, mimetype='image/png')
 
 # Konfiguracja z zmiennych środowiskowych (wFirma OAuth)
 # UWAGA: Teraz obsługujemy dwa zestawy danych: WFIRMA_MD_* i WFIRMA_TEST_*

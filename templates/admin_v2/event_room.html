@@ -342,7 +342,7 @@
             <input type="checkbox" class="checkbox" id="select-all-event-participants" onchange="toggleSelectAllEventParticipants(this.checked)">
           </th>
           <th>Uczestnik</th>
-          <th>Bilet</th>
+          <th>Typ rezerwacji</th>
           <th class="text-center">Status</th>
           <th class="text-right">Data</th>
         </tr>
@@ -363,7 +363,7 @@
               </div>
             </div>
           </td>
-          <td>{{ p.ticket_name or 'Bilet Standard' }}</td>
+          <td>{{ p.ticket_name or 'Standard' }}</td>
           <td class="text-center">
             {% if p.is_notified %}
             <i data-lucide="mail-check" style="width: 20px; height: 20px; color: var(--primary);" title="Powiadomiony"></i>
@@ -399,7 +399,7 @@
     'payment_confirmation': {'label': 'Potwierdzenie płatności', 'icon': 'badge-check'},
     'registration_confirmation': {'label': 'Potwierdzenie rejestracji', 'icon': 'clipboard-check'},
     'proforma_sent': {'label': 'Faktura proforma', 'icon': 'file-text'},
-    'participant_ticket': {'label': 'Bilet uczestnika', 'icon': 'ticket'},
+    'participant_ticket': {'label': 'Potwierdzenie rezerwacji', 'icon': 'mail-check'},
     'internal_order_received': {'label': 'Nowe zamówienie (wewn.)', 'icon': 'inbox'},
     'internal_order_paid': {'label': 'Opłacone (wewn.)', 'icon': 'circle-check'},
     'internal_order_paid_ok': {'label': 'Opłacone (wewn.)', 'icon': 'circle-check'},

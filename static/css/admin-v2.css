@@ -420,15 +420,33 @@
   }
   
   .filters-grid {
-    display: grid;
-    grid-template-columns: 1fr 200px 200px;
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.75rem;
     align-items: center;
   }
   
+  .filters-grid .filter-search {
+    flex: 1;
+    min-width: 200px;
+  }
+  
+  .filters-grid .filter-select {
+    min-width: 150px;
+  }
+  
+  .filters-grid .btn {
+    flex-shrink: 0;
+  }
+  
   @media (max-width: 768px) {
     .filters-grid {
-      grid-template-columns: 1fr;
+      flex-direction: column;
+    }
+    .filters-grid .filter-search,
+    .filters-grid .filter-select,
+    .filters-grid .btn {
+      width: 100%;
     }
   }
   

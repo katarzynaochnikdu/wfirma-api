@@ -99,34 +99,60 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>Wydarzenie</th>
-          <th>ID</th>
+          <th style="width: 80px;">Data</th>
           <th>Kupujący</th>
-          <th>Wartość</th>
-          <th>Status</th>
+          <th>Wydarzenie</th>
+          <th class="text-right">Wartość</th>
+          <th class="text-center" style="width: 70px;">Status</th>
         </tr>
       </thead>
       <tbody>
         {% for order in recent_orders %}
-        <tr>
+        {% set event_color = order.event_color or 'hsl(212, 100%, 42%)' %}
+        <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
+          <!-- Data -->
           <td>
-            <div class="event-cell">
-              <div class="event-dot" style="background: linear-gradient(135deg, {{ order.event_color or 'hsl(212, 100%, 42%)' }}, hsl(195, 100%, 42%));"></div>
-              <span>{{ order.event_name or 'Nieznane' }}</span>
+            <div>
+              <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
             </div>
           </td>
-          <td><a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-link">{{ order.event_order_id[:12] }}...</a></td>
-          <td>{{ (order.purchaser_first_name or '') ~ ' ' ~ (order.purchaser_last_name or '') or order.purchaser_email or '—' }}</td>
-          <td class="font-medium">{{ order.total|default('0.00', true) }} zł</td>
+          <!-- Kupujący -->
           <td>
+            <div>
+              <p style="font-size: 0.875rem; font-weight: 500;">{{ order.purchaser_first_name or '' }} {{ order.purchaser_last_name or '' }}</p>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.purchaser_email or '—' }}</p>
+            </div>
+          </td>
+          <!-- Wydarzenie -->
+          <td>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, hsl(195, 100%, 42%)); width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></div>
+              <span style="font-size: 0.875rem;">{{ order.event_name or 'Nieznane' }}</span>
+            </div>
+          </td>
+          <!-- Wartość -->
+          <td class="text-right">
+            <span style="font-weight: 600;">{{ order.total|format_currency }}</span>
+          </td>
+          <!-- Status (ikona) -->
+          <td class="text-center">
             {% if order.status == 'paid' %}
-            <span class="status-badge status-paid">Opłacone</span>
+            <span class="status-icon-badge status-icon-paid" title="Opłacone">
+              <i data-lucide="check-circle"></i>
+            </span>
             {% elif order.status == 'pending_payment' %}
-            <span class="status-badge status-pending">Oczekujące</span>
+            <span class="status-icon-badge status-icon-pending" title="Oczekujące">
+              <i data-lucide="clock"></i>
+            </span>
             {% elif order.status == 'cancelled' %}
-            <span class="status-badge status-cancelled">Anulowane</span>
+            <span class="status-icon-badge status-icon-cancelled" title="Anulowane">
+              <i data-lucide="x-circle"></i>
+            </span>
             {% else %}
-            <span class="status-badge">{{ order.status or '—' }}</span>
+            <span class="status-icon-badge" title="{{ order.status or 'Nieznany' }}">
+              <i data-lucide="help-circle"></i>
+            </span>
             {% endif %}
           </td>
         </tr>
@@ -154,29 +180,43 @@
       <thead>
         <tr>
           <th>Wydarzenie</th>
-          <th>Data</th>
+          <th style="width: 100px;">Data</th>
           <th>Miejsce</th>
-          <th>Zamówienia</th>
-          <th>Uczestnicy</th>
+          <th class="text-center" style="width: 70px;">Zam.</th>
+          <th class="text-center" style="width: 70px;">Ucz.</th>
         </tr>
       </thead>
       <tbody>
         {% for event in recent_events %}
         {% set event_data = event.data or {} %}
         {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
+        {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
         {% set event_date = event_data.get('event_date_time') or event_data.get('eventDate') or '' %}
         {% set event_city = event_data.get('eventCity') or '—' %}
-        <tr>
+        <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}'">
+          <!-- Wydarzenie -->
           <td>
-            <div class="event-cell">
-              <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, hsl(195, 100%, 42%));"></div>
-              <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="order-link">{{ event.event_name or 'Nieznane' }}</a>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }}); width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></div>
+              <span style="font-size: 0.875rem; font-weight: 500;">{{ event.event_name or 'Nieznane' }}</span>
             </div>
           </td>
-          <td>{{ event_date|format_date_pl if event_date else '—' }}</td>
-          <td>{{ event_city }}</td>
-          <td class="font-medium">{{ event.order_count or 0 }}</td>
-          <td class="font-medium">{{ event.participant_count or 0 }}</td>
+          <!-- Data -->
+          <td>
+            <span style="font-size: 0.875rem;">{{ event_date|format_date_pl if event_date else '—' }}</span>
+          </td>
+          <!-- Miejsce -->
+          <td>
+            <span style="font-size: 0.875rem; color: var(--muted-foreground);">{{ event_city }}</span>
+          </td>
+          <!-- Zamówienia -->
+          <td class="text-center">
+            <span style="font-weight: 600;">{{ event.order_count or 0 }}</span>
+          </td>
+          <!-- Uczestnicy -->
+          <td class="text-center">
+            <span style="font-weight: 600;">{{ event.participant_count or 0 }}</span>
+          </td>
         </tr>
         {% else %}
         <tr>

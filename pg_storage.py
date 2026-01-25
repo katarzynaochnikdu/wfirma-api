@@ -2600,8 +2600,9 @@ def update_admin_user_access(
     role: str,
     allowed_pages: Optional[List[str]],
     allowed_events: Optional[List[str]] = None,
+    is_active: bool = True,
 ) -> bool:
-    """Aktualizuje imię/nazwisko, rolę i uprawnienia użytkownika."""
+    """Aktualizuje imię/nazwisko, rolę, uprawnienia i status aktywności użytkownika."""
     ensure_schema()
     pool = None
     conn = None
@@ -2616,6 +2617,7 @@ def update_admin_user_access(
                 role = %s,
                 allowed_pages = %s,
                 allowed_events = %s,
+                is_active = %s,
                 updated_at = NOW()
             WHERE id = %s
             """,
@@ -2625,6 +2627,7 @@ def update_admin_user_access(
                 str(role or "admin"),
                 psycopg2.extras.Json(allowed_pages or []),  # type: ignore[attr-defined]
                 psycopg2.extras.Json(allowed_events or []),  # type: ignore[attr-defined]
+                bool(is_active),
                 int(user_id),
             ),
         )

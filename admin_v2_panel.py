@@ -1109,8 +1109,8 @@ def _handle_mark_paid(order_id: str, user: dict):
             print(f"[V2 MARK-PAID] Pomijam emaile do uczestników - brak kompletu webhooków: expected={comp.get('expected')}, received={comp.get('received')}")
             participant_email_stats["skipped_reason"] = "attendee_webhooks_incomplete"
     except Exception as e:
-        errors.append(f"Błąd wysyłki biletów: {str(e)}")
-        print(f"[V2 MARK-PAID] Błąd wysyłki biletów do uczestników: {e}")
+        errors.append(f"Błąd wysyłki potwierdzeń: {str(e)}")
+        print(f"[V2 MARK-PAID] Błąd wysyłki potwierdzeń do uczestników: {e}")
     
     # 7. Audit log
     insert_admin_audit_log(
@@ -1142,7 +1142,7 @@ def _handle_mark_paid(order_id: str, user: dict):
         })
     
     tickets_sent = participant_email_stats.get("sent", 0)
-    tickets_msg = f", bilety wysłane ({tickets_sent})" if tickets_sent > 0 else ""
+    tickets_msg = f", potwierdzenia wysłane ({tickets_sent})" if tickets_sent > 0 else ""
     
     return jsonify({
         "success": True,
@@ -1437,7 +1437,7 @@ def order_resend_ticket(order_id: str):
         ip=request.remote_addr,
     )
     
-    message = f"Wysłano {sent_count} biletów"
+    message = f"Wysłano {sent_count} potwierdzeń rezerwacji"
     if failed_count > 0:
         message += f", {failed_count} błędów"
     
@@ -4223,9 +4223,9 @@ def _build_order_history(order_id: str, order: dict):
         "payment_link": ("Link do płatności wysłany", "email"),
         "payment_confirmation": ("Potwierdzenie płatności", "payment"),
         "registration_confirmation": ("Potwierdzenie rejestracji", "email"),
-        "ticket": ("Bilet wysłany", "email"),
-        "participant_ticket": ("Bilet wysłany", "email"),
-        "participant_ticket_resend": ("Bilet wysłany ponownie", "email"),
+        "ticket": ("Potwierdzenie rezerwacji wysłane", "email"),
+        "participant_ticket": ("Potwierdzenie rezerwacji wysłane", "email"),
+        "participant_ticket_resend": ("Potwierdzenie rezerwacji wysłane ponownie", "email"),
         "invoice": ("Faktura wysłana", "document"),
         "stripe_payment_link": ("Link Stripe wysłany", "payment"),
         "paid_confirmation": ("Potwierdzenie zapłaty", "payment"),

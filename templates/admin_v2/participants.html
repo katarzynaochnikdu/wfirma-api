@@ -93,7 +93,7 @@
         </th>
         <th class="sortable-header" data-sort="ticket">
           <div style="display: flex; align-items: center; gap: 0.375rem;">
-            Bilet
+            Typ rezerwacji
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
@@ -148,9 +148,9 @@
             </span>
           </a>
         </td>
-        <!-- Bilet -->
+        <!-- Typ rezerwacji -->
         <td>
-          <span style="font-size: 0.875rem;">{{ p.ticket_class_name or p.ticket_name or 'Bilet Standard' }}</span>
+          <span style="font-size: 0.875rem;">{{ p.ticket_class_name or p.ticket_name or 'Standard' }}</span>
         </td>
         <!-- Status (ikona) -->
         <td class="text-center">

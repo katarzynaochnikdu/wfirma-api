@@ -64,13 +64,13 @@
     </div>
   </div>
   
-  <!-- Typ biletu (nazwa produktu) -->
+  <!-- Typ rezerwacji (nazwa produktu) -->
   <div class="operational-status-badge operational-status-neutral">
     <div class="operational-icon-wrapper">
       <i data-lucide="ticket"></i>
     </div>
     <div class="operational-status-content">
-      <span class="operational-status-label">Typ biletu</span>
+      <span class="operational-status-label">Typ rezerwacji</span>
       <div class="operational-status-value">
         <span>{{ participant.ticket_name or 'Standard' }}</span>
       </div>
@@ -136,8 +136,8 @@
             <span class="info-value">{{ participant.phone or '—' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Typ biletu</span>
-            <span class="info-value">{{ participant.ticket_name or 'Bilet Standard' }}</span>
+            <span class="info-label">Typ rezerwacji</span>
+            <span class="info-value">{{ participant.ticket_name or 'Standard' }}</span>
           </div>
           {% if participant.company %}
           <div class="info-item">
