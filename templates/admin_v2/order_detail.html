@@ -490,10 +490,12 @@
             Zwrot płatności
           </button>
           {% endif %}
+          {% if user_role == 'admin' %}
           <button class="btn btn-outline btn-danger-outline" onclick="deleteOrder()" title="Usuń zamówienie (nieodwracalne)">
             <i data-lucide="trash-2"></i>
             Usuń zamówienie
           </button>
+          {% endif %}
         </div>
       </div>
     </div>

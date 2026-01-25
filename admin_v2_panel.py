@@ -1443,9 +1443,12 @@ def order_resend_ticket(order_id: str):
 @admin_v2_bp.route("/orders/<order_id>/cancel", methods=["POST"])
 @_require_permission("orders")
 def order_cancel(order_id: str):
-    """Anuluje zamówienie i generuje fakturę korygującą jeśli była faktura VAT."""
+    """Anuluje zamówienie, generuje korektę jeśli była faktura, wysyła emaile."""
     from flask import jsonify
-    from pg_storage import update_order_status, get_wfirma_documents, save_wfirma_document
+    from datetime import datetime
+    from pg_storage import update_order_status, get_wfirma_documents, save_wfirma_document, get_participants_for_order, save_mail_log, get_event
+    from backstage_engine import _send_email_via_make
+    from email_templates import render_order_cancelled_email, render_participant_cancelled_email
     
     user = _get_current_admin_user()
     order = get_order(order_id)
@@ -1456,17 +1459,27 @@ def order_cancel(order_id: str):
     if order.get("status") in ["cancelled", "refunded"]:
         return jsonify({"success": False, "error": "Zamówienie jest już anulowane lub zwrócone"}), 400
     
+    was_paid = order.get("status") == "paid"
     correction_created = False
     correction_number = None
     correction_error = None
+    emails_sent = {"purchaser": False, "participants": 0}
+    
+    # Pobierz dane wydarzenia
+    event_id = order.get("event_id", "")
+    event = get_event(event_id) if event_id else None
+    event_name = order.get("event_name") or (event.get("event_name") if event else "") or "Wydarzenie"
+    event_data = (event.get("data") or {}) if event else {}
     
     # Sprawdź czy zamówienie ma fakturę VAT (document_type = 'normal')
+    had_invoice = False
     try:
         documents = get_wfirma_documents(order_id)
         vat_invoice = None
         for doc in documents:
             if doc.get("document_type") == "normal" and doc.get("wfirma_invoice_id"):
                 vat_invoice = doc
+                had_invoice = True
                 break
         
         if vat_invoice:
@@ -1513,33 +1526,129 @@ def order_cancel(order_id: str):
     # Zmień status zamówienia na cancelled
     result = update_order_status(order_id, "cancelled")
     
-    if result:
-        insert_admin_audit_log(
-            action="order_cancelled",
-            admin_user_id=user.get("id") if user else None,
-            target_id=order_id,
-            extra={
-                "correction_created": correction_created,
-                "correction_number": correction_number,
-                "correction_error": correction_error,
-            },
-            ip=request.remote_addr,
-        )
-        
-        message = "Zamówienie zostało anulowane"
-        if correction_created:
-            message += f", wygenerowano fakturę korygującą: {correction_number}"
-        elif correction_error:
-            message += f". Uwaga: {correction_error}"
-        
-        return jsonify({
-            "success": True,
-            "message": message,
+    if not result:
+        return jsonify({"success": False, "error": "Nie udało się anulować zamówienia"}), 500
+    
+    cancel_date = datetime.now().strftime("%d.%m.%Y, %H:%M")
+    
+    # Wyślij email do kupującego (jeśli było opłacone lub miało fakturę)
+    purchaser_email = order.get("purchaser_email", "")
+    if purchaser_email and (was_paid or had_invoice):
+        try:
+            html = render_order_cancelled_email(
+                event_name=event_name,
+                purchaser_first_name=order.get("purchaser_first_name", "") or "Kliencie",
+                purchaser_email=purchaser_email,
+                order_id=order_id,
+                cancel_date=cancel_date,
+                had_invoice=had_invoice,
+                correction_number=correction_number,
+                event_config=event_data,
+            )
+            subject = f"Anulowanie zamówienia - {event_name}"
+            
+            mail_result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=subject,
+                body_html=html,
+                event_order_id=order_id,
+                template_type="order_cancelled",
+            )
+            
+            if mail_result.get("success"):
+                emails_sent["purchaser"] = True
+                save_mail_log(
+                    event_order_id=order_id,
+                    direction="purchaser",
+                    template_key="order_cancelled",
+                    to_email=purchaser_email,
+                    subject=subject,
+                )
+                print(f"[CANCEL] Email do kupującego wysłany: {purchaser_email}")
+            else:
+                print(f"[CANCEL] Błąd wysyłki do kupującego: {mail_result.get('error')}")
+        except Exception as e:
+            print(f"[CANCEL] Wyjątek przy wysyłce do kupującego: {e}")
+    
+    # Wyślij emaile do uczestników (jeśli było opłacone - dostali bilety)
+    if was_paid:
+        try:
+            participants = get_participants_for_order(order_id) or []
+            for p in participants:
+                p_email = p.get("email", "")
+                p_status = p.get("status", "")
+                
+                # Wysyłaj tylko do uczestników którzy dostali bilety (status 'emailed')
+                if not p_email or p_status != "emailed":
+                    continue
+                
+                try:
+                    html = render_participant_cancelled_email(
+                        event_name=event_name,
+                        participant_first_name=p.get("first_name", "") or "Uczestniku",
+                        participant_last_name=p.get("last_name", ""),
+                        participant_email=p_email,
+                        event_config=event_data,
+                    )
+                    subject = f"Anulowanie rejestracji - {event_name}"
+                    
+                    mail_result = _send_email_via_make(
+                        to_email=p_email,
+                        subject=subject,
+                        body_html=html,
+                        event_order_id=order_id,
+                        template_type="participant_cancelled",
+                    )
+                    
+                    if mail_result.get("success"):
+                        emails_sent["participants"] += 1
+                        save_mail_log(
+                            event_order_id=order_id,
+                            direction="participant",
+                            template_key="participant_cancelled",
+                            to_email=p_email,
+                            subject=subject,
+                        )
+                        print(f"[CANCEL] Email do uczestnika wysłany: {p_email}")
+                except Exception as e:
+                    print(f"[CANCEL] Błąd wysyłki do uczestnika {p_email}: {e}")
+        except Exception as e:
+            print(f"[CANCEL] Błąd pobierania uczestników: {e}")
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="order_cancelled",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={
+            "was_paid": was_paid,
+            "had_invoice": had_invoice,
             "correction_created": correction_created,
             "correction_number": correction_number,
-        })
+            "correction_error": correction_error,
+            "emails_sent": emails_sent,
+        },
+        ip=request.remote_addr,
+    )
     
-    return jsonify({"success": False, "error": "Nie udało się anulować zamówienia"}), 500
+    # Buduj komunikat
+    message = "Zamówienie zostało anulowane"
+    if correction_created:
+        message += f", wygenerowano korektę: {correction_number}"
+    if emails_sent["purchaser"]:
+        message += ", email do kupującego wysłany"
+    if emails_sent["participants"] > 0:
+        message += f", emaile do {emails_sent['participants']} uczestników wysłane"
+    if correction_error:
+        message += f". Uwaga: {correction_error}"
+    
+    return jsonify({
+        "success": True,
+        "message": message,
+        "correction_created": correction_created,
+        "correction_number": correction_number,
+        "emails_sent": emails_sent,
+    })
 
 
 @admin_v2_bp.route("/orders/<order_id>/refund", methods=["POST"])

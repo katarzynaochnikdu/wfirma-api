@@ -2132,8 +2132,7 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
                       <tr>
                         <td style="font-size: 12px; color: #64748b; line-height: 1.5;">
                           <p style="margin: 0 0 8px 0;">
-                            Jeśli nie chcesz kontynuować rezerwacji, zignoruj tę wiadomość. 
-                            Twoje dane zostaną automatycznie usunięte po wygaśnięciu linku.
+                            Jeśli nie chcesz kontynuować rezerwacji, zignoruj tę wiadomość.
                           </p>
                           <p style="margin: 0;">
                             Pytania? <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1}; text-decoration: none;">{md_email_kontakt}</a>
@@ -2202,3 +2201,269 @@ def render_checkout_expired_new_link_email(
     }
     
     return TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK.format(**data)
+
+
+# ---------------------------------------------------------------------------
+# ORDER CANCELLED EMAIL (dla kupującego)
+# ---------------------------------------------------------------------------
+
+TEMPLATE_ORDER_CANCELLED = '''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anulowanie zamówienia - {event_name}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 0;">
+              <a href="{url_event}" target="_blank" style="display: block; text-decoration: none;">
+                <img src="{event_mail_link_top_banner}" alt="{event_name}" style="width: 100%; display: block; border-radius: 16px 16px 0 0;">
+              </a>
+            </td>
+          </tr>
+          
+          <!-- Status Badge -->
+          <tr>
+            <td align="center" style="padding: 24px 24px 0 24px;">
+              <div style="display: inline-block; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600;">
+                ✗ Zamówienie anulowane
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 24px 32px;">
+              <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #111827;">
+                Witaj {purchaser_first_name},
+              </h1>
+              <p style="margin: 0 0 16px 0; font-size: 16px; line-height: 1.6; color: #374151;">
+                Informujemy, że Twoje zamówienie na wydarzenie <strong>{event_name}</strong> zostało anulowane.
+              </p>
+              
+              {correction_info}
+              
+              <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin: 24px 0;">
+                <div style="display: flex; align-items: flex-start; gap: 12px;">
+                  <div style="font-size: 14px; color: #991b1b;">
+                    <strong>Szczegóły anulowania:</strong><br>
+                    Zamówienie #{order_id}<br>
+                    Data anulowania: {cancel_date}
+                  </div>
+                </div>
+              </div>
+              
+              <p style="margin: 24px 0 0 0; font-size: 14px; color: #6b7280;">
+                Jeśli masz pytania dotyczące anulowania lub chcesz ponownie zarezerwować miejsce, skontaktuj się z nami.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 32px; background: #f9fafb; border-radius: 0 0 16px 16px;">
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;">
+                Pozdrawiamy,<br>
+                <strong>Zespół organizacyjny</strong>
+              </p>
+              <p style="margin: 0; font-size: 13px; color: #9ca3af;">
+                Kontakt: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1};">{md_email_kontakt}</a>
+              </p>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
+
+
+def render_order_cancelled_email(
+    event_name: str,
+    purchaser_first_name: str,
+    purchaser_email: str,
+    order_id: str,
+    cancel_date: str,
+    had_invoice: bool = False,
+    correction_number: Optional[str] = None,
+    event_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Renderuje email o anulowaniu zamówienia dla kupującego.
+    
+    Args:
+        event_name: Nazwa eventu
+        purchaser_first_name: Imię kupującego
+        purchaser_email: Email kupującego
+        order_id: ID zamówienia
+        cancel_date: Data anulowania
+        had_invoice: Czy była wystawiona faktura
+        correction_number: Numer faktury korygującej (jeśli wygenerowano)
+        event_config: Konfiguracja eventu
+    
+    Returns:
+        Gotowy HTML email
+    """
+    event_config = event_config or get_default_event_config()
+    
+    # Info o korekcie
+    if had_invoice and correction_number:
+        correction_info = f'''
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin: 16px 0;">
+          <div style="font-size: 14px; color: #1e40af;">
+            <strong>📄 Faktura korygująca</strong><br>
+            Została wystawiona faktura korygująca nr <strong>{correction_number}</strong>. 
+            Dokument zostanie wysłany osobnym emailem z systemu wFirma.
+          </div>
+        </div>'''
+    elif had_invoice:
+        correction_info = '''
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin: 16px 0;">
+          <div style="font-size: 14px; color: #1e40af;">
+            <strong>📄 Faktura korygująca</strong><br>
+            Do wystawionej faktury zostanie wygenerowana faktura korygująca. 
+            Dokument otrzymasz osobnym emailem.
+          </div>
+        </div>'''
+    else:
+        correction_info = ''
+    
+    data = {
+        "event_name": event_name,
+        "purchaser_first_name": purchaser_first_name or "Kliencie",
+        "order_id": order_id[-10:] if len(order_id) > 10 else order_id,  # Skróć długie ID
+        "cancel_date": cancel_date,
+        "correction_info": correction_info,
+        # Event config
+        "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
+        "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
+        "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
+        "url_event": event_config.get("url_event", "https://medidesk.com"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/ef4444/ffffff?text=Anulowanie"),
+    }
+    
+    return TEMPLATE_ORDER_CANCELLED.format(**data)
+
+
+# ---------------------------------------------------------------------------
+# PARTICIPANT CANCELLED EMAIL (dla uczestnika)
+# ---------------------------------------------------------------------------
+
+TEMPLATE_PARTICIPANT_CANCELLED = '''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anulowanie rejestracji - {event_name}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 0;">
+              <a href="{url_event}" target="_blank" style="display: block; text-decoration: none;">
+                <img src="{event_mail_link_top_banner}" alt="{event_name}" style="width: 100%; display: block; border-radius: 16px 16px 0 0;">
+              </a>
+            </td>
+          </tr>
+          
+          <!-- Status Badge -->
+          <tr>
+            <td align="center" style="padding: 24px 24px 0 24px;">
+              <div style="display: inline-block; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600;">
+                ⚠ Rejestracja anulowana
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 24px 32px;">
+              <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #111827;">
+                Witaj {participant_first_name},
+              </h1>
+              <p style="margin: 0 0 16px 0; font-size: 16px; line-height: 1.6; color: #374151;">
+                Informujemy, że Twoja rejestracja na wydarzenie <strong>{event_name}</strong> została anulowana.
+              </p>
+              
+              <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 16px; margin: 24px 0;">
+                <div style="font-size: 14px; color: #854d0e;">
+                  <strong>Co to oznacza?</strong><br>
+                  Twój bilet został unieważniony i nie będziesz mógł/mogła wziąć udziału w wydarzeniu na podstawie tej rezerwacji.
+                </div>
+              </div>
+              
+              <p style="margin: 24px 0 0 0; font-size: 14px; color: #6b7280;">
+                Jeśli anulowanie nastąpiło przez pomyłkę lub chcesz ponownie zarejestrować się na wydarzenie, skontaktuj się z nami.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 32px; background: #f9fafb; border-radius: 0 0 16px 16px;">
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;">
+                Pozdrawiamy,<br>
+                <strong>Zespół organizacyjny</strong>
+              </p>
+              <p style="margin: 0; font-size: 13px; color: #9ca3af;">
+                Kontakt: <a href="mailto:{md_email_kontakt}" style="color: {color_gradient_1};">{md_email_kontakt}</a>
+              </p>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
+
+
+def render_participant_cancelled_email(
+    event_name: str,
+    participant_first_name: str,
+    participant_last_name: str,
+    participant_email: str,
+    event_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Renderuje email o anulowaniu rejestracji dla uczestnika.
+    
+    Args:
+        event_name: Nazwa eventu
+        participant_first_name: Imię uczestnika
+        participant_last_name: Nazwisko uczestnika
+        participant_email: Email uczestnika
+        event_config: Konfiguracja eventu
+    
+    Returns:
+        Gotowy HTML email
+    """
+    event_config = event_config or get_default_event_config()
+    
+    data = {
+        "event_name": event_name,
+        "participant_first_name": participant_first_name or "Uczestniku",
+        # Event config
+        "color_gradient_1": event_config.get("color_gradient_1", "#2563eb"),
+        "color_gradient_2": event_config.get("color_gradient_2", "#1e40af"),
+        "md_email_kontakt": event_config.get("md_email_kontakt", "konferencje@medidesk.com"),
+        "url_event": event_config.get("url_event", "https://medidesk.com"),
+        "event_mail_link_top_banner": event_config.get("event_mail_link_top_banner", "https://placehold.co/598x200/f59e0b/ffffff?text=Anulowanie"),
+    }
+    
+    return TEMPLATE_PARTICIPANT_CANCELLED.format(**data)
