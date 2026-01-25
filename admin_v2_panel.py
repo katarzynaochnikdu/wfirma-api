@@ -1158,6 +1158,9 @@ def _handle_mark_paid(order_id: str, user: dict):
     purchaser_first_name = order.get("purchaser_first_name", "") or ""
     purchaser_last_name = order.get("purchaser_last_name", "") or ""
     purchaser_name = f"{purchaser_first_name} {purchaser_last_name}".strip()
+    payment_option_name = (order.get("payment_option_name") or "").lower()
+    payment_type_raw = str(order.get("payment_type") or "").lower()
+    is_proforma_payment = ("proforma" in payment_option_name) or ("proforma" in payment_type_raw) or ("pro" in payment_option_name)
     
     total_value = float(order.get("total", 0) or 0)
     currency_value = order.get("currency", "PLN") or "PLN"
@@ -1218,7 +1221,7 @@ def _handle_mark_paid(order_id: str, user: dict):
     if purchaser_email:
         try:
             from backstage_engine import _send_email_via_make
-            from email_templates import render_payment_confirmation_email
+            from email_templates import render_payment_confirmation_email, render_proforma_paid_confirmation_email
             from pg_storage import save_mail_log
             
             # #region agent log
@@ -1228,23 +1231,39 @@ def _handle_mark_paid(order_id: str, user: dict):
             except: pass
             # #endregion
             
-            email_html = render_payment_confirmation_email(
-                event_name=event_name,
-                purchaser_first_name=purchaser_first_name,
-                purchaser_last_name=purchaser_last_name,
-                purchaser_email=purchaser_email,
-                purchaser_phone=order.get("purchaser_phone", "") or "",
-                total_gross=total_value,
-                event_config=event_data,
-                tickets=None,  # TODO: pobrać bilety z zamówienia
-            )
-            
-            subject = f"Potwierdzenie płatności - {event_name}"
+            if is_proforma_payment:
+                email_html = render_proforma_paid_confirmation_email(
+                    event_name=event_name,
+                    purchaser_first_name=purchaser_first_name,
+                    purchaser_last_name=purchaser_last_name,
+                    purchaser_email=purchaser_email,
+                    purchaser_phone=order.get("purchaser_phone", "") or "",
+                    total_gross=total_value,
+                    event_config=event_data,
+                    tickets=None,  # TODO: pobrać bilety z zamówienia
+                )
+                subject = f"Potwierdzenie płatności proformy - {event_name}"
+                template_key = "proforma_paid"
+                template_type = "proforma_paid"
+            else:
+                email_html = render_payment_confirmation_email(
+                    event_name=event_name,
+                    purchaser_first_name=purchaser_first_name,
+                    purchaser_last_name=purchaser_last_name,
+                    purchaser_email=purchaser_email,
+                    purchaser_phone=order.get("purchaser_phone", "") or "",
+                    total_gross=total_value,
+                    event_config=event_data,
+                    tickets=None,  # TODO: pobrać bilety z zamówienia
+                )
+                subject = f"Potwierdzenie płatności - {event_name}"
+                template_key = "payment_confirmation"
+                template_type = "payment_confirmation"
             
             # NAJPIERW zapisz do mail_log żeby mieć mail_id
             mail_log_result = save_mail_log(
                 event_order_id=order_id,
-                template_key="payment_confirmation",
+                template_key=template_key,
                 to_email=purchaser_email,
                 subject=subject,
                 direction="purchaser",
@@ -1257,7 +1276,7 @@ def _handle_mark_paid(order_id: str, user: dict):
                 subject=subject,
                 body_html=email_html,
                 event_order_id=order_id,
-                template_type="payment_confirmation",
+                template_type=template_type,
                 mail_id=mail_id,
             )
             
@@ -1443,7 +1462,7 @@ def order_send_reminder(order_id: str):
     
     if is_proforma and not checkout_url:
         # Dla proformy bez Stripe - email z przypomnieniem o proformie
-        from email_templates import render_proforma_reservation_email
+        from email_templates import render_proforma_reminder_email
         proforma_number = order.get("proforma_number", "")
         
         # Pobierz bilety z zamówienia
@@ -1467,7 +1486,7 @@ def order_send_reminder(order_id: str):
                 pass
         
         try:
-            html = render_proforma_reservation_email(
+            html = render_proforma_reminder_email(
                 event_name=event_name,
                 purchaser_first_name=order.get("purchaser_first_name", ""),
                 purchaser_last_name=order.get("purchaser_last_name", ""),
@@ -4601,6 +4620,7 @@ def _build_order_history(order_id: str, order: dict):
     EMAIL_TYPE_LABELS = {
         "proforma": ("Proforma wysłana", "document"),
         "proforma_reminder": ("Przypomnienie o płatności", "email"),
+        "proforma_paid": ("Potwierdzenie płatności proformy", "payment"),
         "checkout_reminder": ("Przypomnienie o płatności", "email"),
         "payment_link": ("Link do płatności wysłany", "email"),
         "payment_confirmation": ("Potwierdzenie płatności", "payment"),
@@ -5184,6 +5204,8 @@ def template_preview(template_key: str):
     template_subjects = {
         "stripe_payment_link": f"Link do płatności - {sample_data['event_name']}",
         "proforma_sent": f"Faktura proforma - {sample_data['event_name']}",
+        "proforma_reminder": f"Przypomnienie: Proforma - {sample_data['event_name']}",
+        "proforma_paid": f"Potwierdzenie płatności proformy - {sample_data['event_name']}",
         "payment_confirmation": f"Potwierdzenie płatności - {sample_data['event_name']}",
         "registration_confirmation": f"Potwierdzenie rejestracji - {sample_data['event_name']}",
         "checkout_reminder": f"Przypomnienie o płatności - {sample_data['event_name']}",
@@ -5280,6 +5302,33 @@ def template_preview(template_key: str):
                 new_checkout_url=sample_data["payment_url"],
                 new_expires_at="20.03.2026, 15:00",
                 original_order_date="15.03.2026",
+                event_config=event_config,
+            )
+        
+        elif template_key == "proforma_reminder":
+            from email_templates import render_proforma_reminder_email
+            html_content = render_proforma_reminder_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                purchaser_phone=sample_data["purchaser_phone"],
+                event_config=event_config,
+                tickets=sample_data["tickets"],
+                proforma_number=sample_data["proforma_number"],
+                payment_due_date="31.01.2026",
+            )
+        
+        elif template_key == "proforma_paid":
+            from email_templates import render_proforma_paid_confirmation_email
+            html_content = render_proforma_paid_confirmation_email(
+                event_name=sample_data["event_name"],
+                purchaser_first_name=sample_data["purchaser_first_name"],
+                purchaser_last_name=sample_data["purchaser_last_name"],
+                purchaser_email=sample_data["purchaser_email"],
+                purchaser_phone=sample_data["purchaser_phone"],
+                total_gross=sample_data["total_gross"],
+                tickets=sample_data["tickets"],
                 event_config=event_config,
             )
         
