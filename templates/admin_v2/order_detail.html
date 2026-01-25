@@ -466,11 +466,11 @@
       <div class="card-content">
         <div class="quick-actions">
           {% if order.status not in ['paid', 'cancelled', 'refunded'] %}
-          <button class="btn btn-primary" onclick="markAsPaidFromQuickActions()">
+          <button class="btn" style="background: hsl(142, 71%, 45%); color: white; border: none;" onclick="markAsPaidFromQuickActions()">
             <i data-lucide="check-circle"></i>
             Oznacz jako opłacone
           </button>
-          <button class="btn btn-outline" onclick="sendReminder()">
+          <button class="btn" style="background: hsl(38, 100%, 50%); color: white; border: none;" onclick="sendReminder()">
             <i data-lucide="send"></i>
             Wyślij przypomnienie o płatności
           </button>

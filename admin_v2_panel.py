@@ -1079,7 +1079,6 @@ def _handle_mark_paid(order_id: str, user: dict):
                     template_key="payment_confirmation",
                     to_email=purchaser_email,
                     subject=subject,
-                    status="sent",
                     direction="purchaser",
                 )
                 print(f"[V2 MARK-PAID] Email wysłany do {purchaser_email}")
@@ -1498,9 +1497,9 @@ def order_cancel(order_id: str):
             print(f"[CANCEL] Zamówienie {order_id} ma fakturę VAT: {vat_invoice.get('wfirma_number')}, generuję korektę...")
             
             try:
-                from app import wfirma_create_correction, wfirma_get_company_id, get_wfirma_token
+                from app import wfirma_create_correction, wfirma_get_company_id, load_token
                 
-                token = get_wfirma_token()
+                token = load_token()
                 if token:
                     company_id = wfirma_get_company_id(token)
                     correction, resp = wfirma_create_correction(

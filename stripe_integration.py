@@ -987,6 +987,23 @@ def process_webhook_event(event_type: str, event_data: Dict[str, Any]) -> Dict[s
     if event_type == "checkout.session.async_payment_failed":
         return handle_checkout_payment_failed(event_data)
     
+    # Payment Link events
+    if event_type == "payment_link.created":
+        return handle_payment_link_created(event_data)
+    
+    if event_type == "payment_link.updated":
+        return handle_payment_link_updated(event_data)
+    
+    # Refund events
+    if event_type == "refund.created":
+        return handle_refund_created(event_data)
+    
+    if event_type == "refund.failed":
+        return handle_refund_failed(event_data)
+    
+    if event_type == "refund.updated":
+        return handle_refund_updated(event_data)
+    
     # Inne eventy - ignorujemy
     return {
         "status": "ignored",
@@ -1187,4 +1204,261 @@ def handle_checkout_payment_failed(session_data: Dict[str, Any]) -> Dict[str, An
         "order_id": event_order_id,
         "order_status": "payment_failed",
         "message": "Płatność nie powiodła się",
+    }
+
+
+# ---------------------------------------------------------------------------
+# PAYMENT LINK HANDLERS
+# ---------------------------------------------------------------------------
+
+def handle_payment_link_created(payment_link_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event payment_link.created.
+    Link do płatności został utworzony.
+    """
+    payment_link_id = payment_link_data.get("id")
+    url = payment_link_data.get("url")
+    active = payment_link_data.get("active", True)
+    metadata = payment_link_data.get("metadata") or {}
+    
+    print(f"[STRIPE] payment_link.created | id={payment_link_id}, url={url[:50] if url else None}..., active={active}")
+    
+    # Logujemy event (informacyjny - nie wymaga akcji)
+    return {
+        "status": "ok",
+        "event_type": "payment_link.created",
+        "payment_link_id": payment_link_id,
+        "url": url,
+        "active": active,
+        "message": "Payment link utworzony",
+    }
+
+
+def handle_payment_link_updated(payment_link_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event payment_link.updated.
+    Link do płatności został zaktualizowany.
+    """
+    payment_link_id = payment_link_data.get("id")
+    active = payment_link_data.get("active", True)
+    metadata = payment_link_data.get("metadata") or {}
+    
+    print(f"[STRIPE] payment_link.updated | id={payment_link_id}, active={active}")
+    
+    # Logujemy event (informacyjny - nie wymaga akcji)
+    return {
+        "status": "ok",
+        "event_type": "payment_link.updated",
+        "payment_link_id": payment_link_id,
+        "active": active,
+        "message": "Payment link zaktualizowany",
+    }
+
+
+# ---------------------------------------------------------------------------
+# REFUND HANDLERS
+# ---------------------------------------------------------------------------
+
+def handle_refund_created(refund_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event refund.created.
+    Zwrot został utworzony w Stripe.
+    """
+    refund_id = refund_data.get("id")
+    payment_intent_id = refund_data.get("payment_intent")
+    amount = refund_data.get("amount", 0)  # w groszach
+    currency = refund_data.get("currency", "pln").upper()
+    status = refund_data.get("status")  # succeeded, pending, failed, canceled
+    reason = refund_data.get("reason")  # duplicate, fraudulent, requested_by_customer
+    metadata = refund_data.get("metadata") or {}
+    
+    print(f"[STRIPE] refund.created | id={refund_id}, payment_intent={payment_intent_id}, amount={amount/100} {currency}, status={status}, reason={reason}")
+    
+    # Próbuj znaleźć zamówienie po payment_intent
+    event_order_id = None
+    order = None
+    
+    if payment_intent_id:
+        try:
+            from pg_storage import _with_conn, _put_conn, _dict_cursor, get_order
+            pool, conn = _with_conn()
+            cur = _dict_cursor(conn)
+            cur.execute("""
+                SELECT event_order_id FROM stripe_sessions 
+                WHERE payment_intent_id = %s
+                LIMIT 1
+            """, (payment_intent_id,))
+            row = cur.fetchone()
+            if row:
+                event_order_id = row.get("event_order_id")
+                order = get_order(event_order_id)
+            _put_conn(pool, conn)
+        except Exception as e:
+            print(f"[STRIPE] Błąd wyszukiwania zamówienia po payment_intent: {e}")
+    
+    # Jeśli zwrot się powiódł, aktualizuj status zamówienia
+    if status == "succeeded" and event_order_id:
+        try:
+            update_order_status(event_order_id, "refunded")
+            print(f"[STRIPE] Zamówienie {event_order_id} oznaczone jako zwrócone")
+        except Exception as e:
+            print(f"[STRIPE] Błąd aktualizacji statusu zamówienia: {e}")
+    
+    # Wyślij powiadomienie wewnętrzne
+    if BACKSTAGE_TECHNICAL_INFO_EMAIL:
+        event_name = ""
+        purchaser_email = ""
+        if order:
+            purchaser_email = order.get("purchaser_email", "")
+            try:
+                ev = get_event(order.get("event_id", ""))
+                if ev:
+                    event_name = ev.get("event_name", "")
+            except:
+                pass
+        
+        internal_subject = f"[REFUND] Zwrot {amount/100:.2f} {currency} - {event_name or event_order_id or 'Nieznane'}"
+        internal_body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #17a2b8;">💸 Zwrot płatności utworzony</h2>
+            <p><strong>Refund ID:</strong> {refund_id}</p>
+            <p><strong>Payment Intent:</strong> {payment_intent_id}</p>
+            <p><strong>Kwota:</strong> {amount/100:.2f} {currency}</p>
+            <p><strong>Status:</strong> {status}</p>
+            <p><strong>Powód:</strong> {reason or 'Nie podano'}</p>
+            <hr>
+            <p><strong>Zamówienie:</strong> {event_order_id or 'Nieznane'}</p>
+            <p><strong>Wydarzenie:</strong> {event_name or 'Nieznane'}</p>
+            <p><strong>Email klienta:</strong> {purchaser_email or 'Brak'}</p>
+            <hr>
+            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+        </body>
+        </html>
+        """
+        
+        _send_email_via_make_stripe(
+            to_email=BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            subject=internal_subject,
+            body_html=internal_body_html,
+            event_order_id=event_order_id or "",
+            template_type="internal_refund_created",
+        )
+    
+    return {
+        "status": "ok",
+        "event_type": "refund.created",
+        "refund_id": refund_id,
+        "payment_intent_id": payment_intent_id,
+        "amount": amount / 100,
+        "currency": currency,
+        "refund_status": status,
+        "reason": reason,
+        "order_id": event_order_id,
+        "message": "Zwrot utworzony",
+    }
+
+
+def handle_refund_failed(refund_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event refund.failed.
+    Zwrot nie powiódł się.
+    """
+    refund_id = refund_data.get("id")
+    payment_intent_id = refund_data.get("payment_intent")
+    amount = refund_data.get("amount", 0)
+    currency = refund_data.get("currency", "pln").upper()
+    status = refund_data.get("status")
+    failure_reason = refund_data.get("failure_reason")
+    
+    print(f"[STRIPE] refund.failed | id={refund_id}, payment_intent={payment_intent_id}, amount={amount/100} {currency}, failure_reason={failure_reason}")
+    
+    # Wyślij powiadomienie o błędzie
+    if BACKSTAGE_TECHNICAL_INFO_EMAIL:
+        internal_subject = f"[REFUND ERROR] Zwrot nieudany - {amount/100:.2f} {currency}"
+        internal_body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #dc3545;">❌ Zwrot płatności nieudany</h2>
+            <p><strong>Refund ID:</strong> {refund_id}</p>
+            <p><strong>Payment Intent:</strong> {payment_intent_id}</p>
+            <p><strong>Kwota:</strong> {amount/100:.2f} {currency}</p>
+            <p><strong>Status:</strong> {status}</p>
+            <p style="color: #dc3545;"><strong>Powód błędu:</strong> {failure_reason or 'Nieznany'}</p>
+            <hr>
+            <p style="color: #dc3545;"><strong>WYMAGANA AKCJA:</strong> Sprawdź szczegóły w panelu Stripe!</p>
+            <p style="color: #666; font-size: 12px;">Email wygenerowany automatycznie przez system Render.</p>
+        </body>
+        </html>
+        """
+        
+        _send_email_via_make_stripe(
+            to_email=BACKSTAGE_TECHNICAL_INFO_EMAIL,
+            subject=internal_subject,
+            body_html=internal_body_html,
+            event_order_id="",
+            template_type="internal_refund_failed",
+        )
+    
+    return {
+        "status": "ok",
+        "event_type": "refund.failed",
+        "refund_id": refund_id,
+        "payment_intent_id": payment_intent_id,
+        "amount": amount / 100,
+        "currency": currency,
+        "failure_reason": failure_reason,
+        "message": "Zwrot nieudany",
+    }
+
+
+def handle_refund_updated(refund_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Obsługuje event refund.updated.
+    Status zwrotu został zaktualizowany.
+    """
+    refund_id = refund_data.get("id")
+    payment_intent_id = refund_data.get("payment_intent")
+    amount = refund_data.get("amount", 0)
+    currency = refund_data.get("currency", "pln").upper()
+    status = refund_data.get("status")
+    
+    print(f"[STRIPE] refund.updated | id={refund_id}, payment_intent={payment_intent_id}, amount={amount/100} {currency}, status={status}")
+    
+    # Jeśli zwrot został zrealizowany, zaktualizuj status zamówienia
+    if status == "succeeded":
+        event_order_id = None
+        if payment_intent_id:
+            try:
+                from pg_storage import _with_conn, _put_conn, _dict_cursor
+                pool, conn = _with_conn()
+                cur = _dict_cursor(conn)
+                cur.execute("""
+                    SELECT event_order_id FROM stripe_sessions 
+                    WHERE payment_intent_id = %s
+                    LIMIT 1
+                """, (payment_intent_id,))
+                row = cur.fetchone()
+                if row:
+                    event_order_id = row.get("event_order_id")
+                _put_conn(pool, conn)
+            except Exception as e:
+                print(f"[STRIPE] Błąd wyszukiwania zamówienia: {e}")
+        
+        if event_order_id:
+            try:
+                update_order_status(event_order_id, "refunded")
+                print(f"[STRIPE] Zamówienie {event_order_id} oznaczone jako zwrócone")
+            except Exception as e:
+                print(f"[STRIPE] Błąd aktualizacji statusu: {e}")
+    
+    return {
+        "status": "ok",
+        "event_type": "refund.updated",
+        "refund_id": refund_id,
+        "payment_intent_id": payment_intent_id,
+        "amount": amount / 100,
+        "currency": currency,
+        "refund_status": status,
+        "message": "Zwrot zaktualizowany",
     }
