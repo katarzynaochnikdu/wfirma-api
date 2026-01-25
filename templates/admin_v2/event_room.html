@@ -338,7 +338,7 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th style="width: 40px;">
+          <th style="width: 40px; display: none;">
             <input type="checkbox" class="checkbox" id="select-all-event-participants" onchange="toggleSelectAllEventParticipants(this.checked)">
           </th>
           <th>Uczestnik</th>
@@ -350,7 +350,7 @@
       <tbody>
         {% for p in participants %}
         <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}" class="clickable-row" onclick="goToParticipantDetail(event, {{ p.participant_id }})" style="cursor: pointer;">
-          <td onclick="event.stopPropagation();">
+          <td onclick="event.stopPropagation();" style="display: none;">
             <input type="checkbox" class="checkbox event-participant-checkbox" data-participant-id="{{ p.participant_id }}" onchange="updateEventParticipantSelection()">
           </td>
           <td>

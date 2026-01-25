@@ -76,7 +76,7 @@
   <table class="data-table sortable-table">
     <thead>
       <tr>
-        <th style="width: 40px;">
+        <th style="width: 40px; display: none;">
           <input type="checkbox" class="checkbox" id="select-all-participants" onchange="toggleSelectAll(this.checked)">
         </th>
         <th class="sortable-header" data-sort="name">
@@ -116,8 +116,8 @@
       {% set event_color = p.event_color or 'hsl(212, 100%, 42%)' %}
       {% set event_color_2 = p.event_color_2 or 'hsl(195, 100%, 42%)' %}
       <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}" class="clickable-row" onclick="goToParticipant(event, {{ p.participant_id }})">
-        <!-- Checkbox -->
-        <td onclick="event.stopPropagation();">
+        <!-- Checkbox (ukryte - nieużywane) -->
+        <td onclick="event.stopPropagation();" style="display: none;">
           <input type="checkbox" class="checkbox participant-checkbox" data-participant-id="{{ p.participant_id }}" onchange="updateParticipantSelection()">
         </td>
         <!-- Uczestnik z avatarem -->
