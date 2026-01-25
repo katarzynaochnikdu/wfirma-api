@@ -364,7 +364,21 @@ def map_event_to_local(backstage_event: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict w formacie do zapisania w events.data
     """
+    # #region agent log
+    import json as _json
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"zoho_backstage_api.py:map_event_to_local","message":"Raw backstage_event keys","data":{"keys":list(backstage_event.keys()),"venue_raw":backstage_event.get("venue"),"venue_type":str(type(backstage_event.get("venue"))),"location_raw":backstage_event.get("location"),"address_raw":backstage_event.get("address")},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1,H2,H3,H4"}) + '\n')
+    except: pass
+    # #endregion
     venue = backstage_event.get("venue") or {}
+    
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"zoho_backstage_api.py:venue_parsed","message":"Venue object details","data":{"venue_keys":list(venue.keys()) if isinstance(venue, dict) else "NOT_DICT","venue_name":venue.get("name") if isinstance(venue, dict) else str(venue)[:100],"venue_city":venue.get("city") if isinstance(venue, dict) else None,"venue_street":venue.get("street") if isinstance(venue, dict) else None,"venue_address":venue.get("address") if isinstance(venue, dict) else None},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1,H2"}) + '\n')
+    except: pass
+    # #endregion
     
     # Buduj adres lokalizacji
     venue_parts = []
@@ -404,7 +418,7 @@ def map_event_to_local(backstage_event: Dict[str, Any]) -> Dict[str, Any]:
             event_end_date = date_part
             event_end_time = time_part.replace("Z", "")[:5]
     
-    return {
+    result = {
         # Podstawowe dane
         "backstage_event_id": backstage_event.get("id"),
         "backstage_portal_id": backstage_event.get("space", {}).get("id"),
@@ -456,6 +470,16 @@ def map_event_to_local(backstage_event: Dict[str, Any]) -> Dict[str, Any]:
         # Metadane
         "backstage_synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+    
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _result = result  # reference for logging
+            _f.write(_json.dumps({"location":"zoho_backstage_api.py:map_result","message":"Final mapped location values","data":{"event_location_place":result.get("event_location_place"),"event_location_address":result.get("event_location_address"),"event_location_city":result.get("event_location_city"),"location_full":result.get("location"),"eventLocation":result.get("eventLocation"),"eventCity":result.get("eventCity"),"eventAddress":result.get("eventAddress")},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1,H2,H3"}) + '\n')
+    except: pass
+    # #endregion
+    
+    return result
 
 
 def map_ticket_class_to_local(ticket_class: Dict[str, Any]) -> Dict[str, Any]:

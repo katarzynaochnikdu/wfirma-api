@@ -64,19 +64,19 @@
        class="event-tab {% if active_tab == 'payments' %}active{% endif %}">
       <i data-lucide="credit-card"></i>
       <span>Płatności</span>
-      {% if stats.pending > 0 %}<span class="tab-badge tab-badge-amber">{{ stats.pending }}</span>{% endif %}
+      {% if stats.orders > 0 %}<span class="tab-badge {% if stats.paid == stats.orders %}tab-badge-green{% else %}tab-badge-amber{% endif %}">{{ stats.paid }}/{{ stats.orders }}</span>{% endif %}
     </button>
     <button type="button" data-tab="orders" 
        class="event-tab {% if active_tab == 'orders' %}active{% endif %}">
       <i data-lucide="shopping-cart"></i>
       <span>Zamówienia</span>
-      {% if stats.orders > 0 %}<span class="tab-badge tab-badge-green">{{ stats.paid }}/{{ stats.orders }}</span>{% endif %}
+      {% if stats.orders > 0 %}<span class="tab-badge {% if stats.paid == stats.orders %}tab-badge-green{% else %}tab-badge-amber{% endif %}">{{ stats.paid }}/{{ stats.orders }}</span>{% endif %}
     </button>
     <button type="button" data-tab="participants" 
        class="event-tab {% if active_tab == 'participants' %}active{% endif %}">
       <i data-lucide="users"></i>
       <span>Uczestnicy</span>
-      {% if stats.participants > 0 %}<span class="tab-badge tab-badge-green">{{ stats.notified or 0 }}/{{ stats.participants }}</span>{% endif %}
+      {% if stats.participants > 0 %}<span class="tab-badge {% if (stats.notified or 0) == stats.participants %}tab-badge-green{% else %}tab-badge-amber{% endif %}">{{ stats.notified or 0 }}/{{ stats.participants }}</span>{% endif %}
     </button>
     <button type="button" data-tab="communication" 
        class="event-tab {% if active_tab == 'communication' %}active{% endif %}">
@@ -610,6 +610,23 @@
       </div>
     </div>
   </div>
+  
+  <!-- Opis wydarzenia -->
+  {% if event.data.event_description %}
+  <div class="card" style="margin-bottom: 1rem;">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+        Opis wydarzenia
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <div class="description-preview" style="padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted); font-size: 0.875rem; line-height: 1.6; max-height: 200px; overflow-y: auto;">
+        {{ event.data.event_description|safe }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
   
   <!-- Contacts -->
   <div class="card" style="margin-bottom: 1rem;">
