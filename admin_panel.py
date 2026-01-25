@@ -5465,7 +5465,9 @@ def order_generate_proforma(order_id: str):
 
     # 3. Aktualizuj status zamówienia
     if proforma_created:
-        update_order_status(order_id, "pending_payment")
+        import time
+        payment_due_timestamp = int(time.time() + 7 * 24 * 60 * 60)
+        update_order_status(order_id, "pending_payment", payment_due_date=payment_due_timestamp)
 
     # 4. Wyślij email z proformą (jeśli nie był wysłany)
     email_sent = False
