@@ -275,47 +275,100 @@
         text-overflow: ellipsis;
     }
 
-    /* Placeholder Tabs */
+    /* Placeholder Dropdown (pojawia się pod textarea przy focus) */
+    .placeholder-dropdown-wrapper {
+        position: relative;
+    }
+
+    .placeholder-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        margin-top: 4px;
+        max-height: 260px;
+        overflow: hidden;
+    }
+
+    .placeholder-dropdown.show {
+        display: block;
+    }
+
+    .placeholder-dropdown-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px;
+        background: var(--muted);
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted-foreground);
+    }
+
+    .placeholder-dropdown-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--muted-foreground);
+        padding: 2px;
+        line-height: 1;
+    }
+
+    .placeholder-dropdown-close:hover {
+        color: var(--foreground);
+    }
+
     .placeholder-tabs {
         display: flex;
         flex-wrap: wrap;
-        gap: 4px;
-        margin-bottom: 12px;
+        gap: 3px;
+        padding: 6px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
     }
 
     .placeholder-tab {
-        padding: 6px 10px;
-        font-size: 11px;
+        padding: 3px 6px;
+        font-size: 10px;
         font-weight: 500;
-        border-radius: 6px;
-        border: 1px solid var(--border-subtle);
-        background: var(--surface-primary);
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--muted-foreground);
         cursor: pointer;
-        transition: all 0.15s ease;
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 3px;
     }
 
     .placeholder-tab:hover {
-        background: var(--surface-hover);
+        background: var(--accent);
     }
 
     .placeholder-tab.active {
-        background: var(--surface-brand);
-        border-color: var(--border-primary);
-        color: var(--text-primary);
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
     }
 
     .placeholder-tab i {
-        font-size: 12px;
+        width: 10px;
+        height: 10px;
     }
 
     .placeholder-list {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        max-height: 200px;
+        gap: 2px;
+        padding: 6px;
+        max-height: 160px;
         overflow-y: auto;
     }
 
@@ -323,27 +376,27 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 8px 10px;
-        border-radius: 6px;
-        background: var(--surface-secondary);
+        padding: 5px 8px;
+        border-radius: 4px;
+        background: var(--muted);
         cursor: pointer;
         transition: background 0.15s ease;
-        font-size: 12px;
+        font-size: 11px;
     }
 
     .placeholder-item:hover {
-        background: var(--surface-hover);
+        background: var(--accent);
     }
 
     .placeholder-key {
         font-family: monospace;
-        font-size: 11px;
-        color: var(--text-brand);
+        font-size: 10px;
+        color: var(--primary);
     }
 
     .placeholder-label {
-        color: var(--text-secondary);
-        font-size: 11px;
+        color: var(--muted-foreground);
+        font-size: 10px;
     }
 
     /* Center - Canvas */
@@ -1752,13 +1805,6 @@
                 </div>
             </div>
 
-            <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 16px 0;">
-
-            <div class="palette-section">
-                <div class="palette-title">Placeholdery</div>
-                <div class="placeholder-tabs" id="placeholderTabs"></div>
-                <div class="placeholder-list" id="placeholderList"></div>
-            </div>
         </div>
 
         <!-- Center - Canvas -->
@@ -2262,7 +2308,6 @@ function showToast(message, type = 'info') {
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
-    initPlaceholders();
     initToolbarButtons();
     lucide.createIcons();
     
@@ -2287,21 +2332,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         })
         .catch(() => {});
+    
+    // Zamykanie dropdown placeholderów przy kliknięciu poza nim
+    document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('placeholderDropdown');
+        if (dropdown && dropdown.classList.contains('show')) {
+            const isInsideDropdown = dropdown.contains(e.target);
+            const isTextarea = e.target.id === 'field_text' || e.target.id === 'field_footerText';
+            if (!isInsideDropdown && !isTextarea) {
+                hidePlaceholderDropdown();
+            }
+        }
+    });
 });
 
 function initPlaceholders() {
-    const tabsContainer = document.getElementById('placeholderTabs');
-    
-    PLACEHOLDER_GROUPS.forEach((group, index) => {
-        const tab = document.createElement('button');
-        tab.className = `placeholder-tab ${index === 0 ? 'active' : ''}`;
-        tab.dataset.group = group.name;
-        tab.innerHTML = `<i data-lucide="${group.icon}"></i> ${group.label}`;
-        tab.onclick = () => selectPlaceholderGroup(group.name);
-        tabsContainer.appendChild(tab);
-    });
-
-    renderPlaceholders(PLACEHOLDER_GROUPS[0].name);
+    // Dropdown placeholders - inicjalizacja nie jest potrzebna, renderowane dynamicznie przy focus
 }
 
 function initToolbarButtons() {
@@ -2309,24 +2355,79 @@ function initToolbarButtons() {
     document.getElementById('btnSave').onclick = saveTemplate;
 }
 
-// ==================== PLACEHOLDER FUNCTIONS ====================
-function selectPlaceholderGroup(groupName) {
-    document.querySelectorAll('.placeholder-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.group === groupName);
-    });
-    renderPlaceholders(groupName);
+// ==================== PLACEHOLDER DROPDOWN FUNCTIONS ====================
+let activeDropdownTextarea = null;
+
+function showPlaceholderDropdown(textareaId) {
+    const dropdown = document.getElementById('placeholderDropdown');
+    if (!dropdown) return;
+    
+    activeDropdownTextarea = document.getElementById(textareaId);
+    dropdown.classList.add('show');
+    
+    // Render tabs
+    const tabsContainer = dropdown.querySelector('.placeholder-tabs');
+    tabsContainer.innerHTML = PLACEHOLDER_GROUPS.map((group, index) => `
+        <button class="placeholder-tab ${index === 0 ? 'active' : ''}" data-group="${group.name}" onclick="selectDropdownGroup('${group.name}')">
+            <i data-lucide="${group.icon}"></i> ${group.label}
+        </button>
+    `).join('');
+    
+    renderDropdownPlaceholders(PLACEHOLDER_GROUPS[0].name);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function renderPlaceholders(groupName) {
-    const group = PLACEHOLDER_GROUPS.find(g => g.name === groupName);
-    const container = document.getElementById('placeholderList');
+function hidePlaceholderDropdown() {
+    const dropdown = document.getElementById('placeholderDropdown');
+    if (dropdown) dropdown.classList.remove('show');
+    activeDropdownTextarea = null;
+}
+
+function selectDropdownGroup(groupName) {
+    const dropdown = document.getElementById('placeholderDropdown');
+    if (!dropdown) return;
     
+    dropdown.querySelectorAll('.placeholder-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.group === groupName);
+    });
+    renderDropdownPlaceholders(groupName);
+}
+
+function renderDropdownPlaceholders(groupName) {
+    const group = PLACEHOLDER_GROUPS.find(g => g.name === groupName);
+    const dropdown = document.getElementById('placeholderDropdown');
+    if (!dropdown || !group) return;
+    
+    const container = dropdown.querySelector('.placeholder-list');
     container.innerHTML = group.placeholders.map(p => `
-        <div class="placeholder-item" onclick="copyPlaceholder('${p.key}')" title="${p.example}">
+        <div class="placeholder-item" onclick="insertPlaceholder('${p.key}')" title="${p.example}">
             <span class="placeholder-label">${p.label}</span>
             <span class="placeholder-key">${p.key}</span>
         </div>
     `).join('');
+}
+
+function insertPlaceholder(key) {
+    if (!activeDropdownTextarea) {
+        navigator.clipboard.writeText(key);
+        showToast(`Skopiowano: ${key}`, 'success');
+        return;
+    }
+    
+    const textarea = activeDropdownTextarea;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    
+    // Wstaw placeholder w miejsce kursora
+    textarea.value = text.substring(0, start) + key + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + key.length;
+    textarea.focus();
+    
+    // Trigger change event
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    
+    showToast(`Wstawiono: ${key}`, 'success');
 }
 
 function copyPlaceholder(key) {
@@ -2621,9 +2722,19 @@ function getEditorFieldsHtml(block) {
             
         case 'text':
             return `
-                <div class="editor-field">
+                <div class="editor-field placeholder-dropdown-wrapper">
                     <label>Treść</label>
-                    <textarea id="field_text" placeholder="Wpisz tekst lub użyj placeholderów...">${block.content.text || ''}</textarea>
+                    <textarea id="field_text" placeholder="Wpisz tekst..." onfocus="showPlaceholderDropdown('field_text')">${block.content.text || ''}</textarea>
+                    <div class="placeholder-dropdown" id="placeholderDropdown">
+                        <div class="placeholder-dropdown-header">
+                            <span>Wstaw zmienną</span>
+                            <button class="placeholder-dropdown-close" onclick="hidePlaceholderDropdown()">
+                                <i data-lucide="x" style="width:14px;height:14px;"></i>
+                            </button>
+                        </div>
+                        <div class="placeholder-tabs"></div>
+                        <div class="placeholder-list"></div>
+                    </div>
                 </div>
                 <div class="editor-row">
                     <div class="editor-field">

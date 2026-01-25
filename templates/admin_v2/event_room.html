@@ -425,7 +425,8 @@
     'proforma_sent': {'label': 'Faktura proforma', 'icon': 'file-text'},
     'participant_ticket': {'label': 'Bilet uczestnika', 'icon': 'ticket'},
     'internal_order_received': {'label': 'Nowe zamówienie (wewn.)', 'icon': 'inbox'},
-    'internal_order_paid': {'label': 'Opłacone zamówienie (wewn.)', 'icon': 'circle-check'},
+    'internal_order_paid': {'label': 'Opłacone (wewn.)', 'icon': 'circle-check'},
+    'internal_order_paid_ok': {'label': 'Opłacone (wewn.)', 'icon': 'circle-check'},
     'internal_payment_expired': {'label': 'Płatność wygasła (wewn.)', 'icon': 'timer'},
     'internal_payment_failed': {'label': 'Płatność nieudana (wewn.)', 'icon': 'alert-octagon'},
     'internal_invoice_error': {'label': 'Błąd faktury (wewn.)', 'icon': 'file-warning'}
@@ -476,30 +477,48 @@
       </thead>
       <tbody>
         {% for email in emails %}
+        {% set email_type_key = email.type|lower|replace('_ok', '') if email.type else '' %}
         <tr>
           <td class="text-muted">{{ email.sent_at|format_date_pl if email.sent_at else '—' }}</td>
           <td>
-            {% set meta = email_type_meta.get(email.type) %}
+            {% set meta = email_type_meta.get(email_type_key) or email_type_meta.get(email.type) %}
             {% if meta %}
-            <span class="status-badge" style="display: inline-flex; align-items: center; gap: 0.35rem;">
-              <i data-lucide="{{ meta.icon }}" style="width: 14px; height: 14px;"></i>
+            <span style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem;">
+              <i data-lucide="{{ meta.icon }}" style="width: 14px; height: 14px; color: var(--primary);"></i>
               {{ meta.label }}
             </span>
             {% else %}
-            <span class="status-badge" style="text-transform: capitalize;">{{ email.type }}</span>
+            <span style="font-size: 0.8125rem; text-transform: capitalize;">{{ email.type|replace('_', ' ') }}</span>
             {% endif %}
           </td>
           <td>{{ email.recipient }}</td>
           <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ email.subject }}</td>
           <td>
             {% if email.status == 'delivered' %}
-            <span class="status-badge status-paid">Dostarczono</span>
+            <span class="status-badge status-paid" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+              <i data-lucide="check-circle" style="width: 12px; height: 12px;"></i>
+              Dostarczono
+            </span>
             {% elif email.status == 'sent' %}
-            <span class="status-badge status-pending">Wysłano</span>
-            {% elif email.status == 'error' or email.status == 'bounced' %}
-            <span class="status-badge status-cancelled">Błąd</span>
+            <span class="status-badge status-paid" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+              <i data-lucide="send" style="width: 12px; height: 12px;"></i>
+              Wysłano
+            </span>
+            {% elif email.status == 'queued' %}
+            <span class="status-badge status-pending" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+              <i data-lucide="clock" style="width: 12px; height: 12px;"></i>
+              W kolejce
+            </span>
+            {% elif email.status == 'error' or email.status == 'bounced' or email.status == 'failed' %}
+            <span class="status-badge status-cancelled" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+              <i data-lucide="alert-circle" style="width: 12px; height: 12px;"></i>
+              Błąd
+            </span>
             {% else %}
-            <span class="status-badge">{{ email.status }}</span>
+            <span class="status-badge" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+              <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
+              {{ email.status }}
+            </span>
             {% endif %}
           </td>
         </tr>
@@ -1123,14 +1142,16 @@
   
   .revenue-summary {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr 1fr;
     gap: 1rem;
     margin-top: 1rem;
+    width: 100%;
   }
   
-  .revenue-item {
+  .revenue-summary .revenue-item {
     padding: 1rem;
     border-radius: var(--radius);
+    min-width: 0;
   }
   
   .revenue-paid {

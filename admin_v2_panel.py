@@ -1219,6 +1219,115 @@ def order_refund(order_id: str):
         return jsonify({"success": False, "error": f"Błąd Stripe: {error_msg}"}), 500
 
 
+@admin_v2_bp.route("/orders/<order_id>/send-proforma", methods=["POST"])
+@_require_permission("orders")
+def order_send_proforma(order_id: str):
+    """Wysyła email z proformą do kupującego."""
+    from flask import jsonify
+    from pg_storage import get_order
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    try:
+        from email_templates import render_proforma_sent_email
+        
+        buyer_email = order.get("buyer_email")
+        if not buyer_email:
+            return jsonify({"success": False, "error": "Brak adresu email kupującego"}), 400
+        
+        proforma_number = order.get("proforma_number")
+        if not proforma_number:
+            return jsonify({"success": False, "error": "Zamówienie nie ma numeru proformy"}), 400
+        
+        # Pobierz dane wydarzenia
+        event = get_event(order.get("event_id"))
+        event_name = event.get("event_name", "Wydarzenie") if event else "Wydarzenie"
+        
+        # Renderuj email
+        html_content = render_proforma_sent_email(
+            buyer_name=f"{order.get('buyer_first_name', '')} {order.get('buyer_last_name', '')}".strip(),
+            event_name=event_name,
+            proforma_number=proforma_number,
+            total=order.get("total", 0),
+            payment_deadline=order.get("payment_deadline", "7 dni"),
+            checkout_url=order.get("checkout_url", ""),
+        )
+        
+        # Wyślij przez Make webhook
+        from send_email import send_email_via_make
+        result = send_email_via_make(
+            to_email=buyer_email,
+            subject=f"Faktura proforma {proforma_number} - {event_name}",
+            html_content=html_content,
+            order_id=order_id,
+            template_key="proforma_resent",
+        )
+        
+        if result.get("success"):
+            user = _get_current_admin_user()
+            insert_admin_audit_log(
+                action="proforma_sent",
+                admin_user_id=user.get("id") if user else None,
+                target_id=order_id,
+                extra={"proforma_number": proforma_number, "email": buyer_email},
+                ip=request.remote_addr,
+            )
+            return jsonify({"success": True, "message": f"Proforma wysłana do {buyer_email}"})
+        else:
+            return jsonify({"success": False, "error": result.get("error", "Błąd wysyłki")}), 500
+            
+    except Exception as e:
+        print(f"[order_send_proforma] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@admin_v2_bp.route("/orders/<order_id>/delete", methods=["POST"])
+@_require_permission("orders")
+def order_delete(order_id: str):
+    """Usuwa zamówienie i powiązane dane (NIEODWRACALNE!)."""
+    from flask import jsonify
+    from pg_storage import get_order, delete_order
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź czy użytkownik ma uprawnienia (nie viewer)
+    if user and user.get("role") == "viewer":
+        return jsonify({"success": False, "error": "Brak uprawnień do usuwania"}), 403
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Zamówienie nie istnieje lub zostało już usunięte"}), 404
+    
+    try:
+        # Zaloguj przed usunięciem
+        insert_admin_audit_log(
+            action="order_deleted",
+            admin_user_id=user.get("id") if user else None,
+            target_id=order_id,
+            extra={
+                "buyer_email": order.get("buyer_email"),
+                "event_id": order.get("event_id"),
+                "total": order.get("total"),
+                "status": order.get("status"),
+            },
+            ip=request.remote_addr,
+        )
+        
+        # Usuń zamówienie (i powiązane dane: uczestników, bilety, maile)
+        result = delete_order(order_id)
+        
+        if result and not result.get("error"):
+            return jsonify({"success": True, "message": "Zamówienie zostało usunięte", "deleted": result})
+        else:
+            return jsonify({"success": False, "error": result.get("error", "Błąd podczas usuwania")}), 500
+            
+    except Exception as e:
+        print(f"[order_delete] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # EMAIL DESIGNER
 # ---------------------------------------------------------------------------

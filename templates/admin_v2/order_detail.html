@@ -619,7 +619,7 @@
   function confirmStatusChange() {
     if (!pendingStatus) return;
     
-    fetch(`/api/orders/${orderId}/status`, {
+    fetch(`/admin-v2/orders/${orderId}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: pendingStatus })
@@ -638,11 +638,15 @@
   // Quick actions
   function sendProforma() {
     if (confirm('Czy na pewno chcesz wysłać proformę?')) {
-      fetch(`/api/orders/${orderId}/send-proforma`, { method: 'POST' })
+      fetch(`/admin-v2/orders/${orderId}/send-proforma`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-          showToast('Proforma została wysłana', 'success');
-          location.reload();
+          if (data.success) {
+            showToast('Proforma została wysłana', 'success');
+            location.reload();
+          } else {
+            showToast(data.error || 'Błąd wysyłki proformy', 'error');
+          }
         })
         .catch(err => showToast('Błąd wysyłki proformy', 'error'));
     }
@@ -650,11 +654,19 @@
 
   function markAsPaid() {
     if (confirm('Czy na pewno chcesz oznaczyć zamówienie jako opłacone?')) {
-      fetch(`/api/orders/${orderId}/mark-paid`, { method: 'POST' })
+      fetch(`/admin-v2/orders/${orderId}/status`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid' })
+      })
         .then(response => response.json())
         .then(data => {
-          showToast('Zamówienie zostało oznaczone jako opłacone', 'success');
-          location.reload();
+          if (data.success) {
+            showToast('Zamówienie zostało oznaczone jako opłacone', 'success');
+            location.reload();
+          } else {
+            showToast(data.error || 'Błąd zmiany statusu', 'error');
+          }
         })
         .catch(err => showToast('Błąd zmiany statusu', 'error'));
     }
@@ -667,11 +679,15 @@
 
   function sendReminder() {
     if (confirm('Wysłać przypomnienie o płatności?')) {
-      fetch(`/api/orders/${orderId}/send-reminder`, { method: 'POST' })
+      fetch(`/admin-v2/orders/${orderId}/send-reminder`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-          showToast('Przypomnienie zostało wysłane', 'success');
-          location.reload();
+          if (data.success) {
+            showToast('Przypomnienie zostało wysłane', 'success');
+            location.reload();
+          } else {
+            showToast(data.error || 'Błąd wysyłki', 'error');
+          }
         })
         .catch(err => showToast('Błąd wysyłki', 'error'));
     }
@@ -679,10 +695,14 @@
 
   function resendTickets() {
     if (confirm('Wysłać ponownie bilety uczestników?')) {
-      fetch(`/api/orders/${orderId}/resend-tickets`, { method: 'POST' })
+      fetch(`/admin-v2/orders/${orderId}/resend-ticket`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-          showToast('Bilety zostały wysłane', 'success');
+          if (data.success) {
+            showToast('Bilety zostały wysłane', 'success');
+          } else {
+            showToast(data.error || 'Błąd wysyłki', 'error');
+          }
         })
         .catch(err => showToast('Błąd wysyłki', 'error'));
     }
@@ -690,7 +710,7 @@
 
   function cancelOrder() {
     if (confirm('Czy na pewno chcesz anulować to zamówienie? Ta operacja może być nieodwracalna.')) {
-      fetch(`/api/orders/${orderId}/cancel`, { method: 'POST' })
+      fetch(`/admin-v2/orders/${orderId}/cancel`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
           if (data.success) {
@@ -731,7 +751,7 @@
   function deleteOrder() {
     if (confirm('UWAGA: Czy na pewno chcesz USUNĄĆ to zamówienie?\n\nTa operacja jest NIEODWRACALNA!\nZostaną usunięte wszystkie dane: zamówienie, uczestnicy, historia emaili.')) {
       if (confirm('Ostatnie ostrzeżenie: Potwierdź usunięcie zamówienia ' + orderId)) {
-        fetch(`/api/orders/${orderId}/delete`, { method: 'POST' })
+        fetch(`/admin-v2/orders/${orderId}/delete`, { method: 'POST' })
           .then(response => response.json())
           .then(data => {
             if (data.success) {
