@@ -1414,6 +1414,18 @@ def order_send_reminder(order_id: str):
         elif "items" in order_data:
             tickets = order_data.get("items", [])
         
+        # Oblicz payment_due_date jeśli istnieje
+        payment_due_str = None
+        if order.get("payment_due_date"):
+            try:
+                from datetime import datetime
+                due_date = order["payment_due_date"]
+                if isinstance(due_date, str):
+                    due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                payment_due_str = due_date.strftime("%d.%m.%Y")
+            except:
+                pass
+        
         try:
             html = render_proforma_reservation_email(
                 event_name=event_name,
@@ -1424,6 +1436,7 @@ def order_send_reminder(order_id: str):
                 event_config=event_config,
                 tickets=tickets,
                 proforma_number=proforma_number,
+                payment_due_date=payment_due_str,
             )
         except Exception as e:
             print(f"[order_send_reminder] Błąd renderowania emaila proforma: {e}")
@@ -5232,6 +5245,8 @@ def template_preview(template_key: str):
         
         elif template_key == "proforma_sent":
             from email_templates import render_proforma_reservation_email
+            from datetime import datetime, timedelta
+            payment_due_example = (datetime.now() + timedelta(days=7)).strftime("%d.%m.%Y")
             html_content = render_proforma_reservation_email(
                 event_name=sample_data["event_name"],
                 purchaser_first_name=sample_data["purchaser_first_name"],
@@ -5241,6 +5256,7 @@ def template_preview(template_key: str):
                 event_config=event_config,
                 tickets=sample_data["tickets"],
                 proforma_number="PRO/2026/03/0042",
+                payment_due_date=payment_due_example,
             )
         
         elif template_key == "internal_order_received":
@@ -5537,9 +5553,9 @@ def settings():
 
 def _build_payment_buckets(orders: list) -> dict:
     """Buduje strukturę buckets dla zakładki Płatności."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     
-    today = datetime.now().date()
+    now = datetime.now(timezone.utc)
     
     buckets = {
         "due_today": {"orders": [], "total": 0},
@@ -5552,7 +5568,6 @@ def _build_payment_buckets(orders: list) -> dict:
     for order in orders:
         status = order.get("status", "")
         total = float(order.get("total") or 0)
-        created_at = order.get("created_at")
         
         if status == "paid":
             buckets["paid"]["orders"].append(order)
@@ -5561,20 +5576,62 @@ def _build_payment_buckets(orders: list) -> dict:
             buckets["cancelled"]["orders"].append(order)
             buckets["cancelled"]["total"] += total
         elif status in ("pending_payment", "received"):
-            # Określ bucket na podstawie daty utworzenia
-            if created_at:
+            # Dla zamówień oczekujących na płatność:
+            # 1. Dla Stripe - sprawdź payment_link_expires_at
+            # 2. Dla proform - sprawdź payment_due_date
+            # 3. Fallback - użyj created_at
+            
+            payment_link_expires_at = order.get("payment_link_expires_at")
+            payment_link_is_valid = order.get("payment_link_is_valid")
+            payment_due_date = order.get("payment_due_date")
+            created_at = order.get("created_at")
+            
+            # Stripe - sprawdź ważność linku
+            if payment_link_expires_at is not None:
+                if payment_link_is_valid is False:
+                    # Link wygasł
+                    buckets["overdue"]["orders"].append(order)
+                    buckets["overdue"]["total"] += total
+                else:
+                    # Link jeszcze ważny
+                    buckets["due_today"]["orders"].append(order)
+                    buckets["due_today"]["total"] += total
+            # Proforma - sprawdź termin płatności (używamy payment_due_date_is_valid z query)
+            elif payment_due_date is not None:
+                payment_due_date_is_valid = order.get("payment_due_date_is_valid")
+                if payment_due_date_is_valid is False:
+                    # Termin minął
+                    buckets["overdue"]["orders"].append(order)
+                    buckets["overdue"]["total"] += total
+                elif payment_due_date_is_valid is True:
+                    # Termin aktualny
+                    buckets["due_today"]["orders"].append(order)
+                    buckets["due_today"]["total"] += total
+                else:
+                    # NULL - użyj created_at jako fallback
+                    if created_at:
+                        order_date = created_at.date() if hasattr(created_at, 'date') else created_at
+                        days_old = (now.date() - order_date).days if isinstance(order_date, type(now.date())) else 0
+                        if days_old >= 7:
+                            buckets["overdue"]["orders"].append(order)
+                            buckets["overdue"]["total"] += total
+                        else:
+                            buckets["due_today"]["orders"].append(order)
+                            buckets["due_today"]["total"] += total
+                    else:
+                        buckets["upcoming"]["orders"].append(order)
+                        buckets["upcoming"]["total"] += total
+            # Fallback - użyj created_at (dla starych zamówień bez payment_link)
+            elif created_at:
                 order_date = created_at.date() if hasattr(created_at, 'date') else created_at
-                days_old = (today - order_date).days if isinstance(order_date, type(today)) else 0
+                days_old = (now.date() - order_date).days if isinstance(order_date, type(now.date())) else 0
                 
                 if days_old >= 7:
                     buckets["overdue"]["orders"].append(order)
                     buckets["overdue"]["total"] += total
-                elif days_old >= 3:
+                else:
                     buckets["due_today"]["orders"].append(order)
                     buckets["due_today"]["total"] += total
-                else:
-                    buckets["upcoming"]["orders"].append(order)
-                    buckets["upcoming"]["total"] += total
             else:
                 buckets["upcoming"]["orders"].append(order)
                 buckets["upcoming"]["total"] += total

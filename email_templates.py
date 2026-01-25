@@ -1093,6 +1093,7 @@ TEMPLATE_PROFORMA_RESERVATION = '''<!doctype html>
                         <td style="padding: 0;">
                           <p><strong>Pro-forma</strong>{proforma_number_inline} zostanie wysłana na ten adres email z systemu wFirma.</p>
                           <p style="margin-top: 8px; font-size: 14px; color: #6B7280;">Po opłaceniu pro-formy Twoje miejsce zostanie zarezerwowane.</p>
+                          {payment_due_date_section}
                         </td>
                       </tr>
                       <tr><td style="height: 16px;"></td></tr>
@@ -1196,9 +1197,13 @@ def render_proforma_reservation_email(
     event_config: Optional[Dict[str, Any]] = None,
     tickets: Optional[List[Dict[str, Any]]] = None,
     proforma_number: Optional[str] = None,
+    payment_due_date: Optional[str] = None,
 ) -> str:
     """
     Email BACKSTAGE dla flow PROFORMA: potwierdzenie rejestracji + informacja o pro-formie z wFirma.
+    
+    Args:
+        payment_due_date: Termin płatności w formacie "DD.MM.YYYY" (opcjonalny, np. "31.01.2026")
     """
     event_config = event_config or get_default_event_config()
     tickets = tickets or []
@@ -1250,6 +1255,14 @@ def render_proforma_reservation_email(
             continue
 
     proforma_number_inline = f" ({proforma_number})" if proforma_number else ""
+    
+    # Sekcja z terminem płatności (jeśli podany)
+    payment_due_date_section = ""
+    if payment_due_date:
+        payment_due_date_section = f'''
+                          <p style="margin-top: 12px; padding: 12px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; font-size: 14px; color: #92400e;">
+                            <strong>⏱️ Termin płatności:</strong> {payment_due_date} (7 dni od rejestracji)
+                          </p>'''
 
     data = {
         "event_name": event_name,
@@ -1258,6 +1271,7 @@ def render_proforma_reservation_email(
         "purchaser_email": purchaser_email,
         "purchaser_phone": purchaser_phone or "",
         "proforma_number_inline": proforma_number_inline,
+        "payment_due_date_section": payment_due_date_section,
         "tickets_rows": generate_tickets_table_rows(normalized_tickets, event_config.get("color_gradient_1", "#2563eb"), show_summary=True),
         "event_datetime_section": _build_event_datetime_section(event_config),
         "event_location_section": _build_event_location_section(event_config),
@@ -1903,14 +1917,6 @@ TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
                           <a href="{checkout_url}" target="_blank" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); color: #ffffff; font-size: 16px; font-weight: 700; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
                             Dokończ płatność →
                           </a>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td align="center" style="padding-top: 16px;">
-                          <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                            Jeśli przycisk nie działa, skopiuj ten link:<br>
-                            <a href="{checkout_url}" style="color: {color_gradient_1}; word-break: break-all;">{checkout_url}</a>
-                          </p>
                         </td>
                       </tr>
                     </table>

@@ -179,7 +179,9 @@
                   <span class="bucket-table-event">{{ order.event_name }}</span>
                 </td>
                 <td>
-                  {% if order.payment_due_date %}
+                  {% if order.payment_link_expires_at %}
+                    <span class="bucket-table-date" style="color: hsl(0, 84%, 50%);">{{ order.payment_link_expires_at.strftime('%d.%m.%Y, %H:%M') }}</span>
+                  {% elif order.payment_due_date %}
                     <span class="bucket-table-date" style="color: hsl(0, 84%, 50%);">{{ order.payment_due_date.strftime('%d.%m.%Y') }}</span>
                   {% else %}
                     <span class="bucket-table-date text-muted">—</span>

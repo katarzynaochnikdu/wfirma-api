@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS orders (
   total NUMERIC(12,2),
   currency TEXT NOT NULL DEFAULT 'PLN',
   status TEXT NOT NULL DEFAULT 'received', -- received/pending_payment/paid/failed/cancelled
+  payment_due_date TIMESTAMPTZ, -- Termin płatności (dla proform: created_at + 7 dni)
   raw JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -419,8 +420,11 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         
         # 1d) Migracja stripe_sessions - dodanie expires_at (prawdziwy timestamp z Stripe)
         cur.execute("ALTER TABLE stripe_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ")
+        
+        # 1e) Migracja orders - dodanie payment_due_date (termin płatności dla proform)
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_due_date TIMESTAMPTZ")
 
-        # 1d) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
+        # 1f) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
         cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
         cur.execute("UPDATE admin_users SET allowed_pages = '[]'::jsonb WHERE allowed_pages IS NULL")
         cur.execute("UPDATE admin_users SET must_change_password = FALSE WHERE must_change_password IS NULL")
@@ -1009,14 +1013,19 @@ def list_orders(
             f"""
             SELECT o.event_order_id, o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
                    o.purchaser_phone, o.purchaser_nip, o.payment_option_name, o.payment_type, o.promo_code,
-                   o.total, o.currency, o.status, o.created_at, o.updated_at,
+                   o.total, o.currency, o.status, o.payment_due_date, o.created_at, o.updated_at,
                    s.url as payment_link_url,
                    s.expires_at as payment_link_expires_at,
                    CASE 
                      WHEN s.expires_at IS NULL THEN NULL
                      WHEN s.expires_at > NOW() THEN TRUE
                      ELSE FALSE
-                   END as payment_link_is_valid
+                   END as payment_link_is_valid,
+                   CASE
+                     WHEN o.payment_due_date IS NULL THEN NULL
+                     WHEN o.payment_due_date > NOW() THEN TRUE
+                     ELSE FALSE
+                   END as payment_due_date_is_valid
             FROM orders o
             LEFT JOIN stripe_sessions s ON s.event_order_id = o.event_order_id
             {where_sql}
@@ -1126,6 +1135,7 @@ def upsert_order(
     total: Optional[float] = None,
     currency: str = "PLN",
     status: str = "received",
+    payment_due_date: Optional[int] = None,  # Unix timestamp
     raw: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Tworzy lub aktualizuje zamówienie (idempotentne po event_order_id)."""
@@ -1135,13 +1145,20 @@ def upsert_order(
     try:
         pool, conn = _with_conn()
         cur = conn.cursor()
+        
+        # Konwertuj payment_due_date z unix timestamp na TIMESTAMPTZ
+        payment_due_date_ts = None
+        if payment_due_date:
+            from datetime import datetime, timezone
+            payment_due_date_ts = datetime.fromtimestamp(payment_due_date, tz=timezone.utc)
+        
         cur.execute(
             """
             INSERT INTO orders (
                 event_order_id, event_id, purchaser_email, purchaser_first_name, purchaser_last_name,
                 purchaser_phone, purchaser_nip, payment_option_name, payment_type, promo_code,
-                total, currency, status, raw
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                total, currency, status, payment_due_date, raw
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_order_id) DO UPDATE SET
                 purchaser_email = COALESCE(EXCLUDED.purchaser_email, orders.purchaser_email),
                 purchaser_first_name = COALESCE(EXCLUDED.purchaser_first_name, orders.purchaser_first_name),
@@ -1153,6 +1170,7 @@ def upsert_order(
                 promo_code = COALESCE(EXCLUDED.promo_code, orders.promo_code),
                 total = COALESCE(EXCLUDED.total, orders.total),
                 currency = COALESCE(EXCLUDED.currency, orders.currency),
+                payment_due_date = COALESCE(EXCLUDED.payment_due_date, orders.payment_due_date),
                 raw = EXCLUDED.raw,
                 updated_at = NOW()
             """,
@@ -1170,6 +1188,7 @@ def upsert_order(
                 total,
                 currency,
                 status,
+                payment_due_date_ts,
                 psycopg2.extras.Json(raw or {}),  # type: ignore[attr-defined]
             ),
         )
@@ -1179,18 +1198,28 @@ def upsert_order(
             _put_conn(pool, conn)
 
 
-def update_order_status(event_order_id: str, status: str) -> Optional[Dict[str, Any]]:
-    """Aktualizuje status zamówienia."""
+def update_order_status(event_order_id: str, status: str, payment_due_date: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Aktualizuje status zamówienia i opcjonalnie termin płatności."""
     ensure_schema()
     pool = None
     conn = None
     try:
         pool, conn = _with_conn()
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE orders SET status = %s, updated_at = NOW() WHERE event_order_id = %s",
-            (str(status), str(event_order_id)),
-        )
+        
+        # Konwertuj payment_due_date z unix timestamp na TIMESTAMPTZ
+        if payment_due_date is not None:
+            from datetime import datetime, timezone
+            payment_due_date_ts = datetime.fromtimestamp(payment_due_date, tz=timezone.utc)
+            cur.execute(
+                "UPDATE orders SET status = %s, payment_due_date = %s, updated_at = NOW() WHERE event_order_id = %s",
+                (str(status), payment_due_date_ts, str(event_order_id)),
+            )
+        else:
+            cur.execute(
+                "UPDATE orders SET status = %s, updated_at = NOW() WHERE event_order_id = %s",
+                (str(status), str(event_order_id)),
+            )
         return get_order(event_order_id)
     finally:
         if pool is not None and conn is not None:
@@ -1322,6 +1351,12 @@ def save_stripe_session(
                 expires_at_ts,
             ),
         )
+        # Zapisz termin ważności linku także w zamówieniu (dla monitoringu)
+        if expires_at_ts is not None:
+            cur.execute(
+                "UPDATE orders SET payment_due_date = %s, updated_at = NOW() WHERE event_order_id = %s",
+                (expires_at_ts, str(event_order_id)),
+            )
         row = cur.fetchone()
         return dict(row) if row else {"event_order_id": event_order_id}
     finally:

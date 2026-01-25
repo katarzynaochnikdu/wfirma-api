@@ -678,6 +678,18 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                 sent["purchaser"] = bool(res.get("success"))
         elif flow == FLOW_PROFORMA:
             if not mail_log_exists(event_order_id, TEMPLATE_PROFORMA_SENT, direction="purchaser"):
+                # Oblicz datę płatności (jeśli order ma payment_due_date)
+                payment_due_str = None
+                if order.get("payment_due_date"):
+                    try:
+                        from datetime import datetime
+                        due_date = order["payment_due_date"]
+                        if isinstance(due_date, str):
+                            due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                        payment_due_str = due_date.strftime("%d.%m.%Y")
+                    except:
+                        pass
+                
                 subject = f"Twoja rejestracja na {event_name} - płatność pro forma"
                 body_html = render_proforma_reservation_email(
                     event_name=event_name,
@@ -688,6 +700,7 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
                     event_config=event_data,
                     tickets=tickets_for_email,
                     proforma_number=None,
+                    payment_due_date=payment_due_str,
                 )
                 # 1. Najpierw zapisz do mail_log żeby mieć mail_id
                 mail_record = save_mail_log(
@@ -1982,6 +1995,24 @@ def _handle_proforma_flow(
         existing_docs = get_wfirma_documents(event_order_id)
         existing_proforma = next((d for d in existing_docs if d.get("document_type") == "proforma"), None)
         if existing_proforma:
+            # Jeśli brak terminu płatności w zamówieniu, ustaw 7 dni od utworzenia
+            try:
+                from datetime import datetime, timedelta, timezone
+                from pg_storage import get_order
+                current_order = get_order(event_order_id) or {}
+                if not current_order.get("payment_due_date"):
+                    created_at = current_order.get("created_at")
+                    if isinstance(created_at, str):
+                        created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    if not created_at:
+                        created_at = datetime.now(timezone.utc)
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    payment_due_ts = int((created_at + timedelta(days=7)).timestamp())
+                    update_order_status(event_order_id, "pending_payment", payment_due_date=payment_due_ts)
+            except Exception:
+                pass
+
             _log("WARN", "PROFORMA FLOW: Proforma już istnieje - pomijam tworzenie duplikatu", {
                 "event_order_id": event_order_id,
                 "existing_proforma_id": existing_proforma.get("wfirma_invoice_id"),
@@ -2003,8 +2034,10 @@ def _handle_proforma_flow(
     except Exception as check_err:
         _log("WARNING", "PROFORMA FLOW: Błąd sprawdzania istniejącej proformy - kontynuuję", {"error": str(check_err)})
 
-    # Aktualizuj status zamówienia
-    update_order_status(event_order_id, "pending_payment")
+    # Aktualizuj status zamówienia i ustaw termin płatności (7 dni)
+    import time
+    payment_due_timestamp = int(time.time() + 7 * 24 * 60 * 60)  # +7 dni
+    update_order_status(event_order_id, "pending_payment", payment_due_date=payment_due_timestamp)
 
     mail_tasks = []
     proforma_result = None
@@ -2140,8 +2173,10 @@ def _handle_stripe_flow(
         "sandbox": is_sandbox,
     })
 
-    # Aktualizuj status zamówienia
-    update_order_status(event_order_id, "pending_payment")
+    # Aktualizuj status zamówienia i ustaw termin płatności (24h dla Stripe)
+    import time
+    payment_due_timestamp = int(time.time() + 24 * 60 * 60)  # +24h (Stripe session TTL)
+    update_order_status(event_order_id, "pending_payment", payment_due_date=payment_due_timestamp)
 
     # URLs dla Stripe
     success_url = event_data.get("url_success") or event_data.get("url_event") or "https://medidesk.com"
