@@ -3444,10 +3444,21 @@ def _parse_event_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
                 mapped_fields.append("event_logo_link")
     
     # --- Linki Backstage ---
+    # Pobierz brand_id z payloadu (różne możliwe nazwy pola)
+    brand_id = str(payload.get("brand") or payload.get("brandId") or payload.get("brand_id") or "").strip()
+    data["_backstage_brand_id"] = brand_id
+    
     if event_id and portal_id:
-        data["event_config_link"] = f"https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/overview"
-        data["event_orders_link"] = f"https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/orders"
-        data["event_attendees_link"] = f"https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/attendees"
+        # Nowy format URL Backstage (z home# i brand)
+        if brand_id:
+            data["event_config_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/details"
+            data["event_orders_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/orders"
+            data["event_attendees_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/attendees"
+        else:
+            # Fallback bez brand_id (stary format)
+            data["event_config_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/event/{event_id}/details"
+            data["event_orders_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/event/{event_id}/orders"
+            data["event_attendees_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/event/{event_id}/attendees"
         mapped_fields.extend(["event_config_link", "event_orders_link", "event_attendees_link"])
     
     # --- Surowe dane (do debugowania) ---

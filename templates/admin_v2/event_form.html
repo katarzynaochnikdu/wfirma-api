@@ -320,12 +320,24 @@ input[type="color"].form-input {
         <i data-lucide="refresh-cw"></i>
         Pobierz z Backstage
       </button>
-      <a href="{{ event.backstage_url or 'https://backstage.zoho.eu/portal/20101549222/events/' ~ (event.data.backstage_event_id or event.event_id) ~ '/overview' }}" 
+      {% set portal_id = event.data._backstage_portal_id or '20101549222' %}
+      {% set brand_id = event.data._backstage_brand_id or '' %}
+      {% set backstage_event_id = event.data.backstage_event_id or event.event_id %}
+      {% if brand_id %}
+      <a href="https://backstage.zoho.eu/home#/portal/{{ portal_id }}/brand/{{ brand_id }}/event/{{ backstage_event_id }}/details" 
          target="_blank" rel="noopener noreferrer"
          class="btn btn-outline btn-sm">
         <i data-lucide="external-link"></i>
         Edytuj w Backstage
       </a>
+      {% else %}
+      <a href="{{ event.data.event_config_link or 'https://backstage.zoho.eu/home#/portal/' ~ portal_id ~ '/event/' ~ backstage_event_id ~ '/details' }}" 
+         target="_blank" rel="noopener noreferrer"
+         class="btn btn-outline btn-sm">
+        <i data-lucide="external-link"></i>
+        Edytuj w Backstage
+      </a>
+      {% endif %}
       {% endif %}
       <a href="{% if event %}{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}{% else %}{{ url_for('admin_v2_bp.events_list') }}{% endif %}" class="btn btn-outline btn-sm">
         Anuluj
