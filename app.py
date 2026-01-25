@@ -2043,17 +2043,25 @@ def wfirma_create_correction(
             "type": "correction",
             "parent": {"id": int(source_invoice_id)},  # Powiązanie z fakturą oryginalną
             "description": correction_description,
-            "invoicecontents": invoice_contents_dict
+            "invoicecontents": invoice_contents_dict,
+            "send": True,  # ✅ FIX: Dodaj parametr wysyłki emaila
         }
+        
+        # Dodaj email kontrahenta jeśli dostępny
+        if contractor_email:
+            correction_payload["email"] = contractor_email
+            print(f"[WFIRMA DEBUG] Correction will be sent to: {contractor_email}")
+        else:
+            print(f"[WFIRMA DEBUG] Warning: No contractor email, correction may not be sent")
         
         # #region agent log
         try:
             with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:payload_before_send","message":"Correction payload BEFORE adding send parameter","data":{"has_send_param":"send" in correction_payload,"has_email_param":"email" in correction_payload,"contractor_email":contractor_email,"payload_keys":list(correction_payload.keys())},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
+                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:payload_after_fix","message":"Correction payload AFTER adding send parameter","data":{"has_send_param":"send" in correction_payload,"has_email_param":"email" in correction_payload,"send_value":correction_payload.get("send"),"contractor_email":contractor_email,"payload_keys":list(correction_payload.keys())},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","runId":"post-fix","hypothesisId":"H1,H2,H3,H4"}) + '\n')
         except: pass
         # #endregion
         
-        print(f"[WFIRMA DEBUG] Correction payload: contractor_id={contractor_id}, parent_id={source_invoice_id}, positions={len(positions)}")
+        print(f"[WFIRMA DEBUG] Correction payload: contractor_id={contractor_id}, parent_id={source_invoice_id}, positions={len(positions)}, send=True, email={contractor_email or 'BRAK'}")
         
         # 5) Utwórz fakturę korygującą
         invoice_result, resp = wfirma_create_invoice(token, correction_payload, company_id)

@@ -1754,14 +1754,14 @@ def order_cancel(order_id: str):
             subject = f"Anulowanie zamówienia - {event_name}"
             
             # NAJPIERW zapisz do mail_log żeby mieć mail_id
-            mail_id = save_mail_log(
+            mail_log_result = save_mail_log(
                 event_order_id=order_id,
                 direction="purchaser",
                 template_key="order_cancelled",
                 to_email=purchaser_email,
                 subject=subject,
-                status="queued",
             )
+            mail_id = mail_log_result.get("id") if mail_log_result else None
             
             # POTEM wyślij z mail_id dla callbacka
             mail_result = _send_email_via_make(
@@ -1804,14 +1804,14 @@ def order_cancel(order_id: str):
                     subject = f"Anulowanie rejestracji - {event_name}"
                     
                     # NAJPIERW zapisz do mail_log żeby mieć mail_id
-                    mail_id = save_mail_log(
+                    mail_log_result = save_mail_log(
                         event_order_id=order_id,
                         direction="participant",
                         template_key="participant_cancelled",
                         to_email=p_email,
                         subject=subject,
-                        status="queued",
                     )
+                    mail_id = mail_log_result.get("id") if mail_log_result else None
                     
                     # POTEM wyślij z mail_id dla callbacka
                     mail_result = _send_email_via_make(
@@ -2105,6 +2105,7 @@ def order_delete(order_id: str):
     
     try:
         # Zaloguj przed usunięciem
+        order_total = order.get("total")
         insert_admin_audit_log(
             action="order_deleted",
             admin_user_id=user.get("id") if user else None,
@@ -2112,7 +2113,7 @@ def order_delete(order_id: str):
             extra={
                 "buyer_email": order.get("buyer_email"),
                 "event_id": order.get("event_id"),
-                "total": order.get("total"),
+                "total": float(order_total) if order_total is not None else None,
                 "status": order.get("status"),
             },
             ip=request.remote_addr,
