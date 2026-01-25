@@ -1010,6 +1010,46 @@ def order_detail(order_id: str):
     )
 
 
+@admin_v2_bp.route("/orders/<order_id>/payment-due-date", methods=["POST"])
+@_require_permission("orders")
+def order_update_payment_due_date(order_id: str):
+    """Aktualizuje termin płatności (proforma) dla zamówienia."""
+    from flask import jsonify
+    from datetime import datetime, timezone
+    from pg_storage import update_order_payment_due_date
+    
+    user = _get_current_admin_user()
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Brak uprawnień"}), 403
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    date_str = payload.get("payment_due_date") or request.form.get("payment_due_date") or ""
+    date_str = (date_str or "").strip()
+    
+    if not date_str:
+        update_order_payment_due_date(order_id, None)
+        return jsonify({"success": True, "payment_due_date": None})
+    
+    try:
+        due_date = datetime.strptime(date_str, "%Y-%m-%d")
+        due_date = due_date.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+        payment_due_ts = int(due_date.timestamp())
+    except Exception:
+        return jsonify({"success": False, "error": "Nieprawidłowy format daty"}), 400
+    
+    updated = update_order_payment_due_date(order_id, payment_due_ts)
+    updated_due = updated.get("payment_due_date") if updated else None
+    formatted = updated_due.strftime("%d.%m.%Y") if updated_due else None
+    return jsonify({"success": True, "payment_due_date": formatted})
+
+
 @admin_v2_bp.route("/orders/<order_id>/status", methods=["POST"])
 @_require_permission("orders")
 def order_update_status(order_id: str):

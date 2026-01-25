@@ -60,6 +60,8 @@
   } %}
   {% set payment_method = order.payment_option_name or order.payment_type or '' %}
   {% set payment_method_display = 'Stripe' if 'online' in (payment_method|string|lower) or 'stripe' in (payment_method|string|lower) else ('Proforma' if 'proforma' in (payment_method|string|lower) or 'pro' in (payment_method|string|lower) else ('FOC' if 'foc' in (payment_method|string|lower) or (order.total or 0) == 0 else (payment_method or 'Nieokreślona'))) %}
+  {% set is_proforma_payment = 'proforma' in (payment_method|string|lower) or 'pro' in (payment_method|string|lower) %}
+  {% set is_stripe_payment = 'online' in (payment_method|string|lower) or 'stripe' in (payment_method|string|lower) %}
   <div class="operational-status-badge operational-status-{{ payment_status.type }}">
     <div class="operational-icon-wrapper">
       <i data-lucide="credit-card"></i>
@@ -284,6 +286,36 @@
               {{ order.payment_option_name or order.payment_type or '—' }}
               {% endif %}
             </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Termin ważności płatności</span>
+            {% if is_proforma_payment %}
+              {% if user_role == 'admin' %}
+              <div class="value-with-details" style="gap: 0.5rem; align-items: center;">
+                <input
+                  type="date"
+                  id="proforma-due-date"
+                  class="form-input"
+                  style="max-width: 170px;"
+                  value="{{ order.payment_due_date.strftime('%Y-%m-%d') if order.payment_due_date else '' }}"
+                >
+                <button class="btn btn-outline btn-sm" type="button" onclick="saveProformaDueDate()">
+                  Zapisz
+                </button>
+                {% if order.payment_due_date %}
+                <button class="btn btn-outline btn-sm" type="button" onclick="clearProformaDueDate()">
+                  Wyczyść
+                </button>
+                {% endif %}
+              </div>
+              {% else %}
+              <span class="info-value">{{ order.payment_due_date.strftime('%d.%m.%Y') if order.payment_due_date else '—' }}</span>
+              {% endif %}
+            {% elif is_stripe_payment %}
+              <span class="info-value">{{ order.payment_due_date.strftime('%d.%m.%Y, %H:%M') if order.payment_due_date else '—' }}</span>
+            {% else %}
+              <span class="info-value">—</span>
+            {% endif %}
           </div>
           <div class="info-item">
             <span class="info-label">Data zamówienia</span>
@@ -614,6 +646,34 @@
   const isStripePayment = {{ 'true' if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower else 'false' }};
   const isProformaPayment = {{ 'true' if 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_type or '')|string|lower else 'false' }};
   let pendingActionCallback = null;
+
+  function saveProformaDueDate() {
+    const input = document.getElementById('proforma-due-date');
+    if (!input) return;
+    const value = input.value || '';
+    
+    fetch(`/admin-v2/orders/${orderId}/payment-due-date`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_due_date: value }),
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        showToast('Termin płatności zapisany', 'success');
+        location.reload();
+      } else {
+        showToast(data.error || 'Błąd zapisu terminu', 'error');
+      }
+    })
+    .catch(() => showToast('Błąd zapisu terminu', 'error'));
+  }
+
+  function clearProformaDueDate() {
+    const input = document.getElementById('proforma-due-date');
+    if (input) input.value = '';
+    saveProformaDueDate();
+  }
 
   // ===== UNIVERSAL ACTION MODAL =====
   function showActionModal(options) {

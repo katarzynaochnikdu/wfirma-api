@@ -966,7 +966,7 @@ def get_order(event_order_id: str) -> Optional[Dict[str, Any]]:
             """
             SELECT event_order_id, event_id, purchaser_email, purchaser_first_name, purchaser_last_name,
                    purchaser_phone, purchaser_nip, payment_option_name, payment_type, promo_code,
-                   total, currency, status, raw, created_at, updated_at
+                   total, currency, status, payment_due_date, raw, created_at, updated_at
             FROM orders
             WHERE event_order_id = %s
             """,
@@ -1220,6 +1220,28 @@ def update_order_status(event_order_id: str, status: str, payment_due_date: Opti
                 "UPDATE orders SET status = %s, updated_at = NOW() WHERE event_order_id = %s",
                 (str(status), str(event_order_id)),
             )
+        return get_order(event_order_id)
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def update_order_payment_due_date(event_order_id: str, payment_due_date: Optional[int]) -> Optional[Dict[str, Any]]:
+    """Aktualizuje termin płatności zamówienia (może wyczyścić)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        payment_due_date_ts = None
+        if payment_due_date is not None:
+            from datetime import datetime, timezone
+            payment_due_date_ts = datetime.fromtimestamp(payment_due_date, tz=timezone.utc)
+        cur.execute(
+            "UPDATE orders SET payment_due_date = %s, updated_at = NOW() WHERE event_order_id = %s",
+            (payment_due_date_ts, str(event_order_id)),
+        )
         return get_order(event_order_id)
     finally:
         if pool is not None and conn is not None:
