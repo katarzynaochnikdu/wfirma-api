@@ -1939,6 +1939,72 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
         return None, resp
 
 
+def wfirma_create_correction(
+    token: str,
+    source_invoice_id: str,
+    correction_description: str = "Anulowanie zamówienia",
+    company_id: str = None
+) -> tuple[dict | None, requests.Response | None]:
+    """
+    Utwórz fakturę korygującą (pełna korekta - zerowanie wszystkich pozycji).
+    
+    Args:
+        token: Token OAuth wFirma
+        source_invoice_id: ID faktury źródłowej do skorygowania
+        correction_description: Powód korekty
+        company_id: ID firmy
+    
+    Returns:
+        (correction_dict|None, response)
+    """
+    api_url = "https://api2.wfirma.pl/invoicecorrections/add?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    headers = get_wfirma_headers(token)
+    
+    # Dla pełnej korekty w wFirma wystarczy podać ID faktury źródłowej
+    # i ustawić correction=1. wFirma automatycznie wyzeruje pozycje.
+    correction_payload = {
+        "invoice": {
+            "id": str(source_invoice_id)
+        },
+        "parameters": {
+            "correction_description": correction_description
+        }
+    }
+    
+    resp = None
+    try:
+        request_body = {"invoicecorrections": correction_payload}
+        print(f"[WFIRMA DEBUG] Creating correction for invoice {source_invoice_id}")
+        print(f"[WFIRMA DEBUG] Correction request body: {json.dumps(request_body, indent=2)}")
+        
+        resp = requests.post(api_url, headers=headers, json=request_body)
+        print(f"[WFIRMA DEBUG] Correction response status: {resp.status_code}")
+        print(f"[WFIRMA DEBUG] Correction response: {resp.text[:1000] if resp.text else 'empty'}")
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            status = result.get('status', {}).get('code')
+            if status == 'OK':
+                # Odpowiedź: invoicecorrections.0.invoicecorrection
+                corrections = result.get('invoicecorrections', {})
+                if isinstance(corrections, dict):
+                    for key in corrections:
+                        if key.isdigit():
+                            correction = corrections[key].get('invoicecorrection', {})
+                            if correction:
+                                print(f"[WFIRMA DEBUG] Correction created: id={correction.get('id')}, number={correction.get('fullnumber')}")
+                                return correction, resp
+                return None, resp
+            else:
+                print(f"[WFIRMA DEBUG] Correction error: {result.get('status', {}).get('message')}")
+        return None, resp
+    except Exception as e:
+        print(f"[WFIRMA DEBUG] Correction exception: {e}")
+        return None, resp
+
+
 def wfirma_list_series(token: str, company_id: str = None) -> list:
     """
     Pobierz listę wszystkich serii faktur.

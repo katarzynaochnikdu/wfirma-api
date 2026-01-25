@@ -1443,23 +1443,103 @@ def order_resend_ticket(order_id: str):
 @admin_v2_bp.route("/orders/<order_id>/cancel", methods=["POST"])
 @_require_permission("orders")
 def order_cancel(order_id: str):
-    """Anuluje zamówienie."""
+    """Anuluje zamówienie i generuje fakturę korygującą jeśli była faktura VAT."""
     from flask import jsonify
-    from pg_storage import update_order_status
+    from pg_storage import update_order_status, get_wfirma_documents, save_wfirma_document
     
     user = _get_current_admin_user()
+    order = get_order(order_id)
+    
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    if order.get("status") in ["cancelled", "refunded"]:
+        return jsonify({"success": False, "error": "Zamówienie jest już anulowane lub zwrócone"}), 400
+    
+    correction_created = False
+    correction_number = None
+    correction_error = None
+    
+    # Sprawdź czy zamówienie ma fakturę VAT (document_type = 'normal')
+    try:
+        documents = get_wfirma_documents(order_id)
+        vat_invoice = None
+        for doc in documents:
+            if doc.get("document_type") == "normal" and doc.get("wfirma_invoice_id"):
+                vat_invoice = doc
+                break
+        
+        if vat_invoice:
+            # Jest faktura VAT - generuj korektę
+            print(f"[CANCEL] Zamówienie {order_id} ma fakturę VAT: {vat_invoice.get('wfirma_number')}, generuję korektę...")
+            
+            try:
+                from app import wfirma_create_correction, wfirma_get_company_id, get_wfirma_token
+                
+                token = get_wfirma_token()
+                if token:
+                    company_id = wfirma_get_company_id(token)
+                    correction, resp = wfirma_create_correction(
+                        token=token,
+                        source_invoice_id=vat_invoice.get("wfirma_invoice_id"),
+                        correction_description="Anulowanie zamówienia",
+                        company_id=company_id,
+                    )
+                    
+                    if correction:
+                        correction_created = True
+                        correction_number = correction.get("fullnumber")
+                        
+                        # Zapisz korektę do bazy
+                        save_wfirma_document(
+                            event_order_id=order_id,
+                            wfirma_invoice_id=correction.get("id"),
+                            wfirma_number=correction_number,
+                            document_type="correction",
+                            raw=correction,
+                        )
+                        print(f"[CANCEL] Korekta utworzona: {correction_number}")
+                    else:
+                        correction_error = "Nie udało się utworzyć korekty w wFirma"
+                        print(f"[CANCEL] Błąd tworzenia korekty: {resp.text[:500] if resp else 'brak odpowiedzi'}")
+                else:
+                    correction_error = "Brak tokenu wFirma"
+            except Exception as e:
+                correction_error = f"Błąd generowania korekty: {str(e)}"
+                print(f"[CANCEL] Wyjątek: {e}")
+    except Exception as e:
+        print(f"[CANCEL] Błąd sprawdzania dokumentów: {e}")
+    
+    # Zmień status zamówienia na cancelled
     result = update_order_status(order_id, "cancelled")
     
     if result:
         insert_admin_audit_log(
             action="order_cancelled",
-            admin_user_id=user.get("id"),
+            admin_user_id=user.get("id") if user else None,
             target_id=order_id,
+            extra={
+                "correction_created": correction_created,
+                "correction_number": correction_number,
+                "correction_error": correction_error,
+            },
             ip=request.remote_addr,
         )
-        return jsonify({"success": True})
+        
+        message = "Zamówienie zostało anulowane"
+        if correction_created:
+            message += f", wygenerowano fakturę korygującą: {correction_number}"
+        elif correction_error:
+            message += f". Uwaga: {correction_error}"
+        
+        return jsonify({
+            "success": True,
+            "message": message,
+            "correction_created": correction_created,
+            "correction_number": correction_number,
+        })
     
-    return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    return jsonify({"success": False, "error": "Nie udało się anulować zamówienia"}), 500
 
 
 @admin_v2_bp.route("/orders/<order_id>/refund", methods=["POST"])

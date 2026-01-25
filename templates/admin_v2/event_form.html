@@ -797,8 +797,77 @@ input[type="color"].form-input {
   </div>
   {% endif %}
 
-  <!-- Status wydarzenia (ukryty input) -->
-  <input type="hidden" name="is_active" value="{% if not event or event.is_active %}1{% else %}0{% endif %}">
+  {% if event %}
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <!-- STATUS WYDARZENIA -->
+  <!-- ═══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+    <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="toggle-right" style="width: 20px; height: 20px;"></i>
+      Status wydarzenia
+    </h3>
+    
+    <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: var(--muted); border-radius: var(--radius);">
+      <label class="toggle-switch" style="position: relative; display: inline-block; width: 48px; height: 26px;">
+        <input type="checkbox" name="is_active" id="is_active_toggle" value="1" {% if event.is_active %}checked{% endif %}
+               onchange="updateStatusLabel(this.checked)"
+               style="opacity: 0; width: 0; height: 0;">
+        <span class="toggle-slider" style="
+          position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+          background-color: hsl(215, 16%, 75%);
+          transition: .3s;
+          border-radius: 26px;
+        "></span>
+      </label>
+      
+      <div>
+        <div id="status-label" style="font-weight: 600; font-size: 0.9375rem;">
+          {% if event.is_active %}
+          <span style="color: hsl(160, 82%, 35%);">Aktywne</span>
+          {% else %}
+          <span style="color: hsl(45, 93%, 40%);">W konfiguracji</span>
+          {% endif %}
+        </div>
+        <div style="font-size: 0.8125rem; color: var(--muted-foreground);">
+          {% if event.is_active %}
+          Wydarzenie jest widoczne i przyjmuje rejestracje
+          {% else %}
+          Wydarzenie jest w trybie konfiguracji - możesz je aktywować po zakończeniu ustawień
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    
+    <p style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--muted-foreground);">
+      <i data-lucide="info" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i>
+      Zmień status na "Aktywne" gdy zakończysz konfigurację wydarzenia. Status zapisze się po kliknięciu "Zapisz zmiany".
+    </p>
+  </div>
+  
+  <style>
+    .toggle-switch input:checked + .toggle-slider {
+      background-color: hsl(160, 82%, 45%);
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(22px);
+    }
+  </style>
+  {% else %}
+  <!-- Nowe wydarzenie - domyślnie aktywne -->
+  <input type="hidden" name="is_active" value="1">
+  {% endif %}
 
 </form>
 
@@ -1174,6 +1243,20 @@ function openUrlFromInput(btn) {
     window.open(url, '_blank');
   } catch (e) {
     showToast('Nieprawidłowy format URL', 'error');
+  }
+}
+
+// ===== STATUS TOGGLE =====
+function updateStatusLabel(isActive) {
+  const label = document.getElementById('status-label');
+  if (!label) return;
+  
+  if (isActive) {
+    label.innerHTML = '<span style="color: hsl(160, 82%, 35%);">Aktywne</span>';
+    label.nextElementSibling.textContent = 'Wydarzenie jest widoczne i przyjmuje rejestracje';
+  } else {
+    label.innerHTML = '<span style="color: hsl(45, 93%, 40%);">W konfiguracji</span>';
+    label.nextElementSibling.textContent = 'Wydarzenie jest w trybie konfiguracji - możesz je aktywować po zakończeniu ustawień';
   }
 }
 
