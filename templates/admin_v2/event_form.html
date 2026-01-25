@@ -153,6 +153,48 @@ input[type="color"].form-input {
   cursor: pointer;
 }
 
+/* URL input with open button */
+.url-input-group {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.url-input-group .url-input {
+  flex: 1;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.url-open-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.url-open-btn:hover {
+  background: hsl(212, 100%, 38%);
+}
+
+.url-open-btn:disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.url-open-btn i {
+  width: 16px;
+  height: 16px;
+}
+
 /* Section headers */
 .form-section-header {
   display: flex;
@@ -493,99 +535,149 @@ input[type="color"].form-input {
       <!-- Link mapa hotel (grafika) -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Link mapa hotel (grafika)</label>
-        <input type="url" name="map_hotel_link" class="form-input"
-               value="{{ event_data.map_hotel_link if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="map_hotel_link" class="form-input url-input"
+                 value="{{ event_data.map_hotel_link if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Logo (link) -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Logo (link)</label>
-        <input type="url" name="logo_url" class="form-input"
-               value="{{ event_data.logo_url if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="logo_url" class="form-input url-input"
+                 value="{{ event_data.logo_url if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Logo (białe) link -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Logo (białe) link</label>
-        <input type="url" name="logo_white_url" class="form-input"
-               value="{{ event_data.logo_white_url if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="logo_white_url" class="form-input url-input"
+                 value="{{ event_data.logo_white_url if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Logo (kolor) link -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Logo (kolor) link</label>
-        <input type="url" name="logo_color_url" class="form-input"
-               value="{{ event_data.logo_color_url if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="logo_color_url" class="form-input url-input"
+                 value="{{ event_data.logo_color_url if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Zdjęcie 1 (link) -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Zdjęcie 1 (link)</label>
-        <input type="url" name="photo_1_url" class="form-input"
-               value="{{ event_data.photo_1_url if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="photo_1_url" class="form-input url-input"
+                 value="{{ event_data.photo_1_url if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Baner mail (góra) link -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Baner mail (góra) link</label>
-        <input type="url" name="event_mail_link_top_banner" class="form-input"
-               value="{{ event_data.event_mail_link_top_banner if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="event_mail_link_top_banner" class="form-input url-input"
+                 value="{{ event_data.event_mail_link_top_banner if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Baner mail (dół) link -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Baner mail (dół) link</label>
-        <input type="url" name="event_mail_link_bottom_banner" class="form-input"
-               value="{{ event_data.event_mail_link_bottom_banner if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="event_mail_link_bottom_banner" class="form-input url-input"
+                 value="{{ event_data.event_mail_link_bottom_banner if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- URL wydarzenia (public) -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">URL wydarzenia (public)</label>
-        <input type="url" name="url_event" class="form-input"
-               value="{{ event_data.url_event if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="url_event" class="form-input url-input"
+                 value="{{ event_data.url_event if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- URL success -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">URL success</label>
-        <input type="url" name="url_success" class="form-input"
-               value="{{ event_data.url_success if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="url_success" class="form-input url-input"
+                 value="{{ event_data.url_success if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- URL cancel -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">URL cancel</label>
-        <input type="url" name="url_cancel" class="form-input"
-               value="{{ event_data.url_cancel if event_data else '' }}" placeholder="https://...">
+        <div class="url-input-group">
+          <input type="url" name="url_cancel" class="form-input url-input"
+                 value="{{ event_data.url_cancel if event_data else '' }}" placeholder="https://...">
+          <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+            <i data-lucide="external-link"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Email kontaktowy -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Email kontaktowy</label>
         <input type="email" name="md_email_kontakt" class="form-input"
-               value="{{ event_data.md_email_kontakt if event_data else '' }}" placeholder="np. eventy@medidesk.com">
+               value="{{ event_data.md_email_kontakt or 'eventy@medidesk.com' if event_data else 'eventy@medidesk.com' }}">
       </div>
       
       <!-- Telefon kontaktowy -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Telefon kontaktowy</label>
         <input type="tel" name="md_phone_kontakt" class="form-input"
-               value="{{ event_data.md_phone_kontakt if event_data else '' }}" placeholder="np. +48 123 456 789">
+               value="{{ event_data.md_phone_kontakt or '+48729927389' if event_data else '+48729927389' }}">
       </div>
       
       <!-- Email techniczny -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Email techniczny</label>
         <input type="email" name="md_email_technical" class="form-input"
-               value="{{ event_data.md_email_technical if event_data else '' }}" placeholder="np. adminzoho@medidesk.com">
+               value="{{ event_data.md_email_technical or 'adminzoho@medidesk.com' if event_data else 'adminzoho@medidesk.com' }}">
       </div>
       
       <!-- Telefon techniczny -->
       <div class="form-group">
         <label class="form-label" style="font-size: 0.8125rem;">Telefon techniczny</label>
         <input type="tel" name="md_phone_technical" class="form-input"
-               value="{{ event_data.md_phone_technical if event_data else '' }}" placeholder="np. +48 123 456 789">
+               value="{{ event_data.md_phone_technical or '+48888469553' if event_data else '+48888469553' }}">
       </div>
       
     </div>
@@ -707,6 +799,25 @@ input[type="color"].form-input {
 
 {% block extra_scripts %}
 <script>
+// ===== URL OPEN BUTTON =====
+function openUrlFromInput(btn) {
+  const input = btn.parentElement.querySelector('.url-input');
+  const url = input ? input.value.trim() : '';
+  
+  if (!url) {
+    showToast('Brak linku do otwarcia', 'warning');
+    return;
+  }
+  
+  // Validate URL
+  try {
+    new URL(url);
+    window.open(url, '_blank');
+  } catch (e) {
+    showToast('Nieprawidłowy format URL', 'error');
+  }
+}
+
 // ===== QUILL EDITOR INITIALIZATION =====
 var descriptionEditor = null;
 

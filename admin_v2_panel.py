@@ -3406,6 +3406,8 @@ def _get_emails_for_order(order_id: str):
 
 def _build_order_history(order_id: str, order: dict):
     """Buduje listę zdarzeń dla historii zamówienia."""
+    from datetime import datetime
+    
     history = []
     
     # Mapowanie typów emaili na czytelne nazwy
@@ -3460,6 +3462,7 @@ def _build_order_history(order_id: str, order: dict):
             "title": title,
             "description": f"Do: {email.get('to_email', '—')}",
             "timestamp": created_at.strftime("%d.%m.%Y, %H:%M") if created_at else "—",
+            "_sort_date": created_at or datetime.min,
             "status": email.get("status"),
             "status_label": {"sent": "Wysłano", "delivered": "Dostarczono", "error": "Błąd", "queued": "W kolejce"}.get(email.get("status"), ""),
         })
@@ -3472,6 +3475,7 @@ def _build_order_history(order_id: str, order: dict):
             "title": "Płatność potwierdzona",
             "description": f"Kwota: {order.get('total', 0)} zł",
             "timestamp": paid_at.strftime("%d.%m.%Y, %H:%M") if paid_at else "—",
+            "_sort_date": paid_at or datetime.min,
             "status": "paid",
             "status_label": "Opłacone",
         })
@@ -3483,12 +3487,18 @@ def _build_order_history(order_id: str, order: dict):
         "title": "Zamówienie utworzone",
         "description": "Zamówienie zostało zarejestrowane w systemie",
         "timestamp": created_at.strftime("%d.%m.%Y, %H:%M") if created_at else "—",
+        "_sort_date": created_at or datetime.min,
         "status": None,
         "status_label": "Otrzymane",
     })
     
-    # Sortuj od najnowszych (ale created na końcu)
-    # Historia już jest posortowana - emaile DESC, potem payment, potem created
+    # Sortuj chronologicznie od najnowszych do najstarszych
+    history.sort(key=lambda x: x.get("_sort_date", datetime.min), reverse=True)
+    
+    # Usuń pomocnicze pole sortowania
+    for item in history:
+        item.pop("_sort_date", None)
+    
     return history
 
 

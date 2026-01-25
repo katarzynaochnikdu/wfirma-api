@@ -74,26 +74,92 @@
     </div>
   </div>
   
-  <!-- Status Selector -->
-  <div class="operational-status-badge operational-status-selector">
+  <!-- Status Stepper -->
+  <div class="operational-status-badge operational-status-stepper">
     <div class="operational-icon-wrapper">
       <i data-lucide="git-branch"></i>
     </div>
     <div class="operational-status-content">
       <span class="operational-status-label">Status zamówienia</span>
-      <div class="status-mini-pills">
-        <button type="button" class="mini-pill {% if order.status == 'received' %}active{% endif %}" onclick="handleStatusChange('received')" title="Otrzymane" {% if order.status == 'received' %}disabled{% endif %}>
-          <i data-lucide="inbox"></i>
-        </button>
-        <button type="button" class="mini-pill mini-pill-warning {% if order.status == 'pending_payment' %}active{% endif %}" onclick="handleStatusChange('pending_payment')" title="Oczekuje" {% if order.status == 'pending_payment' %}disabled{% endif %}>
-          <i data-lucide="clock"></i>
-        </button>
-        <button type="button" class="mini-pill mini-pill-success {% if order.status == 'paid' %}active{% endif %}" onclick="handleStatusChange('paid')" title="Opłacone" {% if order.status == 'paid' %}disabled{% endif %}>
-          <i data-lucide="check-circle"></i>
-        </button>
-        <button type="button" class="mini-pill mini-pill-danger {% if order.status == 'cancelled' %}active{% endif %}" onclick="handleStatusChange('cancelled')" title="Anulowane" {% if order.status == 'cancelled' %}disabled{% endif %}>
-          <i data-lucide="x-circle"></i>
-        </button>
+      
+      {% set status_order = ['received', 'pending_payment', 'paid'] %}
+      {% set current_idx = status_order.index(order.status) if order.status in status_order else -1 %}
+      {% set is_cancelled = order.status == 'cancelled' %}
+      {% set is_refunded = order.status == 'refunded' %}
+      
+      <div class="status-stepper">
+        <!-- Główna ścieżka -->
+        <div class="stepper-track">
+          <!-- Otrzymane -->
+          <div class="stepper-step {% if current_idx >= 0 %}completed{% endif %} {% if current_idx == 0 and not is_cancelled %}current{% endif %}">
+            <button type="button" class="stepper-dot" disabled title="Otrzymane">
+              <i data-lucide="inbox"></i>
+            </button>
+            <span class="stepper-label">Otrzymane</span>
+          </div>
+          
+          <div class="stepper-connector {% if current_idx >= 1 %}completed{% endif %}"></div>
+          
+          <!-- Oczekuje -->
+          <div class="stepper-step {% if current_idx >= 1 %}completed{% endif %} {% if current_idx == 1 and not is_cancelled %}current{% endif %}">
+            <button type="button" class="stepper-dot stepper-dot-warning {% if current_idx < 1 and not is_cancelled and not is_refunded %}clickable{% endif %}" 
+                    onclick="{% if current_idx < 1 and not is_cancelled and not is_refunded %}handleStatusChange('pending_payment'){% endif %}" 
+                    title="Oczekuje na płatność"
+                    {% if current_idx >= 1 or is_cancelled or is_refunded %}disabled{% endif %}>
+              <i data-lucide="clock"></i>
+            </button>
+            <span class="stepper-label">Oczekuje</span>
+          </div>
+          
+          <div class="stepper-connector {% if current_idx >= 2 %}completed{% endif %}"></div>
+          
+          <!-- Opłacone -->
+          <div class="stepper-step {% if current_idx >= 2 %}completed{% endif %} {% if current_idx == 2 and not is_cancelled and not is_refunded %}current{% endif %}">
+            <button type="button" class="stepper-dot stepper-dot-success {% if current_idx < 2 and not is_cancelled and not is_refunded %}clickable{% endif %}" 
+                    onclick="{% if current_idx < 2 and not is_cancelled and not is_refunded %}handleStatusChange('paid'){% endif %}" 
+                    title="Opłacone"
+                    {% if current_idx >= 2 or is_cancelled or is_refunded %}disabled{% endif %}>
+              <i data-lucide="check-circle"></i>
+            </button>
+            <span class="stepper-label">Opłacone</span>
+          </div>
+        </div>
+        
+        <!-- Destrukcyjne akcje (oddzielne) -->
+        <div class="stepper-destructive">
+          <span class="stepper-destructive-divider"></span>
+          
+          {% if is_cancelled %}
+          <div class="stepper-step current">
+            <button type="button" class="stepper-dot stepper-dot-danger" disabled title="Anulowane">
+              <i data-lucide="x-circle"></i>
+            </button>
+            <span class="stepper-label">Anulowane</span>
+          </div>
+          {% elif is_refunded %}
+          <div class="stepper-step current">
+            <button type="button" class="stepper-dot stepper-dot-muted" disabled title="Zwrócone">
+              <i data-lucide="rotate-ccw"></i>
+            </button>
+            <span class="stepper-label">Zwrócone</span>
+          </div>
+          {% else %}
+          <div class="stepper-step">
+            <button type="button" class="stepper-dot stepper-dot-danger clickable" onclick="handleStatusChange('cancelled')" title="Anuluj zamówienie">
+              <i data-lucide="x-circle"></i>
+            </button>
+            <span class="stepper-label">Anuluj</span>
+          </div>
+          {% if current_idx == 2 %}
+          <div class="stepper-step">
+            <button type="button" class="stepper-dot stepper-dot-muted clickable" onclick="handleStatusChange('refunded')" title="Zwróć zamówienie">
+              <i data-lucide="rotate-ccw"></i>
+            </button>
+            <span class="stepper-label">Zwrot</span>
+          </div>
+          {% endif %}
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
@@ -410,7 +476,8 @@
             <i data-lucide="x-circle"></i>
             Anuluj zamówienie
           </button>
-          {% if order.status == 'paid' %}
+          {% set is_stripe_payment = 'online' in (order.payment_type or '')|lower or 'stripe' in (order.payment_option_name or '')|lower %}
+          {% if order.status == 'paid' and is_stripe_payment %}
           <button class="btn btn-outline btn-refund-outline" onclick="refundOrder()" title="Zwrot płatności Stripe">
             <i data-lucide="rotate-ccw"></i>
             Zwrot płatności
@@ -515,6 +582,20 @@
   function confirmStatusChange() {
     if (!pendingStatus) return;
     
+    const btn = document.getElementById('confirm-status-btn');
+    const cancelBtn = btn.previousElementSibling;
+    const originalText = btn.innerHTML;
+    
+    // Pokaż spinner i zablokuj przyciski
+    btn.disabled = true;
+    cancelBtn.disabled = true;
+    btn.innerHTML = '<span class="btn-spinner"></span> Przetwarzanie...';
+    
+    // Pokaż dodatkową informację dla "paid" (generuje fakturę wFirma)
+    if (pendingStatus === 'paid') {
+      btn.innerHTML = '<span class="btn-spinner"></span> Generowanie faktury...';
+    }
+    
     fetch(`/admin-v2/orders/${orderId}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -522,12 +603,21 @@
     })
     .then(response => response.json())
     .then(data => {
+      if (data.error) {
+        showToast(data.error || 'Błąd zmiany statusu', 'error');
+        btn.disabled = false;
+        cancelBtn.disabled = false;
+        btn.innerHTML = originalText;
+        return;
+      }
       showToast('Status zamówienia został zmieniony', 'success');
       location.reload();
     })
     .catch(err => {
-      showToast('Błąd zmiany statusu', 'error');
-      closeStatusModal();
+      showToast('Błąd zmiany statusu: ' + (err.message || 'Nieznany błąd'), 'error');
+      btn.disabled = false;
+      cancelBtn.disabled = false;
+      btn.innerHTML = originalText;
     });
   }
 
@@ -942,6 +1032,176 @@
     cursor: default;
   }
   
+  /* ===== STATUS STEPPER ===== */
+  .status-stepper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+  }
+  
+  .stepper-track {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+  
+  .stepper-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    position: relative;
+  }
+  
+  .stepper-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--background);
+    color: var(--muted-foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    cursor: default;
+  }
+  
+  .stepper-dot i {
+    width: 14px;
+    height: 14px;
+  }
+  
+  .stepper-dot.clickable {
+    cursor: pointer;
+  }
+  
+  .stepper-dot.clickable:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  
+  .stepper-label {
+    font-size: 0.65rem;
+    color: var(--muted-foreground);
+    text-align: center;
+    white-space: nowrap;
+  }
+  
+  .stepper-connector {
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+    margin: 15px 4px 0 4px;
+    min-width: 20px;
+    transition: background 0.2s ease;
+  }
+  
+  /* Completed states */
+  .stepper-step.completed .stepper-dot {
+    background: hsl(212, 100%, 50%);
+    border-color: hsl(212, 100%, 50%);
+    color: white;
+  }
+  
+  .stepper-connector.completed {
+    background: hsl(212, 100%, 50%);
+  }
+  
+  /* Current state */
+  .stepper-step.current .stepper-dot {
+    box-shadow: 0 0 0 4px hsl(212, 100%, 50%, 0.2);
+    transform: scale(1.1);
+  }
+  
+  .stepper-step.current .stepper-label {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  
+  /* Warning variant (Oczekuje) */
+  .stepper-step.completed .stepper-dot-warning,
+  .stepper-step.current .stepper-dot-warning {
+    background: hsl(38, 92%, 50%);
+    border-color: hsl(38, 92%, 50%);
+  }
+  
+  .stepper-dot-warning.clickable:hover {
+    border-color: hsl(38, 92%, 50%);
+    color: hsl(38, 92%, 40%);
+    background: hsl(38, 92%, 95%);
+  }
+  
+  /* Success variant (Opłacone) */
+  .stepper-step.completed .stepper-dot-success,
+  .stepper-step.current .stepper-dot-success {
+    background: hsl(142, 71%, 45%);
+    border-color: hsl(142, 71%, 45%);
+  }
+  
+  .stepper-dot-success.clickable:hover {
+    border-color: hsl(142, 71%, 45%);
+    color: hsl(142, 71%, 35%);
+    background: hsl(142, 71%, 95%);
+  }
+  
+  /* Danger variant (Anulowane) */
+  .stepper-step.current .stepper-dot-danger {
+    background: hsl(0, 84%, 60%);
+    border-color: hsl(0, 84%, 60%);
+    color: white;
+  }
+  
+  .stepper-dot-danger.clickable:hover {
+    border-color: hsl(0, 84%, 60%);
+    color: hsl(0, 84%, 50%);
+    background: hsl(0, 84%, 95%);
+  }
+  
+  /* Muted variant (Zwrócone) */
+  .stepper-step.current .stepper-dot-muted {
+    background: hsl(215, 16%, 47%);
+    border-color: hsl(215, 16%, 47%);
+    color: white;
+  }
+  
+  .stepper-dot-muted.clickable:hover {
+    border-color: hsl(215, 16%, 47%);
+    color: hsl(215, 16%, 37%);
+    background: hsl(215, 16%, 95%);
+  }
+  
+  /* Destructive section */
+  .stepper-destructive {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--border);
+  }
+  
+  .stepper-destructive-divider {
+    display: none;
+  }
+  
+  /* Responsive */
+  @media (max-width: 500px) {
+    .stepper-track {
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .stepper-connector {
+      display: none;
+    }
+    .stepper-step {
+      margin: 0.25rem;
+    }
+    .stepper-label {
+      font-size: 0.6rem;
+    }
+  }
+  
   /* ===== STATUS FLOW PILLS (legacy - can remove) ===== */
   .status-flow-section {
     margin-bottom: 0.5rem;
@@ -1139,6 +1399,28 @@
       transform: translateX(100%);
       opacity: 0;
     }
+  }
+  
+  /* ===== BUTTON SPINNER ===== */
+  .btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: btn-spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  
+  @keyframes btn-spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  .btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
   }
 </style>
 {% endblock %}
