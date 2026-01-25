@@ -1347,6 +1347,93 @@
     white-space: nowrap;
   }
   
+  /* Bucket Table Styles */
+  .bucket-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .bucket-table thead {
+    background: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+  
+  .bucket-table th {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  
+  .bucket-order-row {
+    transition: background 0.15s;
+    border-top: 1px solid var(--border);
+  }
+  
+  .bucket-order-row:hover {
+    background: var(--muted);
+  }
+  
+  .bucket-order-row.selected {
+    background: hsl(212, 100%, 97%);
+  }
+  
+  .bucket-table td {
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
+  
+  .bucket-table-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  
+  .bucket-table-link:hover {
+    text-decoration: underline;
+  }
+  
+  .bucket-table-event {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+  }
+  
+  .bucket-table-date {
+    font-size: 0.8125rem;
+    color: var(--foreground);
+  }
+  
+  .bucket-table-amount {
+    font-weight: 600;
+  }
+  
+  .payment-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: calc(var(--radius) - 2px);
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  
+  .payment-type-badge.payment-type-stripe {
+    background: hsl(199, 89%, 96%);
+    color: hsl(199, 89%, 40%);
+    border: 1px solid hsl(199, 89%, 85%);
+  }
+  
+  .payment-type-badge.payment-type-proforma {
+    background: hsl(270, 80%, 96%);
+    color: hsl(270, 80%, 50%);
+    border: 1px solid hsl(270, 80%, 85%);
+  }
+  
   .bucket-empty {
     padding: 1rem;
     text-align: center;

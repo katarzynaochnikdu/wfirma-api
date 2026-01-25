@@ -38,7 +38,7 @@
           <i data-lucide="calendar-clock"></i>
         </div>
         <div class="bucket-info">
-          <span class="bucket-label">Do opłacenia dziś</span>
+          <span class="bucket-label">Do opłacenia</span>
           <span class="bucket-count">{{ buckets.due_today.orders|length if buckets.due_today else 0 }}</span>
         </div>
         <span class="bucket-total">{{ buckets.due_today.total|format_currency if buckets.due_today else '0,00 zł' }}</span>
@@ -47,23 +47,70 @@
       
       <div class="bucket-content" id="content-due_today">
         {% if buckets.due_today and buckets.due_today.orders %}
-          {% for order in buckets.due_today.orders %}
-          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
-            <input type="checkbox" 
-                   class="order-checkbox" 
-                   data-order-id="{{ order.order_id }}" 
-                   data-bucket="due_today"
-                   onchange="updateSelection()">
-            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
-              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
-              <span class="bucket-order-event">{{ order.event_name }}</span>
-            </a>
-            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
-          </div>
-          {% endfor %}
+          <table class="bucket-table">
+            <thead>
+              <tr>
+                <th style="width: 30px;"></th>
+                <th>Kupujący</th>
+                <th>Wydarzenie</th>
+                <th>Termin płatności</th>
+                <th>Typ</th>
+                <th style="text-align: right;">Kwota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in buckets.due_today.orders %}
+              <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
+                <td>
+                  <input type="checkbox" 
+                         class="order-checkbox" 
+                         data-order-id="{{ order.order_id }}" 
+                         data-bucket="due_today"
+                         onchange="updateSelection()">
+                </td>
+                <td>
+                  <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
+                    {{ order.buyer_first_name }} {{ order.buyer_last_name }}
+                  </a>
+                </td>
+                <td>
+                  <span class="bucket-table-event">{{ order.event_name }}</span>
+                </td>
+                <td>
+                  {% if order.payment_due_date %}
+                    <span class="bucket-table-date">{{ order.payment_due_date.strftime('%d.%m.%Y') }}</span>
+                  {% else %}
+                    <span class="bucket-table-date text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if order.payment_link_url %}
+                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
+                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
+                      Stripe
+                    </span>
+                  {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
+                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
+                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
+                      Proforma
+                    </span>
+                  {% else %}
+                    <span class="payment-type-badge" title="Inny typ płatności">
+                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
+                      Inne
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right;">
+                  <span class="bucket-table-amount">{{ order.total|format_currency }}</span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         {% else %}
           <div class="bucket-empty">
-            Brak zamówień do opłacenia dziś
+            Brak zamówień do opłacenia
           </div>
         {% endif %}
       </div>
@@ -90,20 +137,67 @@
       
       <div class="bucket-content" id="content-overdue">
         {% if buckets.overdue and buckets.overdue.orders %}
-          {% for order in buckets.overdue.orders %}
-          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
-            <input type="checkbox" 
-                   class="order-checkbox" 
-                   data-order-id="{{ order.order_id }}" 
-                   data-bucket="overdue"
-                   onchange="updateSelection()">
-            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
-              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
-              <span class="bucket-order-event">{{ order.event_name }}</span>
-            </a>
-            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
-          </div>
-          {% endfor %}
+          <table class="bucket-table">
+            <thead>
+              <tr>
+                <th style="width: 30px;"></th>
+                <th>Kupujący</th>
+                <th>Wydarzenie</th>
+                <th>Termin płatności</th>
+                <th>Typ</th>
+                <th style="text-align: right;">Kwota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in buckets.overdue.orders %}
+              <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
+                <td>
+                  <input type="checkbox" 
+                         class="order-checkbox" 
+                         data-order-id="{{ order.order_id }}" 
+                         data-bucket="overdue"
+                         onchange="updateSelection()">
+                </td>
+                <td>
+                  <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
+                    {{ order.buyer_first_name }} {{ order.buyer_last_name }}
+                  </a>
+                </td>
+                <td>
+                  <span class="bucket-table-event">{{ order.event_name }}</span>
+                </td>
+                <td>
+                  {% if order.payment_due_date %}
+                    <span class="bucket-table-date" style="color: hsl(0, 84%, 50%);">{{ order.payment_due_date.strftime('%d.%m.%Y') }}</span>
+                  {% else %}
+                    <span class="bucket-table-date text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if order.payment_link_url %}
+                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
+                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
+                      Stripe
+                    </span>
+                  {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
+                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
+                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
+                      Proforma
+                    </span>
+                  {% else %}
+                    <span class="payment-type-badge" title="Inny typ płatności">
+                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
+                      Inne
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right;">
+                  <span class="bucket-table-amount">{{ order.total|format_currency }}</span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         {% else %}
           <div class="bucket-empty">
             Brak przeterminowanych zamówień
@@ -133,20 +227,67 @@
       
       <div class="bucket-content" id="content-paid">
         {% if buckets.paid and buckets.paid.orders %}
-          {% for order in buckets.paid.orders %}
-          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
-            <input type="checkbox" 
-                   class="order-checkbox" 
-                   data-order-id="{{ order.order_id }}" 
-                   data-bucket="paid"
-                   onchange="updateSelection()">
-            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
-              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
-              <span class="bucket-order-event">{{ order.event_name }}</span>
-            </a>
-            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
-          </div>
-          {% endfor %}
+          <table class="bucket-table">
+            <thead>
+              <tr>
+                <th style="width: 30px;"></th>
+                <th>Kupujący</th>
+                <th>Wydarzenie</th>
+                <th>Data płatności</th>
+                <th>Typ</th>
+                <th style="text-align: right;">Kwota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in buckets.paid.orders %}
+              <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
+                <td>
+                  <input type="checkbox" 
+                         class="order-checkbox" 
+                         data-order-id="{{ order.order_id }}" 
+                         data-bucket="paid"
+                         onchange="updateSelection()">
+                </td>
+                <td>
+                  <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
+                    {{ order.buyer_first_name }} {{ order.buyer_last_name }}
+                  </a>
+                </td>
+                <td>
+                  <span class="bucket-table-event">{{ order.event_name }}</span>
+                </td>
+                <td>
+                  {% if order.paid_at %}
+                    <span class="bucket-table-date">{{ order.paid_at.strftime('%d.%m.%Y') }}</span>
+                  {% else %}
+                    <span class="bucket-table-date text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if order.payment_link_url %}
+                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
+                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
+                      Stripe
+                    </span>
+                  {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
+                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
+                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
+                      Proforma
+                    </span>
+                  {% else %}
+                    <span class="payment-type-badge" title="Inny typ płatności">
+                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
+                      Inne
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right;">
+                  <span class="bucket-table-amount">{{ order.total|format_currency }}</span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         {% else %}
           <div class="bucket-empty">
             Brak opłaconych zamówień
@@ -176,20 +317,67 @@
       
       <div class="bucket-content" id="content-cancelled">
         {% if buckets.cancelled and buckets.cancelled.orders %}
-          {% for order in buckets.cancelled.orders %}
-          <div class="bucket-order-item" data-order-id="{{ order.order_id }}">
-            <input type="checkbox" 
-                   class="order-checkbox" 
-                   data-order-id="{{ order.order_id }}" 
-                   data-bucket="cancelled"
-                   onchange="updateSelection()">
-            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-order-link">
-              <span class="bucket-order-buyer">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
-              <span class="bucket-order-event">{{ order.event_name }}</span>
-            </a>
-            <span class="bucket-order-amount">{{ order.total|format_currency }}</span>
-          </div>
-          {% endfor %}
+          <table class="bucket-table">
+            <thead>
+              <tr>
+                <th style="width: 30px;"></th>
+                <th>Kupujący</th>
+                <th>Wydarzenie</th>
+                <th>Data anulowania</th>
+                <th>Typ</th>
+                <th style="text-align: right;">Kwota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in buckets.cancelled.orders %}
+              <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
+                <td>
+                  <input type="checkbox" 
+                         class="order-checkbox" 
+                         data-order-id="{{ order.order_id }}" 
+                         data-bucket="cancelled"
+                         onchange="updateSelection()">
+                </td>
+                <td>
+                  <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
+                    {{ order.buyer_first_name }} {{ order.buyer_last_name }}
+                  </a>
+                </td>
+                <td>
+                  <span class="bucket-table-event">{{ order.event_name }}</span>
+                </td>
+                <td>
+                  {% if order.cancelled_at %}
+                    <span class="bucket-table-date">{{ order.cancelled_at.strftime('%d.%m.%Y') }}</span>
+                  {% else %}
+                    <span class="bucket-table-date text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if order.payment_link_url %}
+                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
+                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
+                      Stripe
+                    </span>
+                  {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
+                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
+                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
+                      Proforma
+                    </span>
+                  {% else %}
+                    <span class="payment-type-badge" title="Inny typ płatności">
+                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
+                      Inne
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right;">
+                  <span class="bucket-table-amount">{{ order.total|format_currency }}</span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         {% else %}
           <div class="bucket-empty">
             Brak anulowanych zamówień
@@ -236,12 +424,15 @@ function selectAllInBucket(bucketId, checked) {
     checkbox.checked = checked;
     const orderId = checkbox.dataset.orderId;
     
+    // Support both old (bucket-order-item) and new (bucket-order-row) structure
+    const row = checkbox.closest('.bucket-order-item') || checkbox.closest('.bucket-order-row');
+    
     if (checked) {
       selectedOrders.add(orderId);
-      checkbox.closest('.bucket-order-item').classList.add('selected');
+      if (row) row.classList.add('selected');
     } else {
       selectedOrders.delete(orderId);
-      checkbox.closest('.bucket-order-item').classList.remove('selected');
+      if (row) row.classList.remove('selected');
     }
   });
   
@@ -253,12 +444,14 @@ function updateSelection() {
   selectedOrders.clear();
   
   document.querySelectorAll('.order-checkbox').forEach(checkbox => {
-    const item = checkbox.closest('.bucket-order-item');
+    // Support both old (bucket-order-item) and new (bucket-order-row) structure
+    const item = checkbox.closest('.bucket-order-item') || checkbox.closest('.bucket-order-row');
+    
     if (checkbox.checked) {
       selectedOrders.add(checkbox.dataset.orderId);
-      item.classList.add('selected');
+      if (item) item.classList.add('selected');
     } else {
-      item.classList.remove('selected');
+      if (item) item.classList.remove('selected');
     }
   });
   
@@ -349,7 +542,8 @@ document.addEventListener('DOMContentLoaded', function() {
   ['due_today', 'overdue'].forEach(bucketId => {
     const content = document.getElementById(`content-${bucketId}`);
     const toggle = document.getElementById(`toggle-${bucketId}`);
-    if (content && content.querySelector('.bucket-order-item')) {
+    // Support both old (bucket-order-item) and new (bucket-order-row) structure
+    if (content && (content.querySelector('.bucket-order-item') || content.querySelector('.bucket-order-row'))) {
       content.classList.add('expanded');
       if (toggle) toggle.classList.add('expanded');
     }

@@ -151,6 +151,10 @@
             <span class="info-value">{{ participant.position }}</span>
           </div>
           {% endif %}
+          <div class="info-item">
+            <span class="info-label">Nazwa placówki na identyfikator</span>
+            <span class="info-value">{{ participant.badge_name or '—' }}</span>
+          </div>
           {% if participant.dietary %}
           <div class="info-item">
             <span class="info-label">Dieta</span>

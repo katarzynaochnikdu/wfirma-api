@@ -3659,6 +3659,7 @@ def participant_detail(participant_id):
     participant["position"] = p_data.get("position") or p_data.get("stanowisko") or ""
     participant["dietary"] = p_data.get("dietary") or p_data.get("dieta") or ""
     participant["notes"] = p_data.get("notes") or p_data.get("uwagi") or ""
+    participant["badge_name"] = p_data.get("badge_name") or ""
     
     # Mapuj nazwę biletu i usuń słowo "Bilet"
     ticket_name = participant.get("ticket_class_name") or ""
