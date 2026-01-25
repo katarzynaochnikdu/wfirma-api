@@ -1948,6 +1948,8 @@ def wfirma_create_correction(
     """
     Utwórz fakturę korygującą (pełna korekta - zerowanie wszystkich pozycji).
     
+    Używa wfirma_create_invoice z type="correction" i zeruje pozycje.
+    
     Args:
         token: Token OAuth wFirma
         source_invoice_id: ID faktury źródłowej do skorygowania
@@ -1957,62 +1959,90 @@ def wfirma_create_correction(
     Returns:
         (correction_dict|None, response)
     """
-    # Endpoint: invoices/correct/{invoice_id}
-    api_url = f"https://api2.wfirma.pl/invoices/correct/{source_invoice_id}?inputFormat=json&outputFormat=json&oauth_version=2"
-    if company_id:
-        api_url += f"&company_id={company_id}"
-    headers = get_wfirma_headers(token)
+    print(f"[WFIRMA DEBUG] Creating correction for invoice {source_invoice_id}")
     
-    # Parametry korekty - pełna korekta z opisem
-    correction_payload = {
-        "invoices": {
-            "parameters": {
-                "correction_description": correction_description,
-                "correction_type": "full"  # Pełna korekta zeruje wszystkie pozycje
-            }
-        }
-    }
-    
-    resp = None
     try:
-        print(f"[WFIRMA DEBUG] Creating correction for invoice {source_invoice_id}")
-        print(f"[WFIRMA DEBUG] Correction URL: {api_url}")
-        print(f"[WFIRMA DEBUG] Correction request body: {json.dumps(correction_payload, indent=2)}")
+        # 1) Pobierz oryginalną fakturę żeby uzyskać dane kontrahenta i pozycji
+        original_invoice, err = wfirma_get_invoice(token, str(source_invoice_id), company_id)
+        if err or not original_invoice:
+            print(f"[WFIRMA DEBUG] Nie udało się pobrać faktury oryginalnej: {err}")
+            return None, None
         
-        resp = requests.post(api_url, headers=headers, json=correction_payload)
-        print(f"[WFIRMA DEBUG] Correction response status: {resp.status_code}")
-        print(f"[WFIRMA DEBUG] Correction response: {resp.text[:1000] if resp.text else 'empty'}")
+        print(f"[WFIRMA DEBUG] Pobrano fakturę oryginalną: {original_invoice.get('fullnumber')}")
         
-        if resp.status_code == 200:
-            result = resp.json()
-            status = result.get('status', {}).get('code')
-            if status == 'OK':
-                # Odpowiedź może być: invoices.0.invoice lub invoicecorrections.0.invoicecorrection
-                # Sprawdź obie struktury
-                invoices = result.get('invoices', {})
-                if isinstance(invoices, dict):
-                    for key in invoices:
-                        if key.isdigit():
-                            invoice = invoices[key].get('invoice', {})
-                            if invoice:
-                                print(f"[WFIRMA DEBUG] Correction created: id={invoice.get('id')}, number={invoice.get('fullnumber')}")
-                                return invoice, resp
-                
-                corrections = result.get('invoicecorrections', {})
-                if isinstance(corrections, dict):
-                    for key in corrections:
-                        if key.isdigit():
-                            correction = corrections[key].get('invoicecorrection', {})
-                            if correction:
-                                print(f"[WFIRMA DEBUG] Correction created: id={correction.get('id')}, number={correction.get('fullnumber')}")
-                                return correction, resp
-                return None, resp
-            else:
-                print(f"[WFIRMA DEBUG] Correction error: {result.get('status', {}).get('message')}")
-        return None, resp
+        # Pobierz contractor_id z oryginalnej faktury
+        contractor_data = original_invoice.get('contractor', {})
+        contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
+        if not contractor_id:
+            print(f"[WFIRMA DEBUG] Nie można odczytać kontrahenta z faktury oryginalnej")
+            return None, None
+        
+        # 2) Pobierz pozycje z oryginalnej faktury
+        # Pozycje mogą być w invoicecontents
+        original_contents = original_invoice.get('invoicecontents', {})
+        positions = []
+        
+        if isinstance(original_contents, dict):
+            for key, val in original_contents.items():
+                if isinstance(val, dict) and 'invoicecontent' in val:
+                    content = val['invoicecontent']
+                    positions.append({
+                        'id': content.get('id'),
+                        'name': content.get('name'),
+                        'count': content.get('count'),
+                        'price': content.get('price'),
+                        'vat_code_id': content.get('vat_code', {}).get('id') if isinstance(content.get('vat_code'), dict) else 222,
+                    })
+        
+        if not positions:
+            print(f"[WFIRMA DEBUG] Brak pozycji na fakturze oryginalnej")
+            return None, None
+        
+        print(f"[WFIRMA DEBUG] Znaleziono {len(positions)} pozycji do skorygowania")
+        
+        # 3) Buduj pozycje korekty (zerowanie - count=0 i price=0)
+        invoice_contents_dict = {}
+        for idx, pos in enumerate(positions):
+            content = {
+                "invoicecontent": {
+                    "name": pos.get('name', f'Pozycja {idx+1}'),
+                    "unit": "szt.",
+                    "count": 0,  # Zerujemy ilość
+                    "price": 0,  # Zerujemy cenę
+                    "vat_code": {"id": pos.get('vat_code_id', 222)},
+                    "parent": {"id": int(pos.get('id'))}  # Powiązanie z oryginalną pozycją
+                }
+            }
+            invoice_contents_dict[str(idx)] = content
+        
+        # 4) Payload faktury korygującej
+        import datetime
+        correction_payload = {
+            "contractor_id": int(contractor_id),
+            "date": datetime.date.today().isoformat(),
+            "type": "correction",
+            "parent": {"id": int(source_invoice_id)},  # Powiązanie z fakturą oryginalną
+            "description": correction_description,
+            "invoicecontents": invoice_contents_dict
+        }
+        
+        print(f"[WFIRMA DEBUG] Correction payload: contractor_id={contractor_id}, parent_id={source_invoice_id}, positions={len(positions)}")
+        
+        # 5) Utwórz fakturę korygującą
+        invoice_result, resp = wfirma_create_invoice(token, correction_payload, company_id)
+        
+        if invoice_result and invoice_result.get('id'):
+            print(f"[WFIRMA DEBUG] Correction created: id={invoice_result.get('id')}, number={invoice_result.get('fullnumber')}")
+            return invoice_result, resp
+        else:
+            print(f"[WFIRMA DEBUG] Nie udało się utworzyć korekty: {resp.text[:500] if resp and resp.text else 'brak odpowiedzi'}")
+            return None, resp
+            
     except Exception as e:
         print(f"[WFIRMA DEBUG] Correction exception: {e}")
-        return None, resp
+        import traceback
+        traceback.print_exc()
+        return None, None
 
 
 def wfirma_list_series(token: str, company_id: str = None) -> list:
