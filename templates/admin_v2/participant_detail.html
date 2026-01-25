@@ -118,22 +118,6 @@
         {% endif %}
       </div>
       <div class="card-content">
-        
-        <!-- Status change block -->
-        <div class="status-change-block">
-          <label class="status-change-label">Zmień status uczestnika</label>
-          <div class="filter-select">
-            <select name="status" id="participant-status-select" style="width: 100%; max-width: 280px;" onchange="handleStatusChange(this.value)">
-              <option value="registered"{% if participant.status == 'registered' %} selected{% endif %}>Zarejestrowany</option>
-              <option value="emailed"{% if participant.status == 'emailed' %} selected{% endif %}>Powiadomiony</option>
-              <option value="checked_in"{% if participant.status == 'checked_in' %} selected{% endif %}>Zameldowany</option>
-              <option value="cancelled"{% if participant.status == 'cancelled' %} selected{% endif %}>Anulowany</option>
-            </select>
-          </div>
-        </div>
-
-        <hr style="border: none; border-top: 1px solid var(--border); margin: 1.5rem 0;">
-
         <div class="info-grid">
           <div class="info-item">
             <span class="info-label">Imię i nazwisko</span>
@@ -370,82 +354,8 @@
   </div>
 </div>
 
-<!-- STATUS CONFIRMATION MODAL -->
-<div id="status-confirm-modal" class="modal-backdrop hidden">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3 class="modal-title">Potwierdź zmianę statusu</h3>
-      <button class="modal-close" onclick="closeStatusModal()">
-        <i data-lucide="x"></i>
-      </button>
-    </div>
-    <div class="modal-body">
-      <p id="status-confirm-text"></p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeStatusModal()">Anuluj</button>
-      <button class="btn btn-primary" id="confirm-status-btn" onclick="confirmStatusChange()">Potwierdź</button>
-    </div>
-  </div>
-</div>
-
 <script>
   const participantId = {{ participant.participant_id }};
-  let pendingStatus = null;
-  const currentStatus = '{{ participant.status }}';
-
-  // Handle status change
-  function handleStatusChange(newStatus) {
-    if (newStatus === currentStatus) return;
-    
-    pendingStatus = newStatus;
-    
-    const statusLabels = {
-      'registered': 'Zarejestrowany',
-      'emailed': 'Powiadomiony',
-      'checked_in': 'Zameldowany',
-      'cancelled': 'Anulowany'
-    };
-    
-    const confirmText = document.getElementById('status-confirm-text');
-    confirmText.textContent = `Czy na pewno chcesz zmienić status uczestnika z "${statusLabels[currentStatus]}" na "${statusLabels[newStatus]}"?`;
-    
-    document.getElementById('status-confirm-modal').classList.remove('hidden');
-    
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
-    }
-  }
-
-  function closeStatusModal() {
-    document.getElementById('status-confirm-modal').classList.add('hidden');
-    document.getElementById('participant-status-select').value = currentStatus;
-    pendingStatus = null;
-  }
-
-  function confirmStatusChange() {
-    if (!pendingStatus) return;
-    
-    fetch(`/api/participants/${participantId}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: pendingStatus })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        showToast('Status uczestnika został zmieniony', 'success');
-        location.reload();
-      } else {
-        showToast('Błąd zmiany statusu: ' + (data.error || 'Nieznany błąd'), 'error');
-        closeStatusModal();
-      }
-    })
-    .catch(err => {
-      showToast('Błąd zmiany statusu', 'error');
-      closeStatusModal();
-    });
-  }
 
   // Quick actions
   function sendEmail() {
