@@ -3445,6 +3445,39 @@ def work_queue_resolve(task_id: int):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@admin_v2_bp.route("/work-queue/<int:task_id>/delete", methods=["POST"])
+@_require_login
+def work_queue_delete(task_id: int):
+    """Usuń zadanie z kolejki monitoringu (trwale)."""
+    from flask import jsonify
+    from pg_storage import delete_error_task, get_error_task
+    
+    user = _get_current_admin_user()
+    
+    try:
+        task = get_error_task(task_id)
+        if not task:
+            return jsonify({"success": False, "error": "Zadanie nie istnieje"}), 404
+        
+        success = delete_error_task(task_id)
+        
+        if success:
+            # Audit log
+            insert_admin_audit_log(
+                action="work_queue_delete",
+                admin_user_id=user.get("id") if user else None,
+                target_id=str(task_id),
+                extra={"task_title": task.get("title"), "category": task.get("category")},
+                ip=request.remote_addr,
+            )
+            return jsonify({"success": True, "message": "Zadanie zostało usunięte"})
+        else:
+            return jsonify({"success": False, "error": "Nie udało się usunąć zadania"}), 500
+    except Exception as e:
+        print(f"[work_queue_delete] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # ORDER HISTORY BUILDER
 # ---------------------------------------------------------------------------

@@ -9,7 +9,19 @@
     <h1 class="page-title">Wydarzenia</h1>
     <p class="page-description">Zarządzaj wydarzeniami i konferencjami</p>
   </div>
-  <div class="header-actions">
+  <div class="header-actions" style="display: flex; align-items: center; gap: 1rem;">
+    <!-- View Toggle -->
+    <div class="view-toggle" style="display: flex; background: var(--muted); border-radius: var(--radius); padding: 2px;">
+      <button type="button" class="view-toggle-btn active" data-view="grid" onclick="setEventsView('grid')" title="Duże kostki">
+        <i data-lucide="layout-grid"></i>
+      </button>
+      <button type="button" class="view-toggle-btn" data-view="compact" onclick="setEventsView('compact')" title="Małe kostki">
+        <i data-lucide="grid-3x3"></i>
+      </button>
+      <button type="button" class="view-toggle-btn" data-view="list" onclick="setEventsView('list')" title="Lista">
+        <i data-lucide="list"></i>
+      </button>
+    </div>
     <a href="{{ url_for('admin_v2_bp.event_new') }}" class="btn btn-primary">
       <i data-lucide="plus"></i>
       Nowe wydarzenie
@@ -55,7 +67,7 @@
       {{ group.label }}
       <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ group.events|length }})</span>
     </h3>
-    <div class="events-grid">
+    <div class="events-grid events-container">
       {% for event in group.events %}
       {% set event_data = event.data or {} %}
       {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
@@ -64,7 +76,7 @@
       {% set event_date_raw = event_data.get('eventDate') or '' %}
       {% set banner_url = event_data.get('email_header_url') or '' %}
       
-      <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active">
+      <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="event-card event-card-active" data-event-name="{{ event.event_name }}" data-event-date="{{ event_date_raw }}" data-event-city="{{ event_city }}" data-order-count="{{ event.order_count or 0 }}" data-participant-count="{{ event.participant_count or 0 }}">
         <div class="event-card-header-banner">
           {% if banner_url %}
           <img src="{{ banner_url }}" alt="{{ event.event_name }}" class="event-card-banner-img">
@@ -130,7 +142,7 @@
       {{ group.label }}
       <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ group.events|length }})</span>
     </h3>
-    <div class="events-grid">
+    <div class="events-grid events-container">
       {% for event in group.events %}
       {% set event_data = event.data or {} %}
       {% set event_color = event_data.get('color_gradient_1') or 'hsl(45, 93%, 50%)' %}
@@ -209,7 +221,7 @@
       {{ group.label }}
       <span style="font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground);">({{ group.events|length }})</span>
     </h3>
-    <div class="events-grid">
+    <div class="events-grid events-container">
       {% for event in group.events %}
       {% set event_data = event.data or {} %}
       {% set event_city = event_data.get('eventCity') or '' %}
@@ -498,6 +510,160 @@
   }
 }
 
+/* === VIEW TOGGLE === */
+.view-toggle-btn {
+  padding: 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  color: var(--muted-foreground);
+  transition: all 0.15s ease;
+}
+.view-toggle-btn:hover {
+  color: var(--foreground);
+  background: var(--background);
+}
+.view-toggle-btn.active {
+  background: var(--background);
+  color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.view-toggle-btn i {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* === COMPACT VIEW (małe kostki) === */
+.events-container.view-compact {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+.view-compact .event-card-header-banner {
+  aspect-ratio: 4 / 1;
+}
+.view-compact .event-card-body {
+  padding: 0.75rem 1rem 0.5rem 1rem;
+}
+.view-compact .event-card-title {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.view-compact .event-card-meta {
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+.view-compact .event-meta-item {
+  font-size: 0.6875rem;
+}
+.view-compact .event-meta-item i {
+  width: 12px;
+  height: 12px;
+}
+.view-compact .event-card-stats {
+  display: none;
+}
+.view-compact .event-settings-btn {
+  width: 24px;
+  height: 24px;
+  top: 6px;
+  right: 6px;
+}
+.view-compact .event-settings-btn i {
+  width: 12px;
+  height: 12px;
+}
+
+@media (max-width: 1024px) {
+  .events-container.view-compact {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 768px) {
+  .events-container.view-compact {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* === LIST VIEW === */
+.events-container.view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.view-list .event-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0;
+  border-radius: var(--radius);
+}
+.view-list .event-card-header-banner {
+  width: 80px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.view-list .event-card-header-minimal {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  margin: 0.5rem;
+  border-radius: calc(var(--radius) - 4px);
+  overflow: hidden;
+}
+.view-list .event-card-body {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-width: 0;
+}
+.view-list .event-card-title {
+  font-size: 0.9375rem;
+  flex: 1;
+  min-width: 0;
+}
+.view-list .event-card-meta {
+  margin-top: 0;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+.view-list .event-meta-item {
+  font-size: 0.75rem;
+}
+.view-list .event-card-stats {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0;
+  border: none;
+  flex-shrink: 0;
+}
+.view-list .event-stat {
+  text-align: right;
+}
+.view-list .event-stat-value {
+  font-size: 1.125rem;
+}
+.view-list .event-stat-label {
+  font-size: 0.625rem;
+}
+.view-list .event-settings-btn {
+  position: relative;
+  top: auto;
+  right: auto;
+  margin-right: 0.75rem;
+  opacity: 0.6;
+}
+.view-list .event-card:hover .event-settings-btn {
+  opacity: 1;
+}
+.view-list .event-card-tagline {
+  display: none;
+}
+
 /* === SECTION HEADER === */
 .section-header {
   font-size: 1.125rem;
@@ -519,11 +685,40 @@
 
 {% block extra_scripts %}
 <script>
-// Reinicjalizuj ikony Lucide
+// === VIEW TOGGLE ===
+function setEventsView(view) {
+  const containers = document.querySelectorAll('.events-container');
+  const buttons = document.querySelectorAll('.view-toggle-btn');
+  
+  // Usuń stare klasy widoku
+  containers.forEach(c => {
+    c.classList.remove('view-grid', 'view-compact', 'view-list');
+    if (view !== 'grid') {
+      c.classList.add('view-' + view);
+    }
+  });
+  
+  // Aktualizuj przyciski
+  buttons.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+  
+  // Zapisz preferencję
+  localStorage.setItem('eventsView', view);
+  
+  // Reinicjalizuj ikony
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// Reinicjalizuj ikony Lucide i załaduj zapisany widok
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
+  
+  // Załaduj zapisaną preferencję widoku
+  const savedView = localStorage.getItem('eventsView') || 'grid';
+  setEventsView(savedView);
 });
 </script>
 {% endblock %}

@@ -2979,6 +2979,34 @@ def resolve_error_task(task_id: int) -> bool:
             _put_conn(pool, conn)
 
 
+def delete_error_task(task_id: int) -> bool:
+    """
+    Usuwa zadanie z kolejki błędów (trwale).
+    
+    Returns:
+        True jeśli usunięto, False w przypadku błędu lub braku zadania.
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM error_queue WHERE id = %s",
+            (int(task_id),),
+        )
+        success = cur.rowcount > 0
+        print(f"[DB] delete_error_task: id={task_id}, success={success}")
+        return success
+    except Exception as e:
+        print(f"[DB] delete_error_task error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
 def get_error_queue_stats() -> Dict[str, int]:
     """
     Zwraca statystyki error_queue.

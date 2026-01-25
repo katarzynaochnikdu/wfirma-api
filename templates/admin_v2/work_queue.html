@@ -305,7 +305,6 @@
         </div>
         
         <!-- Action Bar - horizontal at bottom -->
-        {% if task.can_retry or task.actions|length > 0 %}
         <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); background: hsl(var(--muted) / 0.3); flex-wrap: wrap;">
           {% if task.can_retry and task.retry_count < task.max_retries %}
           <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry', task_id=task.id) }}" style="margin: 0;">
@@ -320,8 +319,15 @@
             {{ action.label }}
           </a>
           {% endfor %}
+          
+          <!-- Spacer -->
+          <div style="flex: 1;"></div>
+          
+          <!-- Delete button -->
+          <button type="button" class="btn btn-outline btn-sm" style="height: 2.25rem; padding: 0 0.75rem; gap: 0.375rem; color: var(--muted-foreground);" onclick="deleteTask({{ task.id }}, '{{ task.title|e }}')" title="Usuń z listy">
+            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+          </button>
         </div>
-        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -355,4 +361,38 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function deleteTask(taskId, taskTitle) {
+  if (!confirm('Czy na pewno chcesz usunąć to zadanie z listy monitoringu?\n\n"' + taskTitle + '"\n\nTa operacja jest nieodwracalna.')) {
+    return;
+  }
+  
+  fetch('/admin-v2/work-queue/' + taskId + '/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      showToast('Zadanie zostało usunięte', 'success');
+      location.reload();
+    } else {
+      showToast(data.error || 'Błąd usuwania', 'error');
+    }
+  })
+  .catch(err => {
+    showToast('Błąd połączenia', 'error');
+  });
+}
+
+// Init Lucide icons
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+</script>
 {% endblock %}
