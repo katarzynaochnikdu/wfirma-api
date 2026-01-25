@@ -1626,24 +1626,29 @@ def order_cancel(order_id: str):
             )
             subject = f"Anulowanie zamówienia - {event_name}"
             
+            # NAJPIERW zapisz do mail_log żeby mieć mail_id
+            mail_id = save_mail_log(
+                event_order_id=order_id,
+                direction="purchaser",
+                template_key="order_cancelled",
+                to_email=purchaser_email,
+                subject=subject,
+                status="queued",
+            )
+            
+            # POTEM wyślij z mail_id dla callbacka
             mail_result = _send_email_via_make(
                 to_email=purchaser_email,
                 subject=subject,
                 body_html=html,
                 event_order_id=order_id,
                 template_type="order_cancelled",
+                mail_id=mail_id,
             )
             
             if mail_result.get("success"):
                 emails_sent["purchaser"] = True
-                save_mail_log(
-                    event_order_id=order_id,
-                    direction="purchaser",
-                    template_key="order_cancelled",
-                    to_email=purchaser_email,
-                    subject=subject,
-                )
-                print(f"[CANCEL] Email do kupującego wysłany: {purchaser_email}")
+                print(f"[CANCEL] Email do kupującego wysłany: {purchaser_email}, mail_id={mail_id}")
             else:
                 print(f"[CANCEL] Błąd wysyłki do kupującego: {mail_result.get('error')}")
         except Exception as e:
@@ -1671,24 +1676,31 @@ def order_cancel(order_id: str):
                     )
                     subject = f"Anulowanie rejestracji - {event_name}"
                     
+                    # NAJPIERW zapisz do mail_log żeby mieć mail_id
+                    mail_id = save_mail_log(
+                        event_order_id=order_id,
+                        direction="participant",
+                        template_key="participant_cancelled",
+                        to_email=p_email,
+                        subject=subject,
+                        status="queued",
+                    )
+                    
+                    # POTEM wyślij z mail_id dla callbacka
                     mail_result = _send_email_via_make(
                         to_email=p_email,
                         subject=subject,
                         body_html=html,
                         event_order_id=order_id,
                         template_type="participant_cancelled",
+                        mail_id=mail_id,
                     )
                     
                     if mail_result.get("success"):
                         emails_sent["participants"] += 1
-                        save_mail_log(
-                            event_order_id=order_id,
-                            direction="participant",
-                            template_key="participant_cancelled",
-                            to_email=p_email,
-                            subject=subject,
-                        )
-                        print(f"[CANCEL] Email do uczestnika wysłany: {p_email}")
+                        print(f"[CANCEL] Email do uczestnika wysłany: {p_email}, mail_id={mail_id}")
+                    else:
+                        print(f"[CANCEL] Błąd wysyłki do uczestnika {p_email}: {mail_result.get('error')}")
                 except Exception as e:
                     print(f"[CANCEL] Błąd wysyłki do uczestnika {p_email}: {e}")
         except Exception as e:
@@ -3061,57 +3073,9 @@ def event_preview(event_id: str):
 @admin_v2_bp.route("/events/<event_id>/dashboard", methods=["GET"])
 @_require_permission("events")
 def event_dashboard(event_id: str):
-    """Dashboard pojedynczego wydarzenia."""
-    user = _get_current_admin_user()
-    
-    event = get_event(event_id)
-    if not event:
-        return redirect(url_for("admin_v2_bp.events_list"))
-    
-    # Pobierz zamówienia i uczestników dla tego wydarzenia
-    orders = list_orders(event_id=event_id, limit=500)
-    participants = get_participants_for_event(event_id) or []
-    
-    # Statystyki
-    total_orders = len(orders)
-    paid_orders = [o for o in orders if o.get("status") == "paid"]
-    total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
-    total_participants = len(participants)
-    
-    # Oblicz pending orders i pending revenue
-    pending_orders = [o for o in orders if o.get("status") not in ("paid", "cancelled", "refunded")]
-    pending_revenue = sum(float(o.get("total") or 0) for o in pending_orders)
-    
-    stats = {
-        # Nazwy dla kompatybilności wstecznej
-        "total_orders": total_orders,
-        "total_participants": total_participants,
-        "total_revenue": f"{total_revenue:,.2f}".replace(",", " "),
-        "paid_orders": len(paid_orders),
-        # Nazwy oczekiwane przez event_dashboard.html
-        "orders": total_orders,
-        "participants": total_participants,
-        "paid": len(paid_orders),
-        "pending": len(pending_orders),
-        "revenue": float(total_revenue),
-        "pending_revenue": float(pending_revenue),
-    }
-    
-    # Ostatnie zamówienia
-    recent_orders = orders[:10]
-    for order in recent_orders:
-        order["event_name"] = event.get("event_name", "")
-        order["event_color"] = (event.get("data") or {}).get("color_gradient_1", "")
-    
-    return render_template(
-        "admin_v2/event_dashboard.html",
-        active_page="events",
-        event=event,
-        stats=stats,
-        recent_orders=recent_orders,
-        participants=participants[:20],
-        **_get_common_context(user),
-    )
+    """Dashboard pojedynczego wydarzenia - przekierowanie do Event Room."""
+    # Dashboard jest teraz zakładką "Sprzedaż" w Event Room
+    return redirect(url_for("admin_v2_bp.event_room", event_id=event_id, tab="sales"))
 
 
 @admin_v2_bp.route("/events", methods=["GET"])
@@ -3408,16 +3372,33 @@ def participant_detail(participant_id):
             "timestamp": _format_datetime_pl(participant["created_at"]),
         })
     
+    # Mapowanie template_key na czytelną nazwę
+    template_key_labels = {
+        "participant_ticket": "Potwierdzenie rezerwacji",
+        "participant_ticket_resend": "Ponowne potwierdzenie rezerwacji",
+        "participant_cancel": "Anulowanie rezerwacji",
+        "participant_cancelled": "Anulowanie rezerwacji",
+        "purchaser_payment_confirmation": "Potwierdzenie płatności",
+        "purchaser_order_confirmation": "Potwierdzenie zamówienia",
+        "purchaser_payment_reminder": "Przypomnienie o płatności",
+        "purchaser_order_cancel": "Anulowanie zamówienia",
+        "order_cancelled": "Anulowanie zamówienia",
+    }
+    
     # Dodaj emaile
     for email in emails:
+        template_key = email.get("template_key") or ""
+        email_title = template_key_labels.get(template_key, email.get("subject") or "Email")
+        
         participant_history.append({
             "type": "email",
-            "title": email.get("email_type") or "Email",
+            "title": email_title,
             "description": email.get("subject") or "",
             "status": email.get("status"),
             "status_label": {
                 "sent": "Wysłano",
                 "delivered": "Dostarczono",
+                "queued": "W kolejce",
                 "error": "Błąd",
                 "bounced": "Odrzucono",
             }.get(email.get("status"), email.get("status")),

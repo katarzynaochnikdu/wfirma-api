@@ -23,9 +23,9 @@
           <i data-lucide="edit"></i>
           Edytuj
         </a>
-        <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=event.event_id) }}" class="btn" style="background: white; color: {{ (event.data or {}).color_gradient_1 or '#2563eb' }};">
-          <i data-lucide="layout-dashboard"></i>
-          Dashboard
+        <a href="{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}" class="btn" style="background: white; color: {{ (event.data or {}).color_gradient_1 or '#2563eb' }};">
+          <i data-lucide="layout-grid"></i>
+          Event Room
         </a>
       </div>
     </div>

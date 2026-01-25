@@ -37,8 +37,8 @@
     <span class="event-banner-label">Wydarzenie</span>
     <span class="event-banner-title">{{ participant.event_name or 'Nieznane wydarzenie' }}</span>
   </div>
-  <a href="{{ url_for('admin_v2_bp.event_dashboard', event_id=participant.event_id) }}" class="event-banner-link">
-    Zobacz dashboard →
+  <a href="{{ url_for('admin_v2_bp.event_room', event_id=participant.event_id) }}" class="event-banner-link">
+    Event Room →
   </a>
 </div>
 

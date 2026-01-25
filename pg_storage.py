@@ -1889,6 +1889,7 @@ def mail_log_exists(event_order_id: str, template_key: str, direction: Optional[
 def get_mail_log_by_email(to_email: str, limit: int = 50) -> List[Dict[str, Any]]:
     """
     Pobiera historię emaili wysłanych do danego adresu.
+    Wyszukiwanie case-insensitive.
     """
     ensure_schema()
     pool = None
@@ -1901,13 +1902,15 @@ def get_mail_log_by_email(to_email: str, limit: int = 50) -> List[Dict[str, Any]
             SELECT id, event_order_id, direction, template_key, to_email, subject, 
                    status, error, data, created_at as sent_at
             FROM mail_log
-            WHERE to_email = %s
+            WHERE LOWER(to_email) = LOWER(%s)
             ORDER BY created_at DESC
             LIMIT %s
             """,
             (str(to_email), int(limit)),
         )
-        return [dict(r) for r in (cur.fetchall() or [])]
+        rows = cur.fetchall() or []
+        print(f"[DB] get_mail_log_by_email: found {len(rows)} emails for {to_email}")
+        return [dict(r) for r in rows]
     except Exception as e:
         print(f"[DB] get_mail_log_by_email error: {e}")
         return []
