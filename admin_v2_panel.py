@@ -376,15 +376,17 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     # Generuj linki Backstage dynamicznie
     # Portal ID z konfiguracji lub domyślne dla Medidesk
     backstage_portal_id = event_data.get("backstage_portal_id") or "20101549222"
+    # Brand ID z konfiguracji lub domyślne dla Medidesk
+    backstage_brand_id = event_data.get("backstage_brand_id") or "24311000000002010"
     # Użyj backstage_event_id (Zoho ID) zamiast lokalnego event_id
     backstage_event_id = event_data.get("backstage_event_id") or event.get("event_id", "")
     
-    # Format: https://backstage.zoho.eu/portal/{portal_id}/events/{event_id}/{page}
+    # Format: https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/{page}
     if backstage_event_id:
-        backstage_base = f"https://backstage.zoho.eu/portal/{backstage_portal_id}/events/{backstage_event_id}"
+        backstage_base = f"https://backstage.zoho.eu/home#/portal/{backstage_portal_id}/brand/{backstage_brand_id}/event/{backstage_event_id}"
         event["backstage_url"] = f"{backstage_base}/overview"
-        event["backstage_orders_url"] = f"{backstage_base}/orders"
-        event["backstage_attendees_url"] = f"{backstage_base}/attendees"
+        event["backstage_orders_url"] = f"{backstage_base}/registrations/order-details"
+        event["backstage_attendees_url"] = f"{backstage_base}/registrations/detail/attendees?openImportAttendee=false&showCreditsPurchase=false"
     else:
         event["backstage_url"] = "#"
         event["backstage_orders_url"] = "#"
@@ -5902,6 +5904,64 @@ def _build_payment_buckets(orders: list) -> dict:
                 buckets["upcoming"]["total"] += total
     
     return buckets
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# UPDATE EVENT FIELD (aktualizacja pojedynczego pola wydarzenia)
+# ---------------------------------------------------------------------------
+
+@admin_v2_bp.route("/events/<event_id>/update-field", methods=["POST"])
+@_require_permission("events")
+def event_update_field(event_id: str):
+    """Aktualizuje pojedyncze pole w data wydarzenia (np. link Backstage)."""
+    from flask import jsonify
+    from pg_storage import upsert_event
+    
+    user = _get_current_admin_user()
+    
+    # Sprawdź dostęp do wydarzenia
+    if not _user_has_event_access(user, event_id):
+        return jsonify({"success": False, "error": "Brak dostępu"}), 403
+    
+    # Viewer nie może edytować
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Brak uprawnień do edycji"}), 403
+    
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"success": False, "error": "Nie znaleziono wydarzenia"}), 404
+    
+    data = request.get_json() or {}
+    field = data.get("field", "").strip()
+    value = data.get("value", "").strip()
+    
+    # Dozwolone pola do edycji
+    allowed_fields = [
+        "backstage_url",
+        "backstage_orders_url", 
+        "backstage_attendees_url",
+    ]
+    
+    if field not in allowed_fields:
+        return jsonify({"success": False, "error": f"Pole '{field}' nie jest dozwolone do edycji"}), 400
+    
+    try:
+        event_data = event.get("data") or {}
+        event_data[field] = value
+        
+        upsert_event(
+            event_id=event_id,
+            event_name=event.get("event_name"),
+            status=event.get("status") or "active",
+            notes=event.get("notes") or "",
+            data=event_data,
+            is_active=event.get("is_active", True)
+        )
+        
+        return jsonify({"success": True, "message": f"Pole {field} zaktualizowane"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

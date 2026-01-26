@@ -331,7 +331,8 @@ input[type="color"].form-input {
         Edytuj w Backstage
       </a>
       {% else %}
-      <a href="{{ event.data.event_config_link or 'https://backstage.zoho.eu/home#/portal/' ~ portal_id ~ '/event/' ~ backstage_event_id ~ '/details' }}" 
+      {% set default_brand_id = '24311000000002010' %}
+      <a href="{{ event.data.event_config_link or 'https://backstage.zoho.eu/home#/portal/' ~ portal_id ~ '/brand/' ~ default_brand_id ~ '/event/' ~ backstage_event_id ~ '/details' }}" 
          target="_blank" rel="noopener noreferrer"
          class="btn btn-outline btn-sm">
         <i data-lucide="external-link"></i>

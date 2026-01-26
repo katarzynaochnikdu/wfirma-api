@@ -1116,25 +1116,46 @@
     </div>
     <div style="padding: 1rem;">
       <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
-        <!-- Backstage Links -->
+        <!-- Backstage Links (edytowalne) -->
         <div>
           <label class="form-label" style="margin-bottom: 0.75rem; font-weight: 600;">Zoho Backstage</label>
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-            <a href="{{ event.backstage_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
-              <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
-              <span>Ogólne</span>
-              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
-            </a>
-            <a href="{{ event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
-              <i data-lucide="shopping-cart" style="width: 16px; height: 16px;"></i>
-              <span>Zamówienia</span>
-              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
-            </a>
-            <a href="{{ event.backstage_attendees_url }}" target="_blank" rel="noopener noreferrer" class="link-card">
-              <i data-lucide="users" style="width: 16px; height: 16px;"></i>
-              <span>Uczestnicy</span>
-              <i data-lucide="external-link" style="width: 12px; height: 12px; margin-left: auto; opacity: 0.5;"></i>
-            </a>
+            <!-- Link Ogólne -->
+            <div class="link-card-editable" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);">
+              <i data-lucide="settings" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+              <input type="text" class="backstage-link-input" id="backstage_url" 
+                     value="{{ event.data.backstage_url or event.backstage_url }}" 
+                     placeholder="https://backstage.zoho.eu/..."
+                     style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
+                     onchange="saveBackstageLink('backstage_url', this.value)">
+              <a href="{{ event.data.backstage_url or event.backstage_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
+                <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+              </a>
+            </div>
+            <!-- Link Zamówienia -->
+            <div class="link-card-editable" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);">
+              <i data-lucide="shopping-cart" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+              <input type="text" class="backstage-link-input" id="backstage_orders_url" 
+                     value="{{ event.data.backstage_orders_url or event.backstage_orders_url }}" 
+                     placeholder="https://backstage.zoho.eu/.../orders"
+                     style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
+                     onchange="saveBackstageLink('backstage_orders_url', this.value)">
+              <a href="{{ event.data.backstage_orders_url or event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
+                <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+              </a>
+            </div>
+            <!-- Link Uczestnicy -->
+            <div class="link-card-editable" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);">
+              <i data-lucide="users" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+              <input type="text" class="backstage-link-input" id="backstage_attendees_url" 
+                     value="{{ event.data.backstage_attendees_url or event.backstage_attendees_url }}" 
+                     placeholder="https://backstage.zoho.eu/.../attendees"
+                     style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
+                     onchange="saveBackstageLink('backstage_attendees_url', this.value)">
+              <a href="{{ event.data.backstage_attendees_url or event.backstage_attendees_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
+                <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+              </a>
+            </div>
           </div>
         </div>
         
@@ -1278,6 +1299,23 @@
   /* ===== SALES CHART CARD / DISCOUNT STATS ===== */
   .sales-chart-card {
     margin-bottom: 1.5rem;
+    margin-left: 12.5%;
+    margin-right: 12.5%;
+    width: auto;
+  }
+  
+  @media (max-width: 1200px) {
+    .sales-chart-card {
+      margin-left: 6%;
+      margin-right: 6%;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .sales-chart-card {
+      margin-left: 0;
+      margin-right: 0;
+    }
   }
   
   .sales-chart-legend {
@@ -2890,6 +2928,44 @@ function toggleDiscountAccordion(code) {
     // Re-initialize Lucide icons for newly visible content
     if (typeof lucide !== 'undefined') {
       lucide.createIcons();
+    }
+  }
+}
+
+// ===== SAVE BACKSTAGE LINK =====
+async function saveBackstageLink(fieldName, value) {
+  const eventId = '{{ event.event_id }}';
+  
+  try {
+    const resp = await fetch(`/admin-v2/events/${eventId}/update-field`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field: fieldName, value: value })
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      // Aktualizuj link do otwierania
+      const input = document.getElementById(fieldName);
+      if (input) {
+        const linkBtn = input.parentElement.querySelector('a.backstage-link-open');
+        if (linkBtn) {
+          linkBtn.href = value;
+        }
+      }
+      if (typeof showToast === 'function') {
+        showToast('Link zapisany', 'success');
+      }
+    } else {
+      if (typeof showToast === 'function') {
+        showToast('Błąd zapisu: ' + (data.error || 'Nieznany błąd'), 'error');
+      }
+    }
+  } catch (err) {
+    console.error('Error saving backstage link:', err);
+    if (typeof showToast === 'function') {
+      showToast('Błąd połączenia', 'error');
     }
   }
 }
