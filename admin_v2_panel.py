@@ -1132,6 +1132,16 @@ def orders_list():
         order["buyer_company"] = order.get("purchaser_company", "")
         order["participants_count"] = order.get("participant_count", 1)
     
+    # Pobierz kolory wydarzenia dla sticky bannera (jeśli jest filtr)
+    banner_color_1 = "#0065D7"
+    banner_color_2 = "#00A1D7"
+    if event_filter:
+        filtered_event = event_map.get(event_filter)
+        if filtered_event:
+            event_data = filtered_event.get("data") or {}
+            banner_color_1 = event_data.get("color_gradient_1", "#0065D7")
+            banner_color_2 = event_data.get("color_gradient_2", "#00A1D7")
+    
     return render_template(
         "admin_v2/orders.html",
         active_page="orders",
@@ -1140,6 +1150,8 @@ def orders_list():
         total_orders=len(orders),
         sort_column=sort_column,
         sort_direction=sort_direction,
+        banner_color_1=banner_color_1,
+        banner_color_2=banner_color_2,
         **_get_common_context(user),
     )
 
@@ -4557,6 +4569,16 @@ def participants_list():
                 p_data = {}
         p["company"] = p_data.get("company") or p_data.get("company_name") or p_data.get("firma") or ""
     
+    # Pobierz kolory wydarzenia dla sticky bannera (jeśli jest filtr)
+    banner_color_1 = "#0065D7"
+    banner_color_2 = "#00A1D7"
+    if event_id_filter:
+        event = get_event(event_id_filter)
+        if event:
+            event_data = event.get("data") or {}
+            banner_color_1 = event_data.get("color_gradient_1", "#0065D7")
+            banner_color_2 = event_data.get("color_gradient_2", "#00A1D7")
+    
     return render_template(
         "admin_v2/participants.html",
         active_page="participants",
@@ -4564,6 +4586,8 @@ def participants_list():
         events=events,
         stats=stats,
         total_participants=stats["total"],
+        banner_color_1=banner_color_1,
+        banner_color_2=banner_color_2,
         **_get_common_context(user),
     )
 

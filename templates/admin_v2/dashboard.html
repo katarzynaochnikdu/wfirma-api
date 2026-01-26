@@ -7,13 +7,111 @@
 {% endblock %}
 
 {% block content %}
-<!-- PAGE HEADER -->
-<div class="page-header">
+<!-- Sentinel do wykrywania scroll (przed bannerem) -->
+<div id="bannerSentinel" style="height: 1px;"></div>
+
+<!-- STICKY BANNER -->
+<div class="event-sticky-banner" id="stickyBanner" style="background: linear-gradient(135deg, #0065D7, #00A1D7);">
+  <div class="sticky-banner-content">
+    <div class="sticky-banner-main">
+      <div class="sticky-banner-event">
+        <div class="sticky-banner-title-row">
+          <span class="sticky-banner-title">Dashboard</span>
+        </div>
+        <span class="sticky-banner-meta">Przegląd sprzedaży i statystyk wszystkich wydarzeń</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE HEADER (ukryty, zastąpiony przez sticky banner) -->
+<div class="page-header" style="display: none;">
   <div>
     <h1 class="page-title">Dashboard</h1>
     <p class="page-description">Przegląd sprzedaży i statystyk wszystkich wydarzeń</p>
   </div>
 </div>
+
+<style>
+/* === STICKY BANNER === */
+.event-sticky-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 0;
+  color: white;
+  z-index: 100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.event-sticky-banner.is-sticky {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width, 260px);
+  z-index: 1000;
+  right: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 0.75rem 2rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.sticky-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-banner-event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sticky-banner-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sticky-banner-title {
+  font-weight: 700;
+  font-size: 1.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-sticky-banner.is-sticky .sticky-banner-title {
+  font-size: 0.95rem;
+}
+
+.sticky-banner-meta {
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.8);
+}
+
+.banner-placeholder {
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+</style>
 
 <!-- FILTR GLOBALNY -->
 <div class="dashboard-filter-bar">
@@ -755,6 +853,58 @@ function createRevenueChart(labels, revenueData, participantsData) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  // === STICKY BANNER ===
+  const banner = document.getElementById('stickyBanner');
+  const sentinel = document.getElementById('bannerSentinel');
+  
+  if (banner && sentinel) {
+    // Create placeholder element
+    const placeholder = document.createElement('div');
+    placeholder.className = 'banner-placeholder';
+    banner.parentNode.insertBefore(placeholder, banner.nextSibling);
+    
+    // Use IntersectionObserver for smooth detection
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) {
+            // Sentinel scrolled out of view - make banner sticky
+            banner.classList.add('is-sticky');
+            placeholder.classList.add('active');
+            
+            // Get height AFTER banner is sticky (smaller padding)
+            requestAnimationFrame(() => {
+              const bannerHeight = banner.offsetHeight;
+              placeholder.style.height = bannerHeight + 'px';
+              
+              const bannerRect = banner.getBoundingClientRect();
+              const bannerBottom = Math.ceil(bannerRect.bottom);
+              
+              document.documentElement.style.setProperty('--sticky-banner-height', bannerBottom + 'px');
+              document.body.classList.add('banner-is-sticky');
+            });
+            // Re-init icons
+            setTimeout(() => {
+              if (typeof lucide !== 'undefined') lucide.createIcons();
+            }, 50);
+          } else {
+            // Sentinel visible - remove sticky
+            banner.classList.remove('is-sticky');
+            placeholder.classList.remove('active');
+            placeholder.style.height = '0';
+            document.body.classList.remove('banner-is-sticky');
+          }
+        });
+      },
+      { 
+        threshold: 0,
+        rootMargin: '0px 0px 0px 0px'
+      }
+    );
+    
+    observer.observe(sentinel);
+  }
+
   // Dane z backendu (przekazane przez Jinja) - z fallbackami
   var revenueData = {{ chart_data.revenue | tojson | default('[]', true) }};
   var revenueLabels = {{ chart_data.revenue_labels | tojson | default('[]', true) }};
@@ -777,21 +927,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const paymentDataIsDefault = paymentDataKeys.length === Object.keys(defaultPaymentData).length
     && paymentDataKeys.every(key => defaultPaymentData[key] === finalPaymentData[key]);
 
-  // #region agent log
-  fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      sessionId:'debug-session',
-      runId:'initial',
-      hypothesisId:'A',
-      location:'templates/admin_v2/dashboard.html:773',
-      message:'finalPaymentData prepared',
-      data:{keys:paymentDataKeys,sum:paymentDataNumericSum,isDefaultPaymentData:paymentDataIsDefault},
-      timestamp:Date.now()
-    })
-  }).catch(()=>{});
-  // #endregion
   
   // Revenue Chart (Line) - pobierz dane dzienne na start (z uwzględnieniem filtra)
   let initialChartUrl = '/admin-v2/api/revenue-chart?scale=day';
@@ -897,21 +1032,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const colors = labels.map(l => (paymentConfig[l] || paymentConfig['Inne']).color);
     const paymentChartHasPositive = paymentDataNumericSum > 0;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sessionId:'debug-session',
-        runId:'initial',
-        hypothesisId:'B',
-        location:'templates/admin_v2/dashboard.html:868',
-        message:'payment chart data snapshot',
-        data:{labels:labels,length:labels.length,sum:paymentDataNumericSum,hasPositiveData:paymentChartHasPositive},
-        timestamp:Date.now()
-      })
-    }).catch(()=>{});
-    // #endregion
     
     new Chart(paymentCtx, {
       type: 'doughnut',
@@ -958,22 +1078,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const value = paymentValues[idx];
         return { label, config, value };
       });
-
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'initial',
-          hypothesisId:'C',
-          location:'templates/admin_v2/dashboard.html:902',
-          message:'payment legend entries',
-          data:{entries:legendSummary.map(entry => ({label:entry.label,value:entry.value}))},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
 
       legendSummary.forEach(entry => {
         const iconSvg = svgIcons[entry.config.icon] || svgIcons['help-circle'];

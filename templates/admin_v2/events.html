@@ -3,22 +3,31 @@
 {% block title %}Wydarzenia{% endblock %}
 
 {% block content %}
-<!-- PAGE HEADER -->
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Wydarzenia</h1>
-    <p class="page-description">Zarządzaj wydarzeniami i konferencjami</p>
+<!-- Sentinel do wykrywania scroll (przed bannerem) -->
+<div id="bannerSentinel" style="height: 1px;"></div>
+
+<!-- STICKY BANNER -->
+<div class="event-sticky-banner" id="stickyBanner" style="background: linear-gradient(135deg, #0065D7, #00A1D7);">
+  <div class="sticky-banner-content">
+    <div class="sticky-banner-main">
+      <div class="sticky-banner-event">
+        <div class="sticky-banner-title-row">
+          <span class="sticky-banner-title">Wydarzenia</span>
+        </div>
+        <span class="sticky-banner-meta">Zarządzaj wydarzeniami i konferencjami</span>
+      </div>
+    </div>
   </div>
-  <div class="header-actions" style="display: flex; align-items: center; gap: 1rem;">
+  <div class="sticky-banner-actions" style="display: flex; align-items: center; gap: 1rem;">
     <!-- View Toggle -->
-    <div class="view-toggle" style="display: flex; background: var(--muted); border-radius: var(--radius); padding: 2px;">
-      <button type="button" class="view-toggle-btn active" data-view="grid" onclick="setEventsView('grid')" title="Duże kostki">
+    <div class="view-toggle" style="display: flex; background: rgba(255,255,255,0.2); border-radius: var(--radius); padding: 2px;">
+      <button type="button" class="view-toggle-btn active" data-view="grid" onclick="setEventsView('grid')" title="Duże kostki" style="color: white;">
         <i data-lucide="layout-grid"></i>
       </button>
-      <button type="button" class="view-toggle-btn" data-view="compact" onclick="setEventsView('compact')" title="Małe kostki">
+      <button type="button" class="view-toggle-btn" data-view="compact" onclick="setEventsView('compact')" title="Małe kostki" style="color: rgba(255,255,255,0.7);">
         <i data-lucide="grid-3x3"></i>
       </button>
-      <button type="button" class="view-toggle-btn" data-view="list" onclick="setEventsView('list')" title="Lista">
+      <button type="button" class="view-toggle-btn" data-view="list" onclick="setEventsView('list')" title="Lista" style="color: rgba(255,255,255,0.7);">
         <i data-lucide="list"></i>
       </button>
     </div>
@@ -30,8 +39,16 @@
   </div>
 </div>
 
+<!-- PAGE HEADER (ukryty, zastąpiony przez sticky banner) -->
+<div class="page-header" style="display: none;">
+  <div>
+    <h1 class="page-title">Wydarzenia</h1>
+    <p class="page-description">Zarządzaj wydarzeniami i konferencjami</p>
+  </div>
+</div>
+
 <!-- FILTERS -->
-<div class="card filters-card">
+<div class="card filters-card" style="margin-top: 0; margin-bottom: 0; border-top: none; border-radius: 0;">
   <form class="filters-grid" style="grid-template-columns: 1fr 180px;" method="GET">
     <div class="filter-search">
       <i data-lucide="search" class="search-icon"></i>
@@ -289,6 +306,98 @@
 {% endif %}
 
 <style>
+/* === STICKY BANNER === */
+.event-sticky-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 0;
+  color: white;
+  z-index: 100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.event-sticky-banner.is-sticky {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width, 260px);
+  z-index: 1000;
+  right: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 0.75rem 2rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.sticky-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-banner-event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sticky-banner-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sticky-banner-title {
+  font-weight: 700;
+  font-size: 1.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-sticky-banner.is-sticky .sticky-banner-title {
+  font-size: 0.95rem;
+}
+
+.sticky-banner-meta {
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.8);
+}
+
+.banner-placeholder {
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* Height is set directly by JavaScript */
+
+/* View toggle in sticky banner */
+.event-sticky-banner .view-toggle-btn.active {
+  background: rgba(255,255,255,0.25);
+  color: white !important;
+}
+
+.event-sticky-banner .view-toggle-btn:hover {
+  color: white !important;
+  background: rgba(255,255,255,0.15);
+}
+
 /* === EVENT CARD BASE === */
 .event-card {
   display: block;
@@ -718,6 +827,61 @@ document.addEventListener('DOMContentLoaded', function() {
   // Załaduj zapisaną preferencję widoku
   const savedView = localStorage.getItem('eventsView') || 'grid';
   setEventsView(savedView);
+  
+  // === STICKY BANNER ===
+  const banner = document.getElementById('stickyBanner');
+  const sentinel = document.getElementById('bannerSentinel');
+  
+  if (banner && sentinel) {
+    // Create placeholder element
+    const placeholder = document.createElement('div');
+    placeholder.className = 'banner-placeholder';
+    banner.parentNode.insertBefore(placeholder, banner.nextSibling);
+    
+    // Use IntersectionObserver for smooth detection
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) {
+            // Sentinel scrolled out of view - make banner sticky
+            // First make banner sticky, then get height (sticky has smaller padding)
+            banner.classList.add('is-sticky');
+            placeholder.classList.add('active');
+            
+            // Get height AFTER banner is sticky (smaller padding)
+            requestAnimationFrame(() => {
+              const bannerHeight = banner.offsetHeight;
+              placeholder.style.height = bannerHeight + 'px';
+              
+              const bannerRect = banner.getBoundingClientRect();
+              const bannerBottom = Math.ceil(bannerRect.bottom);
+              
+              // Set CSS variable for banner height
+              document.documentElement.style.setProperty('--sticky-banner-height', bannerBottom + 'px');
+              document.body.classList.add('banner-is-sticky');
+            });
+            // Re-init icons
+            setTimeout(() => {
+              if (typeof lucide !== 'undefined') lucide.createIcons();
+            }, 50);
+          } else {
+            // Sentinel visible - remove sticky
+            banner.classList.remove('is-sticky');
+            placeholder.classList.remove('active');
+            placeholder.style.height = '0';
+            // Reset banner-is-sticky class
+            document.body.classList.remove('banner-is-sticky');
+          }
+        });
+      },
+      { 
+        threshold: 0,
+        rootMargin: '0px 0px 0px 0px'
+      }
+    );
+    
+    observer.observe(sentinel);
+  }
 });
 </script>
 {% endblock %}

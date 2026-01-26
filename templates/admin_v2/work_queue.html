@@ -3,8 +3,40 @@
 {% block title %}Monitoring procesów{% endblock %}
 
 {% block content %}
-<!-- PAGE HEADER -->
-<div class="page-header">
+<!-- Sentinel do wykrywania scroll (przed bannerem) -->
+<div id="bannerSentinel" style="height: 1px;"></div>
+
+<!-- STICKY BANNER -->
+<div class="event-sticky-banner" id="stickyBanner" style="background: linear-gradient(135deg, #0065D7, #00A1D7);">
+  <div class="sticky-banner-content">
+    <div class="sticky-banner-main">
+      <div class="sticky-banner-event">
+        <div class="sticky-banner-title-row">
+          <span class="sticky-banner-title">Monitoring procesów</span>
+          <span class="status-badge" style="background: rgba(255,255,255,0.2); color: white;">{{ tasks|length }} akcji</span>
+        </div>
+        <span class="sticky-banner-meta" style="text-transform: capitalize;">{{ current_date }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="sticky-banner-actions" style="display: flex; align-items: center; gap: 0.75rem;">
+    {% if stats.can_retry > 0 %}
+    <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry_all') }}" style="margin: 0;">
+      <button type="submit" class="sticky-banner-link" style="background: rgba(255,255,255,0.15); border: none; cursor: pointer;">
+        <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+        Ponów wszystkie ({{ stats.can_retry }})
+      </button>
+    </form>
+    {% endif %}
+    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="sticky-banner-link">
+      <i data-lucide="calendar" style="width: 14px; height: 14px;"></i>
+      Wydarzenia
+    </a>
+  </div>
+</div>
+
+<!-- PAGE HEADER (ukryty, zastąpiony przez sticky banner) -->
+<div class="page-header" style="display: none;">
   <div>
     <div style="display: flex; align-items: center; gap: 0.5rem;">
       <h1 class="page-title">Monitoring procesów</h1>
@@ -12,21 +44,106 @@
     </div>
     <p class="page-description" style="text-transform: capitalize;">{{ current_date }}</p>
   </div>
-  <div class="header-actions">
-    {% if stats.can_retry > 0 %}
-    <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry_all') }}" style="margin: 0;">
-      <button type="submit" class="btn btn-outline">
-        <i data-lucide="refresh-cw"></i>
-        Ponów wszystkie ({{ stats.can_retry }})
-      </button>
-    </form>
-    {% endif %}
-    <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-outline">
-      <i data-lucide="calendar"></i>
-      Wydarzenia
-    </a>
-  </div>
 </div>
+
+<style>
+/* === STICKY BANNER === */
+.event-sticky-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 0;
+  color: white;
+  z-index: 100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.event-sticky-banner.is-sticky {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width, 260px);
+  z-index: 1000;
+  right: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 0.75rem 2rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.sticky-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-banner-event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sticky-banner-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sticky-banner-title {
+  font-weight: 700;
+  font-size: 1.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-sticky-banner.is-sticky .sticky-banner-title {
+  font-size: 0.95rem;
+}
+
+.sticky-banner-meta {
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.8);
+}
+
+.sticky-banner-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255,255,255,0.15);
+  border-radius: 8px;
+  color: white;
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.sticky-banner-link:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+.banner-placeholder {
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+</style>
 
 <!-- CRITICAL ALERTS -->
 {% if stats.critical > 0 or events_needing_config|length > 0 %}
@@ -388,10 +505,62 @@ function deleteTask(taskId) {
   });
 }
 
-// Init Lucide icons
+// Init Lucide icons and sticky banner
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
+  }
+  
+  // === STICKY BANNER ===
+  const banner = document.getElementById('stickyBanner');
+  const sentinel = document.getElementById('bannerSentinel');
+  
+  if (banner && sentinel) {
+    // Create placeholder element
+    const placeholder = document.createElement('div');
+    placeholder.className = 'banner-placeholder';
+    banner.parentNode.insertBefore(placeholder, banner.nextSibling);
+    
+    // Use IntersectionObserver for smooth detection
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) {
+            // Sentinel scrolled out of view - make banner sticky
+            banner.classList.add('is-sticky');
+            placeholder.classList.add('active');
+            
+            // Get height AFTER banner is sticky (smaller padding)
+            requestAnimationFrame(() => {
+              const bannerHeight = banner.offsetHeight;
+              placeholder.style.height = bannerHeight + 'px';
+              
+              const bannerRect = banner.getBoundingClientRect();
+              const bannerBottom = Math.ceil(bannerRect.bottom);
+              
+              document.documentElement.style.setProperty('--sticky-banner-height', bannerBottom + 'px');
+              document.body.classList.add('banner-is-sticky');
+            });
+            // Re-init icons
+            setTimeout(() => {
+              if (typeof lucide !== 'undefined') lucide.createIcons();
+            }, 50);
+          } else {
+            // Sentinel visible - remove sticky
+            banner.classList.remove('is-sticky');
+            placeholder.classList.remove('active');
+            placeholder.style.height = '0';
+            document.body.classList.remove('banner-is-sticky');
+          }
+        });
+      },
+      { 
+        threshold: 0,
+        rootMargin: '0px 0px 0px 0px'
+      }
+    );
+    
+    observer.observe(sentinel);
   }
 });
 </script>
