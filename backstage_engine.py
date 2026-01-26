@@ -329,20 +329,13 @@ def send_participant_ticket_emails(
     stats = {"sent": 0, "failed": 0, "skipped": 0, "details": []}
 
     # #region agent log
-    import json as _json
-    try:
-        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:entry","message":"Function called","data":{"event_order_id":event_order_id,"event_name":event_name},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1-H5"}) + '\n')
-    except: pass
+    print(f"[DEBUG-PARTICIPANT-EMAIL] ENTRY | order_id={event_order_id}, event_name={event_name[:30] if event_name else None}")
     # #endregion
 
     # Guard: wysyłka biletów dopiero gdy mamy komplet attendee-webhooków per ticket_id
     complete_info = is_attendee_webhooks_complete(event_order_id)
     # #region agent log
-    try:
-        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:complete_check","message":"Attendee webhooks check","data":{"event_order_id":event_order_id,"complete":complete_info.get("complete"),"expected":complete_info.get("expected",0),"received":complete_info.get("received",0),"missing":complete_info.get("missing_ticket_ids",[])},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
-    except: pass
+    print(f"[DEBUG-PARTICIPANT-EMAIL] COMPLETE_CHECK | order_id={event_order_id}, complete={complete_info.get('complete')}, expected={complete_info.get('expected',0)}, received={complete_info.get('received',0)}, missing={complete_info.get('missing_ticket_ids',[])[:3]}")
     # #endregion
     if not complete_info.get("complete"):
         _log("INFO", "Nie wysyłam maili do uczestników - brak kompletu attendee-webhooków", {
@@ -367,10 +360,7 @@ def send_participant_ticket_emails(
         order = None
     order_status = (order or {}).get("status", "") if isinstance(order, dict) else ""
     # #region agent log
-    try:
-        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:status_check","message":"Order status check","data":{"event_order_id":event_order_id,"order_status":order_status,"is_paid":order_status.strip().lower()=="paid"},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H2"}) + '\n')
-    except: pass
+    print(f"[DEBUG-PARTICIPANT-EMAIL] STATUS_CHECK | order_id={event_order_id}, order_status={order_status}, is_paid={order_status.strip().lower()=='paid'}")
     # #endregion
     if (order_status or "").strip().lower() != "paid":
         _log("INFO", "Nie wysyłam maili do uczestników - zamówienie nieopłacone", {
@@ -388,10 +378,8 @@ def send_participant_ticket_emails(
     # Pobierz uczestników
     participants = get_participants_for_order(event_order_id)
     # #region agent log
-    try:
-        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:participants","message":"Participants fetched","data":{"event_order_id":event_order_id,"count":len(participants) if participants else 0,"participants_preview":[{"email":p.get("email","")[:20],"status":p.get("status","")} for p in (participants or [])[:5]]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H4,H5"}) + '\n')
-    except: pass
+    _p_preview = [{"email": p.get("email","")[:15], "status": p.get("status","")} for p in (participants or [])[:3]]
+    print(f"[DEBUG-PARTICIPANT-EMAIL] PARTICIPANTS | order_id={event_order_id}, count={len(participants) if participants else 0}, preview={_p_preview}")
     # #endregion
     if not participants:
         _log("INFO", "Brak uczestników do wysłania emaili", {"event_order_id": event_order_id})
@@ -1598,7 +1586,9 @@ def _build_mail_task(
 
 # Konfiguracja wFirma
 WFIRMA_COMPANY = os.environ.get("WFIRMA_COMPANY", "md")  # md lub test
-WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "Eventy")
+WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "Eventy Faktura VAT")  # Seria dla faktur VAT
+WFIRMA_SERIES_PROFORMA = os.environ.get("WFIRMA_SERIES_PROFORMA", "Eventy Pro forma")  # Seria dla proform
+WFIRMA_SERIES_CORRECTION = os.environ.get("WFIRMA_SERIES_CORRECTION", "Eventy Korekta")  # Seria dla korekt
 WFIRMA_API_KEY = os.environ.get("MAKE_RENDER_API_KEY", "")  # Ten sam klucz co dla innych API
 
 
@@ -1624,12 +1614,18 @@ def _create_wfirma_invoice(
     """
     event_order_id = order_data.get("event_order_id", "")
     
+    # Wybierz odpowiednią serię w zależności od typu dokumentu
+    if document_type == "proforma":
+        series_name = WFIRMA_SERIES_PROFORMA
+    else:
+        series_name = WFIRMA_SERIES_NAME
+    
     _log("INFO", "WFIRMA: START tworzenia dokumentu", {
         "document_type": document_type,
         "event_order_id": event_order_id,
         "payment_status": payment_status,
         "company": WFIRMA_COMPANY,
-        "series_name": WFIRMA_SERIES_NAME,
+        "series_name": series_name,
         "event_name": event_name[:30] if event_name else None,
         "total": order_data.get("total", 0),
         "currency": order_data.get("currency", "PLN"),
@@ -1702,7 +1698,7 @@ def _create_wfirma_invoice(
     # Payload do workflow endpoint
     invoice_payload = {
         "company": WFIRMA_COMPANY,
-        "series_name": WFIRMA_SERIES_NAME,
+        "series_name": series_name,
         "payment_status": payment_status,
         "payment_due_days": 0 if payment_status == "paid" else 7,
         "description": event_name,

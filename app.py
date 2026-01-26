@@ -217,6 +217,9 @@ WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL = os.environ.get("WFIRMA_TOKEN_EXPIRES_ALERT_EM
 # Link do autoryzacji (MD)
 WFIRMA_AUTH_URL_MD = os.environ.get("WFIRMA_AUTH_URL_MD", "https://wfirma-api.onrender.com/auth?company=md")
 
+# Seria faktur korygujących (używana w wfirma_create_correction)
+WFIRMA_SERIES_CORRECTION = os.environ.get("WFIRMA_SERIES_CORRECTION", "Eventy Korekta")
+
 # SCOPES per firma - muszą odpowiadać konfiguracji w wFirma!
 SCOPES_MD = [
     # Zgodne z konfiguracją w wFirma dla Medidesk (API_RENDER_ADMIN_ZOHO)
@@ -2035,6 +2038,16 @@ def wfirma_create_correction(
             }
             invoice_contents_dict[str(idx)] = content
         
+        # 3.5) Pobierz serię korekty (jeśli skonfigurowana)
+        series_id = None
+        if WFIRMA_SERIES_CORRECTION:
+            series = wfirma_find_series_by_name(token, WFIRMA_SERIES_CORRECTION, company_id)
+            if series and series.get('id'):
+                series_id = int(series.get('id'))
+                print(f"[WFIRMA DEBUG] Znaleziono serię korekty: {WFIRMA_SERIES_CORRECTION} -> ID {series_id}")
+            else:
+                print(f"[WFIRMA DEBUG] Nie znaleziono serii korekty: {WFIRMA_SERIES_CORRECTION}")
+        
         # 4) Payload faktury korygującej
         import datetime
         correction_payload = {
@@ -2046,6 +2059,10 @@ def wfirma_create_correction(
             "invoicecontents": invoice_contents_dict,
             "send": True,  # ✅ FIX: Dodaj parametr wysyłki emaila
         }
+        
+        # Dodaj serię korekty jeśli znaleziono
+        if series_id:
+            correction_payload["series"] = {"id": series_id}
         
         # Dodaj email kontrahenta jeśli dostępny
         if contractor_email:

@@ -1299,17 +1299,11 @@ def _handle_mark_paid(order_id: str, user: dict):
         
         comp = attendee_webhooks_status(order_id)
         # #region agent log
-        try:
-            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:before_send","message":"Checking attendee webhooks","data":{"order_id":order_id,"complete":comp.get("complete"),"expected":comp.get("expected",0),"received":comp.get("received",0),"missing":comp.get("missing_ticket_ids",[])},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
-        except: pass
+        print(f"[DEBUG-V2-MARK-PAID] BEFORE_SEND | order_id={order_id}, complete={comp.get('complete')}, expected={comp.get('expected',0)}, received={comp.get('received',0)}, missing={comp.get('missing_ticket_ids',[])[:3]}")
         # #endregion
         if comp.get("complete"):
             # #region agent log
-            try:
-                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:calling_send","message":"Calling send_participant_ticket_emails","data":{"order_id":order_id,"event_name":event_name},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
-            except: pass
+            print(f"[DEBUG-V2-MARK-PAID] CALLING_SEND | order_id={order_id}, event_name={event_name[:30] if event_name else None}")
             # #endregion
             participant_email_stats = send_participant_ticket_emails(
                 event_order_id=order_id,
@@ -1318,27 +1312,18 @@ def _handle_mark_paid(order_id: str, user: dict):
                 event_id=order.get("event_id", ""),
             )
             # #region agent log
-            try:
-                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:send_result","message":"send_participant_ticket_emails returned","data":{"order_id":order_id,"sent":participant_email_stats.get("sent",0),"failed":participant_email_stats.get("failed",0),"skipped":participant_email_stats.get("skipped",0),"details":participant_email_stats.get("details",[])},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3,H4"}) + '\n')
-            except: pass
+            print(f"[DEBUG-V2-MARK-PAID] SEND_RESULT | order_id={order_id}, sent={participant_email_stats.get('sent',0)}, failed={participant_email_stats.get('failed',0)}, skipped={participant_email_stats.get('skipped',0)}, details={participant_email_stats.get('details',[])[:3]}")
             # #endregion
             print(f"[V2 MARK-PAID] Emaile do uczestników: sent={participant_email_stats.get('sent', 0)}, failed={participant_email_stats.get('failed', 0)}, skipped={participant_email_stats.get('skipped', 0)}")
         else:
             # #region agent log
-            try:
-                with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:skipped","message":"Skipping participant emails - webhooks incomplete","data":{"order_id":order_id,"expected":comp.get("expected"),"received":comp.get("received")},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
-            except: pass
+            print(f"[DEBUG-V2-MARK-PAID] SKIPPED | order_id={order_id}, expected={comp.get('expected')}, received={comp.get('received')}, missing={comp.get('missing_ticket_ids',[])[:3]}")
             # #endregion
             print(f"[V2 MARK-PAID] Pomijam emaile do uczestników - brak kompletu webhooków: expected={comp.get('expected')}, received={comp.get('received')}")
             participant_email_stats["skipped_reason"] = "attendee_webhooks_incomplete"
     except Exception as e:
         # #region agent log
-        try:
-            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:exception","message":"Exception in participant email flow","data":{"order_id":order_id,"error":str(e)},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
-        except: pass
+        print(f"[DEBUG-V2-MARK-PAID] EXCEPTION | order_id={order_id}, error={str(e)}")
         # #endregion
         errors.append(f"Błąd wysyłki potwierdzeń: {str(e)}")
         print(f"[V2 MARK-PAID] Błąd wysyłki potwierdzeń do uczestników: {e}")
@@ -1358,10 +1343,7 @@ def _handle_mark_paid(order_id: str, user: dict):
     )
     
     # #region agent log
-    try:
-        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-            _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:done","message":"Mark paid completed","data":{"order_id":order_id,"invoice_generated":invoice_generated,"email_sent":email_sent,"errors":errors},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
-    except: pass
+    print(f"[DEBUG-V2-MARK-PAID] DONE | order_id={order_id}, invoice_generated={invoice_generated}, email_sent={email_sent}, errors={errors}")
     # #endregion
     
     if errors:
