@@ -328,8 +328,22 @@ def send_participant_ticket_emails(
     
     stats = {"sent": 0, "failed": 0, "skipped": 0, "details": []}
 
+    # #region agent log
+    import json as _json
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:entry","message":"Function called","data":{"event_order_id":event_order_id,"event_name":event_name},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1-H5"}) + '\n')
+    except: pass
+    # #endregion
+
     # Guard: wysyłka biletów dopiero gdy mamy komplet attendee-webhooków per ticket_id
     complete_info = is_attendee_webhooks_complete(event_order_id)
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:complete_check","message":"Attendee webhooks check","data":{"event_order_id":event_order_id,"complete":complete_info.get("complete"),"expected":complete_info.get("expected",0),"received":complete_info.get("received",0),"missing":complete_info.get("missing_ticket_ids",[])},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H1"}) + '\n')
+    except: pass
+    # #endregion
     if not complete_info.get("complete"):
         _log("INFO", "Nie wysyłam maili do uczestników - brak kompletu attendee-webhooków", {
             "event_order_id": event_order_id,
@@ -352,6 +366,12 @@ def send_participant_ticket_emails(
     except Exception:
         order = None
     order_status = (order or {}).get("status", "") if isinstance(order, dict) else ""
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:status_check","message":"Order status check","data":{"event_order_id":event_order_id,"order_status":order_status,"is_paid":order_status.strip().lower()=="paid"},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H2"}) + '\n')
+    except: pass
+    # #endregion
     if (order_status or "").strip().lower() != "paid":
         _log("INFO", "Nie wysyłam maili do uczestników - zamówienie nieopłacone", {
             "event_order_id": event_order_id,
@@ -367,6 +387,12 @@ def send_participant_ticket_emails(
     
     # Pobierz uczestników
     participants = get_participants_for_order(event_order_id)
+    # #region agent log
+    try:
+        with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+            _f.write(_json.dumps({"location":"backstage_engine.py:send_participant_ticket_emails:participants","message":"Participants fetched","data":{"event_order_id":event_order_id,"count":len(participants) if participants else 0,"participants_preview":[{"email":p.get("email","")[:20],"status":p.get("status","")} for p in (participants or [])[:5]]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H4,H5"}) + '\n')
+    except: pass
+    # #endregion
     if not participants:
         _log("INFO", "Brak uczestników do wysłania emaili", {"event_order_id": event_order_id})
         return stats
