@@ -721,12 +721,10 @@ document.addEventListener('DOMContentLoaded', function() {
   if (paymentCtx) {
     // Map payment labels to icons and colors
     const paymentConfig = {
-      'Online - link do płatności': { icon: 'credit-card', color: 'hsl(212, 100%, 42%)', shortName: 'Online' },
-      'Online': { icon: 'credit-card', color: 'hsl(212, 100%, 42%)', shortName: 'Online' },
-      'Faktura Pro Forma': { icon: 'file-text', color: 'hsl(160, 82%, 44%)', shortName: 'Pro forma' },
-      'Proforma': { icon: 'file-text', color: 'hsl(160, 82%, 44%)', shortName: 'Pro forma' },
-      'FOC': { icon: 'gift', color: 'hsl(195, 100%, 42%)', shortName: 'FOC' },
-      'Inne': { icon: 'help-circle', color: 'hsl(280, 70%, 50%)', shortName: 'Inne' }
+      'Online': { icon: 'credit-card', color: 'hsl(212, 100%, 42%)' },
+      'Proforma': { icon: 'file-text', color: 'hsl(160, 82%, 44%)' },
+      'FOC': { icon: 'gift', color: 'hsl(195, 100%, 42%)' },
+      'Inne': { icon: 'help-circle', color: 'hsl(280, 70%, 50%)' }
     };
     
     const labels = Object.keys(finalPaymentData);
@@ -762,22 +760,29 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
     
-    // Build custom icon legend
+    // Build custom icon legend with inline SVGs
     const legendContainer = document.getElementById('paymentLegend');
+    const svgIcons = {
+      'credit-card': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>',
+      'file-text': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>',
+      'gift': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect width="20" height="5" x="2" y="7"/><line x1="12" x2="12" y1="22" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
+      'help-circle': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>'
+    };
+    
     if (legendContainer && labels.length > 0) {
       labels.forEach((label, idx) => {
         const config = paymentConfig[label] || paymentConfig['Inne'];
         const value = Object.values(finalPaymentData)[idx];
+        const iconSvg = svgIcons[config.icon] || svgIcons['help-circle'];
         legendContainer.innerHTML += `
           <div class="payment-legend-item" title="${label}: ${value}" style="display: flex; align-items: center; gap: 0.5rem; cursor: default;">
             <span class="payment-icon-badge" style="background: ${config.color}15; border: 2px solid ${config.color}; color: ${config.color}; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
-              <i data-lucide="${config.icon}" style="width: 16px; height: 16px;"></i>
+              ${iconSvg}
             </span>
             <span style="font-size: 0.75rem; font-weight: 500;">${value}</span>
           </div>
         `;
       });
-      lucide.createIcons();
     }
   }
   

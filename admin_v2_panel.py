@@ -980,15 +980,24 @@ def dashboard():
         revenue_labels.append(month_names_pl[int(month) - 1])
         revenue_values.append(round(revenue_by_month[m], 2))
     
-    # Metody płatności
+    # Metody płatności - kategoryzuj do znanych typów
     payment_methods = defaultdict(int)
     for o in all_orders:
-        payment_type = (o.get("payment_option_name") or "Inne").strip()
-        if not payment_type:
+        raw_payment = (o.get("payment_option_name") or "").strip().lower()
+        total = float(o.get("total") or 0)
+        
+        # Kategoryzuj metodę płatności
+        if total == 0 or "foc" in raw_payment or "free" in raw_payment:
+            payment_type = "FOC"
+        elif "proforma" in raw_payment or "pro forma" in raw_payment:
+            payment_type = "Proforma"
+        elif "online" in raw_payment or "stripe" in raw_payment or "link" in raw_payment:
+            payment_type = "Online"
+        elif raw_payment:
             payment_type = "Inne"
-        # Skróć długie nazwy
-        if len(payment_type) > 15:
-            payment_type = payment_type[:12] + "..."
+        else:
+            payment_type = "Inne"
+        
         payment_methods[payment_type] += 1
     
     chart_data = {
