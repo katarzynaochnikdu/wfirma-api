@@ -2459,6 +2459,124 @@ def email_designer():
 
 
 # ---------------------------------------------------------------------------
+# ORDER SEARCH API
+# ---------------------------------------------------------------------------
+
+
+@admin_v2_bp.route("/api/order-exists/<order_id>", methods=["GET"])
+@_require_login
+def api_order_exists(order_id: str):
+    """API: Sprawdza czy zamówienie istnieje (do wyszukiwarki Dashboard)."""
+    from flask import jsonify
+    from pg_storage import get_order
+    
+    order_id = (order_id or "").strip()
+    if not order_id:
+        return jsonify({"exists": False, "error": "Brak ID zamówienia"})
+    
+    order = get_order(order_id)
+    if order:
+        return jsonify({"exists": True, "order_id": order.get("event_order_id")})
+    else:
+        return jsonify({"exists": False, "order_id": order_id})
+
+
+@admin_v2_bp.route("/api/revenue-chart", methods=["GET"])
+@_require_login
+def api_revenue_chart():
+    """API: Dane wykresu przychodu z możliwością wyboru skali (tydzień/miesiąc)."""
+    from flask import jsonify
+    from pg_storage import list_orders
+    from collections import defaultdict
+    from datetime import datetime, timedelta
+    
+    scale = request.args.get("scale", "month").strip().lower()
+    
+    # Pobierz opłacone zamówienia
+    all_orders = list_orders(status="paid", limit=500)
+    
+    # Filtruj według uprawnień użytkownika
+    user = _get_current_admin_user()
+    role = (user.get("role") or "").lower()
+    if role == "viewer":
+        allowed_event_ids = user.get("allowed_events") or []
+        if isinstance(allowed_event_ids, str):
+            import json
+            try:
+                allowed_event_ids = json.loads(allowed_event_ids)
+            except:
+                allowed_event_ids = []
+        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+        all_orders = [o for o in all_orders if str(o.get("event_id")) in allowed_event_ids]
+    
+    labels = []
+    values = []
+    
+    if scale == "week":
+        # Ostatnie 8 tygodni
+        revenue_by_week = defaultdict(float)
+        today = datetime.now()
+        
+        for o in all_orders:
+            created = o.get("created_at")
+            if created:
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    except Exception:
+                        continue
+                # Oblicz numer tygodnia (ISO week)
+                week_start = created - timedelta(days=created.weekday())
+                week_key = week_start.strftime("%Y-%m-%d")
+                revenue_by_week[week_key] += float(o.get("total") or 0)
+        
+        # Wygeneruj ostatnie 8 tygodni
+        for i in range(7, -1, -1):
+            week_start = today - timedelta(days=today.weekday() + 7 * i)
+            week_key = week_start.strftime("%Y-%m-%d")
+            week_label = week_start.strftime("%d.%m")
+            labels.append(week_label)
+            values.append(round(revenue_by_week.get(week_key, 0), 2))
+    
+    else:  # month
+        # Ostatnie 6 miesięcy
+        revenue_by_month = defaultdict(float)
+        month_names_pl = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru']
+        
+        for o in all_orders:
+            created = o.get("created_at")
+            if created:
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    except Exception:
+                        continue
+                month_key = f"{created.year}-{created.month:02d}"
+                revenue_by_month[month_key] += float(o.get("total") or 0)
+        
+        # Sortuj i weź ostatnie 6 miesięcy
+        sorted_months = sorted(revenue_by_month.keys())[-6:]
+        for m in sorted_months:
+            year, month = m.split('-')
+            labels.append(month_names_pl[int(month) - 1])
+            values.append(round(revenue_by_month[m], 2))
+        
+        # Jeśli brak danych, wypełnij ostatnie 6 miesięcy zerami
+        if not labels:
+            today = datetime.now()
+            for i in range(5, -1, -1):
+                m = (today.month - i - 1) % 12 + 1
+                labels.append(month_names_pl[m - 1])
+                values.append(0)
+    
+    return jsonify({
+        "scale": scale,
+        "labels": labels if labels else ["Brak danych"],
+        "values": values if values else [0]
+    })
+
+
+# ---------------------------------------------------------------------------
 # EMAIL TEMPLATES API
 # ---------------------------------------------------------------------------
 

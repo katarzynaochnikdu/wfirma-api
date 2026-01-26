@@ -15,6 +15,66 @@
   </div>
 </div>
 
+<!-- FILTR GLOBALNY -->
+<div class="dashboard-filter-bar">
+  <form id="dashboardFilterForm" onsubmit="applyDashboardFilter(event)">
+    <div class="filter-row">
+      <!-- Wyszukiwanie tekstowe -->
+      <div class="filter-group filter-group-search">
+        <label class="filter-label">Szukaj zamówienia</label>
+        <div class="search-input-group">
+          <i data-lucide="search" class="search-icon"></i>
+          <input 
+            type="text" 
+            id="filterSearch" 
+            class="form-input" 
+            placeholder="Nazwisko, email lub ID zamówienia..."
+            autocomplete="off"
+          >
+        </div>
+      </div>
+      
+      <!-- Filtr wydarzenia -->
+      <div class="filter-group">
+        <label class="filter-label">Wydarzenie</label>
+        <select id="filterEvent" class="form-select">
+          <option value="">Wszystkie wydarzenia</option>
+          {% for event in recent_events %}
+          <option value="{{ event.event_id }}">{{ event.event_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      
+      <!-- Filtr statusu -->
+      <div class="filter-group">
+        <label class="filter-label">Status płatności</label>
+        <select id="filterStatus" class="form-select">
+          <option value="">Wszystkie statusy</option>
+          <option value="paid">Opłacone</option>
+          <option value="pending_payment">Oczekujące</option>
+          <option value="received">Otrzymane</option>
+          <option value="cancelled">Anulowane</option>
+        </select>
+      </div>
+      
+      <!-- Przyciski -->
+      <div class="filter-group filter-group-actions">
+        <label class="filter-label">&nbsp;</label>
+        <div class="filter-buttons">
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="search"></i>
+            Filtruj
+          </button>
+          <button type="button" class="btn btn-outline" onclick="clearDashboardFilter()">
+            <i data-lucide="x"></i>
+            Wyczyść
+          </button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
 <!-- STATS GRID -->
 <div class="stats-grid dashboard-stats">
   <!-- Stat 1: Zamówienia -->
@@ -66,10 +126,17 @@
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
   <!-- Revenue Chart -->
   <div class="card">
-    <div class="card-header">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
       <h3 class="card-title">Przychód w czasie</h3>
+      <div class="chart-scale-selector">
+        <button type="button" class="scale-btn active" data-scale="week" onclick="changeRevenueScale('week')">Tydzień</button>
+        <button type="button" class="scale-btn" data-scale="month" onclick="changeRevenueScale('month')">Miesiąc</button>
+      </div>
     </div>
-    <div class="card-content" style="padding: 1rem;">
+    <div class="card-content" style="padding: 1rem; position: relative;">
+      <div id="revenueChartLoader" class="chart-loader hidden">
+        <span class="chart-spinner"></span>
+      </div>
       <canvas id="revenueChart" style="height: 240px; width: 100%;"></canvas>
     </div>
   </div>
@@ -85,154 +152,384 @@
   </div>
 </div>
 
-<!-- TWO COLUMN TABLES -->
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-  <!-- RECENT ORDERS -->
-  <div class="card">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <h3 class="card-title">Ostatnie zamówienia</h3>
-      <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="btn btn-ghost" style="font-size: 0.75rem;">
-        Zobacz wszystkie
-        <i data-lucide="arrow-right"></i>
-      </a>
-    </div>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th style="width: 80px;">Data</th>
-          <th>Kupujący</th>
-          <th>Wydarzenie</th>
-          <th class="text-right">Wartość</th>
-          <th class="text-center" style="width: 70px;">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for order in recent_orders %}
-        {% set event_color = order.event_color or 'hsl(212, 100%, 42%)' %}
-        <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
-          <!-- Data -->
-          <td>
-            <div>
-              <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
-              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
-            </div>
-          </td>
-          <!-- Kupujący -->
-          <td>
-            <div>
-              <p style="font-size: 0.875rem; font-weight: 500;">{{ order.purchaser_first_name or '' }} {{ order.purchaser_last_name or '' }}</p>
-              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.purchaser_email or '—' }}</p>
-            </div>
-          </td>
-          <!-- Wydarzenie -->
-          <td>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, hsl(195, 100%, 42%)); width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></div>
-              <span style="font-size: 0.875rem;">{{ order.event_name or 'Nieznane' }}</span>
-            </div>
-          </td>
-          <!-- Wartość -->
-          <td class="text-right">
-            <span style="font-weight: 600;">{{ order.total|format_currency }}</span>
-          </td>
-          <!-- Status (ikona) -->
-          <td class="text-center">
-            {% if order.status == 'paid' %}
-            <span class="status-icon-badge status-icon-paid" title="Opłacone">
-              <i data-lucide="check-circle"></i>
-            </span>
-            {% elif order.status == 'pending_payment' %}
-            <span class="status-icon-badge status-icon-pending" title="Oczekujące">
-              <i data-lucide="clock"></i>
-            </span>
-            {% elif order.status == 'cancelled' %}
-            <span class="status-icon-badge status-icon-cancelled" title="Anulowane">
-              <i data-lucide="x-circle"></i>
-            </span>
-            {% else %}
-            <span class="status-icon-badge" title="{{ order.status or 'Nieznany' }}">
-              <i data-lucide="help-circle"></i>
-            </span>
-            {% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="5" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
-            Brak zamówień do wyświetlenia
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<!-- RECENT ORDERS (pełna szerokość) -->
+<div class="card">
+  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h3 class="card-title">Ostatnie zamówienia</h3>
+    <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="btn btn-ghost" style="font-size: 0.75rem;">
+      Zobacz wszystkie
+      <i data-lucide="arrow-right"></i>
+    </a>
   </div>
-
-  <!-- RECENT EVENTS -->
-  <div class="card">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <h3 class="card-title">Ostatnie wydarzenia</h3>
-      <a href="{{ url_for('admin_v2_bp.events_list') }}" class="btn btn-ghost" style="font-size: 0.75rem;">
-        Zobacz wszystkie
-        <i data-lucide="arrow-right"></i>
-      </a>
-    </div>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Wydarzenie</th>
-          <th style="width: 100px;">Data</th>
-          <th>Miejsce</th>
-          <th class="text-center" style="width: 70px;">Zam.</th>
-          <th class="text-center" style="width: 70px;">Ucz.</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for event in recent_events %}
-        {% set event_data = event.data or {} %}
-        {% set event_color = event_data.get('color_gradient_1') or 'hsl(212, 100%, 42%)' %}
-        {% set event_color_2 = event_data.get('color_gradient_2') or 'hsl(195, 100%, 42%)' %}
-        {% set event_date = event_data.get('event_date_time') or event_data.get('eventDate') or '' %}
-        {% set event_city = event_data.get('eventCity') or '—' %}
-        <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.event_room', event_id=event.event_id) }}'">
-          <!-- Wydarzenie -->
-          <td>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, {{ event_color_2 }}); width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></div>
-              <span style="font-size: 0.875rem; font-weight: 500;">{{ event.event_name or 'Nieznane' }}</span>
-            </div>
-          </td>
-          <!-- Data -->
-          <td>
-            <span style="font-size: 0.875rem;">{{ event_date|format_date_pl if event_date else '—' }}</span>
-          </td>
-          <!-- Miejsce -->
-          <td>
-            <span style="font-size: 0.875rem; color: var(--muted-foreground);">{{ event_city }}</span>
-          </td>
-          <!-- Zamówienia -->
-          <td class="text-center">
-            <span style="font-weight: 600;">{{ event.order_count or 0 }}</span>
-          </td>
-          <!-- Uczestnicy -->
-          <td class="text-center">
-            <span style="font-weight: 600;">{{ event.participant_count or 0 }}</span>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="5" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
-            Brak wydarzeń do wyświetlenia
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 100px;">Data</th>
+        <th>Kupujący</th>
+        <th>Wydarzenie</th>
+        <th class="text-right" style="width: 120px;">Wartość</th>
+        <th class="text-center" style="width: 100px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in recent_orders %}
+      {% set event_color = order.event_color or 'hsl(212, 100%, 42%)' %}
+      <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
+        <!-- Data -->
+        <td>
+          <div>
+            <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
+          </div>
+        </td>
+        <!-- Kupujący -->
+        <td>
+          <div>
+            <p style="font-size: 0.875rem; font-weight: 500;">{{ order.purchaser_first_name or '' }} {{ order.purchaser_last_name or '' }}</p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.purchaser_email or '—' }}</p>
+          </div>
+        </td>
+        <!-- Wydarzenie -->
+        <td>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="event-dot" style="background: linear-gradient(135deg, {{ event_color }}, hsl(195, 100%, 42%)); width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></div>
+            <span style="font-size: 0.875rem;">{{ order.event_name or 'Nieznane' }}</span>
+          </div>
+        </td>
+        <!-- Wartość -->
+        <td class="text-right">
+          <span style="font-weight: 600;">{{ order.total|format_currency }}</span>
+        </td>
+        <!-- Status (ikona) -->
+        <td class="text-center">
+          {% if order.status == 'paid' %}
+          <span class="status-icon-badge status-icon-paid" title="Opłacone">
+            <i data-lucide="check-circle"></i>
+          </span>
+          {% elif order.status == 'pending_payment' %}
+          <span class="status-icon-badge status-icon-pending" title="Oczekujące">
+            <i data-lucide="clock"></i>
+          </span>
+          {% elif order.status == 'cancelled' %}
+          <span class="status-icon-badge status-icon-cancelled" title="Anulowane">
+            <i data-lucide="x-circle"></i>
+          </span>
+          {% else %}
+          <span class="status-icon-badge" title="{{ order.status or 'Nieznany' }}">
+            <i data-lucide="help-circle"></i>
+          </span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          Brak zamówień do wyświetlenia
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+<style>
+  /* DASHBOARD FILTER BAR */
+  .dashboard-filter-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .filter-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  
+  .filter-group-search {
+    flex: 1;
+    min-width: 250px;
+  }
+  
+  .filter-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+  
+  .search-input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0 0.75rem;
+  }
+  
+  .search-input-group:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px hsla(212, 100%, 50%, 0.1);
+  }
+  
+  .search-input-group .search-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+  }
+  
+  .search-input-group .form-input {
+    border: none;
+    background: transparent;
+    padding: 0.5rem 0;
+    width: 100%;
+    font-size: 0.875rem;
+  }
+  
+  .search-input-group .form-input:focus {
+    outline: none;
+    box-shadow: none;
+  }
+  
+  .filter-group .form-select {
+    min-width: 180px;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  
+  .filter-group-actions {
+    flex-shrink: 0;
+  }
+  
+  .filter-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .filter-buttons .btn {
+    white-space: nowrap;
+  }
+  
+  .filter-buttons .btn i {
+    width: 16px;
+    height: 16px;
+  }
+  
+  @media (max-width: 900px) {
+    .filter-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .filter-group {
+      width: 100%;
+    }
+    .filter-group .form-select {
+      width: 100%;
+    }
+    .filter-group-actions {
+      margin-top: 0.5rem;
+    }
+    .filter-buttons {
+      width: 100%;
+    }
+    .filter-buttons .btn {
+      flex: 1;
+    }
+  }
+  
+  /* CHART SCALE SELECTOR */
+  .chart-scale-selector {
+    display: flex;
+    gap: 0.25rem;
+    background: var(--muted);
+    padding: 0.25rem;
+    border-radius: var(--radius);
+  }
+  
+  .scale-btn {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    color: var(--muted-foreground);
+    border-radius: calc(var(--radius) - 2px);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  
+  .scale-btn:hover {
+    color: var(--foreground);
+  }
+  
+  .scale-btn.active {
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  
+  /* CHART LOADER */
+  .chart-loader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    border-radius: var(--radius);
+  }
+  
+  .chart-loader.hidden {
+    display: none;
+  }
+  
+  .chart-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: chart-spin 0.8s linear infinite;
+  }
+  
+  @keyframes chart-spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+
 <script>
+// Globalna zmienna dla wykresu przychodu
+var revenueChart = null;
+var currentScale = 'week';
+
+function applyDashboardFilter(e) {
+  e.preventDefault();
+  
+  const search = (document.getElementById('filterSearch').value || '').trim();
+  const eventId = document.getElementById('filterEvent').value;
+  const status = document.getElementById('filterStatus').value;
+  
+  // Buduj URL z parametrami
+  const params = new URLSearchParams();
+  if (search) params.set('q', search);  // 'q' - parametr wyszukiwania w orders_list
+  if (eventId) params.set('event_id', eventId);
+  if (status) params.set('status', status);
+  
+  // Przekieruj do listy zamówień z filtrami
+  const url = '/admin-v2/orders' + (params.toString() ? '?' + params.toString() : '');
+  window.location.href = url;
+}
+
+function clearDashboardFilter() {
+  document.getElementById('filterSearch').value = '';
+  document.getElementById('filterEvent').value = '';
+  document.getElementById('filterStatus').value = '';
+}
+
+function changeRevenueScale(scale) {
+  if (scale === currentScale) return;
+  currentScale = scale;
+  
+  // Aktualizuj aktywny przycisk
+  document.querySelectorAll('.scale-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.scale === scale);
+  });
+  
+  // Pokaż loader
+  const loader = document.getElementById('revenueChartLoader');
+  loader.classList.remove('hidden');
+  
+  // Pobierz dane z API
+  fetch(`/admin-v2/api/revenue-chart?scale=${scale}`)
+    .then(res => res.json())
+    .then(data => {
+      loader.classList.add('hidden');
+      
+      if (data.labels && data.values && revenueChart) {
+        revenueChart.data.labels = data.labels;
+        revenueChart.data.datasets[0].data = data.values;
+        revenueChart.update('active');
+      }
+    })
+    .catch(err => {
+      loader.classList.add('hidden');
+      console.error('Błąd pobierania danych wykresu:', err);
+    });
+}
+
+function createRevenueChart(labels, data) {
+  var revenueCtx = document.getElementById('revenueChart');
+  if (!revenueCtx) return null;
+  
+  return new Chart(revenueCtx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Przychód (PLN)',
+        data: data,
+        borderColor: 'hsl(212, 100%, 42%)',
+        backgroundColor: 'hsla(212, 100%, 42%, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: 'hsl(212, 100%, 42%)',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: false
+          },
+          ticks: {
+            color: 'hsl(210, 10%, 50%)'
+          }
+        },
+        y: {
+          grid: {
+            color: 'hsla(210, 10%, 50%, 0.1)'
+          },
+          ticks: {
+            color: 'hsl(210, 10%, 50%)',
+            callback: function(value) {
+              return value.toLocaleString('pl-PL') + ' zł';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   // Dane z backendu (przekazane przez Jinja) - z fallbackami
   var revenueData = {{ chart_data.revenue | tojson | default('[]', true) }};
@@ -240,67 +537,27 @@ document.addEventListener('DOMContentLoaded', function() {
   var paymentData = {{ chart_data.payment_methods | tojson | default('{}', true) }};
   
   // Domyślne dane jeśli brak z backendu
-  var defaultRevenueLabels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze'];
-  var defaultRevenueData = [0, 0, 0, 0, 0, 0];
+  var defaultRevenueLabels = ['Brak danych'];
+  var defaultRevenueData = [0];
   var defaultPaymentData = { 'Online': 0, 'Proforma': 0, 'FOC': 0 };
   
   var finalRevenueLabels = (revenueLabels && revenueLabels.length) ? revenueLabels : defaultRevenueLabels;
   var finalRevenueData = (revenueData && revenueData.length) ? revenueData : defaultRevenueData;
   var finalPaymentData = (paymentData && Object.keys(paymentData).length) ? paymentData : defaultPaymentData;
   
-  // Revenue Chart (Line)
-  var revenueCtx = document.getElementById('revenueChart');
-  if (revenueCtx) {
-    new Chart(revenueCtx, {
-      type: 'line',
-      data: {
-        labels: finalRevenueLabels,
-        datasets: [{
-          label: 'Przychód (PLN)',
-          data: finalRevenueData,
-          borderColor: 'hsl(212, 100%, 42%)',
-          backgroundColor: 'hsla(212, 100%, 42%, 0.1)',
-          borderWidth: 2,
-          fill: true,
-          tension: 0.4,
-          pointBackgroundColor: 'hsl(212, 100%, 42%)',
-          pointBorderColor: '#fff',
-          pointBorderWidth: 2,
-          pointRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          x: {
-            grid: {
-              display: false
-            },
-            ticks: {
-              color: 'hsl(210, 10%, 50%)'
-            }
-          },
-          y: {
-            grid: {
-              color: 'hsla(210, 10%, 50%, 0.1)'
-            },
-            ticks: {
-              color: 'hsl(210, 10%, 50%)',
-              callback: function(value) {
-                return value.toLocaleString('pl-PL') + ' zł';
-              }
-            }
-          }
-        }
+  // Revenue Chart (Line) - pobierz dane tygodniowe na start
+  fetch('/admin-v2/api/revenue-chart?scale=week')
+    .then(res => res.json())
+    .then(data => {
+      if (data.labels && data.values) {
+        revenueChart = createRevenueChart(data.labels, data.values);
+      } else {
+        revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData);
       }
+    })
+    .catch(() => {
+      revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData);
     });
-  }
   
   // Payment Methods Chart (Doughnut)
   var paymentCtx = document.getElementById('paymentChart');
