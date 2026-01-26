@@ -342,12 +342,12 @@
     </div>
   </div>
   
-  <!-- WYKRES UCZESTNIKÓW PER TYP BILETU -->
+  <!-- WYKRES UCZESTNIKÓW PER KOD RABATOWY -->
   <div class="card sales-chart-card ticket-stats-card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
       <h3 class="card-title-with-icon">
         <i data-lucide="users"></i>
-        Uczestnicy per typ biletu
+        Uczestnicy per kod rabatowy
       </h3>
       <div class="sales-chart-legend">
         <div class="legend-item">
@@ -366,46 +366,46 @@
     </div>
     <div class="card-body">
       <div class="discount-accordion">
-        {% for ticket in ticket_stats %}
-        <div class="discount-accordion-item {% if ticket.participants_overdue > 0 %}has-problems{% endif %}" 
-             data-state="closed" data-code="ticket-{{ loop.index }}">
+        {% for promo in participant_stats %}
+        <div class="discount-accordion-item {% if promo.participants_overdue > 0 %}has-problems{% endif %}" 
+             data-state="closed" data-code="promo-{{ loop.index }}">
           
           <!-- Trigger (nagłówek wiersza) -->
           <button type="button" class="discount-accordion-trigger" 
-                  onclick="toggleDiscountAccordion('ticket-{{ loop.index }}')">
+                  onclick="toggleDiscountAccordion('promo-{{ loop.index }}')">
             <div class="discount-accordion-trigger-inner">
               
-              <!-- Nazwa typu biletu -->
-              <span class="discount-code-name ticket-type-name" title="{{ ticket.ticket_name }}">
-                <i data-lucide="ticket" style="width: 14px; height: 14px; opacity: 0.5;"></i>
-                {{ ticket.ticket_name }}
+              <!-- Nazwa kodu rabatowego -->
+              <span class="discount-code-name" title="{{ promo.display_name }}">
+                <i data-lucide="tag" style="width: 14px; height: 14px; opacity: 0.5;"></i>
+                {{ promo.display_name }}
               </span>
               
               <!-- Stacked Bar -->
               <div class="stacked-bar">
-                {% if ticket.participants_paid > 0 %}
+                {% if promo.participants_paid > 0 %}
                 <div class="stacked-bar-segment stacked-bar-segment-paid" 
-                     style="width: {{ (ticket.participants_paid / max_ticket_participants * 100)|round(1) }}%"
-                     title="Opłaceni: {{ ticket.participants_paid }}"></div>
+                     style="width: {{ (promo.participants_paid / max_participant_count * 100)|round(1) }}%"
+                     title="Opłaceni: {{ promo.participants_paid }}"></div>
                 {% endif %}
-                {% if ticket.participants_pending > 0 %}
+                {% if promo.participants_pending > 0 %}
                 <div class="stacked-bar-segment stacked-bar-segment-pending" 
-                     style="width: {{ (ticket.participants_pending / max_ticket_participants * 100)|round(1) }}%"
-                     title="Oczekujący: {{ ticket.participants_pending }}"></div>
+                     style="width: {{ (promo.participants_pending / max_participant_count * 100)|round(1) }}%"
+                     title="Oczekujący: {{ promo.participants_pending }}"></div>
                 {% endif %}
-                {% if ticket.participants_overdue > 0 %}
+                {% if promo.participants_overdue > 0 %}
                 <div class="stacked-bar-segment stacked-bar-segment-overdue" 
-                     style="width: {{ (ticket.participants_overdue / max_ticket_participants * 100)|round(1) }}%"
-                     title="Przeterminowani: {{ ticket.participants_overdue }}"></div>
+                     style="width: {{ (promo.participants_overdue / max_participant_count * 100)|round(1) }}%"
+                     title="Przeterminowani: {{ promo.participants_overdue }}"></div>
                 {% endif %}
               </div>
               
               <!-- Wartości (osoby) -->
               <div class="participant-values">
-                <span class="participant-value-paid">{{ ticket.participants_paid }}</span>
-                {% if ticket.participants_pending > 0 or ticket.participants_overdue > 0 %}
-                <span class="participant-value-pending {% if ticket.participants_overdue > 0 %}has-overdue{% endif %}">
-                  +{{ ticket.participants_pending + ticket.participants_overdue }}
+                <span class="participant-value-paid">{{ promo.participants_paid }}</span>
+                {% if promo.participants_pending > 0 or promo.participants_overdue > 0 %}
+                <span class="participant-value-pending {% if promo.participants_overdue > 0 %}has-overdue{% endif %}">
+                  +{{ promo.participants_pending + promo.participants_overdue }}
                 </span>
                 {% endif %}
                 <span class="participant-value-suffix">osób</span>
@@ -423,26 +423,26 @@
             <!-- Stats Summary -->
             <div class="discount-stats-summary">
               <span class="discount-stats-summary-item">
-                Razem: <strong>{{ ticket.participants_total }}</strong>
+                Razem: <strong>{{ promo.participants_total }}</strong>
               </span>
               <span class="discount-stats-summary-item success">
-                Opłaceni: <strong>{{ ticket.participants_paid }}</strong>
+                Opłaceni: <strong>{{ promo.participants_paid }}</strong>
               </span>
-              {% if ticket.participants_pending > 0 %}
+              {% if promo.participants_pending > 0 %}
               <span class="discount-stats-summary-item warning">
-                Oczekujący: <strong>{{ ticket.participants_pending }}</strong>
+                Oczekujący: <strong>{{ promo.participants_pending }}</strong>
               </span>
               {% endif %}
-              {% if ticket.participants_overdue > 0 %}
+              {% if promo.participants_overdue > 0 %}
               <span class="discount-stats-summary-item destructive">
-                Przeterminowani: <strong>{{ ticket.participants_overdue }}</strong>
+                Przeterminowani: <strong>{{ promo.participants_overdue }}</strong>
               </span>
               {% endif %}
             </div>
             
             <!-- Participants List -->
             <div class="participant-list">
-              {% for p in ticket.participants[:10] %}
+              {% for p in promo.participants[:10] %}
               <a href="{{ url_for('admin_v2_bp.order_detail', order_id=p.event_order_id) }}" class="participant-row">
                 <div class="participant-row-info">
                   <div class="participant-row-name">{{ p.first_name }} {{ p.last_name }}</div>
@@ -470,9 +470,9 @@
                 <i data-lucide="chevron-right" class="participant-row-chevron"></i>
               </a>
               {% endfor %}
-              {% if ticket.participants|length > 10 %}
+              {% if promo.participants|length > 10 %}
               <div class="order-list-more">
-                ... i {{ ticket.participants|length - 10 }} więcej uczestników
+                ... i {{ promo.participants|length - 10 }} więcej uczestników
               </div>
               {% endif %}
             </div>

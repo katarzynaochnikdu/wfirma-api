@@ -6999,6 +6999,13 @@ def event_room(event_id: str):
         order["order_id"] = order.get("event_order_id", "")
         order["participants_count"] = order.get("participant_count", 1)
     
+    # #region agent log
+    import json as _json_debug2
+    _sample_p = participants[:3] if participants else []
+    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+        _f.write(_json_debug2.dumps({"location":"admin_v2_panel.py:7003","message":"participants BEFORE mapping","data":{"count":len(participants),"sample":[{"id":p.get("participant_id"),"ticket_class_id":p.get("ticket_class_id"),"ticket_class_name":p.get("ticket_class_name"),"data_keys":list((p.get("data") or {}).keys()) if isinstance(p.get("data"),dict) else str(type(p.get("data")))} for p in _sample_p]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"B,C,E"}) + "\n")
+    # #endregion
+    
     # Mapuj pola uczestników dla szablonu
     for p in participants:
         # Zachowaj oryginalną nazwę biletu z danych
@@ -7024,6 +7031,12 @@ def event_room(event_id: str):
     # Pobierz typy biletów dla tego wydarzenia
     from pg_storage import get_ticket_classes
     ticket_classes = get_ticket_classes(event_id) or []
+    
+    # #region agent log
+    import json as _json_debug
+    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+        _f.write(_json_debug.dumps({"location":"admin_v2_panel.py:7027","message":"ticket_classes fetched","data":{"event_id":event_id,"ticket_classes_count":len(ticket_classes),"ticket_classes":[{"id":tc.get("ticket_class_id"),"name":tc.get("ticket_name")} for tc in ticket_classes]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"A"}) + "\n")
+    # #endregion
     
     # === Grupowanie zamówień per kod rabatowy (dla wykresu) ===
     promo_code_stats = {}
@@ -7083,16 +7096,17 @@ def event_room(event_id: str):
         default=1
     ) or 1
     
-    # === Grupowanie uczestników per typ biletu (dla wykresu) ===
-    # Mapuj order_id -> status zamówienia (paid/pending/overdue)
-    order_status_map = {}
+    # === Grupowanie uczestników per kod rabatowy (dla wykresu) ===
+    # Mapuj order_id -> (status, promo_code)
+    order_info_map = {}
     for o in orders:
         oid = o.get("event_order_id")
         status = o.get("status")
         due_date = o.get("payment_due_date")
+        promo_code = o.get("promo_code") or ""
         
         if status == "paid":
-            order_status_map[oid] = "paid"
+            order_info_map[oid] = {"status": "paid", "promo_code": promo_code}
         elif status == "pending_payment":
             is_overdue = False
             if due_date:
@@ -7103,27 +7117,22 @@ def event_room(event_id: str):
                         due_date = None
                 if due_date and due_date < now:
                     is_overdue = True
-            order_status_map[oid] = "overdue" if is_overdue else "pending"
+            order_info_map[oid] = {"status": "overdue" if is_overdue else "pending", "promo_code": promo_code}
         else:
-            order_status_map[oid] = status or "unknown"
+            order_info_map[oid] = {"status": status or "unknown", "promo_code": promo_code}
     
-    # Grupowanie po NAZWIE biletu (nie ID) - różne ID mogą mieć tę samą nazwę
-    ticket_type_stats = {}
+    # Grupowanie uczestników per kod rabatowy
+    participant_promo_stats = {}
     for p in participants:
-        # Użyj oryginalnej nazwy biletu z danych uczestnika
-        ticket_name = p.get("ticket_class_name") or ""
+        order_id = p.get("event_order_id")
+        order_info = order_info_map.get(order_id, {"status": "unknown", "promo_code": ""})
+        promo_code = order_info["promo_code"]
+        p_status = order_info["status"]
         
-        # Jeśli brak nazwy, spróbuj użyć fallback
-        if not ticket_name:
-            ticket_name = "Nieznany"
-        
-        # Klucz grupowania = nazwa biletu (case-insensitive)
-        group_key = ticket_name.strip().lower()
-        
-        if group_key not in ticket_type_stats:
-            ticket_type_stats[group_key] = {
-                "ticket_id": p.get("ticket_class_id") or "unknown",
-                "ticket_name": ticket_name.strip(),  # Zachowaj oryginalną nazwę z wielkimi literami
+        if promo_code not in participant_promo_stats:
+            participant_promo_stats[promo_code] = {
+                "code": promo_code,
+                "display_name": promo_code if promo_code else "Bez rabatu",
                 "participants": [],
                 "participants_total": 0,
                 "participants_paid": 0,
@@ -7131,12 +7140,8 @@ def event_room(event_id: str):
                 "participants_overdue": 0,
             }
         
-        entry = ticket_type_stats[group_key]
+        entry = participant_promo_stats[promo_code]
         entry["participants_total"] += 1
-        
-        # Status uczestnika na podstawie statusu zamówienia
-        order_id = p.get("event_order_id")
-        p_status = order_status_map.get(order_id, "unknown")
         p["payment_status"] = p_status  # Dodaj status do uczestnika
         entry["participants"].append(p)
         
@@ -7147,13 +7152,13 @@ def event_room(event_id: str):
         elif p_status == "overdue":
             entry["participants_overdue"] += 1
     
-    # Konwertuj do listy i posortuj po nazwie
-    ticket_stats = list(ticket_type_stats.values())
-    ticket_stats.sort(key=lambda x: x["ticket_name"].lower())
+    # Konwertuj do listy i posortuj (najpierw "Bez rabatu", potem reszta alfabetycznie)
+    participant_stats = list(participant_promo_stats.values())
+    participant_stats.sort(key=lambda x: ("" if x["code"] == "" else x["code"].lower()))
     
     # Oblicz max_participants dla skalowania pasków
-    max_ticket_participants = max(
-        (t["participants_total"] for t in ticket_stats),
+    max_participant_count = max(
+        (t["participants_total"] for t in participant_stats),
         default=1
     ) or 1
 
@@ -7170,7 +7175,7 @@ def event_room(event_id: str):
         ticket_classes=ticket_classes,
         discount_codes=discount_codes,
         max_code_revenue=max_code_revenue,
-        ticket_stats=ticket_stats,
-        max_ticket_participants=max_ticket_participants,
+        participant_stats=participant_stats,
+        max_participant_count=max_participant_count,
         **_get_common_context(user),
     )
