@@ -147,7 +147,9 @@
       <h3 class="card-title">Metody płatności</h3>
     </div>
     <div class="card-content" style="padding: 1rem;">
-      <canvas id="paymentChart" style="height: 240px; width: 100%;"></canvas>
+      <canvas id="paymentChart" style="height: 180px; width: 100%;"></canvas>
+      <!-- Custom legend with icons -->
+      <div id="paymentLegend" class="payment-legend" style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;"></div>
     </div>
   </div>
 </div>
@@ -219,9 +221,10 @@
       {% set event_color = order.event_color or 'hsl(212, 100%, 42%)' %}
       <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
         <!-- Data -->
-        <td>
+        <td style="min-width: 90px;">
           <div>
-            <p style="font-size: 0.875rem;">{% if order.created_at %}{% if order.created_at is string %}{{ order.created_at[:10].replace('-', '.').split('.')[::-1]|join('.') }}{% else %}{{ order.created_at.strftime('%d.%m.%Y') }}{% endif %}{% else %}—{% endif %}</p>
+            <p style="font-size: 0.875rem; white-space: nowrap;">{% if order.created_at %}{% if order.created_at is string %}{{ order.created_at[:10].replace('-', '.').split('.')[::-1]|join('.') }}{% else %}{{ order.created_at.strftime('%d.%m.%Y') }}{% endif %}{% else %}—{% endif %}</p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{% if order.created_at and order.created_at is not string %}{{ order.created_at.strftime('%H:%M') }}{% endif %}</p>
           </div>
         </td>
         <!-- Osoba -->
@@ -714,18 +717,26 @@ document.addEventListener('DOMContentLoaded', function() {
   // Payment Methods Chart (Doughnut)
   var paymentCtx = document.getElementById('paymentChart');
   if (paymentCtx) {
+    // Map payment labels to icons and colors
+    const paymentConfig = {
+      'Online - link do płatności': { icon: 'credit-card', color: 'hsl(212, 100%, 42%)', shortName: 'Online' },
+      'Online': { icon: 'credit-card', color: 'hsl(212, 100%, 42%)', shortName: 'Online' },
+      'Faktura Pro Forma': { icon: 'file-text', color: 'hsl(160, 82%, 44%)', shortName: 'Pro forma' },
+      'Proforma': { icon: 'file-text', color: 'hsl(160, 82%, 44%)', shortName: 'Pro forma' },
+      'FOC': { icon: 'gift', color: 'hsl(195, 100%, 42%)', shortName: 'FOC' },
+      'Inne': { icon: 'help-circle', color: 'hsl(280, 70%, 50%)', shortName: 'Inne' }
+    };
+    
+    const labels = Object.keys(finalPaymentData);
+    const colors = labels.map(l => (paymentConfig[l] || paymentConfig['Inne']).color);
+    
     new Chart(paymentCtx, {
       type: 'doughnut',
       data: {
-        labels: Object.keys(finalPaymentData),
+        labels: labels,
         datasets: [{
           data: Object.values(finalPaymentData),
-          backgroundColor: [
-            'hsl(212, 100%, 42%)',
-            'hsl(160, 82%, 44%)',
-            'hsl(195, 100%, 42%)',
-            'hsl(280, 70%, 50%)'
-          ],
+          backgroundColor: colors,
           borderWidth: 0,
           hoverOffset: 4
         }]
@@ -736,17 +747,36 @@ document.addEventListener('DOMContentLoaded', function() {
         cutout: '65%',
         plugins: {
           legend: {
-            position: 'bottom',
-            labels: {
-              padding: 16,
-              usePointStyle: true,
-              pointStyle: 'circle',
-              color: 'hsl(210, 10%, 30%)'
+            display: false  // Hide built-in legend
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.label + ': ' + context.raw;
+              }
             }
           }
         }
       }
     });
+    
+    // Build custom icon legend
+    const legendContainer = document.getElementById('paymentLegend');
+    if (legendContainer) {
+      labels.forEach((label, idx) => {
+        const config = paymentConfig[label] || paymentConfig['Inne'];
+        const value = Object.values(finalPaymentData)[idx];
+        legendContainer.innerHTML += `
+          <div class="payment-legend-item" title="${label}: ${value}" style="display: flex; align-items: center; gap: 0.5rem; cursor: default;">
+            <span class="payment-icon-badge" style="background: ${config.color}15; border: 2px solid ${config.color}; color: ${config.color}; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+              <i data-lucide="${config.icon}" style="width: 16px; height: 16px;"></i>
+            </span>
+            <span style="font-size: 0.75rem; font-weight: 500;">${value}</span>
+          </div>
+        `;
+      });
+      lucide.createIcons();
+    }
   }
   
   // Orders Table Sorting

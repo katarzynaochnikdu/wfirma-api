@@ -116,9 +116,10 @@
       
       <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
         <!-- Data -->
-        <td>
+        <td style="min-width: 90px;">
           <div>
-            <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
+            <p style="font-size: 0.875rem; white-space: nowrap;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
           </div>
         </td>
         <!-- Osoba -->

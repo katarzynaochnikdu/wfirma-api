@@ -1113,6 +1113,7 @@ def list_orders(
             SELECT o.event_order_id, o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
                    o.purchaser_phone, o.purchaser_nip, o.payment_option_name, o.payment_type, o.promo_code,
                    o.total, o.currency, o.status, o.payment_due_date, o.paid_at, o.created_at, o.updated_at,
+                   COALESCE(o.raw->'purchaser'->>'company', o.raw->>'purchaserCompany', '') as purchaser_company,
                    s.url as payment_link_url,
                    s.expires_at as payment_link_expires_at,
                    CASE 
