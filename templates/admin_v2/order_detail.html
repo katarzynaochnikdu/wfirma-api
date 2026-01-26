@@ -509,8 +509,9 @@
         <div class="document-list">
           {% if wfirma_documents %}
             {% for doc in wfirma_documents %}
-            {% set doc_type = doc.document_type or doc.doc_type or 'Dokument' %}
-            {% set is_invoice = 'Faktura' in doc_type %}
+            {% set doc_type_raw = doc.document_type or doc.doc_type or 'dokument' %}
+            {% set doc_type = {'normal': 'Faktura VAT', 'proforma': 'Proforma', 'correction': 'Korekta'}.get(doc_type_raw, doc_type_raw|capitalize) %}
+            {% set is_invoice = doc_type_raw == 'normal' %}
             <div class="document-item">
               <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
                 <div style="width: 40px; height: 40px; border-radius: var(--radius); background: {% if is_invoice %}hsl(160, 70%, 92%){% else %}hsl(45, 90%, 92%){% endif %}; display: flex; align-items: center; justify-content: center;">

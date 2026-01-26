@@ -44,37 +44,45 @@
       </div>
     </div>
   </div>
-  <!-- Backstage Dropdown -->
-  <div class="backstage-dropdown">
-    <button type="button" class="sticky-banner-link backstage-dropdown-toggle">
-      <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
-      Linki zewnętrzne
-      <i data-lucide="chevron-down" class="dropdown-chevron" style="width: 14px; height: 14px;"></i>
-    </button>
-    <div class="backstage-dropdown-menu">
-      {% if event.data.event_public_url %}
-      <div class="dropdown-section-label">Strony publiczne</div>
-      <a href="{{ event.data.event_public_url }}" target="_blank" class="backstage-dropdown-item">
-        <i data-lucide="globe"></i>
-        Strona wydarzenia
-      </a>
-      {% endif %}
-      <div class="dropdown-section-label">Zoho Backstage</div>
-      <a href="{{ event.backstage_url }}" target="_blank" class="backstage-dropdown-item">
-        <i data-lucide="settings"></i>
-        Ogólne
-      </a>
-      <a href="{{ event.backstage_orders_url }}" target="_blank" class="backstage-dropdown-item">
-        <i data-lucide="shopping-cart"></i>
-        Zamówienia
-      </a>
-      <a href="{{ event.backstage_attendees_url }}" target="_blank" class="backstage-dropdown-item">
-        <i data-lucide="users"></i>
-        Uczestnicy
-      </a>
-    </div>
+  <!-- Backstage Dropdown Toggle (menu jest poza bannerem) -->
+  <button type="button" class="sticky-banner-link backstage-dropdown-toggle" id="backstage-dropdown-toggle">
+    <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+    Linki zewnętrzne
+    <i data-lucide="chevron-down" class="dropdown-chevron" style="width: 14px; height: 14px;"></i>
+  </button>
+</div>
+
+<!-- Backstage Dropdown Menu (POZA bannerem żeby nie było ucięte przez overflow:hidden) -->
+<div class="backstage-dropdown-container" id="backstage-dropdown-container">
+  <div class="backstage-dropdown-menu" id="backstage-dropdown-menu">
+    {% if event.data.event_public_url %}
+    <div class="dropdown-section-label">Strony publiczne</div>
+    <a href="{{ event.data.event_public_url }}" target="_blank" class="backstage-dropdown-item">
+      <i data-lucide="globe"></i>
+      Strona wydarzenia
+    </a>
+    {% endif %}
+    <div class="dropdown-section-label">Zoho Backstage</div>
+    <a href="{{ event.backstage_url }}" target="_blank" class="backstage-dropdown-item">
+      <i data-lucide="settings"></i>
+      Ogólne
+    </a>
+    <a href="{{ event.backstage_orders_url }}" target="_blank" class="backstage-dropdown-item">
+      <i data-lucide="shopping-cart"></i>
+      Zamówienia
+    </a>
+    <a href="{{ event.backstage_attendees_url }}" target="_blank" class="backstage-dropdown-item">
+      <i data-lucide="users"></i>
+      Uczestnicy
+    </a>
   </div>
 </div>
+
+<!-- Debug: wartości zmiennych (usuń po testach) -->
+<!-- backstage_url: {{ event.backstage_url }} -->
+<!-- backstage_orders_url: {{ event.backstage_orders_url }} -->
+<!-- backstage_attendees_url: {{ event.backstage_attendees_url }} -->
+<!-- event_public_url: {{ event.data.event_public_url or 'BRAK' }} -->
 
 <!-- TABS CONTAINER -->
 <div class="sticky-header-wrapper" id="sticky-header-wrapper">
@@ -1125,12 +1133,7 @@
     color: white;
   }
   
-  /* Backstage Dropdown */
-  .backstage-dropdown {
-    position: relative;
-    z-index: 1001;
-  }
-  
+  /* Backstage Dropdown - Toggle w bannerze */
   .backstage-dropdown-toggle {
     display: inline-flex;
     align-items: center;
@@ -1138,21 +1141,31 @@
     cursor: pointer;
     border: none;
     font-family: inherit;
+    position: relative;
+    z-index: 1;
   }
   
   .backstage-dropdown-toggle .dropdown-chevron {
     transition: transform 0.2s;
   }
   
-  .backstage-dropdown.open .dropdown-chevron {
+  .backstage-dropdown-toggle.open .dropdown-chevron {
     transform: rotate(180deg);
   }
   
+  /* Backstage Dropdown - Container poza bannerem */
+  .backstage-dropdown-container {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  
+  .backstage-dropdown-container.open {
+    pointer-events: auto;
+  }
+  
   .backstage-dropdown-menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    min-width: 200px;
+    min-width: 220px;
     background: white;
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.1);
@@ -1163,7 +1176,7 @@
     overflow: hidden;
   }
   
-  .backstage-dropdown.open .backstage-dropdown-menu {
+  .backstage-dropdown-container.open .backstage-dropdown-menu {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
@@ -2458,29 +2471,62 @@ function initStickyHeader() {
 
 // ===== BACKSTAGE DROPDOWN =====
 function initBackstageDropdown() {
-  var dropdown = document.querySelector('.backstage-dropdown');
-  if (!dropdown) return;
+  var toggle = document.getElementById('backstage-dropdown-toggle');
+  var container = document.getElementById('backstage-dropdown-container');
+  var menu = document.getElementById('backstage-dropdown-menu');
   
-  var toggle = dropdown.querySelector('.backstage-dropdown-toggle');
+  if (!toggle || !container || !menu) {
+    console.log('[DROPDOWN] Missing elements:', {toggle: !!toggle, container: !!container, menu: !!menu});
+    return;
+  }
+  
+  function positionDropdown() {
+    var rect = toggle.getBoundingClientRect();
+    container.style.top = (rect.bottom + 6) + 'px';
+    container.style.right = (window.innerWidth - rect.right) + 'px';
+  }
   
   toggle.addEventListener('click', function(e) {
     e.stopPropagation();
-    dropdown.classList.toggle('open');
+    var isOpen = container.classList.contains('open');
+    
+    if (!isOpen) {
+      positionDropdown();
+    }
+    
+    toggle.classList.toggle('open');
+    container.classList.toggle('open');
+    
     // Re-init icons when dropdown opens
     if (typeof lucide !== 'undefined') lucide.createIcons();
   });
   
+  // Reposition on scroll/resize when open
+  window.addEventListener('scroll', function() {
+    if (container.classList.contains('open')) {
+      positionDropdown();
+    }
+  });
+  
+  window.addEventListener('resize', function() {
+    if (container.classList.contains('open')) {
+      positionDropdown();
+    }
+  });
+  
   // Close on click outside
   document.addEventListener('click', function(e) {
-    if (!dropdown.contains(e.target)) {
-      dropdown.classList.remove('open');
+    if (!toggle.contains(e.target) && !container.contains(e.target)) {
+      toggle.classList.remove('open');
+      container.classList.remove('open');
     }
   });
   
   // Close on Escape
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      dropdown.classList.remove('open');
+      toggle.classList.remove('open');
+      container.classList.remove('open');
     }
   });
 }
