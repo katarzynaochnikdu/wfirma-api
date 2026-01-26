@@ -147,7 +147,9 @@
       <h3 class="card-title">Metody płatności</h3>
     </div>
     <div class="card-content" style="padding: 1rem;">
-      <canvas id="paymentChart" style="height: 180px; width: 100%;"></canvas>
+      <div style="position: relative; height: 180px; width: 100%;">
+        <canvas id="paymentChart"></canvas>
+      </div>
       <!-- Custom legend with icons -->
       <div id="paymentLegend" class="payment-legend" style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;"></div>
     </div>
@@ -747,7 +749,7 @@ document.addEventListener('DOMContentLoaded', function() {
         cutout: '65%',
         plugins: {
           legend: {
-            display: false  // Hide built-in legend
+            display: false  // Hide built-in legend - we use custom icons
           },
           tooltip: {
             callbacks: {
@@ -762,7 +764,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Build custom icon legend
     const legendContainer = document.getElementById('paymentLegend');
-    if (legendContainer) {
+    if (legendContainer && labels.length > 0) {
       labels.forEach((label, idx) => {
         const config = paymentConfig[label] || paymentConfig['Inne'];
         const value = Object.values(finalPaymentData)[idx];
