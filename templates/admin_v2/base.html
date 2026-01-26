@@ -45,22 +45,6 @@
   <script>
     // Inicjalizuj ikony Lucide po załadowaniu DOM
     document.addEventListener('DOMContentLoaded', function() {
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'run1',
-          hypothesisId:'B',
-          location:'templates/admin_v2/base.html:45',
-          message:'DOMContentLoaded fired',
-          data:{path:window.location.pathname},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
-
       // Debounced Lucide icon initialization to prevent multiple renders
       if (typeof lucide !== 'undefined' && !window._lucideInitialized) {
         window._lucideInitialized = true;
@@ -68,135 +52,13 @@
         // Reset flag after a short delay to allow future updates
         setTimeout(function() { window._lucideInitialized = false; }, 100);
       }
-
-      // #region agent log
-      var sidebarEl = document.getElementById('sidebar');
-      var filterSearchInSidebar = sidebarEl ? sidebarEl.querySelectorAll('.filter-search').length : 0;
-      var searchIconsInSidebar = sidebarEl ? sidebarEl.querySelectorAll('[data-lucide="search"], .lucide-search').length : 0;
-      var allFilterSearch = document.querySelectorAll('.filter-search').length;
-      var allSearchIcons = document.querySelectorAll('[data-lucide="search"], .lucide-search').length;
-      var sidebarChildren = sidebarEl ? Array.from(sidebarEl.children).map(function(c){return c.className;}) : [];
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'run1',
-          hypothesisId:'D',
-          location:'templates/admin_v2/base.html:68',
-          message:'Search elements after lucide init',
-          data:{
-            path:window.location.pathname,
-            filterSearchInSidebar:filterSearchInSidebar,
-            searchIconsInSidebar:searchIconsInSidebar,
-            allFilterSearch:allFilterSearch,
-            allSearchIcons:allSearchIcons,
-            sidebarChildren:sidebarChildren
-          },
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
       
       // Set correct sidebar toggle icon based on initial state
       var sidebar = document.getElementById('sidebar');
       var icon = document.getElementById('sidebar-toggle-icon');
       if (sidebar && icon && sidebar.classList.contains('collapsed')) {
         icon.setAttribute('data-lucide', 'chevron-right');
-        // Icon will be rendered by next createIcons call - no need to call again
       }
-
-      var collapsedState = sidebar ? sidebar.classList.contains('collapsed') : false;
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'run1',
-          hypothesisId:'A',
-          location:'templates/admin_v2/base.html:60',
-          message:'Sidebar collapsed state on load',
-          data:{collapsed:collapsedState,path:window.location.pathname},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
-
-      // #region agent log - check bounding rects for overlap
-      setTimeout(function() {
-        var sidebarRect = sidebarEl ? sidebarEl.getBoundingClientRect() : null;
-        var filterSearchEls = document.querySelectorAll('.filter-search, .search-input-group');
-        var overlaps = [];
-        filterSearchEls.forEach(function(el) {
-          var r = el.getBoundingClientRect();
-          if (sidebarRect && r.left < sidebarRect.right) {
-            overlaps.push({
-              className: el.className,
-              left: r.left,
-              right: r.right,
-              top: r.top,
-              sidebarRight: sidebarRect.right
-            });
-          }
-        });
-        // Check for ANY input/svg elements in sidebar that shouldn't be there
-        var unexpectedInSidebar = [];
-        if (sidebarEl) {
-          var inputs = sidebarEl.querySelectorAll('input');
-          var svgsWithSearch = sidebarEl.querySelectorAll('svg.lucide-search, [class*="search"]');
-          inputs.forEach(function(el) { unexpectedInSidebar.push({tag:'input',class:el.className}); });
-          svgsWithSearch.forEach(function(el) { unexpectedInSidebar.push({tag:'svg',class:el.className}); });
-        }
-        fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            sessionId:'debug-session',
-            runId:'run1',
-            hypothesisId:'H',
-            location:'templates/admin_v2/base.html:95',
-            message:'Bounding rect overlap check',
-            data:{
-              path:window.location.pathname,
-              sidebarRect:sidebarRect ? {left:sidebarRect.left,right:sidebarRect.right,width:sidebarRect.width} : null,
-              filterSearchCount:filterSearchEls.length,
-              overlaps:overlaps,
-              unexpectedInSidebar:unexpectedInSidebar
-            },
-            timestamp:Date.now()
-          })
-        }).catch(()=>{});
-      }, 500);
-      // #endregion
-
-      // #region agent log - MutationObserver for sidebar
-      if (sidebarEl) {
-        var observer = new MutationObserver(function(mutations) {
-          mutations.forEach(function(m) {
-            if (m.addedNodes.length > 0) {
-              var addedInfo = Array.from(m.addedNodes).map(function(n) {
-                return {tag: n.tagName, class: n.className, id: n.id};
-              });
-              fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({
-                  sessionId:'debug-session',
-                  runId:'run1',
-                  hypothesisId:'K',
-                  location:'templates/admin_v2/base.html:mutation',
-                  message:'Sidebar mutation detected',
-                  data:{path:window.location.pathname, added:addedInfo},
-                  timestamp:Date.now()
-                })
-              }).catch(()=>{});
-            }
-          });
-        });
-        observer.observe(sidebarEl, {childList: true, subtree: true});
-      }
-      // #endregion
     });
     
     function toggleSidebar() {
@@ -206,23 +68,6 @@
       }
 
       var icon = document.getElementById('sidebar-toggle-icon');
-      var wasCollapsed = sidebar.classList.contains('collapsed');
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'run1',
-          hypothesisId:'A',
-          location:'templates/admin_v2/base.html:64',
-          message:'toggleSidebar invoked',
-          data:{path:window.location.pathname,collapsedBefore:wasCollapsed},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
-
       sidebar.classList.toggle('collapsed');
       
       // Update icon direction
@@ -236,22 +81,6 @@
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'run1',
-          hypothesisId:'C',
-          location:'templates/admin_v2/base.html:82',
-          message:'Lucide sync after sidebar toggle',
-          data:{collapsed:sidebar.classList.contains('collapsed'),path:window.location.pathname},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
     }
     
     function logout() {
