@@ -849,12 +849,13 @@ def dashboard():
     
     user = _get_current_admin_user()
     
-    # Parametr filtrowania po wydarzeniu
+    # Parametry filtrowania
     filter_event_id = request.args.get("event_id", "").strip()
+    filter_status = request.args.get("status", "").strip()
     
-    # Sprawdź cache statystyk (5 minut TTL) - tylko gdy brak filtra
-    cache_key = f"dashboard_main_stats_{filter_event_id}" if filter_event_id else "dashboard_main_stats"
-    cached = get_cached_stats(cache_key) if not filter_event_id else None
+    # Sprawdź cache statystyk (5 minut TTL) - tylko gdy brak filtrów
+    cache_key = f"dashboard_main_stats_{filter_event_id}_{filter_status}" if (filter_event_id or filter_status) else "dashboard_main_stats"
+    cached = get_cached_stats(cache_key) if not (filter_event_id or filter_status) else None
     
     if cached:
         stats = cached.get("stats", {})
@@ -872,6 +873,10 @@ def dashboard():
         # Filtrowanie po wydarzeniu (jeśli wybrano)
         if filter_event_id:
             all_orders = [o for o in all_orders if str(o.get("event_id")) == filter_event_id]
+        
+        # Filtrowanie po statusie (jeśli wybrano)
+        if filter_status:
+            all_orders = [o for o in all_orders if o.get("status") == filter_status]
         
         # Oblicz statystyki
         total_orders = len(all_orders)
@@ -1055,7 +1060,8 @@ def dashboard():
         recent_orders=recent_orders,
         recent_events=all_events_for_filter,  # Do filtru - wszystkie aktywne
         chart_data=chart_data,
-        filter_event_id=filter_event_id,  # Aktualnie wybrany filtr
+        filter_event_id=filter_event_id,  # Aktualnie wybrany filtr wydarzenia
+        filter_status=filter_status,  # Aktualnie wybrany filtr statusu
         **_get_common_context(user),
     )
 
@@ -2933,7 +2939,7 @@ def api_revenue_chart():
     today = datetime.now()
     
     if scale == "day":
-        # Ostatnie 8 tygodni pokazane jako dni
+        # Ostatnie 7 dni (każdy dzień osobno)
         revenue_by_day = defaultdict(float)
         participants_by_day = defaultdict(int)
         
@@ -2949,25 +2955,17 @@ def api_revenue_chart():
                 revenue_by_day[day_key] += float(o.get("total") or 0)
                 participants_by_day[day_key] += int(o.get("participant_count") or 1)
         
-        # Wygeneruj ostatnie 8 tygodni (56 dni) - ale pokaż tylko co 7 dni dla czytelności
-        for i in range(7, -1, -1):
-            day = today - timedelta(days=7 * i)
+        # Wygeneruj ostatnie 7 dni
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
             day_key = day.strftime("%Y-%m-%d")
             day_label = day.strftime("%d.%m")
-            # Sumuj przychód i uczestników z całego tygodnia kończącego się tego dnia
-            week_total = 0
-            week_participants = 0
-            for d in range(7):
-                check_day = day - timedelta(days=d)
-                check_key = check_day.strftime("%Y-%m-%d")
-                week_total += revenue_by_day.get(check_key, 0)
-                week_participants += participants_by_day.get(check_key, 0)
             labels.append(day_label)
-            values.append(round(week_total, 2))
-            participants_values.append(week_participants)
+            values.append(round(revenue_by_day.get(day_key, 0), 2))
+            participants_values.append(participants_by_day.get(day_key, 0))
     
     elif scale == "week":
-        # Ostatnie 5 tygodni z numerami tygodni
+        # Ostatnie 7 tygodni z numerami tygodni
         revenue_by_week = defaultdict(float)
         participants_by_week = defaultdict(int)
         
@@ -2985,8 +2983,8 @@ def api_revenue_chart():
                 revenue_by_week[week_key] += float(o.get("total") or 0)
                 participants_by_week[week_key] += int(o.get("participant_count") or 1)
         
-        # Wygeneruj ostatnie 5 tygodni
-        for i in range(4, -1, -1):
+        # Wygeneruj ostatnie 7 tygodni
+        for i in range(6, -1, -1):
             week_date = today - timedelta(weeks=i)
             iso_year, iso_week, _ = week_date.isocalendar()
             week_key = f"{iso_year}-W{iso_week:02d}"
@@ -2996,7 +2994,7 @@ def api_revenue_chart():
             participants_values.append(participants_by_week.get(week_key, 0))
     
     else:  # month
-        # Ostatnie 6 miesięcy
+        # Ostatnie 7 miesięcy
         revenue_by_month = defaultdict(float)
         participants_by_month = defaultdict(int)
         month_names_pl = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru']
@@ -3013,21 +3011,14 @@ def api_revenue_chart():
                 revenue_by_month[month_key] += float(o.get("total") or 0)
                 participants_by_month[month_key] += int(o.get("participant_count") or 1)
         
-        # Sortuj i weź ostatnie 6 miesięcy
-        sorted_months = sorted(revenue_by_month.keys())[-6:]
-        for m in sorted_months:
-            year, month = m.split('-')
-            labels.append(month_names_pl[int(month) - 1])
-            values.append(round(revenue_by_month[m], 2))
-            participants_values.append(participants_by_month.get(m, 0))
-        
-        # Jeśli brak danych, wypełnij ostatnie 6 miesięcy zerami
-        if not labels:
-            for i in range(5, -1, -1):
-                m = (today.month - i - 1) % 12 + 1
-                labels.append(month_names_pl[m - 1])
-                values.append(0)
-                participants_values.append(0)
+        # Wygeneruj ostatnie 7 miesięcy
+        for i in range(6, -1, -1):
+            month_date = today - timedelta(days=30 * i)  # Przybliżenie
+            month_key = f"{month_date.year}-{month_date.month:02d}"
+            month_label = month_names_pl[month_date.month - 1]
+            labels.append(month_label)
+            values.append(round(revenue_by_month.get(month_key, 0), 2))
+            participants_values.append(participants_by_month.get(month_key, 0))
     
     return jsonify({
         "scale": scale,

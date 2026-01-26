@@ -47,13 +47,14 @@
       
       <!-- Filtr statusu -->
       <div class="filter-group">
-        <label class="filter-label">Status płatności</label>
+        <label class="filter-label">Status zamówienia</label>
         <select id="filterStatus" class="form-select">
           <option value="">Wszystkie statusy</option>
-          <option value="paid">Opłacone</option>
-          <option value="pending_payment">Oczekujące</option>
-          <option value="received">Otrzymane</option>
-          <option value="cancelled">Anulowane</option>
+          <option value="received"{% if filter_status == 'received' %} selected{% endif %}>Otrzymane</option>
+          <option value="pending_payment"{% if filter_status == 'pending_payment' %} selected{% endif %}>Oczekuje</option>
+          <option value="paid"{% if filter_status == 'paid' %} selected{% endif %}>Opłacone</option>
+          <option value="cancelled"{% if filter_status == 'cancelled' %} selected{% endif %}>Anulowane</option>
+          <option value="refunded"{% if filter_status == 'refunded' %} selected{% endif %}>Zwrócone</option>
         </select>
       </div>
       
@@ -573,23 +574,22 @@ function applyDashboardFilter(e) {
   const eventId = document.getElementById('filterEvent').value;
   const status = document.getElementById('filterStatus').value;
   
-  // Jeśli jest wyszukiwanie tekstowe lub status - przekieruj do zamówień
-  if (search || status) {
+  // Jeśli jest wyszukiwanie tekstowe - przekieruj do zamówień
+  if (search) {
     const params = new URLSearchParams();
-    if (search) params.set('q', search);
+    params.set('q', search);
     if (eventId) params.set('event_id', eventId);
     if (status) params.set('status', status);
-    const url = '/admin-v2/orders' + (params.toString() ? '?' + params.toString() : '');
-    window.location.href = url;
+    window.location.href = '/admin-v2/orders?' + params.toString();
     return;
   }
   
-  // Tylko filtr wydarzenia - przeładuj dashboard z filtrem
+  // Filtrowanie po wydarzeniu i/lub statusie - zostań na dashboard
   const params = new URLSearchParams();
   if (eventId) params.set('event_id', eventId);
+  if (status) params.set('status', status);
   
-  const url = '/admin-v2/dashboard' + (params.toString() ? '?' + params.toString() : '');
-  window.location.href = url;
+  window.location.href = '/admin-v2/dashboard' + (params.toString() ? '?' + params.toString() : '');
 }
 
 function clearDashboardFilter() {
@@ -785,11 +785,11 @@ document.addEventListener('DOMContentLoaded', function() {
       if (data.labels && data.values && data.participants) {
         revenueChart = createRevenueChart(data.labels, data.values, data.participants);
       } else {
-        revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData, [0,0,0,0,0,0,0,0]);
+        revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData, [0,0,0,0,0,0,0]);
       }
     })
     .catch(() => {
-      revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData, [0,0,0,0,0,0,0,0]);
+      revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData, [0,0,0,0,0,0,0]);
     });
   
   // Payment Status Chart (Doughnut)
