@@ -77,10 +77,95 @@
       color: var(--success);
       border: 1px solid var(--success);
     }
+    
+    /* Iframe detection overlay */
+    .iframe-overlay {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+    }
+    .iframe-overlay-icon {
+      width: 64px;
+      height: 64px;
+      background: var(--muted);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+    .iframe-overlay-icon svg {
+      width: 32px;
+      height: 32px;
+      color: var(--muted-foreground);
+    }
+    .iframe-overlay h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--foreground);
+      margin: 0 0 0.75rem 0;
+    }
+    .iframe-overlay p {
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+      margin: 0 0 1.5rem 0;
+      line-height: 1.5;
+    }
+    .iframe-overlay .open-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s ease;
+    }
+    .iframe-overlay .open-btn:hover {
+      background: hsl(212, 100%, 35%);
+    }
+    .iframe-overlay .open-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+    /* Hide login content when in iframe */
+    body.in-iframe .login-content {
+      display: none;
+    }
+    body.in-iframe .iframe-overlay {
+      display: flex;
+    }
   </style>
 </head>
 <body>
   <div class="card login-card">
+    <!-- Iframe detection overlay -->
+    <div class="iframe-overlay">
+      <div class="iframe-overlay-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+      </div>
+      <h2>Otwórz w nowej karcie</h2>
+      <p>Ze względów bezpieczeństwa logowanie<br/>nie jest możliwe w ramce iframe.</p>
+      <a href="{{ url_for('admin_v2_bp.login') }}" target="_blank" class="open-btn" onclick="window.open(this.href, '_blank'); return false;">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+        Otwórz panel logowania
+      </a>
+    </div>
+    
+    <!-- Normal login content - hidden when in iframe -->
+    <div class="login-content">
     <div class="login-header">
       <div class="login-logo">
         <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
@@ -127,6 +212,22 @@
     <p style="text-align: center; margin-top: 1.5rem; font-size: 0.75rem; color: var(--muted-foreground);">
       <a href="/admin/login" style="color: var(--primary);">Przejdź do starego panelu</a>
     </p>
+    </div><!-- end .login-content -->
   </div>
+  
+  <script>
+    // Wykrywanie czy strona jest osadzona w iframe
+    (function() {
+      try {
+        if (window.self !== window.top) {
+          // Strona jest w iframe - pokaż overlay, ukryj formularz
+          document.body.classList.add('in-iframe');
+        }
+      } catch (e) {
+        // Błąd dostępu (cross-origin) - też oznacza iframe
+        document.body.classList.add('in-iframe');
+      }
+    })();
+  </script>
 </body>
 </html>
