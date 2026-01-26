@@ -327,6 +327,15 @@
             <span class="info-label">Liczba uczestników</span>
             <span class="info-value">{{ participants|length if participants else 0 }} osób</span>
           </div>
+          {% if order.promo_code %}
+          <div class="info-item">
+            <span class="info-label">Kod rabatowy</span>
+            <span class="info-value" style="display: flex; align-items: center; gap: 0.5rem;">
+              <i data-lucide="ticket" style="width: 16px; height: 16px; color: hsl(280, 70%, 50%);"></i>
+              <code style="background: hsl(280, 70%, 95%); color: hsl(280, 70%, 35%); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem;">{{ order.promo_code }}</code>
+            </span>
+          </div>
+          {% endif %}
         </div>
 
         <hr style="border: none; border-top: 1px solid var(--border); margin: 1.5rem 0;">
