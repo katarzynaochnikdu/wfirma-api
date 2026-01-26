@@ -6026,15 +6026,18 @@ def event_room(event_id: str):
     
     # Mapuj pola uczestników dla szablonu
     for p in participants:
-        # Preferuj nazwę biletu, ale nie pokazuj długich ID numerycznych
+        # Zachowaj oryginalną nazwę biletu z danych
         ticket_name = p.get("ticket_class_name") or ""
         ticket_id = p.get("ticket_class_id") or ""
-        # Usuń słowo "Bilet" z nazwy jeśli jest
-        if ticket_name:
-            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
-        if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-            ticket_name = "Standard"
-        p["ticket_name"] = ticket_name or ticket_id or "Standard"
+        
+        # Tylko jeśli całkowity brak nazwy, użyj ID lub "Nieznany"
+        if not ticket_name.strip():
+            if ticket_id and not (len(str(ticket_id)) > 10 and str(ticket_id).isdigit()):
+                ticket_name = str(ticket_id)
+            else:
+                ticket_name = "Nieznany"
+        
+        p["ticket_name"] = ticket_name.strip()
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = ""  # Brak w danych
     
@@ -6129,20 +6132,23 @@ def event_room(event_id: str):
         else:
             order_status_map[oid] = status or "unknown"
     
+    # Grupowanie po NAZWIE biletu (nie ID) - różne ID mogą mieć tę samą nazwę
     ticket_type_stats = {}
     for p in participants:
-        ticket_id = p.get("ticket_class_id") or "unknown"
-        ticket_name = p.get("ticket_class_name") or "Standard"
-        # Wyczyść nazwę biletu
-        if ticket_name:
-            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
-        if not ticket_name or (len(str(ticket_id)) > 10 and str(ticket_id).isdigit()):
-            ticket_name = "Standard"
+        # Użyj oryginalnej nazwy biletu z danych uczestnika
+        ticket_name = p.get("ticket_class_name") or ""
         
-        if ticket_id not in ticket_type_stats:
-            ticket_type_stats[ticket_id] = {
-                "ticket_id": ticket_id,
-                "ticket_name": ticket_name,
+        # Jeśli brak nazwy, spróbuj użyć fallback
+        if not ticket_name:
+            ticket_name = "Nieznany"
+        
+        # Klucz grupowania = nazwa biletu (case-insensitive)
+        group_key = ticket_name.strip().lower()
+        
+        if group_key not in ticket_type_stats:
+            ticket_type_stats[group_key] = {
+                "ticket_id": p.get("ticket_class_id") or "unknown",
+                "ticket_name": ticket_name.strip(),  # Zachowaj oryginalną nazwę z wielkimi literami
                 "participants": [],
                 "participants_total": 0,
                 "participants_paid": 0,
@@ -6150,7 +6156,7 @@ def event_room(event_id: str):
                 "participants_overdue": 0,
             }
         
-        entry = ticket_type_stats[ticket_id]
+        entry = ticket_type_stats[group_key]
         entry["participants_total"] += 1
         
         # Status uczestnika na podstawie statusu zamówienia

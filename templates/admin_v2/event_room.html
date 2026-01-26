@@ -368,11 +368,11 @@
       <div class="discount-accordion">
         {% for ticket in ticket_stats %}
         <div class="discount-accordion-item {% if ticket.participants_overdue > 0 %}has-problems{% endif %}" 
-             data-state="closed" data-code="ticket-{{ ticket.ticket_id }}">
+             data-state="closed" data-code="ticket-{{ loop.index }}">
           
           <!-- Trigger (nagłówek wiersza) -->
           <button type="button" class="discount-accordion-trigger" 
-                  onclick="toggleDiscountAccordion('ticket-{{ ticket.ticket_id }}')">
+                  onclick="toggleDiscountAccordion('ticket-{{ loop.index }}')">
             <div class="discount-accordion-trigger-inner">
               
               <!-- Nazwa typu biletu -->
