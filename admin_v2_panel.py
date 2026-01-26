@@ -4720,7 +4720,7 @@ def _build_order_history(order_id: str, order: dict):
     
     # Dodaj zdarzenie płatności jeśli opłacone
     if order.get("status") == "paid":
-        paid_at = order.get("updated_at") or order.get("created_at")
+        paid_at = order.get("paid_at") or order.get("updated_at") or order.get("created_at")
         history.append({
             "type": "payment",
             "title": "Płatność potwierdzona",

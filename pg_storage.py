@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS orders (
   currency TEXT NOT NULL DEFAULT 'PLN',
   status TEXT NOT NULL DEFAULT 'received', -- received/pending_payment/paid/failed/cancelled
   payment_due_date TIMESTAMPTZ, -- Termin płatności (dla proform: created_at + 7 dni)
+  paid_at TIMESTAMPTZ, -- Data i czas potwierdzenia płatności
   raw JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -423,12 +424,18 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         
         # 1e) Migracja orders - dodanie payment_due_date (termin płatności dla proform)
         cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_due_date TIMESTAMPTZ")
+        
+        # 1f) Migracja orders - dodanie paid_at (data potwierdzenia płatności)
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ")
 
-        # 1f) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
+        # 1g) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
         cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
         cur.execute("UPDATE admin_users SET allowed_pages = '[]'::jsonb WHERE allowed_pages IS NULL")
         cur.execute("UPDATE admin_users SET must_change_password = FALSE WHERE must_change_password IS NULL")
         cur.execute("UPDATE admin_users SET allowed_events = '[]'::jsonb WHERE allowed_events IS NULL")
+        
+        # 1h) Backfill paid_at dla już opłaconych zamówień (używamy updated_at jako przybliżenia)
+        cur.execute("UPDATE orders SET paid_at = updated_at WHERE status = 'paid' AND paid_at IS NULL")
 
         # 2) Wersja migracji
         cur.execute("SELECT 1 FROM schema_migrations WHERE version=%s", (SCHEMA_VERSION,))
@@ -966,7 +973,7 @@ def get_order(event_order_id: str) -> Optional[Dict[str, Any]]:
             """
             SELECT event_order_id, event_id, purchaser_email, purchaser_first_name, purchaser_last_name,
                    purchaser_phone, purchaser_nip, payment_option_name, payment_type, promo_code,
-                   total, currency, status, payment_due_date, raw, created_at, updated_at
+                   total, currency, status, payment_due_date, paid_at, raw, created_at, updated_at
             FROM orders
             WHERE event_order_id = %s
             """,
@@ -1013,7 +1020,7 @@ def list_orders(
             f"""
             SELECT o.event_order_id, o.event_id, o.purchaser_email, o.purchaser_first_name, o.purchaser_last_name,
                    o.purchaser_phone, o.purchaser_nip, o.payment_option_name, o.payment_type, o.promo_code,
-                   o.total, o.currency, o.status, o.payment_due_date, o.created_at, o.updated_at,
+                   o.total, o.currency, o.status, o.payment_due_date, o.paid_at, o.created_at, o.updated_at,
                    s.url as payment_link_url,
                    s.expires_at as payment_link_expires_at,
                    CASE 
@@ -1199,7 +1206,10 @@ def upsert_order(
 
 
 def update_order_status(event_order_id: str, status: str, payment_due_date: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Aktualizuje status zamówienia i opcjonalnie termin płatności."""
+    """Aktualizuje status zamówienia i opcjonalnie termin płatności.
+    
+    Jeśli status = 'paid', automatycznie ustawia paid_at = NOW().
+    """
     ensure_schema()
     pool = None
     conn = None
@@ -1207,19 +1217,34 @@ def update_order_status(event_order_id: str, status: str, payment_due_date: Opti
         pool, conn = _with_conn()
         cur = conn.cursor()
         
+        # Automatycznie ustaw paid_at gdy status zmienia się na 'paid'
+        set_paid_at = (status == "paid")
+        
         # Konwertuj payment_due_date z unix timestamp na TIMESTAMPTZ
         if payment_due_date is not None:
             from datetime import datetime, timezone
             payment_due_date_ts = datetime.fromtimestamp(payment_due_date, tz=timezone.utc)
-            cur.execute(
-                "UPDATE orders SET status = %s, payment_due_date = %s, updated_at = NOW() WHERE event_order_id = %s",
-                (str(status), payment_due_date_ts, str(event_order_id)),
-            )
+            if set_paid_at:
+                cur.execute(
+                    "UPDATE orders SET status = %s, payment_due_date = %s, paid_at = NOW(), updated_at = NOW() WHERE event_order_id = %s",
+                    (str(status), payment_due_date_ts, str(event_order_id)),
+                )
+            else:
+                cur.execute(
+                    "UPDATE orders SET status = %s, payment_due_date = %s, updated_at = NOW() WHERE event_order_id = %s",
+                    (str(status), payment_due_date_ts, str(event_order_id)),
+                )
         else:
-            cur.execute(
-                "UPDATE orders SET status = %s, updated_at = NOW() WHERE event_order_id = %s",
-                (str(status), str(event_order_id)),
-            )
+            if set_paid_at:
+                cur.execute(
+                    "UPDATE orders SET status = %s, paid_at = NOW(), updated_at = NOW() WHERE event_order_id = %s",
+                    (str(status), str(event_order_id)),
+                )
+            else:
+                cur.execute(
+                    "UPDATE orders SET status = %s, updated_at = NOW() WHERE event_order_id = %s",
+                    (str(status), str(event_order_id)),
+                )
         return get_order(event_order_id)
     finally:
         if pool is not None and conn is not None:
