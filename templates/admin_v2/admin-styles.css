@@ -435,7 +435,7 @@ body {
   position: relative;
 }
 
-.search-icon {
+.filter-search .search-icon {
   position: absolute;
   left: 0.75rem;
   top: 50%;

@@ -773,6 +773,27 @@ document.addEventListener('DOMContentLoaded', function() {
   var finalPaymentData = (paymentData && Object.keys(paymentData).length) ? paymentData : defaultPaymentData;
   var finalPaymentStatusData = (paymentStatusData && Object.keys(paymentStatusData).length) ? paymentStatusData : defaultPaymentStatusData;
   
+  const paymentDataKeys = Object.keys(finalPaymentData);
+  const paymentDataNumericSum = paymentDataKeys.reduce((sum, key) => sum + (parseFloat(finalPaymentData[key]) || 0), 0);
+  const paymentDataIsDefault = paymentDataKeys.length === Object.keys(defaultPaymentData).length
+    && paymentDataKeys.every(key => defaultPaymentData[key] === finalPaymentData[key]);
+
+  // #region agent log
+  fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      sessionId:'debug-session',
+      runId:'initial',
+      hypothesisId:'A',
+      location:'templates/admin_v2/dashboard.html:773',
+      message:'finalPaymentData prepared',
+      data:{keys:paymentDataKeys,sum:paymentDataNumericSum,isDefaultPaymentData:paymentDataIsDefault},
+      timestamp:Date.now()
+    })
+  }).catch(()=>{});
+  // #endregion
+  
   // Revenue Chart (Line) - pobierz dane dzienne na start (z uwzględnieniem filtra)
   let initialChartUrl = '/admin-v2/api/revenue-chart?scale=day';
   if (filterEventId) {
@@ -873,14 +894,32 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     
     const labels = Object.keys(finalPaymentData);
+    const paymentValues = Object.values(finalPaymentData);
     const colors = labels.map(l => (paymentConfig[l] || paymentConfig['Inne']).color);
+    const paymentChartHasPositive = paymentDataNumericSum > 0;
+
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'initial',
+        hypothesisId:'B',
+        location:'templates/admin_v2/dashboard.html:868',
+        message:'payment chart data snapshot',
+        data:{labels:labels,length:labels.length,sum:paymentDataNumericSum,hasPositiveData:paymentChartHasPositive},
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
     
     new Chart(paymentCtx, {
       type: 'doughnut',
       data: {
-        labels: labels,
-        datasets: [{
-          data: Object.values(finalPaymentData),
+      labels: labels,
+      datasets: [{
+        data: paymentValues,
           backgroundColor: colors,
           borderWidth: 0,
           hoverOffset: 4
@@ -915,16 +954,36 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     
     if (legendContainer && labels.length > 0) {
-      labels.forEach((label, idx) => {
+      const legendSummary = labels.map((label, idx) => {
         const config = paymentConfig[label] || paymentConfig['Inne'];
-        const value = Object.values(finalPaymentData)[idx];
-        const iconSvg = svgIcons[config.icon] || svgIcons['help-circle'];
+        const value = paymentValues[idx];
+        return { label, config, value };
+      });
+
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/66146af7-32fa-497e-a417-5b4344bca6c7',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          sessionId:'debug-session',
+          runId:'initial',
+          hypothesisId:'C',
+          location:'templates/admin_v2/dashboard.html:902',
+          message:'payment legend entries',
+          data:{entries:legendSummary.map(entry => ({label:entry.label,value:entry.value}))},
+          timestamp:Date.now()
+        })
+      }).catch(()=>{});
+      // #endregion
+
+      legendSummary.forEach(entry => {
+        const iconSvg = svgIcons[entry.config.icon] || svgIcons['help-circle'];
         legendContainer.innerHTML += `
-          <div class="payment-legend-item" title="${label}: ${value}" style="display: flex; align-items: center; gap: 0.5rem; cursor: default;">
-            <span class="payment-icon-badge" style="background: ${config.color}15; border: 2px solid ${config.color}; color: ${config.color}; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+          <div class="payment-legend-item" title="${entry.label}: ${entry.value}" style="display: flex; align-items: center; gap: 0.5rem; cursor: default;">
+            <span class="payment-icon-badge" style="background: ${entry.config.color}15; border: 2px solid ${entry.config.color}; color: ${entry.config.color}; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
               ${iconSvg}
             </span>
-            <span style="font-size: 0.75rem; font-weight: 500;">${value}</span>
+            <span style="font-size: 0.75rem; font-weight: 500;">${entry.value}</span>
           </div>
         `;
       });
