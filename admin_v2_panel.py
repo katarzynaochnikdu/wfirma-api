@@ -7029,13 +7029,6 @@ def event_room(event_id: str):
         p_data = p.get("data") or {}
         p["company"] = p_data.get("company") or p_data.get("company_name") or p_data.get("firma") or ""
     
-    # #region agent log
-    import json as _json_debug3
-    _sample_p_after = participants[:3] if participants else []
-    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-        _f.write(_json_debug3.dumps({"location":"admin_v2_panel.py:7045","message":"participants AFTER mapping","data":{"sample":[{"id":p.get("participant_id"),"ticket_class_id":p.get("ticket_class_id"),"ticket_class_name":p.get("ticket_class_name"),"ticket_name":p.get("ticket_name")} for p in _sample_p_after]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"FIX"}) + "\n")
-    # #endregion
-    
     # Backstage URLs są już ustawione przez _normalize_event_data()
     
     # Buduj strukturę buckets dla zakładki Płatności

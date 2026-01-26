@@ -583,50 +583,117 @@
   </div>
   
   <div class="card">
-    <table class="data-table">
+    <table class="data-table sortable-table" id="orders-table">
       <thead>
         <tr>
-          <th>Zamawiający</th>
-          <th>Kwota</th>
-          <th>Uczestnicy</th>
-          <th>Status</th>
-          <th>Data</th>
-          <th class="text-right">Akcje</th>
+          <th class="sortable-header" data-sort="date" style="width: 100px;">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Data
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header" data-sort="buyer">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Kupujący
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header" data-sort="company">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Firma
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header text-center" data-sort="participants" style="width: 70px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+              Osoby
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header" data-sort="promo">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Rabat
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header text-right" data-sort="total" style="width: 100px;">
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.375rem;">
+              Wartość
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header text-center" data-sort="status" style="width: 70px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+              Status
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
         </tr>
       </thead>
       <tbody>
         {% for order in orders %}
-        <tr>
+        <tr class="clickable-row" onclick="goToOrderDetail(event, '{{ order.order_id }}')" style="cursor: pointer;">
+          <!-- Data -->
           <td>
-            <div class="buyer-cell">
-              <span class="buyer-name">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</span>
-              {% if order.buyer_company %}<p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.buyer_company }}</p>{% endif %}
-              <span class="buyer-email">{{ order.buyer_email }}</span>
+            <div>
+              <p style="font-size: 0.875rem;">{{ order.created_at|format_date_pl if order.created_at else '—' }}</p>
             </div>
           </td>
-          <td style="font-weight: 600;">{{ order.total|format_currency }}</td>
-          <td>{{ order.participants_count or 1 }}</td>
+          <!-- Osoba -->
           <td>
-            {% if order.status == 'paid' %}
-            <span class="status-badge status-paid">Opłacone</span>
-            {% elif order.status == 'pending_payment' %}
-            <span class="status-badge status-pending">Oczekuje</span>
-            {% elif order.status == 'cancelled' %}
-            <span class="status-badge status-cancelled">Anulowane</span>
+            <div>
+              <p style="font-size: 0.875rem; font-weight: 500;">{{ order.buyer_first_name }} {{ order.buyer_last_name }}</p>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.buyer_email }}</p>
+            </div>
+          </td>
+          <!-- Firma -->
+          <td>
+            {% if order.buyer_company %}
+            <span style="font-size: 0.875rem;">{{ order.buyer_company }}</span>
             {% else %}
-            <span class="status-badge">{{ order.status }}</span>
+            <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td class="text-muted">{{ order.created_at|format_date_pl }}</td>
+          <!-- Osoby -->
+          <td class="text-center">
+            <span style="font-weight: 500;">{{ order.participants_count or 1 }}</span>
+          </td>
+          <!-- Rabat -->
+          <td>
+            {% if order.promo_code %}
+            <span class="discount-code-badge">{{ order.promo_code }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <!-- Wartość -->
           <td class="text-right">
-            <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="btn-icon" title="Zobacz szczegóły">
-              <i data-lucide="eye"></i>
-            </a>
+            <span style="font-weight: 600;">{{ order.total|format_currency }}</span>
+          </td>
+          <!-- Status (ikona) -->
+          <td class="text-center">
+            {% if order.status == 'paid' %}
+            <span class="status-icon-badge status-icon-paid" title="Opłacone">
+              <i data-lucide="check-circle"></i>
+            </span>
+            {% elif order.status == 'pending_payment' %}
+            <span class="status-icon-badge status-icon-pending" title="Oczekujące">
+              <i data-lucide="clock"></i>
+            </span>
+            {% elif order.status == 'cancelled' %}
+            <span class="status-icon-badge status-icon-cancelled" title="Anulowane">
+              <i data-lucide="x-circle"></i>
+            </span>
+            {% else %}
+            <span class="status-icon-badge" title="{{ order.status or 'Nieznany' }}">
+              <i data-lucide="help-circle"></i>
+            </span>
+            {% endif %}
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="6" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
+          <td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
             Brak zamówień
           </td>
         </tr>
@@ -1581,6 +1648,61 @@
   .status-badge-icon {
     width: 0.75rem;
     height: 0.75rem;
+  }
+  
+  /* Discount code badge */
+  .discount-code-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: var(--font-mono, monospace);
+    background: hsl(262, 83%, 58%, 0.1);
+    color: hsl(262, 83%, 45%);
+    border: 1px solid hsl(262, 83%, 58%, 0.2);
+    border-radius: 4px;
+  }
+  
+  /* Status icon badges */
+  .status-icon-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+  .status-icon-badge i {
+    width: 16px;
+    height: 16px;
+  }
+  .status-icon-paid {
+    background: hsl(142, 76%, 36%, 0.1);
+    color: hsl(142, 76%, 36%);
+  }
+  .status-icon-pending {
+    background: hsl(38, 92%, 50%, 0.1);
+    color: hsl(38, 92%, 50%);
+  }
+  .status-icon-cancelled {
+    background: hsl(0, 84%, 60%, 0.1);
+    color: hsl(0, 84%, 60%);
+  }
+  
+  /* Sortable headers */
+  .sortable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease;
+  }
+  .sortable-header:hover {
+    background-color: var(--muted);
+  }
+  .sortable-header.sorted-asc i[data-lucide="arrow-up-down"],
+  .sortable-header.sorted-desc i[data-lucide="arrow-up-down"] {
+    color: var(--primary);
+    opacity: 1;
   }
   
   /* Footer */
@@ -3398,6 +3520,77 @@ function initTabs() {
 }
 
 // (Removed old collapse toggle - now using scroll-based sticky header)
+
+// ===== ORDER NAVIGATION =====
+function goToOrderDetail(event, orderId) {
+  // Don't navigate if clicking on button/link
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'A' || event.target.tagName === 'BUTTON') {
+    return;
+  }
+  window.location.href = '/admin-v2/orders/' + orderId;
+}
+
+// ===== ORDERS TABLE SORTING =====
+(function() {
+  const table = document.getElementById('orders-table');
+  if (!table) return;
+  
+  const headers = table.querySelectorAll('.sortable-header');
+  const tbody = table.querySelector('tbody');
+  
+  headers.forEach((header, colIndex) => {
+    header.addEventListener('click', function() {
+      const sortKey = this.dataset.sort;
+      const rows = Array.from(tbody.querySelectorAll('tr.clickable-row'));
+      
+      if (rows.length === 0) return;
+      
+      // Toggle direction
+      const isAsc = this.classList.contains('sorted-asc');
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      this.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
+      
+      rows.sort((a, b) => {
+        const aCell = a.children[colIndex];
+        const bCell = b.children[colIndex];
+        if (!aCell || !bCell) return 0;
+        
+        let aVal, bVal;
+        
+        if (sortKey === 'date') {
+          const parseDate = (text) => {
+            const match = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+            if (match) return new Date(match[3], match[2]-1, match[1]);
+            return new Date(0);
+          };
+          aVal = parseDate(aCell.textContent);
+          bVal = parseDate(bCell.textContent);
+          return isAsc ? bVal - aVal : aVal - bVal;
+        } else if (sortKey === 'total' || sortKey === 'participants') {
+          aVal = parseFloat(aCell.textContent.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+          bVal = parseFloat(bCell.textContent.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+          return isAsc ? bVal - aVal : aVal - bVal;
+        } else if (sortKey === 'status') {
+          const aIcon = aCell.querySelector('[title]');
+          const bIcon = bCell.querySelector('[title]');
+          aVal = aIcon ? aIcon.getAttribute('title') : '';
+          bVal = bIcon ? bIcon.getAttribute('title') : '';
+        } else {
+          aVal = aCell.textContent.trim().toLowerCase();
+          bVal = bCell.textContent.trim().toLowerCase();
+        }
+        
+        if (typeof aVal === 'string') {
+          return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+        }
+        return 0;
+      });
+      
+      rows.forEach(row => tbody.appendChild(row));
+      lucide.createIcons();
+    });
+  });
+})();
 
 // ===== PARTICIPANT NAVIGATION =====
 function goToParticipantDetail(event, participantId) {

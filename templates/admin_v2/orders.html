@@ -71,33 +71,39 @@
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
-        <th class="sortable-header {% if sort_column == 'event_name' %}sorted-{{ sort_direction }}{% endif %}" data-sort="event_name" style="min-width: 240px;">
+        <th class="sortable-header {% if sort_column == 'company' %}sorted-{{ sort_direction }}{% endif %}" data-sort="company">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Firma
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header {% if sort_column == 'event_name' %}sorted-{{ sort_direction }}{% endif %}" data-sort="event_name" style="min-width: 180px;">
           <div style="display: flex; align-items: center; gap: 0.375rem;">
             Wydarzenie
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
-        <th class="sortable-header text-center {% if sort_column == 'participants' %}sorted-{{ sort_direction }}{% endif %}" data-sort="participants" style="width: 80px;">
+        <th class="sortable-header text-center {% if sort_column == 'participants' %}sorted-{{ sort_direction }}{% endif %}" data-sort="participants" style="width: 70px;">
           <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
             Osoby
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
-        <th class="sortable-header text-right {% if sort_column == 'total' %}sorted-{{ sort_direction }}{% endif %}" data-sort="total">
+        <th class="sortable-header {% if sort_column == 'promo' %}sorted-{{ sort_direction }}{% endif %}" data-sort="promo">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Rabat
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
+        <th class="sortable-header text-right {% if sort_column == 'total' %}sorted-{{ sort_direction }}{% endif %}" data-sort="total" style="width: 100px;">
           <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.375rem;">
             Wartość
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
-        <th class="sortable-header text-center {% if sort_column == 'status' %}sorted-{{ sort_direction }}{% endif %}" data-sort="status">
+        <th class="sortable-header text-center {% if sort_column == 'status' %}sorted-{{ sort_direction }}{% endif %}" data-sort="status" style="width: 70px;">
           <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
             Status
-            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
-          </div>
-        </th>
-        <th class="sortable-header text-center {% if sort_column == 'payment' %}sorted-{{ sort_direction }}{% endif %}" data-sort="payment">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
-            Płatność
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
@@ -107,30 +113,28 @@
       {% for order in orders %}
       {% set event_color = order.event_color or 'hsl(212, 100%, 42%)' %}
       {% set event_color_2 = order.event_color_2 or 'hsl(195, 100%, 42%)' %}
-      {% set payment_method = 'Online' %}
-      {% if (order.total or 0)|float == 0 %}
-        {% set payment_method = 'FOC' %}
-      {% elif 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_option_name or '')|string|lower %}
-        {% set payment_method = 'Pro forma' %}
-      {% endif %}
       
       <tr class="clickable-row" onclick="window.location.href='{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}'">
         <!-- Data -->
         <td>
           <div>
             <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
-            <p style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
           </div>
         </td>
-        <!-- Kupujący -->
+        <!-- Osoba -->
         <td>
           <div>
             <p style="font-size: 0.875rem; font-weight: 500;">{{ order.buyer_first_name or '' }} {{ order.buyer_last_name or '' }}</p>
             <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.buyer_email or '—' }}</p>
-            {% if order.buyer_company %}
-            <p style="font-size: 0.75rem; color: var(--muted-foreground); opacity: 0.7;">{{ order.buyer_company }}</p>
-            {% endif %}
           </div>
+        </td>
+        <!-- Firma -->
+        <td>
+          {% if order.buyer_company %}
+          <span style="font-size: 0.875rem;">{{ order.buyer_company }}</span>
+          {% else %}
+          <span class="text-muted">—</span>
+          {% endif %}
         </td>
         <!-- Wydarzenie -->
         <td>
@@ -147,6 +151,14 @@
         <!-- Osoby -->
         <td class="text-center">
           <span style="font-weight: 500;">{{ order.participants_count or 1 }}</span>
+        </td>
+        <!-- Rabat -->
+        <td>
+          {% if order.promo_code %}
+          <span class="discount-code-badge">{{ order.promo_code }}</span>
+          {% else %}
+          <span class="text-muted">—</span>
+          {% endif %}
         </td>
         <!-- Wartość -->
         <td class="text-right">
@@ -176,26 +188,10 @@
           </span>
           {% endif %}
         </td>
-        <!-- Płatność (ikona z tooltipem) -->
-        <td class="text-center">
-          {% if payment_method == 'Online' %}
-          <span class="payment-icon-badge payment-online" title="Płatność online">
-            <i data-lucide="credit-card"></i>
-          </span>
-          {% elif payment_method == 'Pro forma' %}
-          <span class="payment-icon-badge payment-proforma" title="Pro-forma">
-            <i data-lucide="file-text"></i>
-          </span>
-          {% elif payment_method == 'FOC' %}
-          <span class="payment-icon-badge payment-foc" title="Free of Charge">
-            <i data-lucide="gift"></i>
-          </span>
-          {% endif %}
-        </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" style="text-align: center; color: var(--muted-foreground); padding: 3rem;">
+        <td colspan="8" style="text-align: center; color: var(--muted-foreground); padding: 3rem;">
           <img src="/Empty_list_1.png" alt="" style="max-width: 120px; opacity: 0.5; margin-bottom: 1rem;">
           <p>Brak zamówień do wyświetlenia</p>
         </td>
@@ -317,6 +313,19 @@
   background: hsl(199, 89%, 96%);
   border-color: hsl(199, 89%, 70%);
   color: hsl(199, 89%, 40%);
+}
+
+/* Discount code badge */
+.discount-code-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font-mono, monospace);
+  background: hsl(262, 83%, 58%, 0.1);
+  color: hsl(262, 83%, 45%);
+  border: 1px solid hsl(262, 83%, 58%, 0.2);
+  border-radius: 4px;
 }
 </style>
 {% endblock %}
