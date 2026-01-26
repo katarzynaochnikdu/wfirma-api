@@ -62,6 +62,7 @@
   {% set payment_method_display = 'Stripe' if 'online' in (payment_method|string|lower) or 'stripe' in (payment_method|string|lower) else ('Proforma' if 'proforma' in (payment_method|string|lower) or 'pro' in (payment_method|string|lower) else ('FOC' if 'foc' in (payment_method|string|lower) or (order.total or 0) == 0 else (payment_method or 'Nieokreślona'))) %}
   {% set is_proforma_payment = 'proforma' in (payment_method|string|lower) or 'pro' in (payment_method|string|lower) %}
   {% set is_stripe_payment = 'online' in (payment_method|string|lower) or 'stripe' in (payment_method|string|lower) %}
+  {% set has_proforma = wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'proforma')|list|length > 0 %}
   <div class="operational-status-badge operational-status-{{ payment_status.type }}">
     <div class="operational-icon-wrapper">
       <i data-lucide="credit-card"></i>
@@ -564,6 +565,12 @@
             Wyślij przypomnienie o płatności
           </button>
           {% endif %}
+          {% if is_proforma_payment and not has_proforma and order.status not in ['cancelled', 'refunded'] %}
+          <button class="btn" style="background: hsl(270, 60%, 50%); color: white; border: none;" onclick="generateProforma()">
+            <i data-lucide="file-text"></i>
+            Wygeneruj proformę
+          </button>
+          {% endif %}
           {% if order.status == 'paid' %}
           <button class="btn btn-outline" onclick="resendTickets()">
             <i data-lucide="mail"></i>
@@ -981,6 +988,40 @@
   function openCorrectionModal() {
     // TODO: Implement correction modal
     showToast('Funkcja korekty danych w przygotowaniu', 'info');
+  }
+
+  function generateProforma() {
+    showActionModal({
+      title: 'Wygeneruj proformę',
+      icon: 'file-text',
+      iconColor: 'hsl(270, 60%, 50%)',
+      text: 'Zostanie wygenerowana faktura proforma w systemie wFirma i wysłana do klienta.',
+      info: `<div style="background: hsl(270, 60%, 97%); border: 1px solid hsl(270, 60%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="info" style="width: 18px; height: 18px; color: hsl(270, 60%, 45%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(270, 60%, 25%);">
+            <strong>Generowanie proformy:</strong> System utworzy fakturę proforma w wFirma 
+            i automatycznie wyśle ją do klienta wraz z danymi do przelewu.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Wygeneruj proformę',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/generate-proforma`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast(data.message || 'Proforma wygenerowana pomyślnie', 'success');
+              setTimeout(() => location.reload(), 1500);
+            } else {
+              showToast(data.error || 'Błąd generowania proformy', 'error');
+            }
+          })
+          .catch(err => {
+            showToast('Błąd połączenia: ' + err.message, 'error');
+          });
+      }
+    });
   }
 
   function sendReminder() {

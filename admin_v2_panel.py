@@ -2604,6 +2604,212 @@ def order_refund(order_id: str):
         return jsonify({"success": False, "error": f"Błąd Stripe: {error_msg}"}), 500
 
 
+@admin_v2_bp.route("/orders/<order_id>/generate-proforma", methods=["POST"])
+@_require_permission("orders")
+def order_generate_proforma(order_id: str):
+    """
+    Ręcznie generuje proformę dla zamówienia.
+    
+    Flow:
+    1. Sprawdza czy proforma już istnieje
+    2. Generuje proformę przez wFirma
+    3. Wysyła email (jeśli nie był wysłany)
+    4. Aktualizuje status na pending_payment
+    """
+    from flask import jsonify
+    from pg_storage import get_order, get_event, get_wfirma_documents, update_order_status, save_mail_log, mail_log_exists
+    
+    user = _get_current_admin_user()
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może generować proform
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do generowania proform"}), 403
+    
+    # 1. Sprawdź czy proforma już istnieje
+    existing_docs = get_wfirma_documents(order_id)
+    has_proforma = any((d or {}).get("document_type") == "proforma" for d in (existing_docs or []))
+    
+    if has_proforma:
+        return jsonify({"success": False, "error": "Proforma już istnieje dla tego zamówienia"}), 400
+    
+    # Pobierz dane eventu
+    event_id = order.get("event_id", "")
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+    event_data = (ev.get("data") if ev else {}) or {}
+    
+    # Dane kupującego
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_first_name = order.get("purchaser_first_name", "") or ""
+    purchaser_last_name = order.get("purchaser_last_name", "") or ""
+    purchaser_nip = order.get("purchaser_nip", "") or ""
+    
+    # Kwota
+    total_raw = order.get("total", 0)
+    try:
+        total_value = float(total_raw or 0)
+    except Exception:
+        total_value = 0.0
+    currency_value = order.get("currency", "PLN") or "PLN"
+    
+    print(f"[ADMIN-V2 GEN-PROFORMA] Tworzę proformę dla {order_id} | event={event_name[:30] if event_name else 'N/A'}")
+    
+    # Przygotuj dane do faktury
+    raw_payload = order.get("raw", {}) or {}
+    
+    billing_address_data = raw_payload.get("eventOrder_billingAddress", {}) or {}
+    billing_address = billing_address_data.get("streetAddress1") or billing_address_data.get("street") or "-"
+    billing_zip = billing_address_data.get("zipcode") or billing_address_data.get("zip") or "00-000"
+    billing_city = billing_address_data.get("city") or "-"
+    
+    # Wyciągnij i wzbogać bilety
+    enriched_tickets = []
+    try:
+        from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+        
+        raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+        if raw_tickets and event_id:
+            enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+            print(f"[ADMIN-V2 GEN-PROFORMA] Wygenerowano {len(enriched_tickets)} pozycji biletów")
+    except Exception as e:
+        print(f"[ADMIN-V2 GEN-PROFORMA] Błąd pobierania biletów: {e}")
+    
+    order_data_for_invoice = {
+        "event_order_id": order_id,
+        "event_id": event_id,
+        "purchaser_email": purchaser_email,
+        "purchaser_first_name": purchaser_first_name,
+        "purchaser_last_name": purchaser_last_name,
+        "purchaser_nip": purchaser_nip,
+        "billing_address": billing_address,
+        "billing_zip": billing_zip,
+        "billing_city": billing_city,
+        "total": total_value,
+        "currency": currency_value,
+        "tickets": enriched_tickets,
+    }
+    
+    # 2. Generuj proformę
+    proforma_created = False
+    proforma_number = None
+    proforma_error = None
+    
+    try:
+        from backstage_engine import _create_proforma_invoice
+        
+        success, proforma_result, error = _create_proforma_invoice(
+            order_data=order_data_for_invoice,
+            event_name=event_name,
+            send_email=False,  # Nie wysyłamy przez wFirma, sami wyślemy
+        )
+        
+        if success and proforma_result:
+            proforma_created = True
+            proforma_number = proforma_result.get("invoice", {}).get("fullnumber")
+            print(f"[ADMIN-V2 GEN-PROFORMA] Proforma utworzona: {proforma_number}")
+        else:
+            proforma_error = error
+            print(f"[ADMIN-V2 GEN-PROFORMA] BŁĄD tworzenia proformy: {error}")
+    except Exception as e:
+        proforma_error = str(e)
+        print(f"[ADMIN-V2 GEN-PROFORMA] WYJĄTEK podczas tworzenia proformy: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    if not proforma_created:
+        return jsonify({"success": False, "error": f"Błąd generowania proformy: {proforma_error}"}), 500
+    
+    # 3. Aktualizuj status zamówienia
+    import time
+    payment_due_timestamp = int(time.time() + 7 * 24 * 60 * 60)
+    update_order_status(order_id, "pending_payment", payment_due_date=payment_due_timestamp)
+    
+    # 4. Wyślij email z proformą (jeśli nie był wysłany)
+    email_sent = False
+    email_error = None
+    
+    if purchaser_email and not mail_log_exists(order_id, "proforma_sent", "purchaser"):
+        try:
+            from email_templates import render_proforma_reservation_email
+            from backstage_engine import _send_email_via_make
+            
+            proforma_subject = f"Twoja rejestracja na {event_name} - płatność pro forma"
+            
+            proforma_body_html = render_proforma_reservation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name or "Uczestnik",
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                purchaser_phone=order.get("purchaser_phone", "") or "",
+                event_config=event_data,
+                tickets=enriched_tickets,
+                proforma_number=proforma_number,
+                payment_due_date=None,  # Będzie obliczone w szablonie
+            )
+            
+            save_mail_log(
+                event_order_id=order_id,
+                direction="purchaser",
+                template_key="proforma_sent",
+                to_email=purchaser_email,
+                subject=proforma_subject,
+                data={
+                    "event_order_id": order_id,
+                    "event_name": event_name,
+                    "proforma_number": proforma_number,
+                    "total": total_value,
+                    "currency": currency_value,
+                },
+            )
+            
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=proforma_subject,
+                body_html=proforma_body_html,
+                event_order_id=order_id,
+                template_type="proforma_sent",
+            )
+            
+            if result.get("success"):
+                email_sent = True
+                print(f"[ADMIN-V2 GEN-PROFORMA] Email z proformą wysłany do {purchaser_email}")
+            else:
+                email_error = result.get("error", "Nieznany błąd")
+                print(f"[ADMIN-V2 GEN-PROFORMA] BŁĄD wysyłki emaila: {email_error}")
+        except Exception as e:
+            email_error = str(e)
+            print(f"[ADMIN-V2 GEN-PROFORMA] WYJĄTEK wysyłki emaila: {e}")
+    elif mail_log_exists(order_id, "proforma_sent", "purchaser"):
+        print(f"[ADMIN-V2 GEN-PROFORMA] Email z proformą już był wysłany - pomijam")
+    
+    # 5. Audit log
+    insert_admin_audit_log(
+        action="proforma_generated",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={"proforma_number": proforma_number, "email_sent": email_sent},
+        ip=request.remote_addr,
+    )
+    
+    # 6. Odpowiedź
+    if email_sent:
+        return jsonify({"success": True, "message": f"Proforma {proforma_number} utworzona i wysłana do {purchaser_email}"})
+    elif not purchaser_email:
+        return jsonify({"success": True, "message": f"Proforma {proforma_number} utworzona. Brak adresu email kupującego."})
+    elif email_error:
+        return jsonify({"success": True, "message": f"Proforma {proforma_number} utworzona, ale email nie został wysłany: {email_error}"})
+    else:
+        return jsonify({"success": True, "message": f"Proforma {proforma_number} utworzona"})
+
+
 @admin_v2_bp.route("/orders/<order_id>/send-proforma", methods=["POST"])
 @_require_permission("orders")
 def order_send_proforma(order_id: str):
