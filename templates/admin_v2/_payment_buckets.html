@@ -52,9 +52,8 @@
               <tr>
                 <th style="width: 30px;"></th>
                 <th>Kupujący</th>
-                <th>Wydarzenie</th>
                 <th>Termin płatności</th>
-                <th>Typ</th>
+                <th style="width: 50px; text-align: center;">Typ</th>
                 <th style="text-align: right;">Kwota</th>
               </tr>
             </thead>
@@ -72,9 +71,6 @@
                   <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
                     {{ order.buyer_first_name }} {{ order.buyer_last_name }}
                   </a>
-                </td>
-                <td>
-                  <span class="bucket-table-event">{{ order.event_name }}</span>
                 </td>
                 <td>
                   {% if order.payment_link_expires_at %}
@@ -95,21 +91,18 @@
                     <span class="bucket-table-date text-muted">—</span>
                   {% endif %}
                 </td>
-                <td>
+                <td style="text-align: center;">
                   {% if order.payment_link_url %}
-                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
-                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
-                      Stripe
+                    <span class="payment-type-icon payment-type-stripe" title="Stripe">
+                      <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
-                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
-                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
-                      Proforma
+                    <span class="payment-type-icon payment-type-proforma" title="Proforma">
+                      <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% else %}
-                    <span class="payment-type-badge" title="Inny typ płatności">
-                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
-                      Inne
+                    <span class="payment-type-icon" title="Inne">
+                      <i data-lucide="help-circle" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% endif %}
                 </td>
@@ -154,9 +147,8 @@
               <tr>
                 <th style="width: 30px;"></th>
                 <th>Kupujący</th>
-                <th>Wydarzenie</th>
                 <th>Termin płatności</th>
-                <th>Typ</th>
+                <th style="width: 50px; text-align: center;">Typ</th>
                 <th style="text-align: right;">Kwota</th>
               </tr>
             </thead>
@@ -176,9 +168,6 @@
                   </a>
                 </td>
                 <td>
-                  <span class="bucket-table-event">{{ order.event_name }}</span>
-                </td>
-                <td>
                   {% if order.payment_link_expires_at %}
                     <span class="bucket-table-date" style="color: hsl(0, 84%, 50%);">{{ order.payment_link_expires_at.strftime('%d.%m.%Y, %H:%M') }}</span>
                   {% elif order.payment_due_date %}
@@ -187,21 +176,18 @@
                     <span class="bucket-table-date text-muted">—</span>
                   {% endif %}
                 </td>
-                <td>
+                <td style="text-align: center;">
                   {% if order.payment_link_url %}
-                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
-                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
-                      Stripe
+                    <span class="payment-type-icon payment-type-stripe" title="Stripe">
+                      <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
-                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
-                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
-                      Proforma
+                    <span class="payment-type-icon payment-type-proforma" title="Proforma">
+                      <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% else %}
-                    <span class="payment-type-badge" title="Inny typ płatności">
-                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
-                      Inne
+                    <span class="payment-type-icon" title="Inne">
+                      <i data-lucide="help-circle" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% endif %}
                 </td>
@@ -246,9 +232,8 @@
               <tr>
                 <th style="width: 30px;"></th>
                 <th>Kupujący</th>
-                <th>Wydarzenie</th>
                 <th>Data płatności</th>
-                <th>Typ</th>
+                <th style="width: 50px; text-align: center;">Typ</th>
                 <th style="text-align: right;">Kwota</th>
               </tr>
             </thead>
@@ -268,30 +253,24 @@
                   </a>
                 </td>
                 <td>
-                  <span class="bucket-table-event">{{ order.event_name }}</span>
-                </td>
-                <td>
                   {% if order.paid_at %}
                     <span class="bucket-table-date">{{ order.paid_at.strftime('%d.%m.%Y') }}</span>
                   {% else %}
                     <span class="bucket-table-date text-muted">—</span>
                   {% endif %}
                 </td>
-                <td>
+                <td style="text-align: center;">
                   {% if order.payment_link_url %}
-                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
-                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
-                      Stripe
+                    <span class="payment-type-icon payment-type-stripe" title="Stripe">
+                      <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
-                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
-                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
-                      Proforma
+                    <span class="payment-type-icon payment-type-proforma" title="Proforma">
+                      <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% else %}
-                    <span class="payment-type-badge" title="Inny typ płatności">
-                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
-                      Inne
+                    <span class="payment-type-icon" title="Inne">
+                      <i data-lucide="help-circle" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% endif %}
                 </td>
@@ -336,9 +315,8 @@
               <tr>
                 <th style="width: 30px;"></th>
                 <th>Kupujący</th>
-                <th>Wydarzenie</th>
                 <th>Data anulowania</th>
-                <th>Typ</th>
+                <th style="width: 50px; text-align: center;">Typ</th>
                 <th style="text-align: right;">Kwota</th>
               </tr>
             </thead>
@@ -358,30 +336,24 @@
                   </a>
                 </td>
                 <td>
-                  <span class="bucket-table-event">{{ order.event_name }}</span>
-                </td>
-                <td>
                   {% if order.cancelled_at %}
                     <span class="bucket-table-date">{{ order.cancelled_at.strftime('%d.%m.%Y') }}</span>
                   {% else %}
                     <span class="bucket-table-date text-muted">—</span>
                   {% endif %}
                 </td>
-                <td>
+                <td style="text-align: center;">
                   {% if order.payment_link_url %}
-                    <span class="payment-type-badge payment-type-stripe" title="Płatność online">
-                      <i data-lucide="credit-card" style="width: 12px; height: 12px;"></i>
-                      Stripe
+                    <span class="payment-type-icon payment-type-stripe" title="Stripe">
+                      <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% elif order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower) %}
-                    <span class="payment-type-badge payment-type-proforma" title="Faktura pro forma">
-                      <i data-lucide="file-text" style="width: 12px; height: 12px;"></i>
-                      Proforma
+                    <span class="payment-type-icon payment-type-proforma" title="Proforma">
+                      <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% else %}
-                    <span class="payment-type-badge" title="Inny typ płatności">
-                      <i data-lucide="help-circle" style="width: 12px; height: 12px;"></i>
-                      Inne
+                    <span class="payment-type-icon" title="Inne">
+                      <i data-lucide="help-circle" style="width: 16px; height: 16px;"></i>
                     </span>
                   {% endif %}
                 </td>
