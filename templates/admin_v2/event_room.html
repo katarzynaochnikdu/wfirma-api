@@ -1365,7 +1365,10 @@
 <style>
   /* Tab panel visibility */
   .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
+  .tab-panel.active { display: block; padding-bottom: 120px; }
+  
+  /* Ensure tab-content has enough space at bottom for sticky headers */
+  .tab-content { padding-bottom: 80px; }
   
   /* ===== SALES CHART CARD / DISCOUNT STATS ===== */
   .sales-chart-card {
@@ -2106,19 +2109,17 @@
     height: 90px;
   }
 
-  /* ===== TABS STICKY WRAPPER ===== */
+  /* ===== TABS WRAPPER (no longer sticky to fix scroll issues) ===== */
   .sticky-header-wrapper {
-    position: sticky;
-    top: 0;
+    position: relative;
     z-index: 99;
     background: var(--background);
     margin: 0 -1.5rem 1.5rem -1.5rem;
     padding: 0 1.5rem;
-    transition: top 0.3s ease;
   }
   
   .sticky-header-wrapper.banner-sticky {
-    top: 56px;
+    /* No longer needed but kept for compatibility */
   }
   
   /* Legacy styles - hide old header elements */
