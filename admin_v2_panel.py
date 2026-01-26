@@ -7037,7 +7037,10 @@ def event_room(event_id: str):
         p["ticket_name"] = ticket_name.strip()
         p["ticket_class_name"] = ticket_name.strip()  # Ustaw też ticket_class_name dla spójności
         p["is_notified"] = p.get("status") == "emailed"
-        p["company"] = ""  # Brak w danych
+        
+        # Wyciągnij firmę z zagnieżdżonego pola "data" (może być company, company_name lub firma)
+        p_data = p.get("data") or {}
+        p["company"] = p_data.get("company") or p_data.get("company_name") or p_data.get("firma") or ""
     
     # #region agent log
     import json as _json_debug3
