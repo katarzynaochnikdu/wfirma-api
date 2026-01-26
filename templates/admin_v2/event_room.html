@@ -1125,7 +1125,7 @@
               <i data-lucide="settings" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
               <input type="text" class="backstage-link-input" id="backstage_url" 
                      value="{{ event.backstage_url }}" 
-                     data-auto-url="{{ event.backstage_url }}"
+                     data-auto-url="{{ event.backstage_url_auto }}"
                      placeholder="https://backstage.zoho.eu/..."
                      style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
                      onchange="saveBackstageLink('backstage_url', this.value, this.dataset.autoUrl)">
@@ -1138,7 +1138,7 @@
               <i data-lucide="shopping-cart" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
               <input type="text" class="backstage-link-input" id="backstage_orders_url" 
                      value="{{ event.backstage_orders_url }}" 
-                     data-auto-url="{{ event.backstage_orders_url }}"
+                     data-auto-url="{{ event.backstage_orders_url_auto }}"
                      placeholder="https://backstage.zoho.eu/.../orders"
                      style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
                      onchange="saveBackstageLink('backstage_orders_url', this.value, this.dataset.autoUrl)">
@@ -1151,7 +1151,7 @@
               <i data-lucide="users" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
               <input type="text" class="backstage-link-input" id="backstage_attendees_url" 
                      value="{{ event.backstage_attendees_url }}" 
-                     data-auto-url="{{ event.backstage_attendees_url }}"
+                     data-auto-url="{{ event.backstage_attendees_url_auto }}"
                      placeholder="https://backstage.zoho.eu/.../attendees"
                      style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
                      onchange="saveBackstageLink('backstage_attendees_url', this.value, this.dataset.autoUrl)">

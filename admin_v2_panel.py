@@ -610,13 +610,27 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
     # Format: https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}/{page}
     if backstage_event_id:
         backstage_base = f"https://backstage.zoho.eu/home#/portal/{backstage_portal_id}/brand/{backstage_brand_id}/event/{backstage_event_id}"
-        event["backstage_url"] = f"{backstage_base}/overview"
-        event["backstage_orders_url"] = f"{backstage_base}/registrations/order-details"
-        event["backstage_attendees_url"] = f"{backstage_base}/registrations/detail/attendees?openImportAttendee=false&showCreditsPurchase=false"
+        # Automatycznie generowane URL (zawsze dostępne dla porównania/przywracania)
+        auto_backstage_url = f"{backstage_base}/overview"
+        auto_backstage_orders_url = f"{backstage_base}/registrations/order-details"
+        auto_backstage_attendees_url = f"{backstage_base}/registrations/detail/attendees?openImportAttendee=false&showCreditsPurchase=false"
+        
+        # Użyj zapisanego linku jeśli istnieje i nie jest pusty, w przeciwnym razie automatyczny
+        event["backstage_url"] = event_data.get("backstage_url") or auto_backstage_url
+        event["backstage_orders_url"] = event_data.get("backstage_orders_url") or auto_backstage_orders_url
+        event["backstage_attendees_url"] = event_data.get("backstage_attendees_url") or auto_backstage_attendees_url
+        
+        # Przekaż automatyczne URL do szablonu (do porównania / przywracania)
+        event["backstage_url_auto"] = auto_backstage_url
+        event["backstage_orders_url_auto"] = auto_backstage_orders_url
+        event["backstage_attendees_url_auto"] = auto_backstage_attendees_url
     else:
         event["backstage_url"] = "#"
         event["backstage_orders_url"] = "#"
         event["backstage_attendees_url"] = "#"
+        event["backstage_url_auto"] = "#"
+        event["backstage_orders_url_auto"] = "#"
+        event["backstage_attendees_url_auto"] = "#"
     
     return event
 
