@@ -1209,16 +1209,23 @@ def order_detail(order_id: str):
     if not order:
         return redirect(url_for("admin_v2_bp.orders_list"))
     
-    # Wyciągnij purchaser_company z raw (JSON)
-    raw = order.get("raw") or {}
-    if isinstance(raw, str):
-        import json
-        try:
-            raw = json.loads(raw)
-        except:
-            raw = {}
-    order["purchaser_company"] = raw.get("purchaser", {}).get("company") or raw.get("purchaserCompany") or ""
-    order["company_name"] = order["purchaser_company"]  # Alias dla szablonu
+    # Pobierz uczestników (potrzebne do wyciągnięcia firmy/placówki)
+    participants_for_company = get_participants_for_order(order_id) or []
+    
+    # Wyciągnij firmę/placówkę z danych pierwszego uczestnika
+    participant_company = ""
+    if participants_for_company:
+        p_data = participants_for_company[0].get("data") or {}
+        if isinstance(p_data, str):
+            import json
+            try:
+                p_data = json.loads(p_data)
+            except:
+                p_data = {}
+        participant_company = p_data.get("company") or p_data.get("company_name") or p_data.get("firma") or ""
+    
+    order["purchaser_company"] = participant_company
+    order["company_name"] = participant_company  # Alias dla szablonu
     
     # Sprawdź dostęp do wydarzenia zamówienia (dla viewer)
     order_event_id = order.get("event_id")
