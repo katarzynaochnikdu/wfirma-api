@@ -1004,10 +1004,10 @@ def list_orders(
         params: List[Any] = []
 
         if event_id:
-            where_clauses.append("event_id = %s")
+            where_clauses.append("o.event_id = %s")
             params.append(str(event_id))
         if status:
-            where_clauses.append("status = %s")
+            where_clauses.append("o.status = %s")
             params.append(str(status))
 
         where_sql = ""
