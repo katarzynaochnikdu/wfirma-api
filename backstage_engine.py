@@ -1898,6 +1898,11 @@ def _create_paid_invoice(
     """
     Tworzy opłaconą fakturę VAT po płatności Stripe.
     """
+    # #region agent log
+    import traceback
+    _caller = ''.join(traceback.format_stack()[-4:-1])
+    print(f"[DEBUG-PAID-INVOICE] CALLED | order_id={order_data.get('event_order_id','')}, caller_snippet={_caller[:300]}")
+    # #endregion
     _log("INFO", "WFIRMA: Wywołanie _create_paid_invoice", {"event_order_id": order_data.get("event_order_id", ""), "event_name": event_name[:30] if event_name else None})
     return _create_wfirma_invoice(
         order_data=order_data,

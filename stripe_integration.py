@@ -942,18 +942,32 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
         from backstage_engine import attendee_webhooks_status
 
         comp = attendee_webhooks_status(event_order_id)
+        # #region agent log
+        print(f"[DEBUG-STRIPE-PAID] BEFORE_SEND | order_id={event_order_id}, complete={comp.get('complete')}, expected={comp.get('expected',0)}, received={comp.get('received',0)}")
+        # #endregion
         if not comp.get("complete"):
+            # #region agent log
+            print(f"[DEBUG-STRIPE-PAID] SKIPPED | order_id={event_order_id}, expected={comp.get('expected')}, received={comp.get('received')}")
+            # #endregion
             print(f"[STRIPE] Pomijam emaile do uczestników - brak kompletu attendee-webhooków | expected={comp.get('expected')}, received={comp.get('received')}")
             participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0, "details": [{"status": "skipped_all", "reason": "attendee_webhooks_incomplete", **comp}]}
         else:
-        
+            # #region agent log
+            print(f"[DEBUG-STRIPE-PAID] CALLING_SEND | order_id={event_order_id}")
+            # #endregion
             participant_email_stats = send_participant_ticket_emails(
                 event_order_id=event_order_id,
                 event_name=event_name,
                 event_config=event_data,
             )
+            # #region agent log
+            print(f"[DEBUG-STRIPE-PAID] SEND_RESULT | sent={participant_email_stats.get('sent',0)}, failed={participant_email_stats.get('failed',0)}, skipped={participant_email_stats.get('skipped',0)}, details={participant_email_stats.get('details',[])[:3]}")
+            # #endregion
             print(f"[STRIPE] Emaile do uczestników: sent={participant_email_stats.get('sent', 0)}, failed={participant_email_stats.get('failed', 0)}, skipped={participant_email_stats.get('skipped', 0)}")
     except Exception as e:
+        # #region agent log
+        print(f"[DEBUG-STRIPE-PAID] EXCEPTION | order_id={event_order_id}, error={str(e)}")
+        # #endregion
         print(f"[STRIPE] Błąd wysyłki emaili do uczestników: {e}")
     
     return {

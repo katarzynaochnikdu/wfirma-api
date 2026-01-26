@@ -705,6 +705,74 @@ def login():
         box-shadow: 0 10px 40px rgba(0, 101, 215, 0.1), 0 2px 10px rgba(0, 0, 0, 0.05);
         overflow: hidden;
       }}
+      /* Iframe detection overlay */
+      .iframe-overlay {{
+        display: none;
+      }}
+      .iframe-overlay.active {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 40px 32px;
+      }}
+      .iframe-overlay-icon {{
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 24px;
+      }}
+      .iframe-overlay-icon svg {{
+        width: 32px;
+        height: 32px;
+        color: #64748b;
+      }}
+      .iframe-overlay h2 {{
+        font-size: 20px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0 0 12px 0;
+      }}
+      .iframe-overlay p {{
+        font-size: 14px;
+        color: #64748b;
+        margin: 0 0 24px 0;
+        line-height: 1.5;
+      }}
+      .iframe-overlay .open-btn {{
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 28px;
+        background: #0065D7;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: background 0.15s ease;
+      }}
+      .iframe-overlay .open-btn:hover {{
+        background: #0052b3;
+      }}
+      .iframe-overlay .open-btn svg {{
+        width: 18px;
+        height: 18px;
+      }}
+      /* Hide login form when in iframe */
+      body.in-iframe .login-body-content {{
+        display: none;
+      }}
+      body.in-iframe .iframe-overlay {{
+        display: flex;
+      }}
       .login-header {{
         background: linear-gradient(90deg, #00E09F 0%, #00A1D7 50%, #0065D7 100%);
         padding: 32px 32px 28px;
@@ -796,30 +864,65 @@ def login():
           <h1>Panel Administracyjny</h1>
         </div>
         <div class="login-body">
-          <h2 class="login-title">Zaloguj się</h2>
-          
-          {f'<div class="login-error">{error}</div>' if error else ''}
-          
-          <form method="post" action="{url_for('admin_bp.login')}">
-            <div class="login-field">
-              <label for="email">Adres email</label>
-              <input type="email" id="email" name="email" required autofocus placeholder="twoj@email.com" />
+          <!-- Iframe detection overlay - pokazywany gdy strona jest w iframe -->
+          <div class="iframe-overlay" id="iframeOverlay">
+            <div class="iframe-overlay-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
             </div>
-            
-            <div class="login-field">
-              <label for="password">Hasło</label>
-              <input type="password" id="password" name="password" required placeholder="Wprowadź hasło" />
-            </div>
-            
-            <button type="submit" class="login-btn">Zaloguj się</button>
-          </form>
+            <h2>Otwórz w nowej karcie</h2>
+            <p>Ze względów bezpieczeństwa logowanie<br/>nie jest możliwe w ramce iframe.</p>
+            <a href="{url_for('admin_bp.login')}" target="_blank" class="open-btn" onclick="window.open(this.href, '_blank'); return false;">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Otwórz panel logowania
+            </a>
+          </div>
           
-          <div class="login-footer">
-            Medidesk Admin Panel
+          <!-- Normalny formularz logowania - ukrywany gdy w iframe -->
+          <div class="login-body-content">
+            <h2 class="login-title">Zaloguj się</h2>
+            
+            {f'<div class="login-error">{error}</div>' if error else ''}
+            
+            <form method="post" action="{url_for('admin_bp.login')}">
+              <div class="login-field">
+                <label for="email">Adres email</label>
+                <input type="email" id="email" name="email" required autofocus placeholder="twoj@email.com" />
+              </div>
+              
+              <div class="login-field">
+                <label for="password">Hasło</label>
+                <input type="password" id="password" name="password" required placeholder="Wprowadź hasło" />
+              </div>
+              
+              <button type="submit" class="login-btn">Zaloguj się</button>
+            </form>
+            
+            <div class="login-footer">
+              Medidesk Admin Panel
+            </div>
           </div>
         </div>
       </div>
     </div>
+    
+    <script>
+      // Wykrywanie czy strona jest osadzona w iframe
+      (function() {{
+        try {{
+          if (window.self !== window.top) {{
+            // Strona jest w iframe - pokaż overlay, ukryj formularz
+            document.body.classList.add('in-iframe');
+          }}
+        }} catch (e) {{
+          // Błąd dostępu (cross-origin) - też oznacza iframe
+          document.body.classList.add('in-iframe');
+        }}
+      }})();
+    </script>
     """
     return _page("Logowanie", body, show_nav=False)
 
@@ -5272,16 +5375,31 @@ def order_mark_paid(order_id: str):
         from backstage_engine import send_participant_ticket_emails, attendee_webhooks_status
         
         comp = attendee_webhooks_status(order_id)
+        # #region agent log
+        print(f"[DEBUG-ADMIN-MARK-PAID] BEFORE_SEND | order_id={order_id}, complete={comp.get('complete')}, expected={comp.get('expected',0)}, received={comp.get('received',0)}")
+        # #endregion
         if comp.get("complete"):
+            # #region agent log
+            print(f"[DEBUG-ADMIN-MARK-PAID] CALLING_SEND | order_id={order_id}")
+            # #endregion
             stats = send_participant_ticket_emails(
                 event_order_id=order_id,
                 event_name=event_name,
                 event_config=event_data,
             )
+            # #region agent log
+            print(f"[DEBUG-ADMIN-MARK-PAID] SEND_RESULT | sent={stats.get('sent',0)}, failed={stats.get('failed',0)}, skipped={stats.get('skipped',0)}, details={stats.get('details',[])[:3]}")
+            # #endregion
             print(f"[ADMIN MARK-PAID] Emaile do uczestników: sent={stats.get('sent', 0)}, failed={stats.get('failed', 0)}")
         else:
+            # #region agent log
+            print(f"[DEBUG-ADMIN-MARK-PAID] SKIPPED | order_id={order_id}, expected={comp.get('expected')}, received={comp.get('received')}")
+            # #endregion
             print(f"[ADMIN MARK-PAID] Pomijam emaile do uczestników - brak kompletu webhooków")
     except Exception as e:
+        # #region agent log
+        print(f"[DEBUG-ADMIN-MARK-PAID] EXCEPTION | order_id={order_id}, error={str(e)}")
+        # #endregion
         print(f"[ADMIN MARK-PAID] Błąd wysyłki emaili do uczestników: {e}")
 
     # 9. Komunikat dla użytkownika
