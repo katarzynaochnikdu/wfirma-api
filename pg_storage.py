@@ -1490,13 +1490,15 @@ def save_stripe_session(
                 expires_at_ts,
             ),
         )
+        # Pobierz wynik INSERT przed kolejnym zapytaniem
+        row = cur.fetchone()
+        
         # Zapisz termin ważności linku także w zamówieniu (dla monitoringu)
         if expires_at_ts is not None:
             cur.execute(
                 "UPDATE orders SET payment_due_date = %s, updated_at = NOW() WHERE event_order_id = %s",
                 (expires_at_ts, str(event_order_id)),
             )
-        row = cur.fetchone()
         return dict(row) if row else {"event_order_id": event_order_id}
     finally:
         if pool is not None and conn is not None:
