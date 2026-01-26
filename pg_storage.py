@@ -273,6 +273,39 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_log_user_id ON admin_audit_log(admin_
 CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action ON admin_audit_log(action);
 
 -- ---------------------------------------------------------------------------
+-- PERMISSION GROUPS (grupy uprawnień - Event Teams i Role Templates)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS permission_groups (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  group_type TEXT NOT NULL DEFAULT 'role_template',
+  base_role TEXT NOT NULL DEFAULT 'user',
+  allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb,
+  allowed_events JSONB NOT NULL DEFAULT '[]'::jsonb,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_permission_groups_type ON permission_groups(group_type);
+CREATE INDEX IF NOT EXISTS idx_permission_groups_active ON permission_groups(is_active);
+
+-- ---------------------------------------------------------------------------
+-- USER GROUP MEMBERSHIPS (przypisania użytkowników do grup)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_group_memberships (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  group_id BIGINT NOT NULL REFERENCES permission_groups(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_group_memberships_user ON user_group_memberships(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_group_memberships_group ON user_group_memberships(group_id);
+
+-- ---------------------------------------------------------------------------
 -- ERROR QUEUE (Work Queue - zarządzanie błędami i retry)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS error_queue (
@@ -437,6 +470,37 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         # 1h) Backfill paid_at dla już opłaconych zamówień (używamy updated_at jako przybliżenia)
         cur.execute("UPDATE orders SET paid_at = updated_at WHERE status = 'paid' AND paid_at IS NULL")
 
+        # 1i) Permission groups - tabele dla grup uprawnień (idempotentne)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS permission_groups (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                group_type TEXT NOT NULL DEFAULT 'role_template',
+                base_role TEXT NOT NULL DEFAULT 'user',
+                allowed_pages JSONB NOT NULL DEFAULT '[]'::jsonb,
+                allowed_events JSONB NOT NULL DEFAULT '[]'::jsonb,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_permission_groups_type ON permission_groups(group_type)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_permission_groups_active ON permission_groups(is_active)")
+
+        # 1j) User group memberships
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_group_memberships (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+                group_id BIGINT NOT NULL REFERENCES permission_groups(id) ON DELETE CASCADE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(user_id, group_id)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_group_memberships_user ON user_group_memberships(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_group_memberships_group ON user_group_memberships(group_id)")
+
         # 2) Wersja migracji
         cur.execute("SELECT 1 FROM schema_migrations WHERE version=%s", (SCHEMA_VERSION,))
         exists = cur.fetchone() is not None
@@ -449,6 +513,34 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
+
+
+def run_permission_groups_migration() -> Dict[str, Any]:
+    """
+    Uruchamia migrację grup uprawnień:
+    1. Tworzy predefiniowane grupy jeśli nie istnieją
+    2. Przypisuje istniejących użytkowników do grup na podstawie ich roli
+    
+    Ta funkcja jest bezpieczna do wielokrotnego uruchamiania.
+    """
+    try:
+        # Upewnij się, że tabele istnieją
+        ensure_schema()
+        
+        # Krok 1: Utwórz domyślne grupy
+        default_groups = ensure_default_permission_groups()
+        
+        # Krok 2: Migruj użytkowników
+        migration_result = migrate_users_to_groups()
+        
+        return {
+            "ok": True,
+            "default_groups_created": len(default_groups),
+            "users_migrated": migration_result.get("migrated", 0),
+            "users_skipped": migration_result.get("skipped", 0),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def get_db_status() -> Dict[str, Any]:
@@ -2828,6 +2920,621 @@ def delete_admin_user(user_id: int) -> bool:
     finally:
         if pool is not None and conn is not None:
             _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# PERMISSION GROUPS (grupy uprawnień)
+# ---------------------------------------------------------------------------
+
+
+def list_permission_groups(
+    group_type: Optional[str] = None,
+    is_active: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    """Lista grup uprawnień z opcjonalnymi filtrami."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        
+        conditions = []
+        params: List[Any] = []
+        
+        if group_type is not None:
+            conditions.append("group_type = %s")
+            params.append(group_type)
+        if is_active is not None:
+            conditions.append("is_active = %s")
+            params.append(is_active)
+        
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+        
+        cur.execute(
+            f"""
+            SELECT g.*, 
+                   (SELECT COUNT(*) FROM user_group_memberships WHERE group_id = g.id) as member_count
+            FROM permission_groups g
+            {where_clause}
+            ORDER BY g.group_type, g.name
+            """,
+            params
+        )
+        return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        print(f"[DB] list_permission_groups error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_permission_group(group_id: int) -> Optional[Dict[str, Any]]:
+    """Pobiera pojedynczą grupę po ID."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT g.*, 
+                   (SELECT COUNT(*) FROM user_group_memberships WHERE group_id = g.id) as member_count
+            FROM permission_groups g
+            WHERE g.id = %s
+            """,
+            (int(group_id),)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[DB] get_permission_group error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_permission_group_by_name(name: str) -> Optional[Dict[str, Any]]:
+    """Pobiera grupę po nazwie."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT g.*, 
+                   (SELECT COUNT(*) FROM user_group_memberships WHERE group_id = g.id) as member_count
+            FROM permission_groups g
+            WHERE LOWER(g.name) = LOWER(%s)
+            """,
+            (str(name).strip(),)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[DB] get_permission_group_by_name error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def create_permission_group(
+    name: str,
+    group_type: str = "role_template",
+    description: Optional[str] = None,
+    base_role: str = "user",
+    allowed_pages: Optional[List[str]] = None,
+    allowed_events: Optional[List[str]] = None,
+    is_active: bool = True,
+) -> Optional[Dict[str, Any]]:
+    """Tworzy nową grupę uprawnień."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            INSERT INTO permission_groups (name, description, group_type, base_role, allowed_pages, allowed_events, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                str(name).strip(),
+                (str(description).strip() if description else None),
+                str(group_type),
+                str(base_role),
+                psycopg2.extras.Json(allowed_pages or []),
+                psycopg2.extras.Json(allowed_events or []),
+                bool(is_active),
+            ),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[DB] create_permission_group error: {e}")
+        return None
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def update_permission_group(
+    group_id: int,
+    name: str,
+    description: Optional[str] = None,
+    base_role: str = "user",
+    allowed_pages: Optional[List[str]] = None,
+    allowed_events: Optional[List[str]] = None,
+    is_active: bool = True,
+) -> bool:
+    """Aktualizuje grupę uprawnień (group_type jest niezmienny)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE permission_groups SET
+                name = %s,
+                description = %s,
+                base_role = %s,
+                allowed_pages = %s,
+                allowed_events = %s,
+                is_active = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (
+                str(name).strip(),
+                (str(description).strip() if description else None),
+                str(base_role),
+                psycopg2.extras.Json(allowed_pages or []),
+                psycopg2.extras.Json(allowed_events or []),
+                bool(is_active),
+                int(group_id),
+            ),
+        )
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] update_permission_group error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def delete_permission_group(group_id: int) -> bool:
+    """Usuwa grupę (cascade usunie też memberships)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM permission_groups WHERE id = %s", (int(group_id),))
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] delete_permission_group error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# USER GROUP MEMBERSHIPS (przypisania użytkowników do grup)
+# ---------------------------------------------------------------------------
+
+
+def get_user_groups(user_id: int) -> List[Dict[str, Any]]:
+    """Pobiera wszystkie grupy, do których należy użytkownik."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT g.*
+            FROM permission_groups g
+            INNER JOIN user_group_memberships m ON m.group_id = g.id
+            WHERE m.user_id = %s AND g.is_active = TRUE
+            ORDER BY g.group_type, g.name
+            """,
+            (int(user_id),)
+        )
+        return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        print(f"[DB] get_user_groups error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def get_group_members(group_id: int) -> List[Dict[str, Any]]:
+    """Pobiera wszystkich członków grupy."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.is_active,
+                   m.created_at as membership_created_at
+            FROM admin_users u
+            INNER JOIN user_group_memberships m ON m.user_id = u.id
+            WHERE m.group_id = %s
+            ORDER BY u.email
+            """,
+            (int(group_id),)
+        )
+        return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        print(f"[DB] get_group_members error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def add_user_to_group(user_id: int, group_id: int) -> bool:
+    """Dodaje użytkownika do grupy (idempotent - ignoruje jeśli już jest)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO user_group_memberships (user_id, group_id)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, group_id) DO NOTHING
+            """,
+            (int(user_id), int(group_id)),
+        )
+        return True
+    except Exception as e:
+        print(f"[DB] add_user_to_group error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def remove_user_from_group(user_id: int, group_id: int) -> bool:
+    """Usuwa użytkownika z grupy."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM user_group_memberships WHERE user_id = %s AND group_id = %s",
+            (int(user_id), int(group_id)),
+        )
+        return cur.rowcount > 0
+    except Exception as e:
+        print(f"[DB] remove_user_from_group error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def set_user_groups(user_id: int, group_ids: List[int]) -> bool:
+    """Ustawia grupy użytkownika (zastępuje istniejące przypisania)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        
+        # Usuń wszystkie istniejące
+        cur.execute("DELETE FROM user_group_memberships WHERE user_id = %s", (int(user_id),))
+        
+        # Dodaj nowe
+        for gid in group_ids:
+            cur.execute(
+                "INSERT INTO user_group_memberships (user_id, group_id) VALUES (%s, %s)",
+                (int(user_id), int(gid)),
+            )
+        return True
+    except Exception as e:
+        print(f"[DB] set_user_groups error: {e}")
+        return False
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def bulk_add_users_to_group(user_ids: List[int], group_id: int) -> int:
+    """Dodaje wielu użytkowników do grupy. Zwraca liczbę dodanych."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        added = 0
+        for uid in user_ids:
+            cur.execute(
+                """
+                INSERT INTO user_group_memberships (user_id, group_id)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id, group_id) DO NOTHING
+                """,
+                (int(uid), int(group_id)),
+            )
+            added += cur.rowcount
+        return added
+    except Exception as e:
+        print(f"[DB] bulk_add_users_to_group error: {e}")
+        return 0
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def bulk_remove_users_from_group(user_ids: List[int], group_id: int) -> int:
+    """Usuwa wielu użytkowników z grupy. Zwraca liczbę usuniętych."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM user_group_memberships WHERE user_id = ANY(%s) AND group_id = %s",
+            (user_ids, int(group_id)),
+        )
+        return cur.rowcount
+    except Exception as e:
+        print(f"[DB] bulk_remove_users_from_group error: {e}")
+        return 0
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def bulk_add_event_to_users(user_ids: List[int], event_id: str) -> int:
+    """Dodaje wydarzenie do allowed_events wielu użytkowników (SUMA, nie nadpisanie)."""
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        updated = 0
+        for uid in user_ids:
+            # Użyj jsonb_insert lub || operator do dodania elementu jeśli nie istnieje
+            cur.execute(
+                """
+                UPDATE admin_users 
+                SET allowed_events = CASE
+                    WHEN allowed_events ? %s THEN allowed_events
+                    ELSE allowed_events || %s::jsonb
+                END,
+                updated_at = NOW()
+                WHERE id = %s
+                """,
+                (event_id, f'["{event_id}"]', int(uid)),
+            )
+            updated += cur.rowcount
+        return updated
+    except Exception as e:
+        print(f"[DB] bulk_add_event_to_users error: {e}")
+        return 0
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# ---------------------------------------------------------------------------
+# GET EFFECTIVE PERMISSIONS (efektywne uprawnienia użytkownika)
+# ---------------------------------------------------------------------------
+
+
+def get_effective_permissions(user: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Oblicza efektywne uprawnienia użytkownika na podstawie grup i bezpośrednich ustawień.
+    
+    Zasady:
+    1. Admin = pełny dostęp
+    2. Rola pochodzi z Role Templates (najwyższa z user/viewer)
+    3. Pages = SUMA z Role Templates + bezpośrednie
+    4. Events = SUMA z Event Teams + bezpośrednie
+    
+    Zwraca: {
+        'role': 'admin'|'user'|'viewer',
+        'pages': List[str],
+        'events': List[str] | None (None = wszystkie wydarzenia),
+        'groups': List[Dict] (lista grup użytkownika)
+    }
+    """
+    ALL_PAGES = ["events", "orders", "participants", "users", "audit"]
+    
+    # Admin = pełny dostęp
+    if user.get('role') == 'admin':
+        return {
+            'role': 'admin',
+            'pages': ALL_PAGES,
+            'events': None,  # None = wszystkie
+            'groups': [],
+        }
+    
+    # Pobierz grupy użytkownika
+    groups = get_user_groups(user['id'])
+    role_templates = [g for g in groups if g.get('group_type') == 'role_template']
+    event_teams = [g for g in groups if g.get('group_type') == 'event_team']
+    
+    # Rola = najwyższa z Role Templates (user > viewer)
+    base_role = 'viewer'
+    if role_templates:
+        for rt in role_templates:
+            if rt.get('base_role') == 'user':
+                base_role = 'user'
+                break
+    else:
+        # Brak Role Template - użyj roli z użytkownika (backward compat)
+        base_role = user.get('role', 'viewer')
+        if base_role == 'admin':
+            base_role = 'user'  # Fallback jeśli coś poszło nie tak
+    
+    # Pages = SUMA z Role Templates + bezpośrednie
+    pages = set()
+    for rt in role_templates:
+        rt_pages = rt.get('allowed_pages') or []
+        if isinstance(rt_pages, list):
+            pages.update(rt_pages)
+    
+    # Dodaj bezpośrednie (jako dodatek, nie override)
+    user_pages = user.get('allowed_pages') or []
+    if isinstance(user_pages, list):
+        pages.update(user_pages)
+    
+    # Events = SUMA z Event Teams + bezpośrednie
+    events: set = set()
+    for et in event_teams:
+        et_events = et.get('allowed_events') or []
+        if isinstance(et_events, list):
+            events.update(et_events)
+    
+    # Dodaj bezpośrednie (jako dodatek)
+    user_events = user.get('allowed_events') or []
+    if isinstance(user_events, list):
+        events.update(user_events)
+    
+    # Pusta lista events = wszystkie wydarzenia (backward compat)
+    events_result: Optional[List[str]] = list(events) if events else None
+    
+    return {
+        'role': base_role,
+        'pages': list(pages),
+        'events': events_result,
+        'groups': groups,
+    }
+
+
+def ensure_default_permission_groups() -> List[Dict[str, Any]]:
+    """
+    Tworzy predefiniowane grupy uprawnień jeśli nie istnieją.
+    Zwraca listę utworzonych lub istniejących grup.
+    """
+    DEFAULT_GROUPS = [
+        {
+            "name": "Koordynator",
+            "group_type": "role_template",
+            "description": "Pełny dostęp do wydarzeń, zamówień i uczestników",
+            "base_role": "user",
+            "allowed_pages": ["events", "orders", "participants"],
+            "allowed_events": [],
+        },
+        {
+            "name": "Obserwator",
+            "group_type": "role_template",
+            "description": "Tylko podgląd wydarzeń, zamówień i uczestników",
+            "base_role": "viewer",
+            "allowed_pages": ["events", "orders", "participants"],
+            "allowed_events": [],
+        },
+        {
+            "name": "Administrator użytkowników",
+            "group_type": "role_template",
+            "description": "Pełny dostęp + zarządzanie użytkownikami",
+            "base_role": "user",
+            "allowed_pages": ["events", "orders", "participants", "users"],
+            "allowed_events": [],
+        },
+        {
+            "name": "Audytor",
+            "group_type": "role_template",
+            "description": "Tylko podgląd logów audytu",
+            "base_role": "viewer",
+            "allowed_pages": ["audit"],
+            "allowed_events": [],
+        },
+    ]
+    
+    result = []
+    for group_def in DEFAULT_GROUPS:
+        existing = get_permission_group_by_name(group_def["name"])
+        if existing:
+            result.append(existing)
+        else:
+            created = create_permission_group(**group_def)
+            if created:
+                result.append(created)
+    
+    return result
+
+
+def migrate_users_to_groups() -> Dict[str, int]:
+    """
+    Migruje istniejących użytkowników do grup na podstawie ich obecnej roli.
+    
+    - user → Koordynator
+    - viewer → Obserwator
+    - admin → pomijany (nie wymaga grup)
+    
+    Zwraca: {'migrated': N, 'skipped': M}
+    """
+    ensure_default_permission_groups()
+    
+    koordynator = get_permission_group_by_name("Koordynator")
+    obserwator = get_permission_group_by_name("Obserwator")
+    
+    if not koordynator or not obserwator:
+        return {'migrated': 0, 'skipped': 0, 'error': 'Brak domyślnych grup'}
+    
+    users = list_admin_users()
+    migrated = 0
+    skipped = 0
+    
+    for user in users:
+        if user.get('role') == 'admin':
+            skipped += 1
+            continue
+        
+        # Sprawdź czy już ma grupy
+        existing_groups = get_user_groups(user['id'])
+        role_templates = [g for g in existing_groups if g.get('group_type') == 'role_template']
+        
+        if role_templates:
+            skipped += 1
+            continue
+        
+        # Przypisz do odpowiedniej grupy
+        if user.get('role') == 'user':
+            if add_user_to_group(user['id'], koordynator['id']):
+                migrated += 1
+            else:
+                skipped += 1
+        else:  # viewer lub inne
+            if add_user_to_group(user['id'], obserwator['id']):
+                migrated += 1
+            else:
+                skipped += 1
+    
+    return {'migrated': migrated, 'skipped': skipped}
 
 
 # ---------------------------------------------------------------------------

@@ -105,7 +105,7 @@
       
       <!-- Uprawnienia do wydarzeń (dla user i viewer) -->
       <div id="events-section" class="form-group" style="display: none;">
-        <label>Dostęp do wydarzeń</label>
+        <label>Dostęp do wydarzeń (dodatkowe)</label>
         <div class="events-permissions-grid">
           {% for event in events %}
           <label class="permission-item">
@@ -115,7 +115,46 @@
           </label>
           {% endfor %}
         </div>
-        <div class="form-hint">Jeśli nie wybierzesz żadnego - użytkownik będzie miał dostęp do wszystkich. Viewer ma tylko podgląd (bez możliwości edycji).</div>
+        <div class="form-hint">Bezpośredni dostęp do wydarzeń (sumuje się z grupami). Jeśli nie wybierzesz żadnego i nie ma grup - dostęp do wszystkich.</div>
+      </div>
+      
+      <!-- GRUPY UPRAWNIEŃ (dla user i viewer) -->
+      <div id="groups-section" class="form-group" style="display: none;">
+        <label>Grupy uprawnień</label>
+        {% if all_groups %}
+        <div class="groups-grid">
+          {% for group in all_groups %}
+          <label class="permission-item group-item">
+            <input type="checkbox" name="user_groups" value="{{ group.id }}"
+                   {{ 'checked' if group.id in (user_group_ids or []) }}>
+            <div class="group-item-info">
+              <span class="group-item-name">
+                {% if group.group_type == 'role_template' %}
+                <i data-lucide="user-cog" style="width: 14px; height: 14px;"></i>
+                {% else %}
+                <i data-lucide="calendar-check" style="width: 14px; height: 14px;"></i>
+                {% endif %}
+                {{ group.name }}
+              </span>
+              <span class="group-item-type">
+                {{ 'Szablon roli' if group.group_type == 'role_template' else 'Zespół wydarzeń' }}
+                {% if group.group_type == 'role_template' %}
+                ({{ group.base_role }})
+                {% endif %}
+              </span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p style="font-size: 0.875rem; color: var(--muted-foreground); padding: 12px; background: var(--muted); border-radius: var(--radius);">
+          Brak dostępnych grup. <a href="{{ url_for('admin_v2_bp.groups_list') }}">Utwórz grupę</a>
+        </p>
+        {% endif %}
+        <div class="form-hint">
+          Wybierz grupy, do których ma należeć użytkownik. 
+          <a href="{{ url_for('admin_v2_bp.groups_list') }}" style="color: var(--primary);">Zarządzaj grupami</a>
+        </div>
       </div>
       
       {% if mode == 'edit' %}
@@ -238,7 +277,8 @@
 }
 
 .permissions-grid,
-.events-permissions-grid {
+.events-permissions-grid,
+.groups-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
@@ -247,6 +287,33 @@
   border-radius: var(--radius);
   max-height: 300px;
   overflow-y: auto;
+}
+
+.groups-grid {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
+
+.group-item {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.group-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.group-item-type {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
 }
 
 .permission-item {
@@ -421,9 +488,11 @@ function toggleSections() {
   const role = document.getElementById('role').value;
   const pagesSection = document.getElementById('pages-section');
   const eventsSection = document.getElementById('events-section');
+  const groupsSection = document.getElementById('groups-section');
   
   pagesSection.style.display = (role === 'user') ? 'block' : 'none';
   eventsSection.style.display = (role === 'user' || role === 'viewer') ? 'block' : 'none';
+  groupsSection.style.display = (role === 'user' || role === 'viewer') ? 'block' : 'none';
 }
 
 // Uruchom przy ładowaniu

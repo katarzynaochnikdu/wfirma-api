@@ -1,0 +1,360 @@
+{% extends 'admin_v2/base.html' %}
+
+{% block title %}Grupy uprawnień{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Grupy uprawnień</h1>
+    <p class="page-description">Zarządzaj grupami uprawnień dla użytkowników</p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('admin_v2_bp.users_list') }}" class="btn btn-ghost">
+      <i data-lucide="arrow-left"></i>
+      Powrót do kont
+    </a>
+    <button type="button" class="btn btn-outline" onclick="runMigration()" title="Utwórz domyślne grupy i przypisz użytkowników">
+      <i data-lucide="wand-2"></i>
+      Inicjalizuj grupy
+    </button>
+    <a href="{{ url_for('admin_v2_bp.group_new') }}" class="btn btn-primary">
+      <i data-lucide="plus"></i>
+      Nowa grupa
+    </a>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Wszystkie grupy</span>
+      <span class="stat-value">{{ groups|length }}</span>
+    </div>
+    <div class="stat-icon cyan">
+      <i data-lucide="layers"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Szablony ról</span>
+      <span class="stat-value">{{ groups|selectattr('group_type', 'equalto', 'role_template')|list|length }}</span>
+    </div>
+    <div class="stat-icon purple">
+      <i data-lucide="user-cog"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Zespoły wydarzeń</span>
+      <span class="stat-value">{{ groups|selectattr('group_type', 'equalto', 'event_team')|list|length }}</span>
+    </div>
+    <div class="stat-icon green">
+      <i data-lucide="calendar-check"></i>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-content">
+      <span class="stat-label">Aktywne</span>
+      <span class="stat-value">{{ groups|selectattr('is_active')|list|length }}</span>
+    </div>
+    <div class="stat-icon blue">
+      <i data-lucide="check-circle"></i>
+    </div>
+  </div>
+</div>
+
+<!-- FILTERS -->
+<div class="filters-bar" style="margin-bottom: 16px;">
+  <div class="filter-group">
+    <a href="{{ url_for('admin_v2_bp.groups_list') }}" 
+       class="filter-chip {{ 'active' if not type_filter }}">
+      Wszystkie
+    </a>
+    <a href="{{ url_for('admin_v2_bp.groups_list', type='role_template') }}" 
+       class="filter-chip {{ 'active' if type_filter == 'role_template' }}">
+      <i data-lucide="user-cog" style="width: 14px; height: 14px;"></i>
+      Szablony ról
+    </a>
+    <a href="{{ url_for('admin_v2_bp.groups_list', type='event_team') }}" 
+       class="filter-chip {{ 'active' if type_filter == 'event_team' }}">
+      <i data-lucide="calendar-check" style="width: 14px; height: 14px;"></i>
+      Zespoły wydarzeń
+    </a>
+  </div>
+</div>
+
+<!-- DATA TABLE -->
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Nazwa grupy</th>
+        <th>Typ</th>
+        <th>Uprawnienia</th>
+        <th>Członkowie</th>
+        <th>Status</th>
+        <th>Akcje</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in groups %}
+      <tr>
+        <td>
+          <div class="group-cell">
+            <div class="group-icon {{ 'role-icon' if group.group_type == 'role_template' else 'event-icon' }}">
+              <i data-lucide="{{ 'user-cog' if group.group_type == 'role_template' else 'calendar-check' }}"></i>
+            </div>
+            <div class="group-info">
+              <span class="group-name">{{ group.name }}</span>
+              {% if group.description %}
+              <span class="group-desc">{{ group.description }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </td>
+        <td>
+          {% if group.group_type == 'role_template' %}
+          <span class="status-badge status-paid">Szablon roli</span>
+          {% else %}
+          <span class="status-badge status-confirmed">Zespół wydarzeń</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if group.group_type == 'role_template' %}
+            {% set pages = group.allowed_pages or [] %}
+            <div class="permissions-summary">
+              <span class="role-badge {{ 'role-user' if group.base_role == 'user' else 'role-viewer' }}">
+                {{ 'User' if group.base_role == 'user' else 'Viewer' }}
+              </span>
+              {% if pages %}
+              <span class="pages-count">{{ pages|length }} stron</span>
+              {% endif %}
+            </div>
+          {% else %}
+            {% set events = group.allowed_events or [] %}
+            <span style="font-size: 0.75rem; color: var(--muted-foreground);">
+              {{ events|length }} wydarzeń
+            </span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="member-count">
+            <i data-lucide="users" style="width: 14px; height: 14px;"></i>
+            {{ group.member_count or 0 }}
+          </span>
+        </td>
+        <td>
+          {% if group.is_active %}
+          <span class="checkin-badge checkin-done">Aktywna</span>
+          {% else %}
+          <span class="checkin-badge checkin-pending">Nieaktywna</span>
+          {% endif %}
+        </td>
+        <td>
+          <div style="display: flex; gap: 0.25rem;">
+            <a href="{{ url_for('admin_v2_bp.group_edit', group_id=group.id) }}" class="btn-icon" title="Edytuj grupę">
+              <i data-lucide="settings"></i>
+            </a>
+            <button type="button" class="btn-icon btn-icon-danger" title="Usuń grupę" onclick="deleteGroup({{ group.id }}, '{{ group.name }}')">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+          Brak grup do wyświetlenia
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  {% if groups %}
+  <div class="table-footer">
+    <span class="table-info">Wyświetlono {{ groups|length }} grup</span>
+  </div>
+  {% endif %}
+</div>
+
+<style>
+.group-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.group-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.group-icon i {
+  width: 18px;
+  height: 18px;
+}
+
+.group-icon.role-icon {
+  background: hsl(262, 80%, 95%);
+  color: hsl(262, 80%, 50%);
+}
+
+.group-icon.event-icon {
+  background: hsl(160, 82%, 95%);
+  color: hsl(160, 82%, 35%);
+}
+
+.group-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-name {
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.group-desc {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.permissions-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.role-badge.role-user {
+  background: hsl(212, 100%, 95%);
+  color: hsl(212, 100%, 40%);
+}
+
+.role-badge.role-viewer {
+  background: hsl(45, 100%, 95%);
+  color: hsl(45, 100%, 30%);
+}
+
+.pages-count {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.member-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.filters-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.filter-chip:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.filter-chip.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.btn-icon-danger {
+  color: hsl(0, 70%, 50%);
+}
+
+.btn-icon-danger:hover {
+  background: hsl(0, 70%, 97%);
+}
+
+.stat-icon.blue {
+  background: hsl(212, 100%, 95%);
+  color: hsl(212, 100%, 45%);
+}
+</style>
+
+<script>
+function deleteGroup(groupId, groupName) {
+  if (!confirm(`Czy na pewno chcesz usunąć grupę "${groupName}"? Użytkownicy zostaną usunięci z tej grupy.`)) {
+    return;
+  }
+  
+  fetch(`/admin-v2/users/groups/${groupId}/delete`, { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();
+      } else {
+        alert('Błąd: ' + (data.error || 'Nieznany błąd'));
+      }
+    })
+    .catch(err => alert('Błąd połączenia'));
+}
+
+function runMigration() {
+  if (!confirm('Czy na pewno chcesz uruchomić inicjalizację grup?\n\n' +
+               'Ta operacja:\n' +
+               '• Utworzy domyślne szablony ról (Koordynator, Obserwator, itp.) jeśli nie istnieją\n' +
+               '• Przypisze istniejących użytkowników do odpowiednich grup na podstawie ich roli\n\n' +
+               'Operacja jest bezpieczna i może być uruchomiona wielokrotnie.')) {
+    return;
+  }
+  
+  fetch('/admin-v2/users/groups/migrate', { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast(data.message, 'success');
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        showToast('Błąd: ' + (data.error || 'Nieznany błąd'), 'error');
+      }
+    })
+    .catch(err => showToast('Błąd połączenia', 'error'));
+}
+</script>
+{% endblock %}

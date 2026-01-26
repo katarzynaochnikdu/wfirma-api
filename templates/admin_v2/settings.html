@@ -95,6 +95,18 @@
     </div>
   </a>
   
+  {% if user_role == 'admin' %}
+  <a href="{{ url_for('admin_v2_bp.groups_list') }}" class="card quick-link-card">
+    <div class="quick-link-icon" style="background: hsl(262, 80%, 50%, 0.1);">
+      <i data-lucide="layers" style="width: 24px; height: 24px; color: hsl(262, 80%, 50%);"></i>
+    </div>
+    <div>
+      <h4 style="font-weight: 600; font-size: 0.875rem;">Grupy uprawnień</h4>
+      <p style="font-size: 0.75rem; color: var(--muted-foreground);">Szablony ról i zespoły wydarzeń</p>
+    </div>
+  </a>
+  {% endif %}
+  
   <a href="{{ url_for('admin_v2_bp.audit_log') }}" class="card quick-link-card">
     <div class="quick-link-icon" style="background: hsl(280, 80%, 50%, 0.1);">
       <i data-lucide="scroll-text" style="width: 24px; height: 24px; color: hsl(280, 80%, 50%);"></i>

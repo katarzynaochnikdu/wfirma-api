@@ -10,6 +10,14 @@
     <p class="page-description">Zarządzaj kontami administratorów panelu</p>
   </div>
   <div class="header-actions">
+    <a href="{{ url_for('admin_v2_bp.groups_list') }}" class="btn btn-outline">
+      <i data-lucide="layers"></i>
+      Grupy
+    </a>
+    <a href="{{ url_for('admin_v2_bp.users_bulk_create') }}" class="btn btn-outline">
+      <i data-lucide="users-round"></i>
+      Utwórz grupowo
+    </a>
     <a href="{{ url_for('admin_v2_bp.user_new') }}" class="btn btn-primary">
       <i data-lucide="plus"></i>
       Nowe konto
@@ -48,11 +56,55 @@
   </div>
 </div>
 
+<!-- BULK ACTIONS TOOLBAR (hidden by default) -->
+<div id="bulk-toolbar" class="bulk-toolbar" style="display: none;">
+  <div class="bulk-info">
+    <i data-lucide="check-square" style="width: 18px; height: 18px;"></i>
+    <span>Zaznaczono: <strong id="selected-count">0</strong> użytkowników</span>
+  </div>
+  <div class="bulk-actions">
+    <div class="dropdown">
+      <button type="button" class="btn btn-outline btn-sm dropdown-toggle" onclick="toggleDropdown('event-dropdown')">
+        <i data-lucide="calendar-plus" style="width: 14px; height: 14px;"></i>
+        Przypisz wydarzenie
+      </button>
+      <div id="event-dropdown" class="dropdown-menu">
+        {% for event in events %}
+        <button type="button" class="dropdown-item" onclick="bulkAssignEvent('{{ event.event_id }}', '{{ event.event_name }}')">
+          {{ event.event_name }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="dropdown">
+      <button type="button" class="btn btn-outline btn-sm dropdown-toggle" onclick="toggleDropdown('group-dropdown')">
+        <i data-lucide="users-round" style="width: 14px; height: 14px;"></i>
+        Dodaj do grupy
+      </button>
+      <div id="group-dropdown" class="dropdown-menu">
+        {% for group in all_groups %}
+        <button type="button" class="dropdown-item" onclick="bulkAssignGroup({{ group.id }}, '{{ group.name }}')">
+          <i data-lucide="{{ 'user-cog' if group.group_type == 'role_template' else 'calendar-check' }}" style="width: 14px; height: 14px;"></i>
+          {{ group.name }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="clearSelection()">
+      <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+      Wyczyść
+    </button>
+  </div>
+</div>
+
 <!-- DATA TABLE -->
 <div class="card">
   <table class="data-table">
     <thead>
       <tr>
+        <th style="width: 40px;">
+          <input type="checkbox" id="select-all" onchange="toggleSelectAll()" title="Zaznacz wszystkich">
+        </th>
         <th>Użytkownik</th>
         <th>Rola</th>
         <th>Uprawnienia</th>
@@ -63,7 +115,12 @@
     </thead>
     <tbody>
       {% for user in users %}
-      <tr>
+      <tr data-user-id="{{ user.id }}" data-user-role="{{ user.role }}">
+        <td>
+          {% if user.role != 'admin' %}
+          <input type="checkbox" class="user-checkbox" value="{{ user.id }}" onchange="updateSelection()">
+          {% endif %}
+        </td>
         <td>
           <div class="participant-cell">
             <div class="participant-avatar">{{ user.email[:2]|upper }}</div>
@@ -116,7 +173,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
+        <td colspan="7" style="text-align: center; color: var(--muted-foreground); padding: 2rem;">
           Brak kont do wyświetlenia
         </td>
       </tr>
@@ -137,6 +194,112 @@
 }
 .btn-icon-danger:hover {
   background: hsl(0, 70%, 97%);
+}
+
+/* Bulk toolbar */
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: hsl(212, 100%, 97%);
+  border: 1px solid hsl(212, 100%, 85%);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bulk-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: hsl(212, 100%, 40%);
+  font-size: 0.875rem;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+}
+
+/* Dropdown */
+.dropdown {
+  position: relative;
+}
+
+.dropdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  display: none;
+}
+
+.dropdown-menu.show {
+  display: block;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.dropdown-item:hover {
+  background: var(--muted);
+}
+
+/* Checkbox styling */
+.user-checkbox,
+#select-all {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+tr.selected {
+  background: hsl(212, 100%, 97%);
 }
 </style>
 
@@ -174,6 +337,147 @@ function toggleActive(userId, currentActive) {
       }
     })
     .catch(err => alert('Błąd połączenia'));
+}
+
+// ============= BULK OPERATIONS =============
+
+function getSelectedUserIds() {
+  const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+  return Array.from(checkboxes).map(cb => parseInt(cb.value));
+}
+
+function updateSelection() {
+  const selectedIds = getSelectedUserIds();
+  const toolbar = document.getElementById('bulk-toolbar');
+  const countEl = document.getElementById('selected-count');
+  const selectAllCb = document.getElementById('select-all');
+  
+  if (selectedIds.length > 0) {
+    toolbar.style.display = 'flex';
+    countEl.textContent = selectedIds.length;
+  } else {
+    toolbar.style.display = 'none';
+  }
+  
+  // Update select-all checkbox state
+  const allCheckboxes = document.querySelectorAll('.user-checkbox');
+  const allChecked = allCheckboxes.length > 0 && selectedIds.length === allCheckboxes.length;
+  selectAllCb.checked = allChecked;
+  selectAllCb.indeterminate = selectedIds.length > 0 && !allChecked;
+  
+  // Highlight selected rows
+  document.querySelectorAll('tr[data-user-id]').forEach(row => {
+    const userId = parseInt(row.getAttribute('data-user-id'));
+    if (selectedIds.includes(userId)) {
+      row.classList.add('selected');
+    } else {
+      row.classList.remove('selected');
+    }
+  });
+  
+  // Re-render Lucide icons
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+}
+
+function toggleSelectAll() {
+  const selectAllCb = document.getElementById('select-all');
+  const checkboxes = document.querySelectorAll('.user-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = selectAllCb.checked;
+  });
+  updateSelection();
+}
+
+function clearSelection() {
+  const checkboxes = document.querySelectorAll('.user-checkbox');
+  checkboxes.forEach(cb => cb.checked = false);
+  document.getElementById('select-all').checked = false;
+  updateSelection();
+}
+
+function toggleDropdown(dropdownId) {
+  // Close all other dropdowns
+  document.querySelectorAll('.dropdown-menu').forEach(menu => {
+    if (menu.id !== dropdownId) {
+      menu.classList.remove('show');
+    }
+  });
+  
+  const dropdown = document.getElementById(dropdownId);
+  dropdown.classList.toggle('show');
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.dropdown')) {
+    document.querySelectorAll('.dropdown-menu').forEach(menu => {
+      menu.classList.remove('show');
+    });
+  }
+});
+
+function bulkAssignEvent(eventId, eventName) {
+  const selectedIds = getSelectedUserIds();
+  if (selectedIds.length === 0) {
+    alert('Zaznacz najpierw użytkowników');
+    return;
+  }
+  
+  if (!confirm(`Czy na pewno chcesz przypisać wydarzenie "${eventName}" do ${selectedIds.length} użytkowników?`)) {
+    return;
+  }
+  
+  fetch('/admin-v2/users/bulk/assign-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_ids: selectedIds, event_id: eventId })
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast(data.message, 'success');
+        clearSelection();
+      } else {
+        showToast('Błąd: ' + (data.error || 'Nieznany błąd'), 'error');
+      }
+    })
+    .catch(err => showToast('Błąd połączenia', 'error'));
+  
+  // Close dropdown
+  document.querySelectorAll('.dropdown-menu').forEach(menu => menu.classList.remove('show'));
+}
+
+function bulkAssignGroup(groupId, groupName) {
+  const selectedIds = getSelectedUserIds();
+  if (selectedIds.length === 0) {
+    alert('Zaznacz najpierw użytkowników');
+    return;
+  }
+  
+  if (!confirm(`Czy na pewno chcesz dodać ${selectedIds.length} użytkowników do grupy "${groupName}"?`)) {
+    return;
+  }
+  
+  fetch('/admin-v2/users/bulk/assign-group', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_ids: selectedIds, group_id: groupId })
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast(data.message, 'success');
+        clearSelection();
+      } else {
+        showToast('Błąd: ' + (data.error || 'Nieznany błąd'), 'error');
+      }
+    })
+    .catch(err => showToast('Błąd połączenia', 'error'));
+  
+  // Close dropdown
+  document.querySelectorAll('.dropdown-menu').forEach(menu => menu.classList.remove('show'));
 }
 </script>
 {% endblock %}

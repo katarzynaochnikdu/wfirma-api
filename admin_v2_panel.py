@@ -36,6 +36,25 @@ from pg_storage import (
     increment_admin_user_failed_login,
     insert_admin_audit_log,
     list_admin_audit_log,
+    # Permission groups
+    list_permission_groups,
+    get_permission_group,
+    get_permission_group_by_name,
+    create_permission_group,
+    update_permission_group,
+    delete_permission_group,
+    get_user_groups,
+    get_group_members,
+    add_user_to_group,
+    remove_user_from_group,
+    set_user_groups,
+    bulk_add_users_to_group,
+    bulk_remove_users_from_group,
+    bulk_add_event_to_users,
+    get_effective_permissions,
+    ensure_default_permission_groups,
+    migrate_users_to_groups,
+    run_permission_groups_migration,
 )
 
 admin_v2_bp = Blueprint("admin_v2_bp", __name__, template_folder="templates")
@@ -82,42 +101,66 @@ def _normalize_allowed_pages(value: Any) -> List[str]:
 
 
 def _user_has_permission(user: Optional[Dict[str, Any]], page: str) -> bool:
-    """Sprawdza czy user ma dostęp do danej strony."""
+    """
+    Sprawdza czy user ma dostęp do danej strony.
+    Uwzględnia uprawnienia z grup (suma: Role Templates + bezpośrednie).
+    """
     if not user:
         return False
     role = (user.get("role") or "").strip().lower() or "admin"
     if role == "admin":
         return True
-    allowed = _normalize_allowed_pages(user.get("allowed_pages"))
-    return page in allowed
+    
+    # Pobierz efektywne uprawnienia (z grup + bezpośrednie)
+    try:
+        effective = get_effective_permissions(user)
+        return page in effective.get("pages", [])
+    except Exception:
+        # Fallback na starą logikę jeśli coś pójdzie nie tak
+        allowed = _normalize_allowed_pages(user.get("allowed_pages"))
+        return page in allowed
 
 
 def _user_has_event_access(user: Optional[Dict[str, Any]], event_id: str) -> bool:
-    """Sprawdza czy user ma dostęp do konkretnego wydarzenia."""
+    """
+    Sprawdza czy user ma dostęp do konkretnego wydarzenia.
+    Uwzględnia uprawnienia z grup (suma: Event Teams + bezpośrednie).
+    """
     if not user:
         return False
     role = (user.get("role") or "").strip().lower()
     # Admin ma dostęp do wszystkich wydarzeń
     if role == "admin":
         return True
-    # User i viewer - sprawdzamy allowed_events
-    # Jeśli lista jest pusta lub None - user ma dostęp do wszystkich
-    # Jeśli lista zawiera wydarzenia - user ma dostęp tylko do nich
-    if role in ("user", "viewer"):
-        allowed_event_ids = user.get("allowed_events") or []
-        if isinstance(allowed_event_ids, str):
-            import json
-            try:
-                allowed_event_ids = json.loads(allowed_event_ids)
-            except:
-                allowed_event_ids = []
-        allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
-        # Jeśli lista pusta - dostęp do wszystkich
-        if not allowed_event_ids:
+    
+    # Pobierz efektywne uprawnienia (z grup + bezpośrednie)
+    try:
+        effective = get_effective_permissions(user)
+        allowed_event_ids = effective.get("events")
+        
+        # None = wszystkie wydarzenia
+        if allowed_event_ids is None:
             return True
-        # Jeśli lista niepusta - sprawdź czy event_id jest na liście
-        return str(event_id) in allowed_event_ids
-    return False
+        
+        # Lista event_ids - sprawdź czy jest na liście
+        return str(event_id) in [str(eid) for eid in allowed_event_ids if eid]
+    except Exception:
+        # Fallback na starą logikę jeśli coś pójdzie nie tak
+        if role in ("user", "viewer"):
+            allowed_event_ids = user.get("allowed_events") or []
+            if isinstance(allowed_event_ids, str):
+                import json
+                try:
+                    allowed_event_ids = json.loads(allowed_event_ids)
+                except:
+                    allowed_event_ids = []
+            allowed_event_ids = [str(eid) for eid in allowed_event_ids if eid]
+            # Jeśli lista pusta - dostęp do wszystkich
+            if not allowed_event_ids:
+                return True
+            # Jeśli lista niepusta - sprawdź czy event_id jest na liście
+            return str(event_id) in allowed_event_ids
+        return False
 
 
 def _is_admin_user(user: Optional[Dict[str, Any]]) -> bool:
@@ -128,10 +171,22 @@ def _is_admin_user(user: Optional[Dict[str, Any]]) -> bool:
 
 
 def _is_viewer(user: Optional[Dict[str, Any]]) -> bool:
-    """Czy user ma rolę viewer (tylko odczyt)."""
+    """
+    Czy user ma rolę viewer (tylko odczyt).
+    Uwzględnia efektywną rolę z grup.
+    """
     if not user:
         return False
-    return (user.get("role") or "").strip().lower() == "viewer"
+    base_role = (user.get("role") or "").strip().lower()
+    if base_role == "admin":
+        return False
+    
+    # Sprawdź efektywną rolę (z grup)
+    try:
+        effective = get_effective_permissions(user)
+        return effective.get("role") == "viewer"
+    except Exception:
+        return base_role == "viewer"
 
 
 def _get_user_initials(user: Optional[Dict[str, Any]]) -> str:
@@ -145,6 +200,177 @@ def _get_user_initials(user: Optional[Dict[str, Any]]) -> str:
     elif parts:
         return parts[0][:2].upper()
     return "AD"
+
+
+def _generate_admin_invitation_email_html(first_name: str, message_intro: str, temp_password: str, login_url: str) -> str:
+    """
+    Generuje elegancki HTML emaila z zaproszeniem/resetem hasła do panelu administracyjnego.
+    
+    Args:
+        first_name: Imię użytkownika (lub 'Użytkowniku' jako fallback)
+        message_intro: Tekst wprowadzający (różny dla nowego konta vs reset hasła)
+        temp_password: Hasło tymczasowe
+        login_url: URL do logowania
+    
+    Returns:
+        Kompletny HTML emaila
+    """
+    return f'''<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel administracyjny – Wydarzenia Medidesk</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {{font-family: Arial, Helvetica, sans-serif !important;}}
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    p, h1, h2, h3, h4, h5, h6, ul {{margin: 0;}}
+    @media screen and (max-width: 620px) {{
+      .wrapper {{ padding: 8px !important; }}
+      .main-table {{ width: 100% !important; max-width: 100% !important; }}
+      .inner-table {{ width: 100% !important; }}
+      .content-cell {{ padding-left: 16px !important; padding-right: 16px !important; }}
+      .password-box {{ font-size: 18px !important; }}
+    }}
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f6f8;">
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+    Twoje konto w panelu administracyjnym Wydarzenia Medidesk jest gotowe!
+    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+  </div>
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f6f8;" dir="ltr">
+    <tr>
+      <td class="wrapper" style="padding: 32px 16px;">
+        <table border="0" width="600" cellpadding="0" cellspacing="0" class="main-table" style="width: 600px; margin: auto; max-width: 600px;">
+          <tr>
+            <td>
+              <table border="0" cellpadding="0" cellspacing="0" class="inner-table" style="font-family: Arial, Helvetica, sans-serif; padding: 0; color: #1e293b; width: 600px; line-height: 24px; background-color: #ffffff; font-size: 15px; text-align: left; box-sizing: content-box; border-collapse: collapse; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+                <tr>
+                  <td style="height: 4px; background-color: #00a3d7;"></td>
+                </tr>
+                <tr>
+                  <td style="padding: 28px 32px 20px 32px; border-bottom: 1px solid #e2e8f0;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="vertical-align: middle;">
+                          <table border="0" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="vertical-align: middle; padding-right: 12px;">
+                                <img src="https://wfirma-api.onrender.com/static/favicon.svg" alt="Medidesk" width="40" height="40" style="width: 40px; height: 40px; display: block;">
+                              </td>
+                              <td style="vertical-align: middle;">
+                                <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1e293b; line-height: 1.2;">Wydarzenia Medidesk</p>
+                                <p style="margin: 2px 0 0 0; font-size: 13px; color: #64748b; line-height: 1.2;">Panel administracyjny</p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="content-cell" style="padding: 32px;">
+                    <h1 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 700; color: #1e293b;">
+                      Cześć {first_name}!
+                    </h1>
+                    <p style="margin: 0 0 24px 0; font-size: 15px; color: #475569; line-height: 1.6;">
+                      {message_intro}
+                    </p>
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px;">
+                      <tr>
+                        <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px;">
+                          <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Twoje hasło tymczasowe
+                          </p>
+                          <p class="password-box" style="margin: 0; font-size: 24px; font-weight: 700; font-family: 'Consolas', 'Monaco', monospace; color: #0065D7; letter-spacing: 2px;">
+                            {temp_password}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px;">
+                      <tr>
+                        <td align="center">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{login_url}" style="v-text-anchor:middle; height:48px; width:200px" arcsize="10%" stroke="false" fillcolor="#0065D7">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff; font-size:16px; font-weight:bold;">Zaloguj się</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{login_url}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 14px 32px; background-color: #0065D7; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px; text-align: center; box-shadow: 0 2px 4px rgba(0, 101, 215, 0.3);">
+                            Zaloguj się
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="padding: 12px 16px; background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 0 6px 6px 0;">
+                          <p style="margin: 0; font-size: 14px; color: #92400e; line-height: 1.5;">
+                            <strong>Ważne:</strong> Po pierwszym zalogowaniu zostaniesz poproszony o zmianę hasła na własne.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 16px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="text-align: center;">
+                          <p style="margin: 0 0 12px 0; font-size: 12px; color: #94a3b8;">
+                            Masz pytania? Skontaktuj się: <a href="mailto:adminzoho@medidesk.pl" style="color: #0065D7; text-decoration: none;">adminzoho@medidesk.pl</a>
+                          </p>
+                          <table border="0" cellpadding="0" cellspacing="0" width="60" style="margin: 0 auto 12px auto;">
+                            <tr>
+                              <td style="height: 1px; background-color: #e2e8f0;"></td>
+                            </tr>
+                          </table>
+                          <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                            <tr>
+                              <td style="vertical-align: middle; padding-right: 6px;">
+                                <span style="font-size: 11px; color: #94a3b8;">Powered by</span>
+                              </td>
+                              <td style="vertical-align: middle;">
+                                <svg width="100" height="32" viewBox="0 0 1280 720" style="display: block;">
+                                  <path fill="#64748b" d="M701.89,329.65l-5.27-139.55c-.33-8.77-5.68-16.71-14.04-20.83l-132.99-65.54c-8.36-4.12-18.45-3.79-26.48.86l-127.73,74.01c-8.03,4.65-12.77,12.92-12.44,21.69l2.06,54.5c.33,8.77,5.68,16.71,14.04,20.83h0c18.01,8.88,39.63-3.65,38.92-22.54l-.99-26.15c-.33-8.77,4.41-17.04,12.44-21.69l75.84-43.94c8.03-4.65,18.12-4.98,26.48-.86l78.96,38.91c8.36,4.12,13.71,12.06,14.04,20.83l3.12,82.85c.33,8.77-4.41,17.04-12.44,21.69l-25.05,14.51c-17.3,10.02-16.4,33.64,1.61,42.52h.01c8.36,4.12,18.45,3.8,26.48-.85l50.99-29.55c8.03-4.65,12.77-12.92,12.44-21.69Z"/>
+                                  <path fill="#64748b" d="M528.1,357.27c15.22-25.35,30.43-50.69,45.65-76.04,4.73-7.88,4.73-17.59,0-25.48h0c-10.2-16.99-35.7-16.99-45.9,0l-30.35,50.56c-4.73,7.88-13.48,12.74-22.95,12.74h-178.84c-9.47,0-18.22,4.85-22.95,12.73l-75.31,125.43c-4.73,7.88-4.73,17.6,0,25.48l75.31,125.43c4.73,7.88,13.48,12.74,22.95,12.74h150.62c9.47,0,18.21-4.86,22.95-12.74l29.41-48.98c4.73-7.88,4.73-17.6,0-25.48h0c-10.2-16.99-35.69-16.99-45.89,0l-14.12,23.51c-4.73,7.88-13.48,12.74-22.95,12.74h-89.41c-9.47,0-18.21-4.86-22.95-12.74l-44.72-74.47c-4.73-7.88-4.73-17.6,0-25.48l44.71-74.47c4.73-7.88,13.48-12.74,22.95-12.74h178.84c9.47,0,18.22-4.85,22.95-12.73Z"/>
+                                  <path fill="#64748b" d="M467.9,490.07c-2.32,0-3.93-1.61-3.93-3.93v-85.56c0-2.32,1.61-3.93,3.93-3.93h70.69c4.57,0,8.31.58,11.27,1.8,3.03,1.22,5.47,2.7,7.21,4.38,1.8,1.8,3.03,3.67,3.73,5.6.71,2.06,1.09,3.86,1.09,5.41v58.97c0,2.83-.64,5.34-1.93,7.47-1.35,2.12-3.09,3.93-5.21,5.34-2.12,1.48-4.57,2.58-7.4,3.28-2.83.77-5.73,1.16-8.76,1.16h-70.69ZM496.68,466.05h32.51v-45.45h-32.51v45.45Z"/>
+                                  <path fill="#64748b" d="M588.49,490.07c-2.32,0-3.93-1.61-3.93-3.93v-85.56c0-2.32,1.61-3.93,3.93-3.93h24.85c2.32,0,3.93,1.61,3.93,3.93v85.56c0,2.32-1.61,3.93-3.93,3.93h-24.85Z"/>
+                                  <path fill="#64748b" d="M662.66,491.35c-4.44,0-8.18-.64-11.2-1.87-2.96-1.22-5.34-2.77-7.08-4.57-1.8-1.74-3.09-3.67-3.8-5.73-.71-2.12-1.09-3.93-1.09-5.54v-60.65c0-1.61.39-3.41,1.09-5.47.71-2,2-3.93,3.8-5.73,1.74-1.8,4.12-3.35,7.08-4.57,3.03-1.22,6.76-1.87,11.2-1.87h51.44c2.9,0,5.86.39,8.76,1.09,2.77.77,5.28,1.93,7.4,3.41s3.86,3.28,5.21,5.54c1.29,2.19,1.93,4.7,1.93,7.6v10.62c0,2.32-1.61,3.93-3.93,3.93h-24.98c-2.25,0-3.8-1.55-3.8-3.8v-3.8h-32.51v46.74h32.51v-8.69h-9.79c-2.32,0-3.93-1.61-3.93-3.93v-15.39c0-2.32,1.61-3.93,3.93-3.93h37.99c2.38,0,3.93,1.55,3.99,3.93l.52,34.89c0,1.61-.39,3.48-1.09,5.6-.71,2-1.93,3.93-3.8,5.79-1.74,1.74-4.12,3.28-7.15,4.51-2.9,1.22-6.7,1.87-11.27,1.87h-51.44Z"/>
+                                  <path fill="#64748b" d="M762.32,618.95c-2.32,0-3.93-3.83-3.93-9.35v-203.61c0-5.52,1.61-9.35,3.93-9.35h24.85c2.32,0,3.93,3.83,3.93,9.35v203.61c0,5.52-1.61,9.35-3.93,9.35h-24.85Z"/>
+                                  <path fill="#64748b" d="M967.05,490.07c-1.74,0-3.22-1.09-3.73-2.7l-5.15-15h-33.03l-5.09,15c-.52,1.61-2,2.7-3.73,2.7h-25.5c-3.28,0-4.12-1.87-4.12-3.35,0-.58.13-1.22.39-1.93l29.74-85.5c.52-1.55,2-2.64,3.73-2.64h42.11c1.74,0,3.22,1.03,3.73,2.64l29.87,85.5c.26.71.39,1.35.39,1.93,0,1.48-.84,3.35-4.12,3.35h-25.5ZM933.19,448.47h16.93l-7.34-21.7h-2.25l-7.34,21.7Z"/>
+                                  <path fill="#64748b" d="M1009.22,490.07c-2.32,0-3.93-1.61-3.93-3.93v-85.56c0-2.32,1.61-3.93,3.93-3.93h24.85c2.32,0,3.93,1.61,3.93,3.93v65.54h44.17c2.32,0,3.93,1.61,3.93,3.93v16.1c0,2.32-1.61,3.93-3.93,3.93h-72.94Z"/>
+                                  <path fill="#64748b" d="M540.27,619.28c-4.57,0-8.31-.58-11.2-1.8-5.99-2.38-9.53-6.05-11.01-10.11-.71-2.06-1.09-3.86-1.09-5.34v-72.24c0-2.32,1.61-3.93,3.93-3.93h24.85c2.32,0,3.93,1.61,3.93,3.93v65.54h32.58v-65.54c0-2.32,1.61-3.93,3.93-3.93h24.79c2.32,0,3.93,1.61,3.93,3.93v72.24c0,2.77-.64,5.28-1.93,7.4-1.29,2.12-3.03,3.93-5.15,5.41s-4.57,2.58-7.4,3.28-2.77.77-5.67,1.16-8.69,1.16h-51.44Z"/>
+                                  <path fill="#64748b" d="M701.48,619.28c-1.35,0-2.7-.71-3.41-1.93l-26.01-43.97h-2.25v41.98c0,2.32-1.61,3.93-3.93,3.93h-24.92c-2.32,0-3.93-1.61-3.93-3.93v-85.56c0-2.32,1.61-3.93,3.93-3.93h30.65c1.35,0,2.7.71,3.41,1.93l26.01,43.97h2.25v-41.98c0-2.32,1.61-3.93,3.93-3.93h24.92c2.32,0,3.93,1.61,3.93,3.93v85.56c0,2.32-1.61,3.93-3.93,3.93h-30.65Z"/>
+                                  <path fill="#64748b" d="M929.38,619.28c-2.38,0-3.99-1.61-3.99-3.99l.06-27.43-37.4-55.82c-.84-1.29-1.29-2.38-1.29-3.28,0-.45.26-1.03.64-1.8.39-.71,1.67-1.09,3.93-1.09h26.2c1.29,0,2.58.71,3.28,1.8l19.77,30.58h2.06l19.96-30.58c.71-1.09,1.99-1.8,3.28-1.8h25.82c2.25,0,3.54.39,3.99,1.09.39.77.58,1.35.58,1.8,0,.9-.39,2-1.22,3.22l-37.15,55.88-.13,27.49c0,2.38-1.55,3.93-3.92,3.93h-24.46Z"/>
+                                  <path fill="#64748b" d="M890.51,396.65h-75.09c-1.97,0-3.33,1.7-3.33,4.15v16.96c0,2.45,1.37,4.15,3.33,4.15h21.44v188.88c0,5.52,1.61,9.35,3.93,9.35h24.85c2.32,0,3.93-3.83,3.93-9.35v-188.88h20.94c1.97,0,3.33-1.7,3.33-4.15v-16.96c0-2.45-1.37-4.15-3.33-4.15Z"/>
+                                </svg>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
 
 
 def _require_login(f):
@@ -4122,11 +4348,15 @@ def users_list():
     user = _get_current_admin_user()
     
     users = list_admin_users() or []
+    events = list_events(limit=200) or []
+    all_groups = list_permission_groups(is_active=True) or []
     
     return render_template(
         "admin_v2/users.html",
         active_page="users",
         users=users,
+        events=events,
+        all_groups=all_groups,
         **_get_common_context(user),
     )
 
@@ -4151,6 +4381,7 @@ def user_new():
     
     user = _get_current_admin_user()
     events = list_events(limit=200) or []
+    all_groups = list_permission_groups(is_active=True) or []
     error = None
     success = None
     
@@ -4161,6 +4392,7 @@ def user_new():
         role = (request.form.get("role") or "user").strip().lower()
         allowed_pages = request.form.getlist("allowed_pages") or []
         allowed_events = request.form.getlist("allowed_events") or []
+        selected_group_ids = request.form.getlist("user_groups") or []
         
         if not email or "@" not in email:
             error = "Podaj prawidłowy adres email"
@@ -4186,6 +4418,13 @@ def user_new():
             )
             
             if new_user:
+                # Przypisz do grup
+                if selected_group_ids and role != "admin":
+                    for gid in selected_group_ids:
+                        try:
+                            add_user_to_group(new_user["id"], int(gid))
+                        except:
+                            pass
                 # Wyślij email z hasłem
                 from backstage_engine import _send_email_via_make
                 panel_url = os.environ.get("PANEL_BASE_URL", "https://wfirma-api.onrender.com")
@@ -4193,14 +4432,12 @@ def user_new():
                 email_result = _send_email_via_make(
                     to_email=email,
                     subject="Twoje konto w panelu administracyjnym Medidesk",
-                    body_html=f"""
-                    <p>Cześć {first_name or 'Użytkowniku'},</p>
-                    <p>Utworzono dla Ciebie konto w panelu administracyjnym.</p>
-                    <p><strong>Login:</strong> {email}<br>
-                    <strong>Hasło tymczasowe:</strong> {temp_password}</p>
-                    <p>Po pierwszym logowaniu zostaniesz poproszony o zmianę hasła.</p>
-                    <p><a href="{login_url}">Zaloguj się tutaj</a></p>
-                    """,
+                    body_html=_generate_admin_invitation_email_html(
+                        first_name=first_name or "Użytkowniku",
+                        message_intro="Utworzono dla Ciebie konto w panelu administracyjnym. Poniżej znajdziesz dane do logowania.",
+                        temp_password=temp_password,
+                        login_url=login_url
+                    ),
                     template_type="admin_account_created",
                 )
                 
@@ -4224,6 +4461,8 @@ def user_new():
         mode="new",
         target_user=None,
         events=events,
+        all_groups=all_groups,
+        user_group_ids=[],
         page_options=ADMIN_PAGE_OPTIONS_V2,
         error=error,
         success=success,
@@ -4242,6 +4481,9 @@ def user_edit(user_id: int):
         return redirect(url_for("admin_v2_bp.users_list"))
     
     events = list_events(limit=200) or []
+    all_groups = list_permission_groups(is_active=True) or []
+    user_groups = get_user_groups(user_id) or []
+    user_group_ids = [g["id"] for g in user_groups]
     error = None
     success = None
     
@@ -4272,6 +4514,7 @@ def user_edit(user_id: int):
         role = (request.form.get("role") or "user").strip().lower()
         allowed_pages = request.form.getlist("allowed_pages") or []
         allowed_events = request.form.getlist("allowed_events") or []
+        selected_group_ids = request.form.getlist("user_groups") or []
         is_active = request.form.get("is_active") == "1"
         
         if role not in ("admin", "user", "viewer"):
@@ -4288,13 +4531,30 @@ def user_edit(user_id: int):
             )
             
             if ok:
+                # Aktualizuj grupy (tylko dla nie-adminów)
+                if role != "admin":
+                    new_group_ids = set(int(gid) for gid in selected_group_ids if gid)
+                    current_group_ids = set(user_group_ids)
+                    
+                    # Usuń z grup, które nie są już wybrane
+                    for gid in current_group_ids - new_group_ids:
+                        remove_user_from_group(user_id, gid)
+                    
+                    # Dodaj do nowych grup
+                    for gid in new_group_ids - current_group_ids:
+                        add_user_to_group(user_id, gid)
+                    
+                    # Odśwież listę grup
+                    user_groups = get_user_groups(user_id) or []
+                    user_group_ids = [g["id"] for g in user_groups]
+                
                 insert_admin_audit_log(
                     action="update_user_access",
                     admin_user_id=user["id"] if user else None,
                     target_email=target_user["email"],
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent", "")[:500],
-                    data={"role": role, "is_active": is_active}
+                    data={"role": role, "is_active": is_active, "groups": list(selected_group_ids)}
                 )
                 success = "Zapisano zmiany"
                 
@@ -4325,6 +4585,8 @@ def user_edit(user_id: int):
         mode="edit",
         target_user=target_user,
         events=events,
+        all_groups=all_groups,
+        user_group_ids=user_group_ids,
         page_options=ADMIN_PAGE_OPTIONS_V2,
         allowed_current=allowed_current,
         allowed_events_current=allowed_events_current,
@@ -4364,13 +4626,12 @@ def user_reset_password(user_id: int):
         email_result = _send_email_via_make(
             to_email=target_user["email"],
             subject="Reset hasła - Panel administracyjny Medidesk",
-            body_html=f"""
-            <p>Cześć {target_user.get('first_name') or 'Użytkowniku'},</p>
-            <p>Twoje hasło zostało zresetowane.</p>
-            <p><strong>Nowe hasło tymczasowe:</strong> {temp_password}</p>
-            <p>Po zalogowaniu zostaniesz poproszony o zmianę hasła.</p>
-            <p><a href="{login_url}">Zaloguj się tutaj</a></p>
-            """,
+            body_html=_generate_admin_invitation_email_html(
+                first_name=target_user.get('first_name') or "Użytkowniku",
+                message_intro="Twoje hasło zostało zresetowane. Poniżej znajdziesz nowe hasło tymczasowe.",
+                temp_password=temp_password,
+                login_url=login_url
+            ),
             template_type="admin_password_reset",
         )
         
@@ -4460,6 +4721,624 @@ def user_delete(user_id: int):
         return jsonify({"success": True, "message": "Konto zostało usunięte"})
     else:
         return jsonify({"success": False, "error": "Nie udało się usunąć konta"}), 500
+
+
+# ---------------------------------------------------------------------------
+# PERMISSION GROUPS (Grupy uprawnień)
+# ---------------------------------------------------------------------------
+
+
+@admin_v2_bp.route("/users/groups", methods=["GET"])
+@_require_permission("users")
+def groups_list():
+    """Lista grup uprawnień."""
+    user = _get_current_admin_user()
+    
+    # Filtry
+    group_type_filter = request.args.get("type", "").strip()
+    
+    groups = list_permission_groups(
+        group_type=group_type_filter if group_type_filter else None,
+        is_active=None,  # Pokaż wszystkie
+    )
+    
+    return render_template(
+        "admin_v2/groups.html",
+        active_page="users",
+        groups=groups,
+        type_filter=group_type_filter,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/users/groups/new", methods=["GET", "POST"])
+@_require_permission("users")
+def group_new():
+    """Tworzenie nowej grupy uprawnień."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    # Tylko admin może tworzyć grupy
+    if not _is_admin_user(user):
+        if request.method == "POST":
+            return jsonify({"success": False, "error": "Tylko administrator może tworzyć grupy"}), 403
+        return redirect(url_for("admin_v2_bp.groups_list"))
+    
+    error = None
+    success = None
+    events = list_events()
+    all_users = list_admin_users()
+    
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        group_type = (request.form.get("group_type") or "role_template").strip()
+        base_role = (request.form.get("base_role") or "user").strip()
+        allowed_pages = request.form.getlist("allowed_pages") or []
+        allowed_events = request.form.getlist("allowed_events") or []
+        member_ids = request.form.getlist("members") or []
+        
+        if not name:
+            error = "Nazwa grupy jest wymagana"
+        elif get_permission_group_by_name(name):
+            error = "Grupa o takiej nazwie już istnieje"
+        else:
+            # Utwórz grupę
+            new_group = create_permission_group(
+                name=name,
+                group_type=group_type,
+                description=description if description else None,
+                base_role=base_role if group_type == "role_template" else "user",
+                allowed_pages=allowed_pages if group_type == "role_template" else [],
+                allowed_events=allowed_events if group_type == "event_team" else [],
+                is_active=True,
+            )
+            
+            if new_group:
+                # Dodaj członków
+                for mid in member_ids:
+                    try:
+                        add_user_to_group(int(mid), new_group["id"])
+                    except:
+                        pass
+                
+                insert_admin_audit_log(
+                    action="create_group",
+                    admin_user_id=user["id"] if user else None,
+                    target_email=name,
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                    data={"group_id": new_group["id"], "group_type": group_type},
+                )
+                
+                return redirect(url_for("admin_v2_bp.groups_list"))
+            else:
+                error = "Nie udało się utworzyć grupy"
+    
+    return render_template(
+        "admin_v2/group_form.html",
+        active_page="users",
+        mode="new",
+        group=None,
+        events=events,
+        all_users=all_users,
+        members=[],
+        page_options=ADMIN_PAGE_OPTIONS_V2,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/users/groups/<int:group_id>/edit", methods=["GET", "POST"])
+@_require_permission("users")
+def group_edit(group_id: int):
+    """Edycja grupy uprawnień."""
+    user = _get_current_admin_user()
+    
+    group = get_permission_group(group_id)
+    if not group:
+        return redirect(url_for("admin_v2_bp.groups_list"))
+    
+    # Tylko admin może edytować grupy
+    if not _is_admin_user(user):
+        return redirect(url_for("admin_v2_bp.groups_list"))
+    
+    error = None
+    success = None
+    events = list_events()
+    all_users = list_admin_users()
+    members = get_group_members(group_id)
+    member_ids = [m["id"] for m in members]
+    
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        base_role = (request.form.get("base_role") or "user").strip()
+        allowed_pages = request.form.getlist("allowed_pages") or []
+        allowed_events = request.form.getlist("allowed_events") or []
+        new_member_ids = request.form.getlist("members") or []
+        is_active = request.form.get("is_active") == "1"
+        
+        if not name:
+            error = "Nazwa grupy jest wymagana"
+        else:
+            # Sprawdź czy nazwa nie jest zajęta przez inną grupę
+            existing = get_permission_group_by_name(name)
+            if existing and existing["id"] != group_id:
+                error = "Grupa o takiej nazwie już istnieje"
+            else:
+                # Aktualizuj grupę
+                ok = update_permission_group(
+                    group_id=group_id,
+                    name=name,
+                    description=description if description else None,
+                    base_role=base_role if group["group_type"] == "role_template" else "user",
+                    allowed_pages=allowed_pages if group["group_type"] == "role_template" else [],
+                    allowed_events=allowed_events if group["group_type"] == "event_team" else [],
+                    is_active=is_active,
+                )
+                
+                if ok:
+                    # Aktualizuj członków
+                    current_member_ids = set(member_ids)
+                    new_member_ids_set = set(int(m) for m in new_member_ids if m)
+                    
+                    # Usuń tych, którzy nie są już członkami
+                    for mid in current_member_ids - new_member_ids_set:
+                        remove_user_from_group(mid, group_id)
+                    
+                    # Dodaj nowych członków
+                    for mid in new_member_ids_set - current_member_ids:
+                        add_user_to_group(mid, group_id)
+                    
+                    insert_admin_audit_log(
+                        action="update_group",
+                        admin_user_id=user["id"] if user else None,
+                        target_email=name,
+                        ip=request.remote_addr,
+                        user_agent=request.headers.get("User-Agent", "")[:500],
+                        data={"group_id": group_id},
+                    )
+                    
+                    success = "Zmiany zostały zapisane"
+                    
+                    # Odśwież dane
+                    group = get_permission_group(group_id)
+                    members = get_group_members(group_id)
+                    member_ids = [m["id"] for m in members]
+                else:
+                    error = "Nie udało się zapisać zmian"
+    
+    return render_template(
+        "admin_v2/group_form.html",
+        active_page="users",
+        mode="edit",
+        group=group,
+        events=events,
+        all_users=all_users,
+        members=members,
+        member_ids=member_ids,
+        page_options=ADMIN_PAGE_OPTIONS_V2,
+        error=error,
+        success=success,
+        **_get_common_context(user),
+    )
+
+
+@admin_v2_bp.route("/users/groups/<int:group_id>/delete", methods=["POST"])
+@_require_permission("users")
+def group_delete(group_id: int):
+    """Usuń grupę (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    group = get_permission_group(group_id)
+    if not group:
+        return jsonify({"success": False, "error": "Nie znaleziono grupy"}), 404
+    
+    # Tylko admin może usuwać grupy
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może usuwać grupy"}), 403
+    
+    ok = delete_permission_group(group_id)
+    
+    if ok:
+        insert_admin_audit_log(
+            action="delete_group",
+            admin_user_id=user["id"] if user else None,
+            target_email=group["name"],
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            data={"group_id": group_id},
+        )
+        return jsonify({"success": True, "message": "Grupa została usunięta"})
+    else:
+        return jsonify({"success": False, "error": "Nie udało się usunąć grupy"}), 500
+
+
+@admin_v2_bp.route("/users/groups/<int:group_id>/members", methods=["POST"])
+@_require_permission("users")
+def group_members_bulk(group_id: int):
+    """Bulk add/remove członków grupy (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    group = get_permission_group(group_id)
+    if not group:
+        return jsonify({"success": False, "error": "Nie znaleziono grupy"}), 404
+    
+    # Tylko admin może zarządzać członkami
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może zarządzać członkami"}), 403
+    
+    data = request.get_json() or {}
+    action = data.get("action", "add")  # add lub remove
+    user_ids = data.get("user_ids", [])
+    
+    if not user_ids:
+        return jsonify({"success": False, "error": "Brak użytkowników do przetworzenia"}), 400
+    
+    try:
+        user_ids = [int(uid) for uid in user_ids]
+    except:
+        return jsonify({"success": False, "error": "Nieprawidłowe ID użytkowników"}), 400
+    
+    if action == "add":
+        count = bulk_add_users_to_group(user_ids, group_id)
+        insert_admin_audit_log(
+            action="bulk_add_to_group",
+            admin_user_id=user["id"] if user else None,
+            target_email=group["name"],
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            data={"group_id": group_id, "user_ids": user_ids, "added": count},
+        )
+        return jsonify({"success": True, "message": f"Dodano {count} użytkowników do grupy"})
+    elif action == "remove":
+        count = bulk_remove_users_from_group(user_ids, group_id)
+        insert_admin_audit_log(
+            action="bulk_remove_from_group",
+            admin_user_id=user["id"] if user else None,
+            target_email=group["name"],
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            data={"group_id": group_id, "user_ids": user_ids, "removed": count},
+        )
+        return jsonify({"success": True, "message": f"Usunięto {count} użytkowników z grupy"})
+    else:
+        return jsonify({"success": False, "error": "Nieznana akcja"}), 400
+
+
+# ---------------------------------------------------------------------------
+# BULK OPERATIONS (Operacje zbiorcze na użytkownikach)
+# ---------------------------------------------------------------------------
+
+
+@admin_v2_bp.route("/users/bulk/assign-event", methods=["POST"])
+@_require_permission("users")
+def users_bulk_assign_event():
+    """Przypisz wydarzenie do zaznaczonych użytkowników (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    # Tylko admin może wykonywać operacje zbiorcze
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może wykonywać operacje zbiorcze"}), 403
+    
+    data = request.get_json() or {}
+    user_ids = data.get("user_ids", [])
+    event_id = data.get("event_id", "").strip()
+    
+    if not user_ids:
+        return jsonify({"success": False, "error": "Brak użytkowników do przetworzenia"}), 400
+    if not event_id:
+        return jsonify({"success": False, "error": "Brak wydarzenia do przypisania"}), 400
+    
+    try:
+        user_ids = [int(uid) for uid in user_ids]
+    except:
+        return jsonify({"success": False, "error": "Nieprawidłowe ID użytkowników"}), 400
+    
+    count = bulk_add_event_to_users(user_ids, event_id)
+    
+    insert_admin_audit_log(
+        action="bulk_assign_event",
+        admin_user_id=user["id"] if user else None,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:500],
+        data={"user_ids": user_ids, "event_id": event_id, "updated": count},
+    )
+    
+    return jsonify({"success": True, "message": f"Dodano wydarzenie do {count} użytkowników"})
+
+
+@admin_v2_bp.route("/users/bulk/assign-group", methods=["POST"])
+@_require_permission("users")
+def users_bulk_assign_group():
+    """Dodaj zaznaczonych użytkowników do grupy (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    # Tylko admin może wykonywać operacje zbiorcze
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może wykonywać operacje zbiorcze"}), 403
+    
+    data = request.get_json() or {}
+    user_ids = data.get("user_ids", [])
+    group_id = data.get("group_id")
+    
+    if not user_ids:
+        return jsonify({"success": False, "error": "Brak użytkowników do przetworzenia"}), 400
+    if not group_id:
+        return jsonify({"success": False, "error": "Brak grupy do przypisania"}), 400
+    
+    try:
+        user_ids = [int(uid) for uid in user_ids]
+        group_id = int(group_id)
+    except:
+        return jsonify({"success": False, "error": "Nieprawidłowe ID"}), 400
+    
+    group = get_permission_group(group_id)
+    if not group:
+        return jsonify({"success": False, "error": "Nie znaleziono grupy"}), 404
+    
+    count = bulk_add_users_to_group(user_ids, group_id)
+    
+    insert_admin_audit_log(
+        action="bulk_assign_group",
+        admin_user_id=user["id"] if user else None,
+        target_email=group["name"],
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:500],
+        data={"user_ids": user_ids, "group_id": group_id, "added": count},
+    )
+    
+    return jsonify({"success": True, "message": f"Dodano {count} użytkowników do grupy '{group['name']}'"})
+
+
+@admin_v2_bp.route("/users/bulk/remove-group", methods=["POST"])
+@_require_permission("users")
+def users_bulk_remove_group():
+    """Usuń zaznaczonych użytkowników z grupy (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    # Tylko admin może wykonywać operacje zbiorcze
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może wykonywać operacje zbiorcze"}), 403
+    
+    data = request.get_json() or {}
+    user_ids = data.get("user_ids", [])
+    group_id = data.get("group_id")
+    
+    if not user_ids:
+        return jsonify({"success": False, "error": "Brak użytkowników do przetworzenia"}), 400
+    if not group_id:
+        return jsonify({"success": False, "error": "Brak grupy"}), 400
+    
+    try:
+        user_ids = [int(uid) for uid in user_ids]
+        group_id = int(group_id)
+    except:
+        return jsonify({"success": False, "error": "Nieprawidłowe ID"}), 400
+    
+    group = get_permission_group(group_id)
+    if not group:
+        return jsonify({"success": False, "error": "Nie znaleziono grupy"}), 404
+    
+    count = bulk_remove_users_from_group(user_ids, group_id)
+    
+    insert_admin_audit_log(
+        action="bulk_remove_group",
+        admin_user_id=user["id"] if user else None,
+        target_email=group["name"],
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:500],
+        data={"user_ids": user_ids, "group_id": group_id, "removed": count},
+    )
+    
+    return jsonify({"success": True, "message": f"Usunięto {count} użytkowników z grupy '{group['name']}'"})
+
+
+@admin_v2_bp.route("/users/groups/migrate", methods=["POST"])
+@_require_permission("users")
+def groups_migrate():
+    """Uruchom migrację grup - utwórz domyślne grupy i przypisz użytkowników (AJAX)."""
+    from flask import jsonify
+    
+    user = _get_current_admin_user()
+    
+    # Tylko admin może uruchomić migrację
+    if not _is_admin_user(user):
+        return jsonify({"success": False, "error": "Tylko administrator może uruchomić migrację"}), 403
+    
+    result = run_permission_groups_migration()
+    
+    if result.get("ok"):
+        insert_admin_audit_log(
+            action="run_groups_migration",
+            admin_user_id=user["id"] if user else None,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:500],
+            data=result,
+        )
+        return jsonify({
+            "success": True,
+            "message": f"Migracja zakończona: utworzono {result.get('default_groups_created', 0)} domyślnych grup, "
+                       f"zmigrowano {result.get('users_migrated', 0)} użytkowników, "
+                       f"pominięto {result.get('users_skipped', 0)}.",
+        })
+    else:
+        return jsonify({"success": False, "error": result.get("error", "Nieznany błąd")}), 500
+
+
+# ---------------------------------------------------------------------------
+# BULK CREATE USERS (Grupowe tworzenie kont)
+# ---------------------------------------------------------------------------
+
+
+@admin_v2_bp.route("/users/bulk-create", methods=["GET", "POST"])
+@_require_permission("users")
+def users_bulk_create():
+    """Grupowe tworzenie kont użytkowników."""
+    from werkzeug.security import generate_password_hash
+    import secrets
+    import string
+    import re
+    
+    user = _get_current_admin_user()
+    
+    # Tylko admin może tworzyć konta grupowo
+    if not _is_admin_user(user):
+        return redirect(url_for("admin_v2_bp.users_list"))
+    
+    events = list_events(limit=200) or []
+    all_groups = list_permission_groups(is_active=True) or []
+    role_templates = [g for g in all_groups if g["group_type"] == "role_template"]
+    event_teams = [g for g in all_groups if g["group_type"] == "event_team"]
+    
+    error = None
+    success = None
+    results = []
+    
+    if request.method == "POST":
+        emails_raw = (request.form.get("emails") or "").strip()
+        role_template_id = request.form.get("role_template_id") or ""
+        selected_event_ids = request.form.getlist("allowed_events") or []
+        selected_group_ids = request.form.getlist("user_groups") or []
+        
+        # Parsuj emaile (jeden na linię lub przecinkami)
+        emails_raw = emails_raw.replace(",", "\n")
+        emails = [e.strip().lower() for e in emails_raw.split("\n") if e.strip()]
+        
+        # Walidacja
+        email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        valid_emails = []
+        invalid_emails = []
+        duplicate_emails = []
+        
+        for email in emails:
+            if not email_pattern.match(email):
+                invalid_emails.append(email)
+            elif get_admin_user_by_email(email):
+                duplicate_emails.append(email)
+            elif email in valid_emails:
+                duplicate_emails.append(email)
+            else:
+                valid_emails.append(email)
+        
+        if invalid_emails:
+            error = f"Nieprawidłowe emaile: {', '.join(invalid_emails)}"
+        elif duplicate_emails:
+            error = f"Emaile już istnieją lub są zduplikowane: {', '.join(duplicate_emails)}"
+        elif not valid_emails:
+            error = "Podaj co najmniej jeden prawidłowy email"
+        elif not role_template_id:
+            error = "Wybierz szablon roli"
+        else:
+            # Pobierz wybrany szablon roli
+            selected_template = get_permission_group(int(role_template_id))
+            if not selected_template or selected_template["group_type"] != "role_template":
+                error = "Wybrany szablon roli nie istnieje"
+            else:
+                # Tworzenie kont
+                created_count = 0
+                for email in valid_emails:
+                    # Generuj tymczasowe hasło
+                    alphabet = string.ascii_letters + string.digits
+                    temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+                    password_hash = generate_password_hash(temp_password)
+                    
+                    # Pobierz ustawienia z szablonu
+                    base_role = selected_template.get("base_role", "user")
+                    
+                    new_user = create_admin_user(
+                        email=email,
+                        password_hash=password_hash,
+                        first_name=None,
+                        last_name=None,
+                        role=base_role,
+                        allowed_pages=[],  # Będą z grup
+                        allowed_events=selected_event_ids if selected_event_ids else [],
+                        must_change_password=True,
+                    )
+                    
+                    if new_user:
+                        # Dodaj do szablonu roli
+                        add_user_to_group(new_user["id"], int(role_template_id))
+                        
+                        # Dodaj do dodatkowych grup
+                        for gid in selected_group_ids:
+                            try:
+                                add_user_to_group(new_user["id"], int(gid))
+                            except:
+                                pass
+                        
+                        # Wyślij email z hasłem
+                        from backstage_engine import _send_email_via_make
+                        panel_url = os.environ.get("PANEL_BASE_URL", "https://wfirma-api.onrender.com")
+                        login_url = f"{panel_url}/admin-v2/login"
+                        email_result = _send_email_via_make(
+                            to_email=email,
+                            subject="Twoje konto w panelu administracyjnym Medidesk",
+                            body_html=_generate_admin_invitation_email_html(
+                                first_name="Użytkowniku",
+                                message_intro="Utworzono dla Ciebie konto w panelu administracyjnym. Poniżej znajdziesz dane do logowania.",
+                                temp_password=temp_password,
+                                login_url=login_url
+                            ),
+                            template_type="admin_account_created",
+                        )
+                        
+                        results.append({
+                            "email": email,
+                            "success": True,
+                            "email_sent": email_result.get("success", False),
+                        })
+                        created_count += 1
+                    else:
+                        results.append({
+                            "email": email,
+                            "success": False,
+                            "error": "Nie udało się utworzyć konta",
+                        })
+                
+                # Log audytu
+                insert_admin_audit_log(
+                    action="bulk_create_users",
+                    admin_user_id=user["id"] if user else None,
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                    data={
+                        "emails": valid_emails,
+                        "role_template_id": role_template_id,
+                        "created_count": created_count,
+                    }
+                )
+                
+                if created_count == len(valid_emails):
+                    success = f"Utworzono {created_count} kont. Hasła zostały wysłane na email."
+                else:
+                    error = f"Utworzono {created_count} z {len(valid_emails)} kont. Sprawdź szczegóły poniżej."
+    
+    return render_template(
+        "admin_v2/users_bulk_create.html",
+        active_page="users",
+        events=events,
+        role_templates=role_templates,
+        event_teams=event_teams,
+        error=error,
+        success=success,
+        results=results,
+        **_get_common_context(user),
+    )
 
 
 @admin_v2_bp.route("/audit-log", methods=["GET"])
