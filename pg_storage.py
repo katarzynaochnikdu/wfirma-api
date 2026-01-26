@@ -3352,10 +3352,15 @@ def get_cached_stats(key: str) -> Optional[Dict[str, Any]]:
 
 
 def _convert_decimals(obj):
-    """Rekurencyjnie konwertuje Decimal na float w strukturze danych."""
+    """Rekurencyjnie konwertuje Decimal na float i datetime na ISO string w strukturze danych."""
     from decimal import Decimal
+    from datetime import datetime, date
     if isinstance(obj, Decimal):
         return float(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, date):
+        return obj.isoformat()
     elif isinstance(obj, dict):
         return {k: _convert_decimals(v) for k, v in obj.items()}
     elif isinstance(obj, list):

@@ -4855,11 +4855,14 @@ def email_confirm_sent():
         
         print(f"[EMAIL CALLBACK] order={event_order_id}, status={status}, to={to_email}, direction={direction}, mail_id={mail_id}")
         
+        # Jeśli brak event_order_id (np. email resetu hasła) - akceptujemy callback ale nie aktualizujemy bazy
         if not event_order_id:
+            print(f"[EMAIL CALLBACK] Brak event_order_id - callback zaakceptowany (prawdopodobnie email systemowy, np. reset hasła)")
             return jsonify({
-                'success': False,
-                'error': 'Brak event_order_id'
-            }), 400
+                'success': True,
+                'message': 'Callback accepted (no order to update)',
+                'status': status
+            }), 200
         
         # Zaktualizuj mail_log w bazie (zgodnie ze schematem w pg_storage.py)
         try:
