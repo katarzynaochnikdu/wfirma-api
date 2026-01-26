@@ -40,7 +40,7 @@
         <select id="filterEvent" class="form-select">
           <option value="">Wszystkie wydarzenia</option>
           {% for event in recent_events %}
-          <option value="{{ event.event_id }}">{{ event.event_name }}</option>
+          <option value="{{ event.event_id }}" {% if filter_event_id == event.event_id|string %}selected{% endif %}>{{ event.event_name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -427,14 +427,22 @@ function applyDashboardFilter(e) {
   const eventId = document.getElementById('filterEvent').value;
   const status = document.getElementById('filterStatus').value;
   
-  // Buduj URL z parametrami
-  const params = new URLSearchParams();
-  if (search) params.set('q', search);  // 'q' - parametr wyszukiwania w orders_list
-  if (eventId) params.set('event_id', eventId);
-  if (status) params.set('status', status);
+  // Jeśli jest wyszukiwanie tekstowe lub status - przekieruj do zamówień
+  if (search || status) {
+    const params = new URLSearchParams();
+    if (search) params.set('q', search);
+    if (eventId) params.set('event_id', eventId);
+    if (status) params.set('status', status);
+    const url = '/admin-v2/orders' + (params.toString() ? '?' + params.toString() : '');
+    window.location.href = url;
+    return;
+  }
   
-  // Przekieruj do listy zamówień z filtrami
-  const url = '/admin-v2/orders' + (params.toString() ? '?' + params.toString() : '');
+  // Tylko filtr wydarzenia - przeładuj dashboard z filtrem
+  const params = new URLSearchParams();
+  if (eventId) params.set('event_id', eventId);
+  
+  const url = '/admin-v2/dashboard' + (params.toString() ? '?' + params.toString() : '');
   window.location.href = url;
 }
 
@@ -442,7 +450,15 @@ function clearDashboardFilter() {
   document.getElementById('filterSearch').value = '';
   document.getElementById('filterEvent').value = '';
   document.getElementById('filterStatus').value = '';
+  
+  // Przeładuj dashboard bez parametrów (jeśli były)
+  if (window.location.search) {
+    window.location.href = '/admin-v2/dashboard';
+  }
 }
+
+// Aktualnie wybrany filtr wydarzenia (z URL)
+var filterEventId = '{{ filter_event_id or "" }}';
 
 function changeRevenueScale(scale) {
   if (scale === currentScale) return;
@@ -457,8 +473,13 @@ function changeRevenueScale(scale) {
   const loader = document.getElementById('revenueChartLoader');
   loader.classList.remove('hidden');
   
-  // Pobierz dane z API
-  fetch(`/admin-v2/api/revenue-chart?scale=${scale}`)
+  // Pobierz dane z API (z uwzględnieniem filtra wydarzenia)
+  let apiUrl = `/admin-v2/api/revenue-chart?scale=${scale}`;
+  if (filterEventId) {
+    apiUrl += `&event_id=${encodeURIComponent(filterEventId)}`;
+  }
+  
+  fetch(apiUrl)
     .then(res => res.json())
     .then(data => {
       loader.classList.add('hidden');
@@ -545,8 +566,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var finalRevenueData = (revenueData && revenueData.length) ? revenueData : defaultRevenueData;
   var finalPaymentData = (paymentData && Object.keys(paymentData).length) ? paymentData : defaultPaymentData;
   
-  // Revenue Chart (Line) - pobierz dane tygodniowe na start
-  fetch('/admin-v2/api/revenue-chart?scale=week')
+  // Revenue Chart (Line) - pobierz dane tygodniowe na start (z uwzględnieniem filtra)
+  let initialChartUrl = '/admin-v2/api/revenue-chart?scale=week';
+  if (filterEventId) {
+    initialChartUrl += `&event_id=${encodeURIComponent(filterEventId)}`;
+  }
+  
+  fetch(initialChartUrl)
     .then(res => res.json())
     .then(data => {
       if (data.labels && data.values) {

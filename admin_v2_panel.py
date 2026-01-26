@@ -835,8 +835,12 @@ def dashboard():
     
     user = _get_current_admin_user()
     
-    # Sprawdź cache statystyk (5 minut TTL)
-    cached = get_cached_stats("dashboard_main_stats")
+    # Parametr filtrowania po wydarzeniu
+    filter_event_id = request.args.get("event_id", "").strip()
+    
+    # Sprawdź cache statystyk (5 minut TTL) - tylko gdy brak filtra
+    cache_key = f"dashboard_main_stats_{filter_event_id}" if filter_event_id else "dashboard_main_stats"
+    cached = get_cached_stats(cache_key) if not filter_event_id else None
     
     if cached:
         stats = cached.get("stats", {})
@@ -850,6 +854,10 @@ def dashboard():
         # Pobierz statystyki
         all_orders = list_orders(limit=500)
         all_events = list_events(limit=100)
+        
+        # Filtrowanie po wydarzeniu (jeśli wybrano)
+        if filter_event_id:
+            all_orders = [o for o in all_orders if str(o.get("event_id")) == filter_event_id]
         
         # Oblicz statystyki
         total_orders = len(all_orders)
@@ -865,7 +873,12 @@ def dashboard():
             except Exception:
                 pass
         
-        active_events = len([e for e in all_events if e.get("is_active", True)])
+        # Aktywne wydarzenia - jeśli jest filtr, pokazuj 1 jeśli wybrane jest aktywne
+        if filter_event_id:
+            filtered_event = next((e for e in all_events if str(e.get("event_id")) == filter_event_id), None)
+            active_events = 1 if filtered_event and filtered_event.get("is_active", True) else 0
+        else:
+            active_events = len([e for e in all_events if e.get("is_active", True)])
         
         stats = {
             "total_orders": total_orders,
@@ -874,15 +887,15 @@ def dashboard():
             "active_events": active_events,
         }
         
-        # Zapisz do cache (5 minut)
-        # Uwaga: nie cachujemy pełnych obiektów zamówień/eventów, tylko minimalne dane
-        cache_data = {
-            "stats": stats,
-            "all_orders": all_orders[:100],  # Ogranicz dla cache
-            "all_events": all_events[:50],
-            "paid_orders": paid_orders[:100],
-        }
-        set_cached_stats("dashboard_main_stats", cache_data, ttl_minutes=5)
+        # Zapisz do cache (5 minut) - tylko gdy brak filtra
+        if not filter_event_id:
+            cache_data = {
+                "stats": stats,
+                "all_orders": all_orders[:100],  # Ogranicz dla cache
+                "all_events": all_events[:50],
+                "paid_orders": paid_orders[:100],
+            }
+            set_cached_stats(cache_key, cache_data, ttl_minutes=5)
     
     # FILTROWANIE WEDŁUG UPRAWNIEŃ UŻYTKOWNIKA (dla viewer)
     role = (user.get("role") or "").lower()
@@ -970,13 +983,17 @@ def dashboard():
         "payment_methods": dict(payment_methods) if payment_methods else {"Brak": 1},
     }
     
+    # Wszystkie wydarzenia do filtru (nie tylko recent)
+    all_events_for_filter = [e for e in all_events if e.get("is_active")]
+    
     return render_template(
         "admin_v2/dashboard.html",
         active_page="dashboard",
         stats=stats,
         recent_orders=recent_orders,
-        recent_events=recent_events,
+        recent_events=all_events_for_filter,  # Do filtru - wszystkie aktywne
         chart_data=chart_data,
+        filter_event_id=filter_event_id,  # Aktualnie wybrany filtr
         **_get_common_context(user),
     )
 
@@ -2719,9 +2736,14 @@ def api_revenue_chart():
     from datetime import datetime, timedelta
     
     scale = request.args.get("scale", "month").strip().lower()
+    filter_event_id = request.args.get("event_id", "").strip()
     
     # Pobierz opłacone zamówienia
     all_orders = list_orders(status="paid", limit=500)
+    
+    # Filtrowanie po wydarzeniu (jeśli wybrano)
+    if filter_event_id:
+        all_orders = [o for o in all_orders if str(o.get("event_id")) == filter_event_id]
     
     # Filtruj według uprawnień użytkownika
     user = _get_current_admin_user()

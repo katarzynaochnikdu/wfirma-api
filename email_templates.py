@@ -2183,7 +2183,7 @@ def _build_calendar_section(event_id: str, color_gradient_1: str = "#2563eb", ba
     return f'''
                 <tr>
                   <td style="padding: 0 24px 16px 24px;">
-                    <table cellpadding="0" cellspacing="0" style="width: 100%; background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 1px solid #fcd34d; border-radius: 10px;">
+                    <table cellpadding="0" cellspacing="0" style="width: 100%; background-color: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px;">
                       <tr>
                         <td style="padding: 14px 16px;">
                           <table cellpadding="0" cellspacing="0" width="100%">
@@ -2346,7 +2346,7 @@ TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
 
                 <!-- ALERT BAR -->
                 <tr>
-                  <td style="background: linear-gradient(90deg, #F59E0B, #D97706); padding: 12px 24px;">
+                  <td style="background-color: #F59E0B; padding: 12px 24px;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
                         <td style="color: #ffffff; font-size: 14px; font-weight: bold;">
@@ -2411,9 +2411,17 @@ TEMPLATE_CHECKOUT_REMINDER = '''<!doctype html>
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
                         <td align="center">
-                          <a href="{checkout_url}" target="_blank" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); color: #ffffff; font-size: 16px; font-weight: 700; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{checkout_url}" style="v-text-anchor:middle; height:50px; width:220px" arcsize="10%" stroke="false" fillcolor="{color_gradient_1}">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff; font-size:16px; font-weight:bold;">Dokończ płatność →</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{checkout_url}" target="_blank" style="display: inline-block; padding: 16px 48px; background-color: {color_gradient_1}; color: #ffffff; font-size: 16px; font-weight: 700; text-decoration: none; border-radius: 8px;">
                             Dokończ płatność →
                           </a>
+                          <!--<![endif]-->
                         </td>
                       </tr>
                     </table>
@@ -2552,7 +2560,7 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
 
                 <!-- INFO BAR -->
                 <tr>
-                  <td style="background: linear-gradient(90deg, #F59E0B, #D97706); padding: 12px 24px;">
+                  <td style="background-color: #F59E0B; padding: 12px 24px;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
                         <td style="color: #ffffff; font-size: 14px; font-weight: bold;">
@@ -2619,9 +2627,17 @@ TEMPLATE_CHECKOUT_EXPIRED_NEW_LINK = '''<!doctype html>
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
                         <td align="center">
-                          <a href="{new_checkout_url}" target="_blank" style="display: inline-block; padding: 18px 56px; background: linear-gradient(135deg, {color_gradient_1}, {color_gradient_2}); color: #ffffff; font-size: 17px; font-weight: 700; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{new_checkout_url}" style="v-text-anchor:middle; height:54px; width:240px" arcsize="10%" stroke="false" fillcolor="{color_gradient_1}">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff; font-size:17px; font-weight:bold;">Opłać rezerwację →</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{new_checkout_url}" target="_blank" style="display: inline-block; padding: 18px 56px; background-color: {color_gradient_1}; color: #ffffff; font-size: 17px; font-weight: 700; text-decoration: none; border-radius: 8px;">
                             Opłać rezerwację →
                           </a>
+                          <!--<![endif]-->
                         </td>
                       </tr>
                       <tr>
@@ -2737,7 +2753,7 @@ TEMPLATE_ORDER_CANCELLED = '''<!DOCTYPE html>
           <!-- Status Badge -->
           <tr>
             <td align="center" style="padding: 24px 24px 0 24px;">
-              <div style="display: inline-block; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600;">
+              <div style="display: inline-block; background-color: #ef4444; color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600;">
                 ✗ Zamówienie anulowane
               </div>
             </td>
@@ -2884,7 +2900,7 @@ TEMPLATE_PARTICIPANT_CANCELLED = '''<!DOCTYPE html>
           <!-- Status Badge -->
           <tr>
             <td align="center" style="padding: 24px 24px 0 24px;">
-              <div style="display: inline-block; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600;">
+              <div style="display: inline-block; background-color: #f59e0b; color: white; padding: 8px 24px; border-radius: 20px; font-size: 14px; font-weight: 600;">
                 ⚠ Rejestracja anulowana
               </div>
             </td>
