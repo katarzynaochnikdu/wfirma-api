@@ -3544,7 +3544,12 @@ def events_list():
         event_id = event.get("event_id")
         orders = list_orders(event_id=event_id, limit=500)
         event["order_count"] = len(orders)
-        event["participant_count"] = sum(int(o.get("participant_count") or 0) for o in orders)
+        # Licz uczestników z tabeli participants (nie z pola w zamówieniach)
+        participants = get_participants_for_event(event_id) or []
+        event["participant_count"] = len(participants)
+        # Debug: jeśli są zamówienia ale brak uczestników, loguj
+        if orders and not participants:
+            print(f"[EVENTS_LIST] event_id={event_id}: {len(orders)} orders, 0 participants from DB")
         # Normalizuj pola z Backstage
         _normalize_event_data(event)
     
