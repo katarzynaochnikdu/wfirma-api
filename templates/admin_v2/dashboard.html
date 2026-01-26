@@ -122,14 +122,15 @@
   </div>
 </div>
 
-<!-- CHARTS ROW -->
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-  <!-- Revenue Chart -->
+<!-- CHARTS ROW - wszystkie wykresy w jednym wierszu -->
+<div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+  <!-- Revenue Chart (2 kolumny) -->
   <div class="card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
       <h3 class="card-title">Przychód w czasie</h3>
       <div class="chart-scale-selector">
-        <button type="button" class="scale-btn active" data-scale="week" onclick="changeRevenueScale('week')">Tydzień</button>
+        <button type="button" class="scale-btn active" data-scale="day" onclick="changeRevenueScale('day')">Dzień</button>
+        <button type="button" class="scale-btn" data-scale="week" onclick="changeRevenueScale('week')">Tydzień</button>
         <button type="button" class="scale-btn" data-scale="month" onclick="changeRevenueScale('month')">Miesiąc</button>
       </div>
     </div>
@@ -141,7 +142,21 @@
     </div>
   </div>
   
-  <!-- Payment Methods -->
+  <!-- Payment Status (1 kolumna) -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Status płatności</h3>
+    </div>
+    <div class="card-content" style="padding: 1rem;">
+      <div style="position: relative; height: 180px; width: 100%;">
+        <canvas id="paymentStatusChart"></canvas>
+      </div>
+      <!-- Custom legend with icons -->
+      <div id="paymentStatusLegend" class="payment-legend" style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;"></div>
+    </div>
+  </div>
+  
+  <!-- Payment Methods (1 kolumna) -->
   <div class="card">
     <div class="card-header">
       <h3 class="card-title">Metody płatności</h3>
@@ -549,7 +564,7 @@
 <script>
 // Globalna zmienna dla wykresu przychodu
 var revenueChart = null;
-var currentScale = 'week';
+var currentScale = 'day';
 
 function applyDashboardFilter(e) {
   e.preventDefault();
@@ -687,18 +702,21 @@ document.addEventListener('DOMContentLoaded', function() {
   var revenueData = {{ chart_data.revenue | tojson | default('[]', true) }};
   var revenueLabels = {{ chart_data.revenue_labels | tojson | default('[]', true) }};
   var paymentData = {{ chart_data.payment_methods | tojson | default('{}', true) }};
+  var paymentStatusData = {{ chart_data.payment_status | tojson | default('{}', true) }};
   
   // Domyślne dane jeśli brak z backendu
   var defaultRevenueLabels = ['Brak danych'];
   var defaultRevenueData = [0];
   var defaultPaymentData = { 'Online': 0, 'Proforma': 0, 'FOC': 0 };
+  var defaultPaymentStatusData = { 'paid': 0, 'pending': 0, 'overdue': 0, 'cancelled': 0 };
   
   var finalRevenueLabels = (revenueLabels && revenueLabels.length) ? revenueLabels : defaultRevenueLabels;
   var finalRevenueData = (revenueData && revenueData.length) ? revenueData : defaultRevenueData;
   var finalPaymentData = (paymentData && Object.keys(paymentData).length) ? paymentData : defaultPaymentData;
+  var finalPaymentStatusData = (paymentStatusData && Object.keys(paymentStatusData).length) ? paymentStatusData : defaultPaymentStatusData;
   
-  // Revenue Chart (Line) - pobierz dane tygodniowe na start (z uwzględnieniem filtra)
-  let initialChartUrl = '/admin-v2/api/revenue-chart?scale=week';
+  // Revenue Chart (Line) - pobierz dane dzienne na start (z uwzględnieniem filtra)
+  let initialChartUrl = '/admin-v2/api/revenue-chart?scale=day';
   if (filterEventId) {
     initialChartUrl += `&event_id=${encodeURIComponent(filterEventId)}`;
   }
@@ -715,6 +733,75 @@ document.addEventListener('DOMContentLoaded', function() {
     .catch(() => {
       revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData);
     });
+  
+  // Payment Status Chart (Doughnut)
+  var paymentStatusCtx = document.getElementById('paymentStatusChart');
+  if (paymentStatusCtx) {
+    const statusConfig = {
+      'paid': { icon: 'check-circle', color: 'hsl(142, 76%, 36%)', label: 'Zapłacone' },
+      'pending': { icon: 'clock', color: 'hsl(38, 92%, 50%)', label: 'Oczekujące' },
+      'overdue': { icon: 'alert-circle', color: 'hsl(0, 84%, 60%)', label: 'Przeterminowane' },
+      'cancelled': { icon: 'x-circle', color: 'hsl(0, 0%, 60%)', label: 'Anulowane' }
+    };
+    
+    const statusLabels = Object.keys(finalPaymentStatusData).filter(k => finalPaymentStatusData[k] > 0);
+    const statusColors = statusLabels.map(k => statusConfig[k].color);
+    const statusValues = statusLabels.map(k => finalPaymentStatusData[k]);
+    
+    new Chart(paymentStatusCtx, {
+      type: 'doughnut',
+      data: {
+        labels: statusLabels.map(k => statusConfig[k].label),
+        datasets: [{
+          data: statusValues,
+          backgroundColor: statusColors,
+          borderWidth: 0,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.label + ': ' + context.raw.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' zł';
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Build custom icon legend
+    const statusLegendContainer = document.getElementById('paymentStatusLegend');
+    const statusSvgIcons = {
+      'check-circle': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+      'clock': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+      'alert-circle': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
+      'x-circle': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>'
+    };
+    
+    if (statusLegendContainer && statusLabels.length > 0) {
+      statusLabels.forEach((key, idx) => {
+        const config = statusConfig[key];
+        const value = statusValues[idx];
+        const iconSvg = statusSvgIcons[config.icon];
+        const formattedValue = value.toLocaleString('pl-PL', {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ' zł';
+        statusLegendContainer.innerHTML += `
+          <div class="payment-legend-item" title="${config.label}: ${formattedValue}" style="display: flex; align-items: center; gap: 0.5rem; cursor: default;">
+            <span class="payment-icon-badge" style="background: ${config.color}15; border: 2px solid ${config.color}; color: ${config.color}; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+              ${iconSvg}
+            </span>
+            <span style="font-size: 0.75rem; font-weight: 500;">${formattedValue}</span>
+          </div>
+        `;
+      });
+    }
+  }
   
   // Payment Methods Chart (Doughnut)
   var paymentCtx = document.getElementById('paymentChart');

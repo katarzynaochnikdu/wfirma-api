@@ -1000,10 +1000,49 @@ def dashboard():
         
         payment_methods[payment_type] += 1
     
+    # Statusy płatności - KWOTY zamiast liczby zamówień
+    from datetime import datetime, timezone
+    payment_status = {"paid": 0.0, "pending": 0.0, "overdue": 0.0, "cancelled": 0.0}
+    now = datetime.now(timezone.utc)
+    
+    for o in all_orders:
+        status = o.get("status", "")
+        amount = float(o.get("total") or 0)
+        
+        if status == "paid":
+            payment_status["paid"] += amount
+        elif status == "cancelled":
+            payment_status["cancelled"] += amount
+        elif status == "pending_payment" or status == "received":
+            # Sprawdź czy przeterminowane
+            due_date = o.get("payment_due_date")
+            is_overdue = False
+            if due_date:
+                if isinstance(due_date, str):
+                    try:
+                        due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                        is_overdue = due_date < now
+                    except:
+                        pass
+                elif hasattr(due_date, 'tzinfo'):
+                    is_overdue = due_date < now
+            
+            if is_overdue:
+                payment_status["overdue"] += amount
+            else:
+                payment_status["pending"] += amount
+        else:
+            payment_status["pending"] += amount
+    
+    # Zaokrąglij kwoty
+    for key in payment_status:
+        payment_status[key] = round(payment_status[key], 2)
+    
     chart_data = {
         "revenue": revenue_values if revenue_values else [0],
         "revenue_labels": revenue_labels if revenue_labels else ["Brak danych"],
         "payment_methods": dict(payment_methods) if payment_methods else {"Brak": 1},
+        "payment_status": payment_status,
     }
     
     # Wszystkie wydarzenia do filtru (nie tylko recent)
@@ -1163,20 +1202,35 @@ def participants_export():
     import csv
     import io
     from flask import Response
+    from pg_storage import get_ticket_classes
     
     event_filter = request.args.get("event_id", "").strip()
     
+    # Mapa ticket_class_id -> ticket_name (budowana per-event)
+    ticket_class_name_map = {}
+    
     if event_filter:
         participants = get_participants_for_event(event_filter) or []
+        # Pobierz mapę nazw biletów dla tego wydarzenia
+        ticket_classes = get_ticket_classes(event_filter) or []
+        ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
     else:
         # Wszystkie wydarzenia
         events = list_events(limit=100)
         participants = []
         for e in events:
-            p_list = get_participants_for_event(e.get("event_id")) or []
+            eid = e.get("event_id")
+            p_list = get_participants_for_event(eid) or []
             for p in p_list:
                 p["event_name"] = e.get("event_name", "")
             participants.extend(p_list)
+            
+            # Pobierz mapę nazw biletów dla tego wydarzenia i dodaj do globalnej mapy
+            ticket_classes = get_ticket_classes(eid) or []
+            for tc in ticket_classes:
+                tc_id = tc.get("ticket_class_id")
+                if tc_id and tc_id not in ticket_class_name_map:
+                    ticket_class_name_map[tc_id] = tc.get("ticket_name", "")
     
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
@@ -1187,12 +1241,36 @@ def participants_export():
     
     for p in participants:
         created = p.get("created_at")
+        ticket_class_id = p.get("ticket_class_id") or ""
+        
+        # NOWE: Użyj mapy ticket_class_id -> ticket_name z event_ticket_classes
+        ticket_name = ticket_class_name_map.get(ticket_class_id, "") if ticket_class_id else ""
+        
+        # Fallback: jeśli brak w mapie, spróbuj użyć data.ticket_name
+        if not ticket_name:
+            p_data = p.get("data") or {}
+            if isinstance(p_data, str):
+                import json
+                try:
+                    p_data = json.loads(p_data)
+                except:
+                    p_data = {}
+            ticket_name = p_data.get("ticket_name", "")
+        
+        # Usuń słowo "Bilet" z nazwy jeśli jest
+        if ticket_name:
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
+        
+        # Ostateczny fallback
+        if not ticket_name.strip():
+            ticket_name = "Nieznany" if ticket_class_id else "Standard"
+        
         writer.writerow([
             p.get("first_name", ""),
             p.get("last_name", ""),
             p.get("email", ""),
             p.get("event_name", ""),
-            (p.get("ticket_class_name") or p.get("ticket_class_id") or "Standard").replace("Bilet ", "").replace("bilet ", ""),
+            ticket_name.strip(),
             p.get("status", ""),
             created.strftime("%Y-%m-%d %H:%M") if created else "",
         ])
@@ -1248,16 +1326,40 @@ def order_detail(order_id: str):
     # Pobierz uczestników
     participants = get_participants_for_order(order_id) or []
     
-    # Mapuj nazwy biletów (nie pokazuj długich ID numerycznych)
+    # Pobierz mapę nazw biletów z event_ticket_classes
+    from pg_storage import get_ticket_classes
+    order_event_id_for_tickets = order.get("event_id") or ""
+    ticket_classes = get_ticket_classes(order_event_id_for_tickets) if order_event_id_for_tickets else []
+    ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
+    
+    # Mapuj nazwy biletów używając mapy z event_ticket_classes
     for p in participants:
-        ticket_name = p.get("ticket_class_name") or ""
-        ticket_id = p.get("ticket_class_id") or ""
+        ticket_class_id = p.get("ticket_class_id") or ""
+        
+        # NOWE: Użyj mapy ticket_class_id -> ticket_name z event_ticket_classes
+        ticket_name = ticket_class_name_map.get(ticket_class_id, "") if ticket_class_id else ""
+        
+        # Fallback: jeśli brak w mapie, spróbuj użyć data.ticket_name
+        if not ticket_name:
+            p_data = p.get("data") or {}
+            if isinstance(p_data, str):
+                import json
+                try:
+                    p_data = json.loads(p_data)
+                except:
+                    p_data = {}
+            ticket_name = p_data.get("ticket_name", "")
+        
         # Usuń słowo "Bilet" z nazwy jeśli jest
         if ticket_name:
             ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
-        if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-            ticket_name = "Standard"
-        p["ticket_name"] = ticket_name or ticket_id or "Standard"
+        
+        # Ostateczny fallback: "Nieznany" jeśli mamy ticket_class_id ale nie rozpoznajemy nazwy
+        if not ticket_name.strip():
+            ticket_name = "Nieznany" if ticket_class_id else "Standard"
+        
+        p["ticket_name"] = ticket_name.strip()
+        p["ticket_class_name"] = ticket_name.strip()  # Ustaw też ticket_class_name dla spójności
     
     # Pobierz dokumenty wFirma
     wfirma_documents = get_wfirma_documents(order_id) or []
@@ -1923,6 +2025,11 @@ def order_resend_ticket(order_id: str):
     event_name = event.get("event_name", "Wydarzenie")
     event_id = order.get("event_id", "")
     
+    # Pobierz mapę nazw biletów z event_ticket_classes
+    from pg_storage import get_ticket_classes
+    ticket_classes = get_ticket_classes(event_id) if event_id else []
+    ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
+    
     sent_count = 0
     failed_count = 0
     errors = []
@@ -1935,11 +2042,31 @@ def order_resend_ticket(order_id: str):
             errors.append(f"Brak emaila dla uczestnika {participant.get('first_name', '')} {participant.get('last_name', '')}")
             continue
         
-        # Pobierz dane biletu
-        ticket_name = participant.get("ticket_class_name") or participant.get("ticket_name") or "Standard"
+        # Pobierz dane biletu używając mapy z event_ticket_classes
+        ticket_class_id = participant.get("ticket_class_id") or ""
+        
+        # NOWE: Użyj mapy ticket_class_id -> ticket_name z event_ticket_classes
+        ticket_name = ticket_class_name_map.get(ticket_class_id, "") if ticket_class_id else ""
+        
+        # Fallback: jeśli brak w mapie, spróbuj użyć data.ticket_name
+        if not ticket_name:
+            p_data = participant.get("data") or {}
+            if isinstance(p_data, str):
+                import json
+                try:
+                    p_data = json.loads(p_data)
+                except:
+                    p_data = {}
+            ticket_name = p_data.get("ticket_name", "")
+        
         # Usuń słowo "Bilet" z nazwy jeśli jest
         if ticket_name and isinstance(ticket_name, str):
             ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
+        
+        # Ostateczny fallback
+        if not ticket_name.strip():
+            ticket_name = "Nieznany" if ticket_class_id else "Standard"
+        
         ticket_id = participant.get("ticket_id", "")
         
         # Oblicz cenę biletu (średnia z zamówienia jeśli nie ma szczegółów)
@@ -2770,13 +2897,13 @@ def api_order_exists(order_id: str):
 @admin_v2_bp.route("/api/revenue-chart", methods=["GET"])
 @_require_login
 def api_revenue_chart():
-    """API: Dane wykresu przychodu z możliwością wyboru skali (tydzień/miesiąc)."""
+    """API: Dane wykresu przychodu z możliwością wyboru skali (dzień/tydzień/miesiąc)."""
     from flask import jsonify
     from pg_storage import list_orders
     from collections import defaultdict
     from datetime import datetime, timedelta
     
-    scale = request.args.get("scale", "month").strip().lower()
+    scale = request.args.get("scale", "day").strip().lower()
     filter_event_id = request.args.get("event_id", "").strip()
     
     # Pobierz opłacone zamówienia
@@ -2802,11 +2929,11 @@ def api_revenue_chart():
     
     labels = []
     values = []
+    today = datetime.now()
     
-    if scale == "week":
-        # Ostatnie 8 tygodni
-        revenue_by_week = defaultdict(float)
-        today = datetime.now()
+    if scale == "day":
+        # Ostatnie 8 tygodni pokazane jako dni
+        revenue_by_day = defaultdict(float)
         
         for o in all_orders:
             created = o.get("created_at")
@@ -2816,16 +2943,46 @@ def api_revenue_chart():
                         created = datetime.fromisoformat(created.replace('Z', '+00:00'))
                     except Exception:
                         continue
-                # Oblicz numer tygodnia (ISO week)
-                week_start = created - timedelta(days=created.weekday())
-                week_key = week_start.strftime("%Y-%m-%d")
+                day_key = created.strftime("%Y-%m-%d")
+                revenue_by_day[day_key] += float(o.get("total") or 0)
+        
+        # Wygeneruj ostatnie 8 tygodni (56 dni) - ale pokaż tylko co 7 dni dla czytelności
+        for i in range(7, -1, -1):
+            day = today - timedelta(days=7 * i)
+            day_key = day.strftime("%Y-%m-%d")
+            day_label = day.strftime("%d.%m")
+            # Sumuj przychód z całego tygodnia kończącego się tego dnia
+            week_total = 0
+            for d in range(7):
+                check_day = day - timedelta(days=d)
+                check_key = check_day.strftime("%Y-%m-%d")
+                week_total += revenue_by_day.get(check_key, 0)
+            labels.append(day_label)
+            values.append(round(week_total, 2))
+    
+    elif scale == "week":
+        # Ostatnie 5 tygodni z numerami tygodni
+        revenue_by_week = defaultdict(float)
+        
+        for o in all_orders:
+            created = o.get("created_at")
+            if created:
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    except Exception:
+                        continue
+                # ISO week number
+                iso_year, iso_week, _ = created.isocalendar()
+                week_key = f"{iso_year}-W{iso_week:02d}"
                 revenue_by_week[week_key] += float(o.get("total") or 0)
         
-        # Wygeneruj ostatnie 8 tygodni
-        for i in range(7, -1, -1):
-            week_start = today - timedelta(days=today.weekday() + 7 * i)
-            week_key = week_start.strftime("%Y-%m-%d")
-            week_label = week_start.strftime("%d.%m")
+        # Wygeneruj ostatnie 5 tygodni
+        for i in range(4, -1, -1):
+            week_date = today - timedelta(weeks=i)
+            iso_year, iso_week, _ = week_date.isocalendar()
+            week_key = f"{iso_year}-W{iso_week:02d}"
+            week_label = f"Tydz. {iso_week}"
             labels.append(week_label)
             values.append(round(revenue_by_week.get(week_key, 0), 2))
     
@@ -2854,7 +3011,6 @@ def api_revenue_chart():
         
         # Jeśli brak danych, wypełnij ostatnie 6 miesięcy zerami
         if not labels:
-            today = datetime.now()
             for i in range(5, -1, -1):
                 m = (today.month - i - 1) % 12 + 1
                 labels.append(month_names_pl[m - 1])
@@ -4086,11 +4242,21 @@ def participants_list():
     
     # Pobierz uczestników - jeśli wybrany event, tylko z niego
     all_participants = []
+    
+    # Mapa ticket_class_id -> ticket_name z event_ticket_classes (dla poprawnego rozpoznawania nazw biletów)
+    from pg_storage import get_ticket_classes
+    ticket_class_name_map = {}
+    
     if event_id_filter:
         all_participants = get_participants_for_event(event_id_filter) or []
         # Dodaj event info
         event = get_event(event_id_filter)
         event_data = (event.get("data") or {}) if event else {}
+        
+        # Pobierz mapę nazw biletów dla tego wydarzenia
+        ticket_classes = get_ticket_classes(event_id_filter) or []
+        ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
+        
         for p in all_participants:
             p["event_name"] = event.get("event_name", "") if event else ""
             p["event_color"] = event_data.get("color_gradient_1", "hsl(212, 100%, 42%)")
@@ -4099,8 +4265,17 @@ def participants_list():
         # Pobierz z wszystkich aktywnych wydarzeń (już przefiltrowanych według uprawnień)
         for event in events:
             if event.get("is_active", True):
-                event_participants = get_participants_for_event(event.get("event_id")) or []
+                eid = event.get("event_id")
+                event_participants = get_participants_for_event(eid) or []
                 event_data = event.get("data") or {}
+                
+                # Pobierz mapę nazw biletów dla tego wydarzenia i dodaj do globalnej mapy
+                ticket_classes = get_ticket_classes(eid) or []
+                for tc in ticket_classes:
+                    tc_id = tc.get("ticket_class_id")
+                    if tc_id and tc_id not in ticket_class_name_map:
+                        ticket_class_name_map[tc_id] = tc.get("ticket_name", "")
+                
                 for p in event_participants:
                     p["event_name"] = event.get("event_name", "")
                     p["event_color"] = event_data.get("color_gradient_1", "hsl(212, 100%, 42%)")
@@ -4133,18 +4308,43 @@ def participants_list():
     
     # Mapuj pola dla szablonu
     for p in all_participants:
-        # Preferuj nazwę biletu, ale nie pokazuj długich ID numerycznych
-        ticket_name = p.get("ticket_class_name") or ""
-        ticket_id = p.get("ticket_class_id") or ""
+        ticket_class_id = p.get("ticket_class_id") or ""
+        
+        # NOWE: Użyj mapy ticket_class_id -> ticket_name z event_ticket_classes
+        ticket_name = ticket_class_name_map.get(ticket_class_id, "") if ticket_class_id else ""
+        
+        # Fallback: jeśli brak w mapie, spróbuj użyć data.ticket_name
+        if not ticket_name:
+            p_data = p.get("data") or {}
+            if isinstance(p_data, str):
+                import json
+                try:
+                    p_data = json.loads(p_data)
+                except:
+                    p_data = {}
+            ticket_name = p_data.get("ticket_name", "")
+        
         # Usuń słowo "Bilet" z nazwy jeśli jest
         if ticket_name:
             ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
-        # Jeśli ticket_id wygląda jak długi numer (>10 cyfr), nie pokazuj go
-        if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-            ticket_name = "Standard"
-        p["ticket_name"] = ticket_name or ticket_id or "Standard"
+        
+        # Ostateczny fallback: "Nieznany" jeśli mamy ticket_class_id ale nie rozpoznajemy nazwy
+        if not ticket_name.strip():
+            ticket_name = "Nieznany" if ticket_class_id else "Standard"
+        
+        p["ticket_name"] = ticket_name.strip()
+        p["ticket_class_name"] = ticket_name.strip()  # Ustaw też ticket_class_name dla spójności
         p["is_notified"] = p.get("status") == "emailed"
-        p["company"] = p.get("company") or ""
+        
+        # Wyciągnij firmę z zagnieżdżonego pola "data"
+        p_data = p.get("data") or {}
+        if isinstance(p_data, str):
+            import json
+            try:
+                p_data = json.loads(p_data)
+            except:
+                p_data = {}
+        p["company"] = p_data.get("company") or p_data.get("company_name") or p_data.get("firma") or ""
     
     return render_template(
         "admin_v2/participants.html",
@@ -4223,15 +4423,31 @@ def participant_detail(participant_id):
     participant["notes"] = p_data.get("notes") or p_data.get("uwagi") or ""
     participant["badge_name"] = p_data.get("badge_name") or ""
     
-    # Mapuj nazwę biletu i usuń słowo "Bilet"
-    ticket_name = participant.get("ticket_class_name") or ""
-    ticket_id = participant.get("ticket_class_id") or ""
+    # Mapuj nazwę biletu używając mapy z event_ticket_classes
+    from pg_storage import get_ticket_classes
+    participant_event_id = participant.get("event_id") or ""
+    ticket_classes = get_ticket_classes(participant_event_id) if participant_event_id else []
+    ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
+    
+    ticket_class_id = participant.get("ticket_class_id") or ""
+    
+    # NOWE: Użyj mapy ticket_class_id -> ticket_name z event_ticket_classes
+    ticket_name = ticket_class_name_map.get(ticket_class_id, "") if ticket_class_id else ""
+    
+    # Fallback: jeśli brak w mapie, spróbuj użyć data.ticket_name
+    if not ticket_name:
+        ticket_name = p_data.get("ticket_name", "")
+    
     # Usuń słowo "Bilet" z nazwy jeśli jest
     if ticket_name:
         ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
-    if not ticket_name and ticket_id and len(str(ticket_id)) > 10 and str(ticket_id).isdigit():
-        ticket_name = "Standard"
-    participant["ticket_name"] = ticket_name or ticket_id or "Standard"
+    
+    # Ostateczny fallback: "Nieznany" jeśli mamy ticket_class_id ale nie rozpoznajemy nazwy
+    if not ticket_name.strip():
+        ticket_name = "Nieznany" if ticket_class_id else "Standard"
+    
+    participant["ticket_name"] = ticket_name.strip()
+    participant["ticket_class_name"] = ticket_name.strip()  # Ustaw też ticket_class_name dla spójności
     
     # Pobierz historię komunikacji dla uczestnika
     from pg_storage import get_mail_log_by_email
