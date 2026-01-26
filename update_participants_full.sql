@@ -87,10 +87,51 @@ UPDATE participants SET
 WHERE event_order_id = '24311000000795009' AND email = 'karolina.kostrzewska.manowiecka@medispace.pl';
 
 -- ============================================
--- CZĘŚĆ 2: DODAJ KOLUMNĘ PROMO_CODE (jeśli nie istnieje)
+-- CZĘŚĆ 2: DODAJ KOLUMNY (jeśli nie istnieją)
 -- ============================================
 
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS company TEXT;
+
+-- ============================================
+-- CZĘŚĆ 2b: UZUPEŁNIJ FIRMY
+-- ============================================
+
+UPDATE participants SET company = 'Mea Clinic'
+WHERE ticket_id = '243110000008240971';
+
+UPDATE participants SET company = 'KRAJMED CENTRUM MEDYCZNE'
+WHERE ticket_id = '243110000008290181';
+
+UPDATE participants SET company = E'NZOZ \u0141omianki'
+WHERE ticket_id = '243110000008240741';
+
+UPDATE participants SET company = E'Centrum Medyczne \u201e\u017belazna\u201d'
+WHERE ticket_id = '243110000007980371';
+
+UPDATE participants SET company = E'Centrum Medyczne \u201e\u017belazna\u201d'
+WHERE ticket_id = '243110000007980372';
+
+UPDATE participants SET company = E'NZOZ \u0141omianki'
+WHERE ticket_id = '243110000008030751';
+
+UPDATE participants SET company = E'Samodzielny Publiczny Kliniczny Szpital Okulistyczny'
+WHERE ticket_id = '243110000008030541';
+
+UPDATE participants SET company = 'CM Medicers'
+WHERE ticket_id = '243110000008030311';
+
+UPDATE participants SET company = 'Mimedica'
+WHERE ticket_id = '243110000008030101';
+
+UPDATE participants SET company = E'CM \u017belazna'
+WHERE ticket_id = '243110000007980091';
+
+UPDATE participants SET company = E'Szpital Po\u0142udniowy'
+WHERE ticket_id = '243110000007950301';
+
+UPDATE participants SET company = 'Medispace'
+WHERE ticket_id = '243110000007950091';
 
 -- ============================================
 -- CZĘŚĆ 3: UZUPEŁNIJ KODY RABATOWE
@@ -146,6 +187,7 @@ SELECT
   last_name, 
   phone, 
   ticket_id,
+  company,
   promo_code
 FROM participants 
 WHERE event_order_id IN (

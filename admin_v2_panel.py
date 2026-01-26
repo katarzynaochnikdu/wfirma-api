@@ -7006,19 +7006,6 @@ def event_room(event_id: str):
     # Zbuduj mapę ticket_class_id -> ticket_name
     ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
     
-    # #region agent log
-    import json as _json_debug
-    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-        _f.write(_json_debug.dumps({"location":"admin_v2_panel.py:7005","message":"ticket_classes fetched and map built","data":{"event_id":event_id,"ticket_classes_count":len(ticket_classes),"ticket_class_name_map":ticket_class_name_map,"ticket_classes":[{"id":tc.get("ticket_class_id"),"name":tc.get("ticket_name")} for tc in ticket_classes]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"A"}) + "\n")
-    # #endregion
-    
-    # #region agent log
-    import json as _json_debug2
-    _sample_p = participants[:3] if participants else []
-    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-        _f.write(_json_debug2.dumps({"location":"admin_v2_panel.py:7015","message":"participants BEFORE mapping","data":{"count":len(participants),"sample":[{"id":p.get("participant_id"),"ticket_class_id":p.get("ticket_class_id"),"ticket_class_name":p.get("ticket_class_name"),"data_keys":list((p.get("data") or {}).keys()) if isinstance(p.get("data"),dict) else str(type(p.get("data")))} for p in _sample_p]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"B,C,E"}) + "\n")
-    # #endregion
-    
     # Mapuj pola uczestników dla szablonu
     for p in participants:
         ticket_id = p.get("ticket_class_id") or ""
