@@ -1333,7 +1333,7 @@ def _require_permission(permission_key: str):
             token = _require_admin_token()
             user = _get_current_admin_user()
             if user and not _user_has_permission(user, permission_key):
-                return _err(403, "Brak dostępu", "Nie masz uprawnień do tej sekcji.")
+                abort(403, description="Nie masz uprawnień do tej sekcji.")
             request.admin_token = token
             return f(*args, **kwargs)
         return wrapped

@@ -178,8 +178,8 @@
         <!-- Data -->
         <td>
           <div>
-            <p style="font-size: 0.875rem;">{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</p>
-            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ order.created_at.strftime('%H:%M') if order.created_at else '' }}</p>
+            <p style="font-size: 0.875rem;">{% if order.created_at %}{% if order.created_at is string %}{{ order.created_at[:10].replace('-', '.').split('.')[::-1]|join('.') }}{% else %}{{ order.created_at.strftime('%d.%m.%Y') }}{% endif %}{% else %}—{% endif %}</p>
+            <p style="font-size: 0.75rem; color: var(--muted-foreground);">{% if order.created_at %}{% if order.created_at is string %}{{ order.created_at[11:16] }}{% else %}{{ order.created_at.strftime('%H:%M') }}{% endif %}{% else %}{% endif %}</p>
           </div>
         </td>
         <!-- Kupujący -->
