@@ -1116,7 +1116,7 @@
     </div>
     <div style="padding: 1rem;">
       <div style="display: grid; gap: 1rem; grid-template-columns: repeat(2, 1fr);">
-        <!-- Backstage Links (edytowalne) -->
+        <!-- Backstage Links (automatycznie generowane, z możliwością edycji) -->
         <div>
           <label class="form-label" style="margin-bottom: 0.75rem; font-weight: 600;">Zoho Backstage</label>
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">
@@ -1124,11 +1124,12 @@
             <div class="link-card-editable" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);">
               <i data-lucide="settings" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
               <input type="text" class="backstage-link-input" id="backstage_url" 
-                     value="{{ event.data.backstage_url or event.backstage_url }}" 
+                     value="{{ event.backstage_url }}" 
+                     data-auto-url="{{ event.backstage_url }}"
                      placeholder="https://backstage.zoho.eu/..."
                      style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
-                     onchange="saveBackstageLink('backstage_url', this.value)">
-              <a href="{{ event.data.backstage_url or event.backstage_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
+                     onchange="saveBackstageLink('backstage_url', this.value, this.dataset.autoUrl)">
+              <a href="{{ event.backstage_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
                 <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
               </a>
             </div>
@@ -1136,11 +1137,12 @@
             <div class="link-card-editable" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);">
               <i data-lucide="shopping-cart" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
               <input type="text" class="backstage-link-input" id="backstage_orders_url" 
-                     value="{{ event.data.backstage_orders_url or event.backstage_orders_url }}" 
+                     value="{{ event.backstage_orders_url }}" 
+                     data-auto-url="{{ event.backstage_orders_url }}"
                      placeholder="https://backstage.zoho.eu/.../orders"
                      style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
-                     onchange="saveBackstageLink('backstage_orders_url', this.value)">
-              <a href="{{ event.data.backstage_orders_url or event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
+                     onchange="saveBackstageLink('backstage_orders_url', this.value, this.dataset.autoUrl)">
+              <a href="{{ event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
                 <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
               </a>
             </div>
@@ -1148,11 +1150,12 @@
             <div class="link-card-editable" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);">
               <i data-lucide="users" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
               <input type="text" class="backstage-link-input" id="backstage_attendees_url" 
-                     value="{{ event.data.backstage_attendees_url or event.backstage_attendees_url }}" 
+                     value="{{ event.backstage_attendees_url }}" 
+                     data-auto-url="{{ event.backstage_attendees_url }}"
                      placeholder="https://backstage.zoho.eu/.../attendees"
                      style="flex: 1; border: none; background: transparent; font-size: 0.8125rem; outline: none; min-width: 0;"
-                     onchange="saveBackstageLink('backstage_attendees_url', this.value)">
-              <a href="{{ event.data.backstage_attendees_url or event.backstage_attendees_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
+                     onchange="saveBackstageLink('backstage_attendees_url', this.value, this.dataset.autoUrl)">
+              <a href="{{ event.backstage_attendees_url }}" target="_blank" rel="noopener noreferrer" title="Otwórz link" class="backstage-link-open" style="flex-shrink: 0; color: var(--primary);">
                 <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
               </a>
             </div>
@@ -2933,14 +2936,18 @@ function toggleDiscountAccordion(code) {
 }
 
 // ===== SAVE BACKSTAGE LINK =====
-async function saveBackstageLink(fieldName, value) {
+async function saveBackstageLink(fieldName, value, autoUrl) {
   const eventId = '{{ event.event_id }}';
+  
+  // Jeśli wartość jest taka sama jak auto-generowana, nie zapisuj (wyczyść ewentualne nadpisanie)
+  const shouldClear = value === autoUrl;
+  const saveValue = shouldClear ? '' : value;
   
   try {
     const resp = await fetch(`/admin-v2/events/${eventId}/update-field`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field: fieldName, value: value })
+      body: JSON.stringify({ field: fieldName, value: saveValue })
     });
     
     const data = await resp.json();
@@ -2955,7 +2962,11 @@ async function saveBackstageLink(fieldName, value) {
         }
       }
       if (typeof showToast === 'function') {
-        showToast('Link zapisany', 'success');
+        if (shouldClear) {
+          showToast('Link przywrócony do automatycznego', 'info');
+        } else {
+          showToast('Link zapisany', 'success');
+        }
       }
     } else {
       if (typeof showToast === 'function') {
