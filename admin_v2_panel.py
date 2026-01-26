@@ -943,8 +943,8 @@ def dashboard():
             "active_events": len([e for e in all_events if e.get("is_active", True)]),
         }
     
-    # Ostatnie zamówienia
-    recent_orders = all_orders[:5]
+    # Wszystkie zamówienia (bez limitu)
+    recent_orders = all_orders
     
     # Ostatnie wydarzenia (aktywne, sortowane po dacie)
     recent_events = [e for e in all_events if e.get("is_active")][:5]

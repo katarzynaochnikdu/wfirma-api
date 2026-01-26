@@ -37,7 +37,7 @@
       <!-- Filtr wydarzenia -->
       <div class="filter-group">
         <label class="filter-label">Wydarzenie</label>
-        <select id="filterEvent" class="form-select">
+        <select id="filterEvent" class="form-select" onchange="filterByEvent()">
           <option value="">Wszystkie wydarzenia</option>
           {% for event in recent_events %}
           <option value="{{ event.event_id }}" {% if filter_event_id == event.event_id|string %}selected{% endif %}>{{ event.event_name }}</option>
@@ -45,8 +45,8 @@
         </select>
       </div>
       
-      <!-- Filtr statusu -->
-      <div class="filter-group">
+      <!-- Filtr statusu - ukryty tymczasowo -->
+      <div class="filter-group" style="display: none;">
         <label class="filter-label">Status zamówienia</label>
         <select id="filterStatus" class="form-select">
           <option value="">Wszystkie statusy</option>
@@ -62,10 +62,6 @@
       <div class="filter-group filter-group-actions">
         <label class="filter-label">&nbsp;</label>
         <div class="filter-buttons">
-          <button type="submit" class="btn btn-primary">
-            <i data-lucide="search"></i>
-            Filtruj
-          </button>
           <button type="button" class="btn btn-outline" onclick="clearDashboardFilter()">
             <i data-lucide="x"></i>
             Wyczyść
@@ -174,12 +170,8 @@
 
 <!-- RECENT ORDERS (pełna szerokość) -->
 <div class="card">
-  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-    <h3 class="card-title">Ostatnie zamówienia</h3>
-    <a href="{{ url_for('admin_v2_bp.orders_list') }}" class="btn btn-ghost" style="font-size: 0.75rem;">
-      Zobacz wszystkie
-      <i data-lucide="arrow-right"></i>
-    </a>
+  <div class="card-header">
+    <h3 class="card-title">Zamówienia</h3>
   </div>
   <table class="data-table sortable-table" id="dashboard-orders-table">
     <thead>
@@ -592,15 +584,22 @@ function applyDashboardFilter(e) {
   window.location.href = '/admin-v2/dashboard' + (params.toString() ? '?' + params.toString() : '');
 }
 
+function filterByEvent() {
+  const eventId = document.getElementById('filterEvent').value;
+  if (eventId) {
+    window.location.href = '/admin-v2/dashboard?event_id=' + encodeURIComponent(eventId);
+  } else {
+    window.location.href = '/admin-v2/dashboard';
+  }
+}
+
 function clearDashboardFilter() {
   document.getElementById('filterSearch').value = '';
   document.getElementById('filterEvent').value = '';
   document.getElementById('filterStatus').value = '';
   
   // Przeładuj dashboard bez parametrów (jeśli były)
-  if (window.location.search) {
-    window.location.href = '/admin-v2/dashboard';
-  }
+  window.location.href = '/admin-v2/dashboard';
 }
 
 // Aktualnie wybrany filtr wydarzenia (z URL)
