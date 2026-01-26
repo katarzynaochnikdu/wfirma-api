@@ -6999,44 +6999,57 @@ def event_room(event_id: str):
         order["order_id"] = order.get("event_order_id", "")
         order["participants_count"] = order.get("participant_count", 1)
     
+    # Pobierz typy biletów dla tego wydarzenia (PRZED mapowaniem uczestników!)
+    from pg_storage import get_ticket_classes
+    ticket_classes = get_ticket_classes(event_id) or []
+    
+    # Zbuduj mapę ticket_class_id -> ticket_name
+    ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
+    
+    # #region agent log
+    import json as _json_debug
+    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+        _f.write(_json_debug.dumps({"location":"admin_v2_panel.py:7005","message":"ticket_classes fetched and map built","data":{"event_id":event_id,"ticket_classes_count":len(ticket_classes),"ticket_class_name_map":ticket_class_name_map,"ticket_classes":[{"id":tc.get("ticket_class_id"),"name":tc.get("ticket_name")} for tc in ticket_classes]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"A"}) + "\n")
+    # #endregion
+    
     # #region agent log
     import json as _json_debug2
     _sample_p = participants[:3] if participants else []
     with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-        _f.write(_json_debug2.dumps({"location":"admin_v2_panel.py:7003","message":"participants BEFORE mapping","data":{"count":len(participants),"sample":[{"id":p.get("participant_id"),"ticket_class_id":p.get("ticket_class_id"),"ticket_class_name":p.get("ticket_class_name"),"data_keys":list((p.get("data") or {}).keys()) if isinstance(p.get("data"),dict) else str(type(p.get("data")))} for p in _sample_p]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"B,C,E"}) + "\n")
+        _f.write(_json_debug2.dumps({"location":"admin_v2_panel.py:7015","message":"participants BEFORE mapping","data":{"count":len(participants),"sample":[{"id":p.get("participant_id"),"ticket_class_id":p.get("ticket_class_id"),"ticket_class_name":p.get("ticket_class_name"),"data_keys":list((p.get("data") or {}).keys()) if isinstance(p.get("data"),dict) else str(type(p.get("data")))} for p in _sample_p]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"B,C,E"}) + "\n")
     # #endregion
     
     # Mapuj pola uczestników dla szablonu
     for p in participants:
-        # Zachowaj oryginalną nazwę biletu z danych
-        ticket_name = p.get("ticket_class_name") or ""
         ticket_id = p.get("ticket_class_id") or ""
         
-        # Tylko jeśli całkowity brak nazwy, użyj ID lub "Nieznany"
+        # NOWE: Użyj mapy ticket_class_id -> ticket_name
+        ticket_name = ticket_class_name_map.get(ticket_id, "") if ticket_id else ""
+        
+        # Fallback: jeśli brak w mapie, spróbuj użyć ticket_class_name z danych uczestnika
+        if not ticket_name:
+            ticket_name = p.get("ticket_class_name") or ""
+        
+        # Ostateczny fallback: "Nieznany"
         if not ticket_name.strip():
-            if ticket_id and not (len(str(ticket_id)) > 10 and str(ticket_id).isdigit()):
-                ticket_name = str(ticket_id)
-            else:
-                ticket_name = "Nieznany"
+            ticket_name = "Nieznany"
         
         p["ticket_name"] = ticket_name.strip()
+        p["ticket_class_name"] = ticket_name.strip()  # Ustaw też ticket_class_name dla spójności
         p["is_notified"] = p.get("status") == "emailed"
         p["company"] = ""  # Brak w danych
+    
+    # #region agent log
+    import json as _json_debug3
+    _sample_p_after = participants[:3] if participants else []
+    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
+        _f.write(_json_debug3.dumps({"location":"admin_v2_panel.py:7045","message":"participants AFTER mapping","data":{"sample":[{"id":p.get("participant_id"),"ticket_class_id":p.get("ticket_class_id"),"ticket_class_name":p.get("ticket_class_name"),"ticket_name":p.get("ticket_name")} for p in _sample_p_after]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"FIX"}) + "\n")
+    # #endregion
     
     # Backstage URLs są już ustawione przez _normalize_event_data()
     
     # Buduj strukturę buckets dla zakładki Płatności
     buckets = _build_payment_buckets(orders)
-    
-    # Pobierz typy biletów dla tego wydarzenia
-    from pg_storage import get_ticket_classes
-    ticket_classes = get_ticket_classes(event_id) or []
-    
-    # #region agent log
-    import json as _json_debug
-    with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-        _f.write(_json_debug.dumps({"location":"admin_v2_panel.py:7027","message":"ticket_classes fetched","data":{"event_id":event_id,"ticket_classes_count":len(ticket_classes),"ticket_classes":[{"id":tc.get("ticket_class_id"),"name":tc.get("ticket_name")} for tc in ticket_classes]},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"A"}) + "\n")
-    # #endregion
     
     # === Grupowanie zamówień per kod rabatowy (dla wykresu) ===
     promo_code_stats = {}
