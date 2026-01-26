@@ -2929,11 +2929,13 @@ def api_revenue_chart():
     
     labels = []
     values = []
+    participants_values = []
     today = datetime.now()
     
     if scale == "day":
         # Ostatnie 8 tygodni pokazane jako dni
         revenue_by_day = defaultdict(float)
+        participants_by_day = defaultdict(int)
         
         for o in all_orders:
             created = o.get("created_at")
@@ -2945,24 +2947,29 @@ def api_revenue_chart():
                         continue
                 day_key = created.strftime("%Y-%m-%d")
                 revenue_by_day[day_key] += float(o.get("total") or 0)
+                participants_by_day[day_key] += int(o.get("participant_count") or 1)
         
         # Wygeneruj ostatnie 8 tygodni (56 dni) - ale pokaż tylko co 7 dni dla czytelności
         for i in range(7, -1, -1):
             day = today - timedelta(days=7 * i)
             day_key = day.strftime("%Y-%m-%d")
             day_label = day.strftime("%d.%m")
-            # Sumuj przychód z całego tygodnia kończącego się tego dnia
+            # Sumuj przychód i uczestników z całego tygodnia kończącego się tego dnia
             week_total = 0
+            week_participants = 0
             for d in range(7):
                 check_day = day - timedelta(days=d)
                 check_key = check_day.strftime("%Y-%m-%d")
                 week_total += revenue_by_day.get(check_key, 0)
+                week_participants += participants_by_day.get(check_key, 0)
             labels.append(day_label)
             values.append(round(week_total, 2))
+            participants_values.append(week_participants)
     
     elif scale == "week":
         # Ostatnie 5 tygodni z numerami tygodni
         revenue_by_week = defaultdict(float)
+        participants_by_week = defaultdict(int)
         
         for o in all_orders:
             created = o.get("created_at")
@@ -2976,6 +2983,7 @@ def api_revenue_chart():
                 iso_year, iso_week, _ = created.isocalendar()
                 week_key = f"{iso_year}-W{iso_week:02d}"
                 revenue_by_week[week_key] += float(o.get("total") or 0)
+                participants_by_week[week_key] += int(o.get("participant_count") or 1)
         
         # Wygeneruj ostatnie 5 tygodni
         for i in range(4, -1, -1):
@@ -2985,10 +2993,12 @@ def api_revenue_chart():
             week_label = f"Tydz. {iso_week}"
             labels.append(week_label)
             values.append(round(revenue_by_week.get(week_key, 0), 2))
+            participants_values.append(participants_by_week.get(week_key, 0))
     
     else:  # month
         # Ostatnie 6 miesięcy
         revenue_by_month = defaultdict(float)
+        participants_by_month = defaultdict(int)
         month_names_pl = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru']
         
         for o in all_orders:
@@ -3001,6 +3011,7 @@ def api_revenue_chart():
                         continue
                 month_key = f"{created.year}-{created.month:02d}"
                 revenue_by_month[month_key] += float(o.get("total") or 0)
+                participants_by_month[month_key] += int(o.get("participant_count") or 1)
         
         # Sortuj i weź ostatnie 6 miesięcy
         sorted_months = sorted(revenue_by_month.keys())[-6:]
@@ -3008,6 +3019,7 @@ def api_revenue_chart():
             year, month = m.split('-')
             labels.append(month_names_pl[int(month) - 1])
             values.append(round(revenue_by_month[m], 2))
+            participants_values.append(participants_by_month.get(m, 0))
         
         # Jeśli brak danych, wypełnij ostatnie 6 miesięcy zerami
         if not labels:
@@ -3015,11 +3027,13 @@ def api_revenue_chart():
                 m = (today.month - i - 1) % 12 + 1
                 labels.append(month_names_pl[m - 1])
                 values.append(0)
+                participants_values.append(0)
     
     return jsonify({
         "scale": scale,
         "labels": labels if labels else ["Brak danych"],
-        "values": values if values else [0]
+        "values": values if values else [0],
+        "participants": participants_values if participants_values else [0]
     })
 
 

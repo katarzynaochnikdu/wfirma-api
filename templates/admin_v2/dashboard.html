@@ -127,7 +127,7 @@
   <!-- Revenue Chart (2 kolumny) -->
   <div class="card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <h3 class="card-title">Przychód w czasie</h3>
+      <h3 class="card-title">Przychód i uczestnicy w czasie</h3>
       <div class="chart-scale-selector">
         <button type="button" class="scale-btn active" data-scale="day" onclick="changeRevenueScale('day')">Dzień</button>
         <button type="button" class="scale-btn" data-scale="week" onclick="changeRevenueScale('week')">Tydzień</button>
@@ -630,9 +630,10 @@ function changeRevenueScale(scale) {
     .then(data => {
       loader.classList.add('hidden');
       
-      if (data.labels && data.values && revenueChart) {
+      if (data.labels && data.values && data.participants && revenueChart) {
         revenueChart.data.labels = data.labels;
         revenueChart.data.datasets[0].data = data.values;
+        revenueChart.data.datasets[1].data = data.participants;
         revenueChart.update('active');
       }
     })
@@ -642,7 +643,7 @@ function changeRevenueScale(scale) {
     });
 }
 
-function createRevenueChart(labels, data) {
+function createRevenueChart(labels, revenueData, participantsData) {
   var revenueCtx = document.getElementById('revenueChart');
   if (!revenueCtx) return null;
   
@@ -651,8 +652,8 @@ function createRevenueChart(labels, data) {
     data: {
       labels: labels,
       datasets: [{
-        label: 'Przychód (PLN)',
-        data: data,
+        label: 'Przychód',
+        data: revenueData,
         borderColor: 'hsl(212, 100%, 42%)',
         backgroundColor: 'hsla(212, 100%, 42%, 0.1)',
         borderWidth: 2,
@@ -661,34 +662,91 @@ function createRevenueChart(labels, data) {
         pointBackgroundColor: 'hsl(212, 100%, 42%)',
         pointBorderColor: '#fff',
         pointBorderWidth: 2,
-        pointRadius: 4
+        pointRadius: 4,
+        yAxisID: 'y-revenue'
+      }, {
+        label: 'Uczestnicy',
+        data: participantsData,
+        borderColor: 'hsl(160, 82%, 44%)',
+        backgroundColor: 'hsla(160, 82%, 44%, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: 'hsl(160, 82%, 44%)',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        yAxisID: 'y-participants'
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
       plugins: {
         legend: {
-          display: false
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 12,
+            color: 'hsl(210, 10%, 30%)',
+            font: { size: 11, weight: '500' }
+          },
+          onClick: function(e, legendItem, legend) {
+            const index = legendItem.datasetIndex;
+            const chart = legend.chart;
+            const meta = chart.getDatasetMeta(index);
+            meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null;
+            chart.update();
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) label += ': ';
+              if (context.parsed.y !== null) {
+                if (context.datasetIndex === 0) {
+                  label += context.parsed.y.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' zł';
+                } else {
+                  label += context.parsed.y + ' osób';
+                }
+              }
+              return label;
+            }
+          }
         }
       },
       scales: {
         x: {
-          grid: {
-            display: false
-          },
+          grid: { display: false },
+          ticks: { color: 'hsl(210, 10%, 50%)' }
+        },
+        'y-revenue': {
+          type: 'linear',
+          position: 'left',
+          grid: { color: 'hsla(210, 10%, 50%, 0.1)' },
           ticks: {
-            color: 'hsl(210, 10%, 50%)'
+            color: 'hsl(212, 100%, 42%)',
+            callback: function(value) {
+              return value.toLocaleString('pl-PL', {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ' zł';
+            }
           }
         },
-        y: {
-          grid: {
-            color: 'hsla(210, 10%, 50%, 0.1)'
-          },
+        'y-participants': {
+          type: 'linear',
+          position: 'right',
+          grid: { display: false },
           ticks: {
-            color: 'hsl(210, 10%, 50%)',
+            color: 'hsl(160, 82%, 44%)',
             callback: function(value) {
-              return value.toLocaleString('pl-PL') + ' zł';
+              return Math.round(value) + ' os.';
             }
           }
         }
@@ -724,14 +782,14 @@ document.addEventListener('DOMContentLoaded', function() {
   fetch(initialChartUrl)
     .then(res => res.json())
     .then(data => {
-      if (data.labels && data.values) {
-        revenueChart = createRevenueChart(data.labels, data.values);
+      if (data.labels && data.values && data.participants) {
+        revenueChart = createRevenueChart(data.labels, data.values, data.participants);
       } else {
-        revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData);
+        revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData, [0,0,0,0,0,0,0,0]);
       }
     })
     .catch(() => {
-      revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData);
+      revenueChart = createRevenueChart(finalRevenueLabels, finalRevenueData, [0,0,0,0,0,0,0,0]);
     });
   
   // Payment Status Chart (Doughnut)
