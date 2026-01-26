@@ -5949,10 +5949,35 @@ def event_room(event_id: str):
         email["sent_at"] = email.get("created_at")
     
     # Statystyki
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    
     paid_orders = [o for o in orders if o.get("status") == "paid"]
     pending_orders = [o for o in orders if o.get("status") == "pending_payment"]
+    
+    # Rozdziel oczekujące na przeterminowane i w terminie
+    overdue_orders = []
+    in_time_pending = []
+    for o in pending_orders:
+        due_date = o.get("payment_due_date")
+        if due_date:
+            if isinstance(due_date, str):
+                try:
+                    due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                except:
+                    due_date = None
+            if due_date and due_date < now:
+                overdue_orders.append(o)
+                continue
+        in_time_pending.append(o)
+    
     total_revenue = sum(float(o.get("total") or 0) for o in paid_orders)
-    pending_revenue = sum(float(o.get("total") or 0) for o in pending_orders)
+    pending_revenue = sum(float(o.get("total") or 0) for o in in_time_pending)
+    overdue_revenue = sum(float(o.get("total") or 0) for o in overdue_orders)
+    
+    # Zlicz uczestników per status zamówienia
+    paid_order_ids = {o.get("event_order_id") for o in paid_orders}
+    pending_order_ids = {o.get("event_order_id") for o in pending_orders}
     
     # Filtruj emaile - tylko zewnętrzne (nie internal_*, nie do admina)
     def is_internal_email(e):
@@ -5968,13 +5993,21 @@ def event_room(event_id: str):
     email_errors = len([e for e in external_emails if e.get("status") in ("failed", "error", "bounced")])
     notified = len([p for p in participants if p.get("status") == "emailed"])
     
+    # Zlicz uczestników per status zamówienia
+    participants_paid = len([p for p in participants if p.get("event_order_id") in paid_order_ids])
+    participants_pending = len([p for p in participants if p.get("event_order_id") in pending_order_ids])
+    
     stats = {
         "orders": len(orders),
         "paid": len(paid_orders),
-        "pending": len(pending_orders),
+        "pending": len(in_time_pending),
+        "overdue": len(overdue_orders),
         "participants": len(participants),
+        "participants_paid": participants_paid,
+        "participants_pending": participants_pending,
         "revenue": total_revenue,
         "pending_revenue": pending_revenue,
+        "overdue_revenue": overdue_revenue,
         "email_errors": email_errors,
         "emails_sent": len(sent_emails),
         "notified": notified,
@@ -6013,6 +6046,135 @@ def event_room(event_id: str):
     # Pobierz typy biletów dla tego wydarzenia
     from pg_storage import get_ticket_classes
     ticket_classes = get_ticket_classes(event_id) or []
+    
+    # === Grupowanie zamówień per kod rabatowy (dla wykresu) ===
+    promo_code_stats = {}
+    for o in orders:
+        code = o.get("promo_code") or ""
+        if code not in promo_code_stats:
+            promo_code_stats[code] = {
+                "code": code,
+                "display_name": code if code else "Bez rabatu",
+                "orders": [],
+                "orders_count": 0,
+                "orders_paid": 0,
+                "orders_pending": 0,
+                "orders_overdue": 0,
+                "revenue_paid": 0,
+                "revenue_pending": 0,
+                "revenue_overdue": 0,
+            }
+        
+        entry = promo_code_stats[code]
+        entry["orders"].append(o)
+        entry["orders_count"] += 1
+        
+        total = float(o.get("total") or 0)
+        status = o.get("status")
+        due_date = o.get("payment_due_date")
+        
+        if status == "paid":
+            entry["orders_paid"] += 1
+            entry["revenue_paid"] += total
+        elif status == "pending_payment":
+            # Sprawdź czy przeterminowane
+            is_overdue = False
+            if due_date:
+                if isinstance(due_date, str):
+                    try:
+                        due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                    except:
+                        due_date = None
+                if due_date and due_date < now:
+                    is_overdue = True
+            
+            if is_overdue:
+                entry["orders_overdue"] += 1
+                entry["revenue_overdue"] += total
+            else:
+                entry["orders_pending"] += 1
+                entry["revenue_pending"] += total
+    
+    # Konwertuj do listy i posortuj (najpierw "Bez rabatu", potem reszta alfabetycznie)
+    discount_codes = list(promo_code_stats.values())
+    discount_codes.sort(key=lambda x: ("" if x["code"] == "" else x["code"].lower()))
+    
+    # Oblicz max_revenue dla skalowania pasków
+    max_code_revenue = max(
+        (c["revenue_paid"] + c["revenue_pending"] + c["revenue_overdue"] for c in discount_codes),
+        default=1
+    ) or 1
+    
+    # === Grupowanie uczestników per typ biletu (dla wykresu) ===
+    # Mapuj order_id -> status zamówienia (paid/pending/overdue)
+    order_status_map = {}
+    for o in orders:
+        oid = o.get("event_order_id")
+        status = o.get("status")
+        due_date = o.get("payment_due_date")
+        
+        if status == "paid":
+            order_status_map[oid] = "paid"
+        elif status == "pending_payment":
+            is_overdue = False
+            if due_date:
+                if isinstance(due_date, str):
+                    try:
+                        due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                    except:
+                        due_date = None
+                if due_date and due_date < now:
+                    is_overdue = True
+            order_status_map[oid] = "overdue" if is_overdue else "pending"
+        else:
+            order_status_map[oid] = status or "unknown"
+    
+    ticket_type_stats = {}
+    for p in participants:
+        ticket_id = p.get("ticket_class_id") or "unknown"
+        ticket_name = p.get("ticket_class_name") or "Standard"
+        # Wyczyść nazwę biletu
+        if ticket_name:
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
+        if not ticket_name or (len(str(ticket_id)) > 10 and str(ticket_id).isdigit()):
+            ticket_name = "Standard"
+        
+        if ticket_id not in ticket_type_stats:
+            ticket_type_stats[ticket_id] = {
+                "ticket_id": ticket_id,
+                "ticket_name": ticket_name,
+                "participants": [],
+                "participants_total": 0,
+                "participants_paid": 0,
+                "participants_pending": 0,
+                "participants_overdue": 0,
+            }
+        
+        entry = ticket_type_stats[ticket_id]
+        entry["participants_total"] += 1
+        
+        # Status uczestnika na podstawie statusu zamówienia
+        order_id = p.get("event_order_id")
+        p_status = order_status_map.get(order_id, "unknown")
+        p["payment_status"] = p_status  # Dodaj status do uczestnika
+        entry["participants"].append(p)
+        
+        if p_status == "paid":
+            entry["participants_paid"] += 1
+        elif p_status == "pending":
+            entry["participants_pending"] += 1
+        elif p_status == "overdue":
+            entry["participants_overdue"] += 1
+    
+    # Konwertuj do listy i posortuj po nazwie
+    ticket_stats = list(ticket_type_stats.values())
+    ticket_stats.sort(key=lambda x: x["ticket_name"].lower())
+    
+    # Oblicz max_participants dla skalowania pasków
+    max_ticket_participants = max(
+        (t["participants_total"] for t in ticket_stats),
+        default=1
+    ) or 1
 
     return render_template(
         "admin_v2/event_room.html",
@@ -6025,5 +6187,9 @@ def event_room(event_id: str):
         emails=emails,
         buckets=buckets,
         ticket_classes=ticket_classes,
+        discount_codes=discount_codes,
+        max_code_revenue=max_code_revenue,
+        ticket_stats=ticket_stats,
+        max_ticket_participants=max_ticket_participants,
         **_get_common_context(user),
     )

@@ -180,6 +180,322 @@
     </div>
   </div>
   
+  <!-- WYKRES SPRZEDAŻY PER KOD RABATOWY -->
+  <div class="card sales-chart-card discount-stats-card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <h3 class="card-title-with-icon">
+        <i data-lucide="trending-up"></i>
+        Przychód per kod rabatowy
+      </h3>
+      <div class="sales-chart-legend">
+        <div class="legend-item">
+          <span class="legend-dot legend-dot-success"></span>
+          <span>Opłacone</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot legend-dot-warning"></span>
+          <span>Oczekujące</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot legend-dot-destructive"></span>
+          <span>Przeterminowane</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="discount-accordion">
+        {% for code in discount_codes %}
+        <div class="discount-accordion-item {% if code.orders_overdue > 0 %}has-problems{% endif %}" 
+             data-state="closed" data-code="{{ code.code or 'no-code' }}">
+          
+          <!-- Trigger (nagłówek wiersza) -->
+          <button type="button" class="discount-accordion-trigger" 
+                  onclick="toggleDiscountAccordion('{{ code.code or 'no-code' }}')">
+            <div class="discount-accordion-trigger-inner">
+              
+              <!-- Nazwa kodu -->
+              <span class="discount-code-name" title="{{ code.display_name }}">
+                {% if code.code %}
+                <i data-lucide="ticket" style="width: 14px; height: 14px; opacity: 0.5;"></i>
+                {% endif %}
+                {{ code.display_name }}
+              </span>
+              
+              <!-- Stacked Bar -->
+              {% set code_total = code.revenue_paid + code.revenue_pending + code.revenue_overdue %}
+              <div class="stacked-bar">
+                {% if code.revenue_paid > 0 %}
+                <div class="stacked-bar-segment stacked-bar-segment-paid" 
+                     style="width: {{ (code.revenue_paid / max_code_revenue * 100)|round(1) }}%"
+                     title="Opłacone: {{ code.revenue_paid|format_currency }}"></div>
+                {% endif %}
+                {% if code.revenue_pending > 0 %}
+                <div class="stacked-bar-segment stacked-bar-segment-pending" 
+                     style="width: {{ (code.revenue_pending / max_code_revenue * 100)|round(1) }}%"
+                     title="Oczekujące: {{ code.revenue_pending|format_currency }}"></div>
+                {% endif %}
+                {% if code.revenue_overdue > 0 %}
+                <div class="stacked-bar-segment stacked-bar-segment-overdue" 
+                     style="width: {{ (code.revenue_overdue / max_code_revenue * 100)|round(1) }}%"
+                     title="Przeterminowane: {{ code.revenue_overdue|format_currency }}"></div>
+                {% endif %}
+              </div>
+              
+              <!-- Wartości -->
+              <div class="discount-values">
+                <span class="discount-value-paid">{{ code.revenue_paid|format_currency }}</span>
+                {% if code.revenue_pending > 0 or code.revenue_overdue > 0 %}
+                <span class="discount-value-pending {% if code.revenue_overdue > 0 %}has-overdue{% endif %}">
+                  +{{ (code.revenue_pending + code.revenue_overdue)|format_currency }}
+                </span>
+                {% endif %}
+              </div>
+              
+            </div>
+            
+            <!-- Chevron -->
+            <i data-lucide="chevron-down" class="accordion-chevron"></i>
+          </button>
+          
+          <!-- Content (rozwinięty) -->
+          <div class="discount-accordion-content" style="display: none;">
+            
+            <!-- Stats Summary -->
+            <div class="discount-stats-summary">
+              <span class="discount-stats-summary-item">
+                Zamówienia: <strong>{{ code.orders_count }}</strong>
+              </span>
+              <span class="discount-stats-summary-item success">
+                Opłacone: <strong>{{ code.orders_paid }}</strong>
+              </span>
+              {% if code.orders_pending > 0 %}
+              <span class="discount-stats-summary-item warning">
+                Oczekujące: <strong>{{ code.orders_pending }}</strong>
+              </span>
+              {% endif %}
+              {% if code.orders_overdue > 0 %}
+              <span class="discount-stats-summary-item destructive">
+                Przeterminowane: <strong>{{ code.orders_overdue }}</strong>
+              </span>
+              {% endif %}
+            </div>
+            
+            <!-- Orders List -->
+            <div class="order-list">
+              {% for order in code.orders[:10] %}
+              <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.event_order_id) }}" class="order-row">
+                <div class="order-row-info">
+                  <div class="order-row-name">{{ order.purchaser_first_name }} {{ order.purchaser_last_name }}</div>
+                  <div class="order-row-email">{{ order.purchaser_email }}</div>
+                </div>
+                <div class="order-row-amount">
+                  <div class="order-row-amount-value">{{ order.total|format_currency }}</div>
+                  <div class="order-row-amount-date">{{ order.created_at|format_date_pl }}</div>
+                </div>
+                
+                <!-- Status Badge -->
+                {% if order.status == 'paid' %}
+                <span class="status-badge status-badge-paid">
+                  <i data-lucide="check-circle" class="status-badge-icon"></i>
+                  Opłacone
+                </span>
+                {% elif order.status == 'pending_payment' %}
+                <span class="status-badge status-badge-pending">
+                  <i data-lucide="clock" class="status-badge-icon"></i>
+                  Oczekuje
+                </span>
+                {% else %}
+                <span class="status-badge status-badge-cancelled">
+                  <i data-lucide="x-circle" class="status-badge-icon"></i>
+                  {{ order.status }}
+                </span>
+                {% endif %}
+                
+                <i data-lucide="chevron-right" class="order-row-chevron"></i>
+              </a>
+              {% endfor %}
+              {% if code.orders|length > 10 %}
+              <div class="order-list-more">
+                ... i {{ code.orders|length - 10 }} więcej zamówień
+              </div>
+              {% endif %}
+            </div>
+            
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      
+      <!-- Footer - suma -->
+      <div class="discount-stats-footer">
+        <span class="discount-stats-footer-label">Suma ({{ stats.orders }} zamówień)</span>
+        <div class="discount-stats-footer-values">
+          <span class="discount-stats-footer-paid">{{ stats.revenue|format_currency }}</span>
+          {% if stats.pending_revenue > 0 %}
+          <span class="discount-stats-footer-pending">+{{ stats.pending_revenue|format_currency }}</span>
+          {% endif %}
+          {% if stats.overdue_revenue > 0 %}
+          <span class="discount-stats-footer-overdue">+{{ stats.overdue_revenue|format_currency }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- WYKRES UCZESTNIKÓW PER TYP BILETU -->
+  <div class="card sales-chart-card ticket-stats-card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <h3 class="card-title-with-icon">
+        <i data-lucide="users"></i>
+        Uczestnicy per typ biletu
+      </h3>
+      <div class="sales-chart-legend">
+        <div class="legend-item">
+          <span class="legend-dot legend-dot-success"></span>
+          <span>Opłaceni</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot legend-dot-warning"></span>
+          <span>Oczekujący</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot legend-dot-destructive"></span>
+          <span>Przeterminowani</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="discount-accordion">
+        {% for ticket in ticket_stats %}
+        <div class="discount-accordion-item {% if ticket.participants_overdue > 0 %}has-problems{% endif %}" 
+             data-state="closed" data-code="ticket-{{ ticket.ticket_id }}">
+          
+          <!-- Trigger (nagłówek wiersza) -->
+          <button type="button" class="discount-accordion-trigger" 
+                  onclick="toggleDiscountAccordion('ticket-{{ ticket.ticket_id }}')">
+            <div class="discount-accordion-trigger-inner">
+              
+              <!-- Nazwa typu biletu -->
+              <span class="discount-code-name ticket-type-name" title="{{ ticket.ticket_name }}">
+                <i data-lucide="ticket" style="width: 14px; height: 14px; opacity: 0.5;"></i>
+                {{ ticket.ticket_name }}
+              </span>
+              
+              <!-- Stacked Bar -->
+              <div class="stacked-bar">
+                {% if ticket.participants_paid > 0 %}
+                <div class="stacked-bar-segment stacked-bar-segment-paid" 
+                     style="width: {{ (ticket.participants_paid / max_ticket_participants * 100)|round(1) }}%"
+                     title="Opłaceni: {{ ticket.participants_paid }}"></div>
+                {% endif %}
+                {% if ticket.participants_pending > 0 %}
+                <div class="stacked-bar-segment stacked-bar-segment-pending" 
+                     style="width: {{ (ticket.participants_pending / max_ticket_participants * 100)|round(1) }}%"
+                     title="Oczekujący: {{ ticket.participants_pending }}"></div>
+                {% endif %}
+                {% if ticket.participants_overdue > 0 %}
+                <div class="stacked-bar-segment stacked-bar-segment-overdue" 
+                     style="width: {{ (ticket.participants_overdue / max_ticket_participants * 100)|round(1) }}%"
+                     title="Przeterminowani: {{ ticket.participants_overdue }}"></div>
+                {% endif %}
+              </div>
+              
+              <!-- Wartości (osoby) -->
+              <div class="participant-values">
+                <span class="participant-value-paid">{{ ticket.participants_paid }}</span>
+                {% if ticket.participants_pending > 0 or ticket.participants_overdue > 0 %}
+                <span class="participant-value-pending {% if ticket.participants_overdue > 0 %}has-overdue{% endif %}">
+                  +{{ ticket.participants_pending + ticket.participants_overdue }}
+                </span>
+                {% endif %}
+                <span class="participant-value-suffix">osób</span>
+              </div>
+              
+            </div>
+            
+            <!-- Chevron -->
+            <i data-lucide="chevron-down" class="accordion-chevron"></i>
+          </button>
+          
+          <!-- Content (rozwinięty) -->
+          <div class="discount-accordion-content" style="display: none;">
+            
+            <!-- Stats Summary -->
+            <div class="discount-stats-summary">
+              <span class="discount-stats-summary-item">
+                Razem: <strong>{{ ticket.participants_total }}</strong>
+              </span>
+              <span class="discount-stats-summary-item success">
+                Opłaceni: <strong>{{ ticket.participants_paid }}</strong>
+              </span>
+              {% if ticket.participants_pending > 0 %}
+              <span class="discount-stats-summary-item warning">
+                Oczekujący: <strong>{{ ticket.participants_pending }}</strong>
+              </span>
+              {% endif %}
+              {% if ticket.participants_overdue > 0 %}
+              <span class="discount-stats-summary-item destructive">
+                Przeterminowani: <strong>{{ ticket.participants_overdue }}</strong>
+              </span>
+              {% endif %}
+            </div>
+            
+            <!-- Participants List -->
+            <div class="participant-list">
+              {% for p in ticket.participants[:10] %}
+              <a href="{{ url_for('admin_v2_bp.order_detail', order_id=p.event_order_id) }}" class="participant-row">
+                <div class="participant-row-info">
+                  <div class="participant-row-name">{{ p.first_name }} {{ p.last_name }}</div>
+                  <div class="participant-row-email">{{ p.email }}</div>
+                </div>
+                
+                <!-- Status Badge -->
+                {% if p.payment_status == 'paid' %}
+                <span class="status-badge status-badge-paid">
+                  <i data-lucide="check-circle" class="status-badge-icon"></i>
+                  Opłacone
+                </span>
+                {% elif p.payment_status == 'overdue' %}
+                <span class="status-badge status-badge-overdue">
+                  <i data-lucide="alert-triangle" class="status-badge-icon"></i>
+                  Przeterminowane
+                </span>
+                {% else %}
+                <span class="status-badge status-badge-pending">
+                  <i data-lucide="clock" class="status-badge-icon"></i>
+                  Oczekuje
+                </span>
+                {% endif %}
+                
+                <i data-lucide="chevron-right" class="participant-row-chevron"></i>
+              </a>
+              {% endfor %}
+              {% if ticket.participants|length > 10 %}
+              <div class="order-list-more">
+                ... i {{ ticket.participants|length - 10 }} więcej uczestników
+              </div>
+              {% endif %}
+            </div>
+            
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      
+      <!-- Footer - suma -->
+      <div class="discount-stats-footer">
+        <span class="discount-stats-footer-label">Suma ({{ stats.participants }} uczestników)</span>
+        <div class="discount-stats-footer-values">
+          <span class="discount-stats-footer-paid">{{ stats.participants_paid }}</span>
+          {% if stats.participants_pending > 0 %}
+          <span class="discount-stats-footer-pending">+{{ stats.participants_pending }}</span>
+          {% endif %}
+          <span class="participant-value-suffix">osób</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
   <div class="sales-cards-grid">
     <!-- Przychody -->
     <div class="card sales-revenue-card">
@@ -958,6 +1274,399 @@
   /* Tab panel visibility */
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
+  
+  /* ===== SALES CHART CARD / DISCOUNT STATS ===== */
+  .sales-chart-card {
+    margin-bottom: 1.5rem;
+  }
+  
+  .sales-chart-legend {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.75rem;
+  }
+  
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  
+  .legend-dot {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 0.25rem;
+  }
+  
+  .legend-dot-success { background: hsl(142, 76%, 36%); }
+  .legend-dot-warning { background: hsl(38, 92%, 50%); }
+  .legend-dot-destructive { background: hsl(0, 84%, 60%); }
+  
+  .stacked-bar {
+    flex: 1;
+    height: 1.5rem;
+    background: hsl(210, 40%, 96%);
+    border-radius: 0.25rem;
+    overflow: hidden;
+    display: flex;
+  }
+  
+  .stacked-bar-segment {
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+  
+  .stacked-bar-segment-paid { background: hsl(142, 76%, 36%); }
+  .stacked-bar-segment-pending { background: hsl(38, 92%, 50%); }
+  .stacked-bar-segment-overdue { background: hsl(0, 84%, 60%); }
+  
+  /* Discount Accordion */
+  .discount-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .discount-accordion-item {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  
+  .discount-accordion-item.has-problems {
+    border-color: hsl(0, 84%, 60%, 0.3);
+  }
+  
+  .discount-accordion-trigger {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+  }
+  
+  .discount-accordion-trigger:hover {
+    background: hsl(210, 40%, 96%, 0.5);
+  }
+  
+  .discount-accordion-trigger-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+    margin-right: 1rem;
+  }
+  
+  .discount-code-name {
+    font-size: 0.875rem;
+    width: 140px;
+    min-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  
+  .discount-values {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 160px;
+    min-width: 160px;
+    justify-content: flex-end;
+  }
+  
+  .discount-value-paid {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: hsl(142, 76%, 36%);
+    font-variant-numeric: tabular-nums;
+  }
+  
+  .discount-value-pending {
+    font-size: 0.75rem;
+    color: hsl(38, 92%, 50%);
+    font-variant-numeric: tabular-nums;
+  }
+  
+  .discount-value-pending.has-overdue {
+    color: hsl(0, 84%, 60%);
+  }
+  
+  .accordion-chevron {
+    width: 1rem;
+    height: 1rem;
+    color: var(--muted-foreground);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  
+  .discount-accordion-item[data-state="open"] .accordion-chevron {
+    transform: rotate(180deg);
+  }
+  
+  .discount-accordion-content {
+    padding: 0 1rem 1rem;
+  }
+  
+  .discount-stats-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.75rem;
+  }
+  
+  .discount-stats-summary-item {
+    color: var(--muted-foreground);
+  }
+  
+  .discount-stats-summary-item strong {
+    color: var(--foreground);
+    font-weight: 600;
+  }
+  
+  .discount-stats-summary-item.success { color: hsl(142, 76%, 36%); }
+  .discount-stats-summary-item.warning { color: hsl(38, 92%, 50%); }
+  .discount-stats-summary-item.destructive { color: hsl(0, 84%, 60%); }
+  
+  /* Order rows in accordion */
+  .order-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .order-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    transition: background 0.15s;
+    text-decoration: none;
+    color: inherit;
+  }
+  
+  .order-row:hover {
+    background: hsl(210, 40%, 96%, 0.5);
+  }
+  
+  .order-row-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .order-row-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .order-row-email {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .order-row-amount {
+    text-align: right;
+  }
+  
+  .order-row-amount-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  
+  .order-row-amount-date {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+  
+  .order-row-chevron {
+    width: 1rem;
+    height: 1rem;
+    color: var(--muted-foreground);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  
+  .order-row:hover .order-row-chevron {
+    opacity: 1;
+  }
+  
+  .order-list-more {
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+  
+  /* Status badges in accordion */
+  .status-badge-paid {
+    background: hsl(142, 76%, 36%, 0.1);
+    color: hsl(142, 76%, 36%);
+    border-color: hsl(142, 76%, 36%, 0.3);
+  }
+  
+  .status-badge-pending {
+    background: hsl(38, 92%, 50%, 0.1);
+    color: hsl(38, 92%, 50%);
+    border-color: hsl(38, 92%, 50%, 0.3);
+  }
+  
+  .status-badge-overdue {
+    background: hsl(0, 84%, 60%, 0.1);
+    color: hsl(0, 84%, 60%);
+    border-color: hsl(0, 84%, 60%, 0.3);
+  }
+  
+  .status-badge-icon {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  
+  /* Footer */
+  .discount-stats-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 1rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.875rem;
+  }
+  
+  .discount-stats-footer-label {
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  
+  .discount-stats-footer-values {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  
+  .discount-stats-footer-paid {
+    font-weight: 700;
+    color: hsl(142, 76%, 36%);
+  }
+  
+  .discount-stats-footer-pending {
+    color: hsl(38, 92%, 50%);
+  }
+  
+  .discount-stats-footer-overdue {
+    color: hsl(0, 84%, 60%);
+  }
+  
+  /* Participant values (for ticket stats chart) */
+  .participant-values {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 120px;
+    min-width: 120px;
+    justify-content: flex-end;
+  }
+  
+  .participant-value-paid {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: hsl(142, 76%, 36%);
+    font-variant-numeric: tabular-nums;
+  }
+  
+  .participant-value-pending {
+    font-size: 0.75rem;
+    color: hsl(38, 92%, 50%);
+    font-variant-numeric: tabular-nums;
+  }
+  
+  .participant-value-pending.has-overdue {
+    color: hsl(0, 84%, 60%);
+  }
+  
+  .participant-value-suffix {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+  
+  /* Participant rows */
+  .participant-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .participant-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    transition: background 0.15s;
+    text-decoration: none;
+    color: inherit;
+  }
+  
+  .participant-row:hover {
+    background: hsl(210, 40%, 96%, 0.5);
+  }
+  
+  .participant-row-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .participant-row-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .participant-row-email {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .participant-row-chevron {
+    width: 1rem;
+    height: 1rem;
+    color: var(--muted-foreground);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  
+  .participant-row:hover .participant-row-chevron {
+    opacity: 1;
+  }
+  
+  .ticket-type-name {
+    font-family: inherit;
+  }
 
   /* ===== STICKY EVENT BANNER (jak w order_detail) ===== */
   .event-sticky-banner {
@@ -2164,6 +2873,27 @@
 
 {% block extra_scripts %}
 <script>
+// ===== DISCOUNT ACCORDION =====
+function toggleDiscountAccordion(code) {
+  const item = document.querySelector(`.discount-accordion-item[data-code="${code}"]`);
+  if (!item) return;
+  
+  const content = item.querySelector('.discount-accordion-content');
+  const currentState = item.dataset.state;
+  
+  if (currentState === 'open') {
+    item.dataset.state = 'closed';
+    content.style.display = 'none';
+  } else {
+    item.dataset.state = 'open';
+    content.style.display = 'block';
+    // Re-initialize Lucide icons for newly visible content
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  }
+}
+
 // ===== DELETE EVENT WITH DATA =====
 async function deleteEventWithData() {
   const eventName = '{{ event.event_name|e }}';
