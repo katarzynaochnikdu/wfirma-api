@@ -108,6 +108,12 @@
             <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
           </div>
         </th>
+        <th class="sortable-header" data-sort="company">
+          <div style="display: flex; align-items: center; gap: 0.375rem;">
+            Firma
+            <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+          </div>
+        </th>
         <th class="sortable-header" data-sort="event">
           <div style="display: flex; align-items: center; gap: 0.375rem;">
             Wydarzenie
@@ -162,11 +168,12 @@
             <div style="min-width: 0;">
               <p style="font-size: 0.875rem; font-weight: 500;">{{ p.first_name or '' }} {{ p.last_name or '' }}</p>
               <p style="font-size: 0.75rem; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.email or '—' }}</p>
-              {% if p.company %}
-              <p style="font-size: 0.75rem; color: var(--muted-foreground); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.company }}</p>
-              {% endif %}
             </div>
           </div>
+        </td>
+        <!-- Firma (Placówka na identyfikatorze) -->
+        <td>
+          <span style="font-size: 0.875rem; color: var(--muted-foreground);">{{ p.company or '—' }}</span>
         </td>
         <!-- Wydarzenie -->
         <td>
@@ -220,7 +227,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" style="text-align: center; color: var(--muted-foreground); padding: 3rem;">
+        <td colspan="8" style="text-align: center; color: var(--muted-foreground); padding: 3rem;">
           <p>Brak uczestników pasujących do filtrów</p>
         </td>
       </tr>
