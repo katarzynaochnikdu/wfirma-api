@@ -37,7 +37,7 @@
     
     /* Muted */
     --muted: hsl(210, 40%, 96%);
-    --muted-foreground: hsl(215, 16%, 47%);
+    --muted-foreground: hsl(215, 25%, 25%);
     
     /* Borders */
     --border: hsl(214, 32%, 91%);
@@ -48,7 +48,7 @@
     
     /* Sidebar */
     --sidebar-bg: hsl(0, 0%, 100%);
-    --sidebar-foreground: hsl(215, 16%, 47%);
+    --sidebar-foreground: hsl(215, 25%, 25%);
     --sidebar-border: hsl(214, 32%, 91%);
     --sidebar-width: 16rem;
     --sidebar-collapsed: 4rem;

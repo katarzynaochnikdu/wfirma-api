@@ -392,8 +392,9 @@
                         <div style="color: #374151; font-size: 0.75rem;">{{ task.error_data.purchaser_email or '' }}</div>
                       </td>
                       <!-- Date & Time -->
-                      <td style="padding: 0.75rem; vertical-align: top; color: #000000; white-space: pre-line;">
-                        {{ task.error_data.order_date or '-' }}
+                      <td style="padding: 0.75rem; vertical-align: top;">
+                        <div style="color: #000000;">{{ task.error_data.order_date or '-' }}</div>
+                        <div style="color: #6b7280; font-size: 0.75rem;">{{ task.error_data.order_time or '' }}</div>
                       </td>
                       <!-- Amount -->
                       <td style="padding: 0.75rem; vertical-align: top;">

@@ -3917,27 +3917,31 @@ def create_todo_task_for_order(order_id: str) -> Optional[int]:
     netto_formatted = f"{netto:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
     vat_formatted = f"{vat:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
     
-    # Formatowanie dat w stylu Backstage (np. "sty 23, 2026 09:45 AM")
+    # Formatowanie dat w stylu Backstage (np. "sty 23, 2026" i "09:45 AM")
     months_short = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru']
     
     def format_date_backstage(dt):
+        """Zwraca tuple (data, godzina) w stylu Backstage."""
         if not dt:
-            return ""
+            return ("", "")
         if isinstance(dt, str):
             try:
                 dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
             except:
-                return str(dt)
-        # Format: "sty 23, 2026" + godzina
+                return (str(dt), "")
+        # Format daty: "sty 23, 2026"
+        date_str = f"{months_short[dt.month - 1]} {dt.day}, {dt.year}"
+        # Format godziny: "09:45 AM"
         hour = dt.hour
         am_pm = "AM" if hour < 12 else "PM"
         hour_12 = hour if hour <= 12 else hour - 12
         if hour_12 == 0:
             hour_12 = 12
-        return f"{months_short[dt.month - 1]} {dt.day}, {dt.year}\n{hour_12:02d}:{dt.minute:02d} {am_pm}"
+        time_str = f"{hour_12:02d}:{dt.minute:02d} {am_pm}"
+        return (date_str, time_str)
     
-    order_date = format_date_backstage(order.get("created_at"))
-    paid_at = format_date_backstage(order.get("paid_at"))
+    order_date, order_time = format_date_backstage(order.get("created_at"))
+    paid_date, paid_time = format_date_backstage(order.get("paid_at"))
     
     # Metoda płatności
     payment_option = order.get("payment_option_name", "")
@@ -3978,7 +3982,9 @@ def create_todo_task_for_order(order_id: str) -> Optional[int]:
         "promo_code": promo_code,
         "participants_count": participants_count,
         "order_date": order_date,
-        "paid_at": paid_at,
+        "order_time": order_time,
+        "paid_date": paid_date,
+        "paid_time": paid_time,
         "order_number": order_number,
         "order_id_full": order_id,
     }
