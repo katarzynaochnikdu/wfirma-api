@@ -3889,6 +3889,17 @@ def create_todo_task_for_order(order_id: str) -> Optional[int]:
     event = get_event(event_id) if event_id else None
     event_name = event.get("event_name", "") if event else ""
     
+    # Pobierz link do zamówień w Backstage z konfiguracji eventu
+    backstage_orders_url = ""
+    if event:
+        event_data = event.get("data") or {}
+        if isinstance(event_data, dict):
+            backstage_orders_url = (
+                event_data.get("backstage_orders_url") or 
+                event_data.get("event_orders_link") or 
+                ""
+            )
+    
     # Pobierz uczestników
     participants = get_participants_for_order(order_id)
     participants_count = len(participants)
@@ -3987,6 +3998,7 @@ def create_todo_task_for_order(order_id: str) -> Optional[int]:
         "paid_time": paid_time,
         "order_number": order_number,
         "order_id_full": order_id,
+        "backstage_orders_url": backstage_orders_url,
     }
     
     # Opis zadania

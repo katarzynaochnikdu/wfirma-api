@@ -439,6 +439,16 @@
                   {% endif %}
                 </div>
                 {% endif %}
+                
+                <!-- Przycisk do Backstage Orders -->
+                {% if task.error_data.backstage_orders_url %}
+                <div style="padding: 0.625rem 0.75rem; border-top: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.5rem;">
+                  <a href="{{ task.error_data.backstage_orders_url }}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: #7c3aed; color: white; border-radius: 6px; font-size: 0.8125rem; font-weight: 500; text-decoration: none;">
+                    <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+                    Otwórz zamówienia w Backstage
+                  </a>
+                </div>
+                {% endif %}
               </div>
               {% endif %}
               
