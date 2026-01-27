@@ -460,8 +460,14 @@ def _get_common_context(user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
     if user is None:
         user = _get_current_admin_user()
     
-    # Licznik błędów do wyświetlenia w sidebarze (na razie placeholder)
+    # Licznik zadań do wyświetlenia w sidebarze (nierozwiązane zadania z error_queue)
     work_queue_count = 0
+    try:
+        from pg_storage import get_error_queue_stats
+        stats = get_error_queue_stats()
+        work_queue_count = stats.get("total", 0) if stats else 0
+    except Exception:
+        pass  # Jeśli baza niedostępna, pokaż 0
     
     return {
         "user_email": user.get("email") if user else None,
@@ -2172,6 +2178,177 @@ def order_resend_ticket(order_id: str):
         "errors": errors[:5] if errors else [],  # Ogranicz liczbę błędów w odpowiedzi
         "message": message,
     })
+
+
+@admin_v2_bp.route("/participants/<int:participant_id>/send-ticket", methods=["POST"])
+@_require_permission("participants")
+def participant_send_ticket(participant_id: int):
+    """Wysyła potwierdzenie rezerwacji do pojedynczego uczestnika."""
+    from flask import jsonify
+    from pg_storage import get_participant_by_id, save_mail_log, get_event, get_ticket_classes, update_participant_status
+    from backstage_engine import _send_email_via_make
+    from email_templates import render_participant_ticket_email
+    import traceback
+    import json
+    
+    print(f"[participant_send_ticket] START participant_id={participant_id}")
+    
+    try:
+        user = _get_current_admin_user()
+        
+        # Pobranie uczestnika (zawiera dane zamówienia i wydarzenia przez JOIN)
+        participant = get_participant_by_id(participant_id)
+        if not participant:
+            print(f"[participant_send_ticket] Uczestnik {participant_id} nie znaleziony")
+            return jsonify({"success": False, "error": "Nie znaleziono uczestnika"}), 404
+        
+        event_id = participant.get("event_id", "")
+        order_id = participant.get("event_order_id", "")
+        order_status = participant.get("order_status", "")
+        
+        print(f"[participant_send_ticket] participant found: email={participant.get('email')}, order_status={order_status}")
+        
+        # Sprawdź uprawnienia
+        if event_id and not _user_has_event_access(user, event_id):
+            return jsonify({"success": False, "error": "Brak dostępu do tego uczestnika"}), 403
+        
+        # Viewer nie może wysyłać
+        if _is_viewer(user):
+            return jsonify({"success": False, "error": "Nie masz uprawnień do wysyłania potwierdzeń"}), 403
+        
+        # Sprawdź status zamówienia (tylko paid)
+        if order_status != "paid":
+            return jsonify({"success": False, "error": "Zamówienie nie jest opłacone"}), 400
+        
+        # Sprawdź email uczestnika
+        participant_email = participant.get("email", "")
+        if not participant_email:
+            return jsonify({"success": False, "error": "Uczestnik nie ma adresu email"}), 400
+        
+        # Pobierz dane wydarzenia
+        event_name = participant.get("event_name", "Wydarzenie")
+        event_config = participant.get("event_data") or {}
+        if isinstance(event_config, str):
+            try:
+                event_config = json.loads(event_config)
+            except:
+                event_config = {}
+        
+        # Pobierz mapę nazw biletów
+        ticket_classes = get_ticket_classes(event_id) if event_id else []
+        ticket_class_name_map = {tc.get("ticket_class_id"): tc.get("ticket_name") for tc in ticket_classes if tc.get("ticket_class_id")}
+        
+        # Ustal nazwę biletu
+        ticket_class_id = participant.get("ticket_class_id") or ""
+        ticket_name = ticket_class_name_map.get(ticket_class_id, "") if ticket_class_id else ""
+        
+        # Fallback: z data.ticket_name
+        if not ticket_name:
+            p_data = participant.get("data") or {}
+            if isinstance(p_data, str):
+                try:
+                    p_data = json.loads(p_data)
+                except:
+                    p_data = {}
+            ticket_name = p_data.get("ticket_name", "")
+        else:
+            p_data = participant.get("data") or {}
+            if isinstance(p_data, str):
+                try:
+                    p_data = json.loads(p_data)
+                except:
+                    p_data = {}
+        
+        # Usuń prefix "Bilet "
+        if ticket_name and isinstance(ticket_name, str):
+            ticket_name = ticket_name.replace("Bilet ", "").replace("bilet ", "")
+        
+        # Ostateczny fallback
+        if not ticket_name or not ticket_name.strip():
+            ticket_name = "Nieznany" if ticket_class_id else "Standard"
+        
+        ticket_id = participant.get("ticket_id", "")
+        
+        # Oblicz cenę biletu
+        try:
+            ticket_price = float(p_data.get("price", 0) or 0)
+            if not ticket_price:
+                total = float(participant.get("total", 0) or 0)
+                # Dla pojedynczego uczestnika: cena = total / liczba_uczestników, ale tu mamy 1
+                ticket_price = total  # Uproszczenie - cała kwota zamówienia
+        except Exception:
+            ticket_price = 0.0
+        
+        # Renderuj email
+        try:
+            html = render_participant_ticket_email(
+                event_name=event_name,
+                participant_first_name=participant.get("first_name", ""),
+                participant_last_name=participant.get("last_name", ""),
+                participant_email=participant_email,
+                participant_phone=participant.get("phone", ""),
+                participant_company=p_data.get("company") or p_data.get("company_name") or "",
+                participant_badge_name=p_data.get("badge_name") or "",
+                ticket_name=ticket_name,
+                ticket_id=ticket_id,
+                ticket_price=ticket_price,
+                event_config=event_config,
+                event_id=event_id,
+            )
+        except Exception as e:
+            print(f"[participant_send_ticket] Błąd renderowania emaila: {e}")
+            traceback.print_exc()
+            return jsonify({"success": False, "error": f"Błąd generowania emaila: {e}"}), 500
+        
+        subject = f"Potwierdzenie rezerwacji na {event_name}"
+        
+        # Zapisz w mail_log
+        mail_log_result = save_mail_log(
+            event_order_id=order_id,
+            direction="participant",
+            template_key="participant_ticket_resend",
+            to_email=participant_email,
+            subject=subject,
+        )
+        mail_id = mail_log_result.get("id") if mail_log_result else None
+        
+        # Wyślij email
+        result = _send_email_via_make(
+            to_email=participant_email,
+            subject=subject,
+            body_html=html,
+            event_order_id=order_id,
+            template_type="participant_ticket",
+            mail_id=mail_id,
+        )
+        
+        if result.get("success"):
+            # Zaktualizuj status uczestnika na 'emailed'
+            try:
+                update_participant_status(participant_id, "emailed")
+            except Exception:
+                pass
+            
+            # Audit log
+            insert_admin_audit_log(
+                action="participant_ticket_sent",
+                admin_user_id=user.get("id") if user else None,
+                target_id=str(participant_id),
+                extra={"to_email": participant_email, "order_id": order_id},
+                ip=request.remote_addr,
+            )
+            
+            print(f"[participant_send_ticket] Email wysłany do {participant_email}")
+            return jsonify({"success": True, "message": "Potwierdzenie rezerwacji zostało wysłane"})
+        else:
+            error_msg = result.get("error", "Nieznany błąd wysyłki")
+            print(f"[participant_send_ticket] Błąd wysyłki: {error_msg}")
+            return jsonify({"success": False, "error": error_msg}), 500
+    
+    except Exception as e:
+        print(f"[participant_send_ticket] EXCEPTION: {e}")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @admin_v2_bp.route("/orders/<order_id>/cancel", methods=["POST"])

@@ -3917,11 +3917,10 @@ def create_todo_task_for_order(order_id: str) -> Optional[int]:
     netto_formatted = f"{netto:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
     vat_formatted = f"{vat:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
     
-    # Formatowanie dat po polsku
-    months_pl = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
-                 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia']
+    # Formatowanie dat w stylu Backstage (np. "sty 23, 2026 09:45 AM")
+    months_short = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru']
     
-    def format_date_pl(dt):
+    def format_date_backstage(dt):
         if not dt:
             return ""
         if isinstance(dt, str):
@@ -3929,10 +3928,16 @@ def create_todo_task_for_order(order_id: str) -> Optional[int]:
                 dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
             except:
                 return str(dt)
-        return f"{dt.day} {months_pl[dt.month - 1]} {dt.year}, {dt.strftime('%H:%M')}"
+        # Format: "sty 23, 2026" + godzina
+        hour = dt.hour
+        am_pm = "AM" if hour < 12 else "PM"
+        hour_12 = hour if hour <= 12 else hour - 12
+        if hour_12 == 0:
+            hour_12 = 12
+        return f"{months_short[dt.month - 1]} {dt.day}, {dt.year}\n{hour_12:02d}:{dt.minute:02d} {am_pm}"
     
-    order_date = format_date_pl(order.get("created_at"))
-    paid_at = format_date_pl(order.get("paid_at"))
+    order_date = format_date_backstage(order.get("created_at"))
+    paid_at = format_date_backstage(order.get("paid_at"))
     
     # Metoda płatności
     payment_option = order.get("payment_option_name", "")

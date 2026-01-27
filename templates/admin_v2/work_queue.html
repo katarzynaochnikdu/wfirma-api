@@ -369,84 +369,75 @@
               <!-- Description -->
               <p style="font-size: 0.875rem; color: var(--muted-foreground); line-height: 1.5; margin-bottom: 0.5rem;">{{ task.description }}</p>
               
-              <!-- ToDo: Dane zamówienia w formie tabelki -->
+              <!-- ToDo: Dane zamówienia w stylu Backstage -->
               {% if task.category == 'todo' and task.error_data %}
-              <div style="margin-top: 0.75rem; padding: 0.75rem; background: var(--muted); border-radius: var(--radius); font-size: 0.8125rem;">
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem 1.5rem;">
-                  {% if task.error_data.purchaser_name %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Kupujący:</span>
-                    <span style="font-weight: 500;">{{ task.error_data.purchaser_name }}</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.purchaser_email %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Email:</span>
-                    <a href="mailto:{{ task.error_data.purchaser_email }}" style="color: hsl(212, 100%, 42%);">{{ task.error_data.purchaser_email }}</a>
-                  </div>
-                  {% endif %}
+              <div style="margin-top: 0.75rem; background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                <!-- Tabela w stylu Backstage -->
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem;">
+                  <thead>
+                    <tr style="background: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+                      <th style="padding: 0.625rem 0.75rem; text-align: left; font-weight: 500; color: #6b7280; font-size: 0.75rem;">Purchased By</th>
+                      <th style="padding: 0.625rem 0.75rem; text-align: left; font-weight: 500; color: #6b7280; font-size: 0.75rem;">Date & Time</th>
+                      <th style="padding: 0.625rem 0.75rem; text-align: left; font-weight: 500; color: #6b7280; font-size: 0.75rem;">Amount</th>
+                      <th style="padding: 0.625rem 0.75rem; text-align: left; font-weight: 500; color: #6b7280; font-size: 0.75rem;">Orders</th>
+                      <th style="padding: 0.625rem 0.75rem; text-align: center; font-weight: 500; color: #6b7280; font-size: 0.75rem;">Status</th>
+                      <th style="padding: 0.625rem 0.75rem; text-align: right; font-weight: 500; color: #6b7280; font-size: 0.75rem;">Phone</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <!-- Purchased By -->
+                      <td style="padding: 0.75rem; vertical-align: top;">
+                        <div style="font-weight: 500; color: #111827;">{{ task.error_data.purchaser_name or '-' }}</div>
+                        <div style="color: #6b7280; font-size: 0.75rem;">{{ task.error_data.purchaser_email or '' }}</div>
+                      </td>
+                      <!-- Date & Time -->
+                      <td style="padding: 0.75rem; vertical-align: top; color: #374151; white-space: pre-line;">
+                        {{ task.error_data.order_date or '-' }}
+                      </td>
+                      <!-- Amount -->
+                      <td style="padding: 0.75rem; vertical-align: top;">
+                        <div style="font-weight: 600; font-size: 1.125rem; color: #111827;">{{ task.error_data.total or '-' }}</div>
+                      </td>
+                      <!-- Orders -->
+                      <td style="padding: 0.75rem; vertical-align: top;">
+                        <a href="#" style="color: #0891b2; text-decoration: none;">{{ task.error_data.participants_count or 1 }} Ticket</a>
+                      </td>
+                      <!-- Status -->
+                      <td style="padding: 0.75rem; vertical-align: top; text-align: center;">
+                        <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: #10b981; color: white; font-size: 0.75rem; font-weight: 500;">Paid</span>
+                      </td>
+                      <!-- Phone -->
+                      <td style="padding: 0.75rem; vertical-align: top; text-align: right; color: #374151;">
+                        {{ task.error_data.purchaser_phone or '-' }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                
+                <!-- Dodatkowe szczegóły pod tabelą -->
+                {% if task.error_data.company_name or task.error_data.nip or task.error_data.promo_code %}
+                <div style="padding: 0.625rem 0.75rem; background: #f9fafb; border-top: 1px solid #e5e7eb; display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.75rem;">
                   {% if task.error_data.company_name %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Firma:</span>
-                    <span>{{ task.error_data.company_name }}</span>
+                  <div style="display: flex; align-items: center; gap: 0.375rem;">
+                    <span style="color: #6b7280;">Firma:</span>
+                    <span style="font-weight: 500; color: #374151;">{{ task.error_data.company_name }}</span>
                   </div>
                   {% endif %}
                   {% if task.error_data.nip %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">NIP:</span>
-                    <span style="font-family: monospace;">{{ task.error_data.nip }}</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.purchaser_phone %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Telefon:</span>
-                    <span>{{ task.error_data.purchaser_phone }}</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.total %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Kwota:</span>
-                    <span style="font-weight: 600;">{{ task.error_data.total }}</span>
-                    <span style="color: var(--muted-foreground); font-size: 0.75rem;">(netto: {{ task.error_data.total_netto }}, VAT: {{ task.error_data.vat }})</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.payment_method %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Płatność:</span>
-                    <span>{{ task.error_data.payment_method }}</span>
+                  <div style="display: flex; align-items: center; gap: 0.375rem;">
+                    <span style="color: #6b7280;">NIP:</span>
+                    <span style="font-family: monospace; color: #374151;">{{ task.error_data.nip }}</span>
                   </div>
                   {% endif %}
                   {% if task.error_data.promo_code %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Kod rabat:</span>
-                    <span style="background: hsl(280, 80%, 95%); color: hsl(280, 80%, 40%); padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-family: monospace; font-size: 0.75rem;">{{ task.error_data.promo_code }}</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.participants_count %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Uczestnicy:</span>
-                    <span>{{ task.error_data.participants_count }} osób</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.order_date %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Zamówiono:</span>
-                    <span>{{ task.error_data.order_date }}</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.paid_at %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Opłacono:</span>
-                    <span style="color: hsl(160, 82%, 35%); font-weight: 500;">{{ task.error_data.paid_at }}</span>
-                  </div>
-                  {% endif %}
-                  {% if task.error_data.order_number %}
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Nr zam.:</span>
-                    <code style="font-size: 0.75rem; background: var(--background); padding: 0.125rem 0.375rem; border-radius: 0.25rem;">{{ task.error_data.order_number }}</code>
+                  <div style="display: flex; align-items: center; gap: 0.375rem;">
+                    <span style="color: #6b7280;">Kod:</span>
+                    <span style="background: #ede9fe; color: #7c3aed; padding: 0.125rem 0.5rem; border-radius: 4px; font-family: monospace;">{{ task.error_data.promo_code }}</span>
                   </div>
                   {% endif %}
                 </div>
+                {% endif %}
               </div>
               {% endif %}
               

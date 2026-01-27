@@ -432,7 +432,7 @@
 
   function sendTicketEmail() {
     if (confirm('Czy na pewno chcesz wysłać potwierdzenie rezerwacji do uczestnika?')) {
-      fetch(`/api/participants/${participantId}/send-ticket`, { method: 'POST' })
+      fetch(`/admin-v2/participants/${participantId}/send-ticket`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
           if (data.success) {
