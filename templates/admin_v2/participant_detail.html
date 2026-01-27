@@ -247,13 +247,42 @@
               {% endif %}
             </span>
           </div>
+          {% set payment_option = (participant.payment_option_name or '')|lower %}
+          {% set is_foc = 'foc' in payment_option or (participant.total is defined and participant.total|float <= 0) %}
+          {% set is_proforma = 'proforma' in payment_option or 'pro forma' in payment_option or 'pro' in payment_option %}
+          {% set is_stripe = 'online' in payment_option or 'stripe' in payment_option or 'karta' in payment_option %}
           <div class="info-item">
             <span class="info-label">Metoda płatności</span>
-            <span class="info-value">{{ participant.payment_option_name or participant.payment_type or '—' }}</span>
+            <span class="info-value" style="display: flex; align-items: center; gap: 0.5rem;">
+              {% if is_foc %}
+              <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+                <i data-lucide="gift" style="width: 16px; height: 16px;"></i>
+              </span>
+              <span>Bezpłatne (FOC)</span>
+              {% elif is_stripe %}
+              <span class="payment-type-icon payment-type-stripe" title="Płatność online (Stripe)">
+                <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
+              </span>
+              <span>Płatność online</span>
+              {% elif is_proforma %}
+              <span class="payment-type-icon payment-type-proforma" title="Przelew (Proforma)">
+                <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+              </span>
+              <span>Przelew (Proforma)</span>
+              {% else %}
+              <span>{{ participant.payment_option_name or participant.payment_type or '—' }}</span>
+              {% endif %}
+            </span>
           </div>
           <div class="info-item">
             <span class="info-label">Wartość</span>
-            <span class="info-value">{{ participant.total|default('0.00', true) }} zł</span>
+            <span class="info-value">
+              {% if is_foc %}
+              <span style="color: hsl(160, 82%, 44%); font-weight: 500;">BEZPŁATNE</span>
+              {% else %}
+              {{ participant.total|default('0.00', true) }} zł
+              {% endif %}
+            </span>
           </div>
         </div>
         
@@ -687,6 +716,34 @@
   
   .banner-placeholder.active {
     height: 76px;
+  }
+  
+  /* Payment type icons */
+  .payment-type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius);
+    color: var(--muted-foreground);
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+
+  .payment-type-icon.payment-type-foc {
+    background: hsl(160, 82%, 44%, 0.1);
+    color: hsl(160, 82%, 44%);
+  }
+
+  .payment-type-icon.payment-type-stripe {
+    background: hsl(280, 80%, 50%, 0.1);
+    color: hsl(280, 80%, 50%);
+  }
+
+  .payment-type-icon.payment-type-proforma {
+    background: hsl(212, 100%, 42%, 0.1);
+    color: hsl(212, 100%, 42%);
   }
 </style>
 {% endblock %}

@@ -296,17 +296,31 @@
               <span class="value-breakdown">Netto: {{ (order.total|float / 1.23)|round(2) if order.total else '0.00' }} zł • VAT 23%</span>
             </div>
           </div>
+          {% set payment_option_lower = (order.payment_option_name or '')|lower %}
+          {% set payment_type_lower = (order.payment_type or '')|lower %}
+          {% set is_order_foc = 'foc' in payment_option_lower or 'foc' in payment_type_lower or (order.total or 0)|float == 0 %}
+          {% set is_order_proforma = 'proforma' in payment_option_lower or 'proforma' in payment_type_lower or 'pro forma' in payment_option_lower or 'pro' in payment_option_lower %}
+          {% set is_order_stripe = 'online' in payment_type_lower or 'stripe' in payment_option_lower or 'karta' in payment_option_lower %}
           <div class="info-item">
             <span class="info-label">Metoda płatności</span>
-            <span class="info-value">
-              {% if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower %}
-              <span class="payment-badge payment-online">Online</span>
-              {% elif 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_type or '')|string|lower %}
-              <span class="payment-badge payment-proforma">Pro forma</span>
-              {% elif (order.total or 0)|float == 0 %}
-              <span class="payment-badge payment-foc">FOC (bezpłatne)</span>
+            <span class="info-value" style="display: flex; align-items: center; gap: 0.5rem;">
+              {% if is_order_foc %}
+              <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+                <i data-lucide="gift" style="width: 16px; height: 16px;"></i>
+              </span>
+              <span>Bezpłatne (FOC)</span>
+              {% elif is_order_stripe %}
+              <span class="payment-type-icon payment-type-stripe" title="Płatność online (Stripe)">
+                <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
+              </span>
+              <span>Płatność online</span>
+              {% elif is_order_proforma %}
+              <span class="payment-type-icon payment-type-proforma" title="Przelew (Proforma)">
+                <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+              </span>
+              <span>Przelew (Proforma)</span>
               {% else %}
-              {{ order.payment_option_name or order.payment_type or '—' }}
+              <span>{{ order.payment_option_name or order.payment_type or '—' }}</span>
               {% endif %}
             </span>
           </div>
@@ -2327,6 +2341,34 @@
   .btn:disabled {
     opacity: 0.7;
     cursor: wait;
+  }
+  
+  /* Payment type icons */
+  .payment-type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius);
+    color: var(--muted-foreground);
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+
+  .payment-type-icon.payment-type-foc {
+    background: hsl(160, 82%, 44%, 0.1);
+    color: hsl(160, 82%, 44%);
+  }
+
+  .payment-type-icon.payment-type-stripe {
+    background: hsl(280, 80%, 50%, 0.1);
+    color: hsl(280, 80%, 50%);
+  }
+
+  .payment-type-icon.payment-type-proforma {
+    background: hsl(212, 100%, 42%, 0.1);
+    color: hsl(212, 100%, 42%);
   }
 </style>
 {% endblock %}

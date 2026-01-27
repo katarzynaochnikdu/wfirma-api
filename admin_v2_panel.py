@@ -4568,6 +4568,11 @@ def participants_list():
             except:
                 p_data = {}
         p["company"] = p_data.get("company") or p_data.get("company_name") or p_data.get("firma") or ""
+        
+        # Wyciągnij cenę biletu i typ płatności
+        p["price_gross"] = p_data.get("price_gross", 0)
+        p["is_free_ticket"] = float(p.get("price_gross", 0)) <= 0
+        p["payment_option_name"] = p.get("payment_option_name") or ""
     
     # Pobierz kolory wydarzenia dla sticky bannera (jeśli jest filtr)
     banner_color_1 = "#0065D7"
