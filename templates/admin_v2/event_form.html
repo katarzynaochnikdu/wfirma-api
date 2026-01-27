@@ -651,7 +651,7 @@ input[type="color"].form-input {
       
       <!-- URL success -->
       <div class="form-group">
-        <label class="form-label" style="font-size: 0.8125rem;">URL success</label>
+        <label class="form-label" style="font-size: 0.8125rem;">Strona sukcesu płatności Stripe</label>
         <div class="url-input-group">
           <input type="url" name="url_success" class="form-input url-input"
                  value="{{ event_data.url_success if event_data else '' }}" placeholder="https://...">
@@ -663,13 +663,54 @@ input[type="color"].form-input {
       
       <!-- URL cancel -->
       <div class="form-group">
-        <label class="form-label" style="font-size: 0.8125rem;">URL cancel</label>
+        <label class="form-label" style="font-size: 0.8125rem;">Strona błędu płatności Stripe</label>
         <div class="url-input-group">
           <input type="url" name="url_cancel" class="form-input url-input"
                  value="{{ event_data.url_cancel if event_data else '' }}" placeholder="https://...">
           <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
             <i data-lucide="external-link"></i>
           </button>
+        </div>
+      </div>
+      
+      <!-- Zoho Backstage Links -->
+      <div class="form-group" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <label class="form-label" style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem;">Linki Zoho Backstage</label>
+        
+        <!-- Backstage Ustawienia -->
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-size: 0.8125rem;">Strona Ustawień</label>
+          <div class="url-input-group">
+            <input type="url" name="backstage_url" class="form-input url-input"
+                   value="{{ event_data.backstage_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/...">
+            <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+              <i data-lucide="external-link"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Backstage Zamówienia -->
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-size: 0.8125rem;">Strona Zamówień</label>
+          <div class="url-input-group">
+            <input type="url" name="backstage_orders_url" class="form-input url-input"
+                   value="{{ event_data.backstage_orders_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../orders">
+            <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+              <i data-lucide="external-link"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Backstage Uczestnicy -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" style="font-size: 0.8125rem;">Strona Uczestników</label>
+          <div class="url-input-group">
+            <input type="url" name="backstage_attendees_url" class="form-input url-input"
+                   value="{{ event_data.backstage_attendees_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../attendees">
+            <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+              <i data-lucide="external-link"></i>
+            </button>
+          </div>
         </div>
       </div>
       

@@ -92,7 +92,11 @@
                   {% endif %}
                 </td>
                 <td style="text-align: center;">
-                  {% if order.payment_link_url %}
+                  {% if (order.total or 0)|float == 0 %}
+                    <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+                      <i data-lucide="gift" style="width: 16px; height: 16px;"></i>
+                    </span>
+                  {% elif order.payment_link_url %}
                     <span class="payment-type-icon payment-type-stripe" title="Stripe">
                       <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
@@ -177,7 +181,11 @@
                   {% endif %}
                 </td>
                 <td style="text-align: center;">
-                  {% if order.payment_link_url %}
+                  {% if (order.total or 0)|float == 0 %}
+                    <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+                      <i data-lucide="gift" style="width: 16px; height: 16px;"></i>
+                    </span>
+                  {% elif order.payment_link_url %}
                     <span class="payment-type-icon payment-type-stripe" title="Stripe">
                       <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
@@ -260,7 +268,11 @@
                   {% endif %}
                 </td>
                 <td style="text-align: center;">
-                  {% if order.payment_link_url %}
+                  {% if (order.total or 0)|float == 0 %}
+                    <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+                      <i data-lucide="gift" style="width: 16px; height: 16px;"></i>
+                    </span>
+                  {% elif order.payment_link_url %}
                     <span class="payment-type-icon payment-type-stripe" title="Stripe">
                       <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
@@ -343,7 +355,11 @@
                   {% endif %}
                 </td>
                 <td style="text-align: center;">
-                  {% if order.payment_link_url %}
+                  {% if (order.total or 0)|float == 0 %}
+                    <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+                      <i data-lucide="gift" style="width: 16px; height: 16px;"></i>
+                    </span>
+                  {% elif order.payment_link_url %}
                     <span class="payment-type-icon payment-type-stripe" title="Stripe">
                       <i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
                     </span>
