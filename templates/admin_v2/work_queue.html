@@ -388,27 +388,27 @@
                     <tr>
                       <!-- Purchased By -->
                       <td style="padding: 0.75rem; vertical-align: top;">
-                        <div style="font-weight: 500; color: #111827;">{{ task.error_data.purchaser_name or '-' }}</div>
-                        <div style="color: #6b7280; font-size: 0.75rem;">{{ task.error_data.purchaser_email or '' }}</div>
+                        <div style="font-weight: 500; color: #000000;">{{ task.error_data.purchaser_name or '-' }}</div>
+                        <div style="color: #374151; font-size: 0.75rem;">{{ task.error_data.purchaser_email or '' }}</div>
                       </td>
                       <!-- Date & Time -->
-                      <td style="padding: 0.75rem; vertical-align: top; color: #374151; white-space: pre-line;">
+                      <td style="padding: 0.75rem; vertical-align: top; color: #000000; white-space: pre-line;">
                         {{ task.error_data.order_date or '-' }}
                       </td>
                       <!-- Amount -->
                       <td style="padding: 0.75rem; vertical-align: top;">
-                        <div style="font-weight: 600; font-size: 1.125rem; color: #111827;">{{ task.error_data.total or '-' }}</div>
+                        <div style="font-weight: 600; font-size: 1.125rem; color: #000000;">{{ task.error_data.total or '-' }}</div>
                       </td>
                       <!-- Orders -->
                       <td style="padding: 0.75rem; vertical-align: top;">
-                        <a href="#" style="color: #0891b2; text-decoration: none;">{{ task.error_data.participants_count or 1 }} Ticket</a>
+                        <span style="color: #7c3aed; font-weight: 500;">{{ task.error_data.participants_count or 1 }} Ticket</span>
                       </td>
                       <!-- Status -->
                       <td style="padding: 0.75rem; vertical-align: top; text-align: center;">
-                        <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: #10b981; color: white; font-size: 0.75rem; font-weight: 500;">Paid</span>
+                        <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: #f59e0b; color: white; font-size: 0.75rem; font-weight: 500;">Unpaid</span>
                       </td>
                       <!-- Phone -->
-                      <td style="padding: 0.75rem; vertical-align: top; text-align: right; color: #374151;">
+                      <td style="padding: 0.75rem; vertical-align: top; text-align: right; color: #000000;">
                         {{ task.error_data.purchaser_phone or '-' }}
                       </td>
                     </tr>
