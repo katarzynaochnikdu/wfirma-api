@@ -126,6 +126,30 @@ CREATE TABLE IF NOT EXISTS participants (
 
 CREATE INDEX IF NOT EXISTS idx_participants_order_id ON participants(event_order_id);
 
+-- Tabela bufora dla "osieroconych" uczestników (attendee webhook przed order webhook)
+-- Race condition: Zoho wysyła webhooki równolegle, czasem attendee przychodzi przed order
+CREATE TABLE IF NOT EXISTS pending_attendees (
+  id BIGSERIAL PRIMARY KEY,
+  event_order_id TEXT NOT NULL,
+  ticket_id TEXT,
+  attendee_id TEXT,
+  email TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  phone TEXT,
+  company TEXT,
+  position TEXT,
+  badge_name TEXT,
+  raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at TIMESTAMPTZ,
+  UNIQUE (event_order_id, ticket_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_attendees_order_id ON pending_attendees(event_order_id);
+CREATE INDEX IF NOT EXISTS idx_pending_attendees_unprocessed ON pending_attendees(event_order_id) WHERE processed_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS stripe_sessions (
   id BIGSERIAL PRIMARY KEY,
   event_order_id TEXT NOT NULL REFERENCES orders(event_order_id) ON DELETE CASCADE,
@@ -2393,6 +2417,126 @@ def count_participants_by_status(event_order_id: str) -> Dict[str, int]:
     except Exception as e:
         print(f"[DB] count_participants_by_status error: {e}")
         return {}
+    finally:
+        _put_conn(pool, conn)
+
+
+# ==================== PENDING ATTENDEES (bufor dla race condition) ====================
+
+def save_pending_attendee(
+    event_order_id: str,
+    ticket_id: str = "",
+    attendee_id: str = "",
+    email: str = "",
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = "",
+    company: str = "",
+    position: str = "",
+    badge_name: str = "",
+    raw_payload: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
+    """
+    Zapisuje "osieroconego" uczestnika do bufora pending_attendees.
+    Używane gdy attendee webhook przychodzi przed order webhook.
+    """
+    pool, conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO pending_attendees (
+                event_order_id, ticket_id, attendee_id, email, first_name, last_name,
+                phone, company, position, badge_name, raw_payload, attempts
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
+            ON CONFLICT (event_order_id, ticket_id) DO UPDATE SET
+                attendee_id = EXCLUDED.attendee_id,
+                email = EXCLUDED.email,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                phone = EXCLUDED.phone,
+                company = EXCLUDED.company,
+                position = EXCLUDED.position,
+                badge_name = EXCLUDED.badge_name,
+                raw_payload = EXCLUDED.raw_payload,
+                attempts = pending_attendees.attempts + 1
+            RETURNING id
+        """, (
+            event_order_id, ticket_id, attendee_id, email, first_name, last_name,
+            phone, company, position, badge_name, json.dumps(raw_payload or {}),
+        ))
+        conn.commit()
+        result = cur.fetchone()
+        print(f"[DB] save_pending_attendee: saved for order={event_order_id}, ticket={ticket_id}")
+        return result[0] if result else None
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] save_pending_attendee error: {e}")
+        return None
+    finally:
+        _put_conn(pool, conn)
+
+
+def get_pending_attendees_for_order(event_order_id: str) -> List[Dict[str, Any]]:
+    """Pobiera osieroconych uczestników z bufora dla danego zamówienia (nieprzetworzonych)."""
+    pool, conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, event_order_id, ticket_id, attendee_id, email, first_name, last_name,
+                   phone, company, position, badge_name, raw_payload, attempts,
+                   created_at, processed_at
+            FROM pending_attendees
+            WHERE event_order_id = %s AND processed_at IS NULL
+            ORDER BY created_at
+        """, (event_order_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        print(f"[DB] get_pending_attendees_for_order error: {e}")
+        return []
+    finally:
+        _put_conn(pool, conn)
+
+
+def mark_pending_attendee_processed(pending_id: int) -> bool:
+    """Oznacza rekord pending_attendee jako przetworzony."""
+    pool, conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE pending_attendees SET processed_at = NOW()
+            WHERE id = %s
+        """, (pending_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] mark_pending_attendee_processed error: {e}")
+        return False
+    finally:
+        _put_conn(pool, conn)
+
+
+def delete_old_pending_attendees(days_old: int = 7) -> int:
+    """Usuwa stare przetworzone rekordy z bufora (cleanup)."""
+    pool, conn = _with_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM pending_attendees
+            WHERE processed_at IS NOT NULL
+              AND processed_at < NOW() - INTERVAL '%s days'
+        """, (days_old,))
+        conn.commit()
+        deleted = cur.rowcount
+        if deleted > 0:
+            print(f"[DB] delete_old_pending_attendees: deleted {deleted} old records")
+        return deleted
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] delete_old_pending_attendees error: {e}")
+        return 0
     finally:
         _put_conn(pool, conn)
 

@@ -1391,6 +1391,142 @@ def _save_participants_for_order(
     return stats
 
 
+def _process_pending_attendees_for_order(event_order_id: str) -> Dict[str, Any]:
+    """
+    Przetwarza osieroconych uczestników z bufora pending_attendees.
+    
+    Wywoływane gdy order webhook przetwarza zamówienie - sprawdza czy
+    są jakieś "zaparkowane" uczestniki (z attendee webhook który przyszedł
+    przed order webhook) i aktualizuje ich dane w tabeli participants.
+    """
+    from pg_storage import (
+        get_pending_attendees_for_order,
+        mark_pending_attendee_processed,
+        update_participant_details,
+        get_participant_by_ticket,
+        save_participant,
+    )
+    
+    pending = get_pending_attendees_for_order(event_order_id)
+    
+    if not pending:
+        return {"processed": 0, "skipped": 0}
+    
+    _log("INFO", "Przetwarzanie pending_attendees z bufora", {
+        "event_order_id": event_order_id,
+        "pending_count": len(pending),
+    })
+    
+    processed = 0
+    skipped = 0
+    
+    for att in pending:
+        try:
+            ticket_id = att.get("ticket_id", "")
+            email = att.get("email", "")
+            first_name = att.get("first_name", "")
+            last_name = att.get("last_name", "")
+            phone = att.get("phone", "")
+            company = att.get("company", "")
+            position = att.get("position", "")
+            badge_name = att.get("badge_name", "")
+            attendee_id = att.get("attendee_id", "")
+            
+            # Sprawdź czy uczestnik istnieje
+            existing = get_participant_by_ticket(event_order_id, ticket_id)
+            
+            import time
+            extra_data = {
+                "attendee_id": attendee_id,
+                "source": "pending_attendee_buffer",
+                "attendee_webhook_received": True,
+                "attendee_webhook_received_at": int(time.time()),
+                "company": company,
+                "position": position,
+                "badge_name": badge_name,
+                "pending_attendee_id": att.get("id"),
+            }
+            
+            if existing:
+                # Aktualizuj istniejącego uczestnika
+                existing_status = existing.get("status", "")
+                new_status = "emailed" if existing_status.lower() == "emailed" else "registered"
+                effective_email = email or existing.get("email", "") or ""
+                effective_first_name = first_name or existing.get("first_name", "") or ""
+                effective_last_name = last_name or existing.get("last_name", "") or ""
+                effective_phone = phone or existing.get("phone", "") or ""
+                
+                success = update_participant_details(
+                    event_order_id=event_order_id,
+                    ticket_id=ticket_id,
+                    email=effective_email,
+                    first_name=effective_first_name,
+                    last_name=effective_last_name,
+                    phone=effective_phone,
+                    status=new_status,
+                    extra_data=extra_data,
+                )
+                
+                if success:
+                    mark_pending_attendee_processed(att["id"])
+                    processed += 1
+                    _log("DEBUG", "Pending attendee przetworzony (update)", {
+                        "pending_id": att["id"],
+                        "ticket_id": ticket_id,
+                        "email": email,
+                    })
+                else:
+                    skipped += 1
+                    _log("WARNING", "Nie udało się zaktualizować uczestnika z bufora", {
+                        "pending_id": att["id"],
+                        "ticket_id": ticket_id,
+                    })
+            else:
+                # Utwórz nowego uczestnika (rzadki przypadek - brak slotu)
+                participant_id = save_participant(
+                    event_order_id=event_order_id,
+                    ticket_id=ticket_id,
+                    ticket_class_id="",
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    phone=phone,
+                    status="registered",
+                    data=extra_data,
+                )
+                
+                if participant_id:
+                    mark_pending_attendee_processed(att["id"])
+                    processed += 1
+                    _log("DEBUG", "Pending attendee przetworzony (nowy)", {
+                        "pending_id": att["id"],
+                        "ticket_id": ticket_id,
+                        "participant_id": participant_id,
+                    })
+                else:
+                    skipped += 1
+                    _log("WARNING", "Nie udało się utworzyć uczestnika z bufora", {
+                        "pending_id": att["id"],
+                        "ticket_id": ticket_id,
+                    })
+                    
+        except Exception as e:
+            skipped += 1
+            _log("WARNING", "Błąd przetwarzania pending_attendee", {
+                "pending_id": att.get("id"),
+                "error": str(e),
+            })
+    
+    if processed > 0:
+        _log("INFO", "Pending attendees przetworzone", {
+            "event_order_id": event_order_id,
+            "processed": processed,
+            "skipped": skipped,
+        })
+    
+    return {"processed": processed, "skipped": skipped}
+
+
 def _enrich_tickets_with_names(tickets: List[Dict[str, Any]], event_id: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     Wzbogaca bilety o nazwy z bazy danych (event_ticket_classes).
@@ -3083,6 +3219,12 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
                 _log("DEBUG", "Brak indywidualnych biletów do zapisania uczestników", {"event_order_id": event_order_id})
         except Exception as e:
             _log("WARNING", "Błąd zapisywania uczestników", {"event_order_id": event_order_id, "error": str(e)})
+
+        # 4c. Przetwórz bufor pending_attendees (race condition: attendee webhook przed order webhook)
+        try:
+            _process_pending_attendees_for_order(event_order_id)
+        except Exception as e:
+            _log("WARNING", "Błąd przetwarzania pending_attendees", {"event_order_id": event_order_id, "error": str(e)})
 
         # 5. Określ flow
         _log("INFO", "Krok 5: Określanie flow płatności...")

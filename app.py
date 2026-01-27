@@ -3201,14 +3201,16 @@ def backstage_attendee():
             save_participant,
             get_order,
             get_participants_for_order,
+            save_pending_attendee,  # bufor dla race condition
         )
         
         # WALIDACJA: Sprawdź czy zamówienie istnieje (z retry dla race condition)
         # Zoho wysyła webhooki równolegle i czasem attendee przychodzi przed order
+        # Zwiększono retry z 3x1.5s na 8x1s (łącznie ~8s) jako dodatkowy margines bezpieczeństwa
         import time as time_module
         order = None
-        max_retries = 3
-        retry_delay_seconds = 1.5  # 1.5s między próbami
+        max_retries = 8
+        retry_delay_seconds = 1.0  # 1s między próbami (łącznie ~8s czekania)
         
         for attempt in range(max_retries):
             order = get_order(order_id)
@@ -3222,15 +3224,47 @@ def backstage_attendee():
                 time_module.sleep(retry_delay_seconds)
         
         if not order:
-            print(f"[ATTENDEE WEBHOOK] BŁĄD: Zamówienie {order_id} nie istnieje w bazie po {max_retries} próbach!")
-            return jsonify({
-                'status': 'error',
-                'error': f'Zamówienie {order_id} nie istnieje',
-                'order_id': order_id,
-                'ticket_id': ticket_id,
-                'retries': max_retries,
-                'hint': 'Webhook order nie dotarł w czasie oczekiwania. Sprawdź czy Zoho wysyła webhooki poprawnie.'
-            }), 404
+            # FALLBACK: Zapisz do bufora pending_attendees zamiast tracić dane
+            # Order webhook przetworzy te dane gdy przyjdzie
+            print(f"[ATTENDEE WEBHOOK] Zamówienie {order_id} nie istnieje po {max_retries} próbach - zapisuję do bufora pending_attendees")
+            
+            # Wyciągnij dane uczestnika do zapisu w buforze
+            company_for_buffer = payload.get("company_system_crm") or payload.get("company") or ""
+            position_for_buffer = payload.get("stanowisko_system_crm") or payload.get("designation") or ""
+            badge_name_for_buffer = payload.get("nazwa_placowki_na_identyfikator") or ""
+            
+            pending_id = save_pending_attendee(
+                event_order_id=order_id,
+                ticket_id=ticket_id,
+                attendee_id=attendee_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=phone,
+                company=company_for_buffer,
+                position=position_for_buffer,
+                badge_name=badge_name_for_buffer,
+                raw_payload=payload,
+            )
+            
+            if pending_id:
+                print(f"[ATTENDEE WEBHOOK] Zapisano do bufora pending_attendees id={pending_id}")
+                return jsonify({
+                    'status': 'pending',
+                    'message': 'Uczestnik zapisany do bufora, zostanie przetworzony gdy przyjdzie order webhook',
+                    'order_id': order_id,
+                    'ticket_id': ticket_id,
+                    'pending_id': pending_id,
+                }), 202  # Accepted
+            else:
+                print(f"[ATTENDEE WEBHOOK] BŁĄD: Nie udało się zapisać do bufora pending_attendees!")
+                return jsonify({
+                    'status': 'error',
+                    'error': f'Zamówienie {order_id} nie istnieje i zapis do bufora nie powiódł się',
+                    'order_id': order_id,
+                    'ticket_id': ticket_id,
+                    'retries': max_retries,
+                }), 500
         
         # WALIDACJA: Sprawdź czy bilet należy do tego zamówienia
         existing_participants = get_participants_for_order(order_id)
