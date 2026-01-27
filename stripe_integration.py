@@ -419,6 +419,11 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
     print(f"[STRIPE] update_order_status -> paid | order={event_order_id}")
     update_order_status(event_order_id, "paid")
     
+    # Utwórz zadanie ToDo w monitoringu (do oznaczenia w Backstage)
+    from pg_storage import create_todo_task_for_order
+    todo_id = create_todo_task_for_order(event_order_id)
+    print(f"[STRIPE] create_todo_task_for_order | order={event_order_id}, todo_id={todo_id}")
+    
     # Pobierz dane zamówienia i eventu do mail tasks
     order = get_order(event_order_id)
     if not order:

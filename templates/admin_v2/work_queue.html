@@ -250,6 +250,10 @@
       <h3 style="font-size: 1rem; font-weight: 600;">Kolejka błędów i akcji</h3>
       <div style="display: flex; align-items: center; gap: 1rem; font-size: 0.75rem; color: var(--muted-foreground);">
         <span style="display: flex; align-items: center; gap: 0.25rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: hsl(280, 80%, 50%);"></span>
+          Zadania
+        </span>
+        <span style="display: flex; align-items: center; gap: 0.25rem;">
           <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--destructive);"></span>
           Krytyczne
         </span>
@@ -296,14 +300,15 @@
     {% else %}
     <div style="display: flex; flex-direction: column; gap: 0.75rem;">
       {% for task in tasks|sort(attribute='created_at', reverse=True) %}
-      <div class="task-card" id="{% if task.alert_level == 'critical' %}critical{% endif %}" style="
+      {% set alert_level = task.alert_level or task.severity %}
+      <div class="task-card" id="{% if alert_level == 'critical' %}critical{% endif %}" style="
         display: flex;
         flex-direction: column;
         border-radius: var(--radius);
         border: 1px solid var(--border);
         background: var(--card);
         overflow: hidden;
-        {% if task.alert_level == 'critical' %}border-left: 4px solid var(--destructive);{% elif task.alert_level == 'error' %}border-left: 4px solid hsl(38, 92%, 50%);{% else %}border-left: 4px solid hsl(212, 100%, 42%);{% endif %}
+        {% if alert_level == 'todo' %}border-left: 4px solid hsl(280, 80%, 50%);{% elif alert_level == 'critical' %}border-left: 4px solid var(--destructive);{% elif alert_level == 'error' %}border-left: 4px solid hsl(38, 92%, 50%);{% else %}border-left: 4px solid hsl(212, 100%, 42%);{% endif %}
       ">
         <!-- Content Section -->
         <div style="flex: 1; padding: 1.25rem;">
@@ -313,7 +318,8 @@
               padding: 0.625rem;
               border-radius: var(--radius);
               background: hsl(var(--muted) / 0.6);
-              {% if task.category == 'wfirma' %}color: hsl(212, 100%, 42%);
+              {% if task.category == 'todo' %}color: hsl(280, 80%, 50%);
+              {% elif task.category == 'wfirma' %}color: hsl(212, 100%, 42%);
               {% elif task.category == 'make' %}color: hsl(280, 80%, 50%);
               {% elif task.category == 'stripe' %}color: hsl(160, 82%, 44%);
               {% elif task.category == 'database' %}color: hsl(220, 10%, 50%);
@@ -321,7 +327,8 @@
               {% elif task.category == 'config' %}color: hsl(350, 80%, 50%);
               {% endif %}
             ">
-              {% if task.category == 'wfirma' %}<i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+              {% if task.category == 'todo' %}<i data-lucide="clipboard-check" style="width: 16px; height: 16px;"></i>
+              {% elif task.category == 'wfirma' %}<i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
               {% elif task.category == 'make' %}<i data-lucide="zap" style="width: 16px; height: 16px;"></i>
               {% elif task.category == 'stripe' %}<i data-lucide="credit-card" style="width: 16px; height: 16px;"></i>
               {% elif task.category == 'database' %}<i data-lucide="database" style="width: 16px; height: 16px;"></i>
@@ -341,13 +348,14 @@
                   font-weight: 500;
                   padding: 0.125rem 0.5rem;
                   border-radius: 9999px;
-                  {% if task.alert_level == 'critical' or task.alert_level == 'security' %}background: hsl(0, 84%, 95%); color: hsl(0, 84%, 40%);
-                  {% elif task.alert_level == 'error' %}background: hsl(25, 95%, 95%); color: hsl(25, 95%, 35%);
-                  {% elif task.alert_level == 'warning' %}background: hsl(38, 92%, 95%); color: hsl(38, 92%, 35%);
+                  {% if alert_level == 'todo' %}background: hsl(280, 80%, 95%); color: hsl(280, 80%, 40%);
+                  {% elif alert_level == 'critical' or alert_level == 'security' %}background: hsl(0, 84%, 95%); color: hsl(0, 84%, 40%);
+                  {% elif alert_level == 'error' %}background: hsl(25, 95%, 95%); color: hsl(25, 95%, 35%);
+                  {% elif alert_level == 'warning' %}background: hsl(38, 92%, 95%); color: hsl(38, 92%, 35%);
                   {% else %}background: hsl(220, 10%, 95%); color: hsl(220, 10%, 40%);
                   {% endif %}
                 ">
-                  {% if task.alert_level == 'critical' %}Krytyczny{% elif task.alert_level == 'error' %}Błąd{% elif task.alert_level == 'warning' %}Ostrzeżenie{% else %}Info{% endif %}
+                  {% if alert_level == 'todo' %}ToDo{% elif alert_level == 'critical' %}Krytyczny{% elif alert_level == 'error' %}Błąd{% elif alert_level == 'warning' %}Ostrzeżenie{% else %}Info{% endif %}
                 </span>
                 
                 {% if task.is_overdue %}
@@ -360,6 +368,87 @@
               
               <!-- Description -->
               <p style="font-size: 0.875rem; color: var(--muted-foreground); line-height: 1.5; margin-bottom: 0.5rem;">{{ task.description }}</p>
+              
+              <!-- ToDo: Dane zamówienia w formie tabelki -->
+              {% if task.category == 'todo' and task.error_data %}
+              <div style="margin-top: 0.75rem; padding: 0.75rem; background: var(--muted); border-radius: var(--radius); font-size: 0.8125rem;">
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem 1.5rem;">
+                  {% if task.error_data.purchaser_name %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Kupujący:</span>
+                    <span style="font-weight: 500;">{{ task.error_data.purchaser_name }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.purchaser_email %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Email:</span>
+                    <a href="mailto:{{ task.error_data.purchaser_email }}" style="color: hsl(212, 100%, 42%);">{{ task.error_data.purchaser_email }}</a>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.company_name %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Firma:</span>
+                    <span>{{ task.error_data.company_name }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.nip %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">NIP:</span>
+                    <span style="font-family: monospace;">{{ task.error_data.nip }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.purchaser_phone %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Telefon:</span>
+                    <span>{{ task.error_data.purchaser_phone }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.total %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Kwota:</span>
+                    <span style="font-weight: 600;">{{ task.error_data.total }}</span>
+                    <span style="color: var(--muted-foreground); font-size: 0.75rem;">(netto: {{ task.error_data.total_netto }}, VAT: {{ task.error_data.vat }})</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.payment_method %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Płatność:</span>
+                    <span>{{ task.error_data.payment_method }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.promo_code %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Kod rabat:</span>
+                    <span style="background: hsl(280, 80%, 95%); color: hsl(280, 80%, 40%); padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-family: monospace; font-size: 0.75rem;">{{ task.error_data.promo_code }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.participants_count %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Uczestnicy:</span>
+                    <span>{{ task.error_data.participants_count }} osób</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.order_date %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Zamówiono:</span>
+                    <span>{{ task.error_data.order_date }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.paid_at %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Opłacono:</span>
+                    <span style="color: hsl(160, 82%, 35%); font-weight: 500;">{{ task.error_data.paid_at }}</span>
+                  </div>
+                  {% endif %}
+                  {% if task.error_data.order_number %}
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span style="color: var(--muted-foreground); font-weight: 500; min-width: 80px;">Nr zam.:</span>
+                    <code style="font-size: 0.75rem; background: var(--background); padding: 0.125rem 0.375rem; border-radius: 0.25rem;">{{ task.error_data.order_number }}</code>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+              {% endif %}
               
               <!-- Metadata row -->
               <div style="display: flex; align-items: center; gap: 0.75rem; font-size: 0.75rem; flex-wrap: wrap; padding-top: 0.25rem;">
@@ -423,6 +512,19 @@
         
         <!-- Action Bar - horizontal at bottom -->
         <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); background: hsl(var(--muted) / 0.3); flex-wrap: wrap;">
+          {% if task.category == 'todo' %}
+          <!-- ToDo: Przyciski akcji -->
+          <button type="button" class="btn btn-primary btn-sm" style="height: 2.25rem; padding: 0 1rem; gap: 0.5rem; background: hsl(160, 82%, 44%); border-color: hsl(160, 82%, 44%);" onclick="markTodoDone({{ task.id }})" title="Oznacz jako wykonane">
+            <i data-lucide="check-circle" style="width: 14px; height: 14px;"></i>
+            Wykonane
+          </button>
+          {% if task.order_id or task.event_order_id %}
+          <a href="{{ url_for('admin_v2_bp.order_detail', order_id=task.order_id or task.event_order_id) }}" class="btn btn-outline btn-sm" style="height: 2.25rem; padding: 0 1rem; gap: 0.5rem;" target="_blank">
+            <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
+            Szczegóły zamówienia
+          </a>
+          {% endif %}
+          {% else %}
           {% if task.can_retry and task.retry_count < task.max_retries %}
           <form method="POST" action="{{ url_for('admin_v2_bp.work_queue_retry', task_id=task.id) }}" style="margin: 0;">
             <button type="submit" class="btn btn-primary btn-sm" style="height: 2.25rem; padding: 0 1rem; gap: 0.5rem;">
@@ -436,6 +538,7 @@
             {{ action.label }}
           </a>
           {% endfor %}
+          {% endif %}
           
           <!-- Spacer -->
           <div style="flex: 1;"></div>
@@ -498,6 +601,29 @@ function deleteTask(taskId) {
       location.reload();
     } else {
       showToast(data.error || 'Błąd usuwania', 'error');
+    }
+  })
+  .catch(err => {
+    showToast('Błąd połączenia', 'error');
+  });
+}
+
+function markTodoDone(taskId) {
+  if (!confirm('Czy potwierdzasz, że zamówienie zostało oznaczone jako opłacone w Backstage?')) {
+    return;
+  }
+  
+  fetch('/admin-v2/work-queue/' + taskId + '/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      showToast('Zadanie oznaczone jako wykonane', 'success');
+      location.reload();
+    } else {
+      showToast(data.error || 'Błąd oznaczania', 'error');
     }
   })
   .catch(err => {

@@ -1698,6 +1698,11 @@ def _handle_mark_paid(order_id: str, user: dict):
     # 4. Zmień status na paid
     update_order_status(order_id, "paid")
     
+    # 4a. Utwórz zadanie ToDo w monitoringu (do oznaczenia w Backstage)
+    from pg_storage import create_todo_task_for_order
+    todo_id = create_todo_task_for_order(order_id)
+    print(f"[V2 MARK-PAID] create_todo_task_for_order | order={order_id}, todo_id={todo_id}")
+    
     # 5. Wyślij emaile z biletami do uczestników
     participant_email_stats = {"sent": 0, "failed": 0, "skipped": 0}
     try:
@@ -5912,6 +5917,7 @@ def work_queue():
     
     # Kategorie zadań
     categories = {
+        "todo": {"label": "Zadania", "icon": "clipboard-check"},
         "wfirma": {"label": "wFirma", "icon": "file-text"},
         "make": {"label": "Make.com", "icon": "zap"},
         "stripe": {"label": "Stripe", "icon": "credit-card"},

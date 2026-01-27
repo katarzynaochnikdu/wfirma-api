@@ -3837,6 +3837,169 @@ def save_error_task(
             _put_conn(pool, conn)
 
 
+def create_todo_task_for_order(order_id: str) -> Optional[int]:
+    """
+    Tworzy zadanie ToDo dla opłaconego zamówienia.
+    
+    Zadanie pojawia się w monitoringu z wszystkimi danymi zamówienia,
+    aby admin mógł oznaczyć je jako opłacone w Backstage.
+    
+    Args:
+        order_id: event_order_id zamówienia
+    
+    Returns:
+        ID utworzonego zadania lub None
+    """
+    from datetime import datetime
+    
+    # Sprawdź czy ToDo dla tego zamówienia już istnieje (deduplikacja)
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        cur.execute(
+            """
+            SELECT id FROM error_queue 
+            WHERE category = 'todo' 
+              AND event_order_id = %s 
+              AND resolved_at IS NULL
+            """,
+            (str(order_id),),
+        )
+        existing = cur.fetchone()
+        if existing:
+            print(f"[DB] create_todo_task_for_order: ToDo już istnieje dla order_id={order_id}, id={existing['id']}")
+            return existing["id"]
+    except Exception as e:
+        print(f"[DB] create_todo_task_for_order dedupe check error: {e}")
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+    
+    # Pobierz dane zamówienia
+    order = get_order(order_id)
+    if not order:
+        print(f"[DB] create_todo_task_for_order: brak zamówienia order_id={order_id}")
+        return None
+    
+    # Pobierz dane wydarzenia
+    event_id = order.get("event_id", "")
+    event = get_event(event_id) if event_id else None
+    event_name = event.get("event_name", "") if event else ""
+    
+    # Pobierz uczestników
+    participants = get_participants_for_order(order_id)
+    participants_count = len(participants)
+    
+    # Wyciągnij firmę z danych uczestnika (jeśli dostępna)
+    company_name = ""
+    if participants:
+        first_p = participants[0]
+        p_data = first_p.get("data") or {}
+        if isinstance(p_data, dict):
+            company_name = p_data.get("company", "") or p_data.get("company_name", "") or ""
+    
+    # Formatowanie kwot
+    total = order.get("total") or 0
+    try:
+        total_float = float(total)
+    except (ValueError, TypeError):
+        total_float = 0.0
+    
+    currency = order.get("currency", "PLN")
+    total_formatted = f"{total_float:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
+    
+    # Oblicz netto i VAT (zakładamy 23% VAT)
+    netto = total_float / 1.23
+    vat = total_float - netto
+    netto_formatted = f"{netto:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
+    vat_formatted = f"{vat:,.2f}".replace(",", " ").replace(".", ",") + f" {currency}"
+    
+    # Formatowanie dat po polsku
+    months_pl = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
+                 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia']
+    
+    def format_date_pl(dt):
+        if not dt:
+            return ""
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+            except:
+                return str(dt)
+        return f"{dt.day} {months_pl[dt.month - 1]} {dt.year}, {dt.strftime('%H:%M')}"
+    
+    order_date = format_date_pl(order.get("created_at"))
+    paid_at = format_date_pl(order.get("paid_at"))
+    
+    # Metoda płatności
+    payment_option = order.get("payment_option_name", "")
+    payment_type = order.get("payment_type")
+    if payment_type == 1 or "online" in (payment_option or "").lower() or "stripe" in (payment_option or "").lower():
+        payment_method = "Karta online (Stripe)"
+    elif payment_type == 2 or "przelew" in (payment_option or "").lower() or "proforma" in (payment_option or "").lower():
+        payment_method = "Przelew (Proforma)"
+    else:
+        payment_method = payment_option or "Nieznana"
+    
+    # Dane kupującego
+    purchaser_first = order.get("purchaser_first_name", "") or ""
+    purchaser_last = order.get("purchaser_last_name", "") or ""
+    purchaser_name = f"{purchaser_first} {purchaser_last}".strip()
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_phone = order.get("purchaser_phone", "") or ""
+    purchaser_nip = order.get("purchaser_nip", "") or ""
+    promo_code = order.get("promo_code", "") or ""
+    
+    # Skrócony numer zamówienia do wyświetlenia
+    order_number = order_id
+    if len(order_id) > 20:
+        order_number = f"{order_id[:8]}...{order_id[-8:]}"
+    
+    # Przygotuj error_data z wszystkimi danymi zamówienia
+    error_data = {
+        "purchaser_name": purchaser_name,
+        "purchaser_email": purchaser_email,
+        "purchaser_phone": purchaser_phone,
+        "company_name": company_name,
+        "nip": purchaser_nip,
+        "event_name": event_name,
+        "total": total_formatted,
+        "total_netto": netto_formatted,
+        "vat": vat_formatted,
+        "payment_method": payment_method,
+        "promo_code": promo_code,
+        "participants_count": participants_count,
+        "order_date": order_date,
+        "paid_at": paid_at,
+        "order_number": order_number,
+        "order_id_full": order_id,
+    }
+    
+    # Opis zadania
+    description = f"{event_name} | {purchaser_email}"
+    if company_name:
+        description += f" | {company_name}"
+    
+    # Zapisz zadanie ToDo
+    task_id = save_error_task(
+        category="todo",
+        severity="todo",
+        title="Oznacz zamówienie jako opłacone w Backstage",
+        description=description,
+        event_order_id=order_id,
+        event_id=event_id,
+        error_data=error_data,
+        can_retry=False,  # ToDo nie wymaga ponowienia
+        max_retries=0,
+    )
+    
+    print(f"[DB] create_todo_task_for_order: utworzono ToDo id={task_id} dla order_id={order_id}")
+    return task_id
+
+
 def list_error_tasks(
     category: Optional[str] = None,
     severity: Optional[str] = None,
