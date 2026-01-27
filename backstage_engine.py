@@ -3285,6 +3285,21 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             "mail_tasks_count": len(result.get("mail_tasks", [])),
         })
 
+        # 6b. FALLBACK: Jeśli flow=FOC (status=paid od razu), sprawdź kompletność i wyślij maile
+        # To obsługuje przypadek gdy attendee webhook przyszedł PRZED order webhook (bufor pending_attendees)
+        if flow == FLOW_FOC:
+            try:
+                _log("INFO", "Krok 6b: FOC fallback - sprawdzam kompletność i wysyłam maile...")
+                foc_send_result = maybe_send_backstage_emails_when_complete(event_order_id)
+                _log("INFO", "FOC fallback zakończony", {
+                    "event_order_id": event_order_id,
+                    "complete": foc_send_result.get("complete"),
+                    "purchaser_sent": foc_send_result.get("sent", {}).get("purchaser"),
+                    "participants_sent": foc_send_result.get("sent", {}).get("participants", {}).get("sent", 0),
+                })
+            except Exception as e:
+                _log("WARNING", f"Błąd FOC fallback wysyłki maili: {e}", {"event_order_id": event_order_id})
+
         # 7. Zapisz mail tasks do logu (tylko purchaser/participant - internal nie są wysyłane)
         _log("INFO", "Krok 7: Zapisywanie mail tasks...")
         for i, mt in enumerate(result.get("mail_tasks", [])):
