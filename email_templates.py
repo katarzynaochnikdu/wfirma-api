@@ -2237,7 +2237,7 @@ def render_participant_ticket_email(
         participant_phone: Telefon uczestnika
         participant_company: Firma uczestnika (opcjonalnie)
         participant_badge_name: Nazwa na identyfikatorze (opcjonalnie)
-        ticket_name: Nazwa/typ rezerwacji
+        ticket_name: Nazwa biletu
         ticket_id: Numer potwierdzenia rezerwacji
         ticket_price: Wartość rezerwacji (brutto)
         discount_amount: Kwota rabatu (jeśli był)
