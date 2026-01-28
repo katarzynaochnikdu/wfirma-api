@@ -144,8 +144,9 @@
       {% set event_color = p.event_color or 'hsl(212, 100%, 42%)' %}
       {% set event_color_2 = p.event_color_2 or 'hsl(195, 100%, 42%)' %}
       {% set payment_option = (p.payment_option_name or '')|lower %}
-      {% set is_foc = p.is_free_ticket or 'foc' in payment_option or (p.price_gross is defined and p.price_gross <= 0) %}
-      {% set is_proforma = 'proforma' in payment_option or 'pro forma' in payment_option or 'pro' in payment_option %}
+      {% set ticket_name_lower = (p.ticket_class_name or p.ticket_name or '')|lower %}
+      {% set is_foc = p.is_free_ticket or 'foc' in payment_option or 'connect' in ticket_name_lower or 'free' in ticket_name_lower or 'gratis' in ticket_name_lower or 'bezpłatny' in ticket_name_lower or (p.price_gross is defined and p.price_gross <= 0) %}
+      {% set is_proforma = 'proforma' in payment_option or 'pro forma' in payment_option or 'przelew' in payment_option %}
       {% set is_stripe = 'online' in payment_option or 'stripe' in payment_option or 'karta' in payment_option %}
       <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}" class="clickable-row" onclick="goToParticipant(event, {{ p.participant_id }})">
         <!-- Checkbox (ukryte - nieużywane) -->
