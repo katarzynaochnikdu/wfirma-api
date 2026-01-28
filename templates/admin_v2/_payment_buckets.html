@@ -1,7 +1,7 @@
 <!-- PAYMENT BUCKETS -->
 <div class="payment-buckets">
   
-  <!-- Bulk Actions Bar -->
+  <!-- Bulk Actions Bar - dla zamówień oczekujących (proforma) -->
   <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
     <span class="bulk-count">
       <i data-lucide="check-square" style="width: 16px; height: 16px;"></i>
@@ -12,13 +12,23 @@
         <i data-lucide="bell"></i>
         Wyślij przypomnienie
       </button>
-      <button class="btn btn-outline btn-sm" onclick="bulkAction('resend_proforma')" type="button">
-        <i data-lucide="send"></i>
-        Wyślij proformę
-      </button>
       <button class="btn btn-primary btn-sm" onclick="bulkAction('mark_paid')" type="button">
         <i data-lucide="credit-card"></i>
         Oznacz opłacone
+      </button>
+    </div>
+  </div>
+  
+  <!-- Bulk Actions Bar - dla zamówień opłaconych -->
+  <div id="bulk-actions-bar-paid" class="bulk-actions-bar hidden">
+    <span class="bulk-count">
+      <i data-lucide="check-square" style="width: 16px; height: 16px;"></i>
+      Zaznaczono: <span id="selected-count-paid">0</span>
+    </span>
+    <div class="bulk-actions-buttons">
+      <button class="btn btn-primary btn-sm" onclick="bulkAction('send_confirmation')" type="button">
+        <i data-lucide="mail-check"></i>
+        Wyślij potwierdzenie uczestnictwa
       </button>
     </div>
   </div>
@@ -27,13 +37,22 @@
   <div class="buckets-grid">
     
     <!-- Due Today Bucket -->
+    {% set ns = namespace(due_today_proforma_count=0) %}
+    {% if buckets.due_today and buckets.due_today.orders %}
+      {% for order in buckets.due_today.orders %}
+        {% if order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower or 'przelew' in order.payment_option_name|lower) %}
+          {% set ns.due_today_proforma_count = ns.due_today_proforma_count + 1 %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
     <div class="bucket-card" data-bucket-id="due_today">
       <div class="bucket-header" onclick="toggleBucket('due_today')">
         <input type="checkbox" 
                class="bucket-checkbox" 
                data-bucket="due_today" 
                onclick="event.stopPropagation(); selectAllInBucket('due_today', this.checked)"
-               {% if not buckets.due_today.orders %}disabled{% endif %}>
+               {% if not buckets.due_today.orders %}disabled{% endif %}
+               style="{% if not ns.due_today_proforma_count %}display: none;{% endif %}">
         <div class="bucket-icon bucket-icon-due_today">
           <i data-lucide="calendar-clock"></i>
         </div>
@@ -59,13 +78,16 @@
             </thead>
             <tbody>
               {% for order in buckets.due_today.orders %}
+              {% set is_proforma = order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower or 'przelew' in order.payment_option_name|lower) %}
               <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
                 <td>
+                  {% if is_proforma %}
                   <input type="checkbox" 
                          class="order-checkbox" 
                          data-order-id="{{ order.order_id }}" 
                          data-bucket="due_today"
                          onchange="updateSelection()">
+                  {% endif %}
                 </td>
                 <td>
                   <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
@@ -126,13 +148,22 @@
     </div>
     
     <!-- Overdue Bucket -->
+    {% set ns_overdue = namespace(overdue_proforma_count=0) %}
+    {% if buckets.overdue and buckets.overdue.orders %}
+      {% for order in buckets.overdue.orders %}
+        {% if order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower or 'przelew' in order.payment_option_name|lower) %}
+          {% set ns_overdue.overdue_proforma_count = ns_overdue.overdue_proforma_count + 1 %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
     <div class="bucket-card" data-bucket-id="overdue">
       <div class="bucket-header" onclick="toggleBucket('overdue')">
         <input type="checkbox" 
                class="bucket-checkbox" 
                data-bucket="overdue" 
                onclick="event.stopPropagation(); selectAllInBucket('overdue', this.checked)"
-               {% if not buckets.overdue.orders %}disabled{% endif %}>
+               {% if not buckets.overdue.orders %}disabled{% endif %}
+               style="{% if not ns_overdue.overdue_proforma_count %}display: none;{% endif %}">
         <div class="bucket-icon bucket-icon-overdue">
           <i data-lucide="alert-triangle"></i>
         </div>
@@ -158,13 +189,16 @@
             </thead>
             <tbody>
               {% for order in buckets.overdue.orders %}
+              {% set is_proforma = order.payment_option_name and ('proforma' in order.payment_option_name|lower or 'pro forma' in order.payment_option_name|lower or 'przelew' in order.payment_option_name|lower) %}
               <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
                 <td>
+                  {% if is_proforma %}
                   <input type="checkbox" 
                          class="order-checkbox" 
                          data-order-id="{{ order.order_id }}" 
                          data-bucket="overdue"
                          onchange="updateSelection()">
+                  {% endif %}
                 </td>
                 <td>
                   <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
@@ -250,10 +284,10 @@
               <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
                 <td>
                   <input type="checkbox" 
-                         class="order-checkbox" 
+                         class="order-checkbox order-checkbox-paid" 
                          data-order-id="{{ order.order_id }}" 
                          data-bucket="paid"
-                         onchange="updateSelection()">
+                         onchange="updateSelectionPaid()">
                 </td>
                 <td>
                   <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
@@ -301,14 +335,9 @@
       </div>
     </div>
     
-    <!-- Cancelled Bucket -->
+    <!-- Cancelled Bucket - bez akcji grupowych -->
     <div class="bucket-card" data-bucket-id="cancelled">
       <div class="bucket-header" onclick="toggleBucket('cancelled')">
-        <input type="checkbox" 
-               class="bucket-checkbox" 
-               data-bucket="cancelled" 
-               onclick="event.stopPropagation(); selectAllInBucket('cancelled', this.checked)"
-               {% if not buckets.cancelled.orders %}disabled{% endif %}>
         <div class="bucket-icon bucket-icon-cancelled">
           <i data-lucide="x-circle"></i>
         </div>
@@ -336,11 +365,7 @@
               {% for order in buckets.cancelled.orders %}
               <tr class="bucket-order-row" data-order-id="{{ order.order_id }}">
                 <td>
-                  <input type="checkbox" 
-                         class="order-checkbox" 
-                         data-order-id="{{ order.order_id }}" 
-                         data-bucket="cancelled"
-                         onchange="updateSelection()">
+                  <!-- Brak checkboxa - anulowane zamówienia nie mają akcji grupowych -->
                 </td>
                 <td>
                   <a href="{{ url_for('admin_v2_bp.order_detail', order_id=order.order_id) }}" class="bucket-table-link">
@@ -404,8 +429,9 @@
 </div>
 
 <script>
-// Payment Buckets State
-const selectedOrders = new Set();
+// Payment Buckets State - oddzielne dla pending (do opłacenia/przeterminowane) i paid (opłacone)
+const selectedOrdersPending = new Set();  // dla due_today, overdue
+const selectedOrdersPaid = new Set();      // dla paid
 
 // Toggle bucket expand/collapse
 function toggleBucket(bucketId) {
@@ -420,48 +446,65 @@ function toggleBucket(bucketId) {
 
 // Select all orders in a bucket
 function selectAllInBucket(bucketId, checked) {
-  const checkboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]`);
-  
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = checked;
-    const orderId = checkbox.dataset.orderId;
-    
-    // Support both old (bucket-order-item) and new (bucket-order-row) structure
-    const row = checkbox.closest('.bucket-order-item') || checkbox.closest('.bucket-order-row');
-    
-    if (checked) {
-      selectedOrders.add(orderId);
-      if (row) row.classList.add('selected');
-    } else {
-      selectedOrders.delete(orderId);
-      if (row) row.classList.remove('selected');
-    }
-  });
-  
-  updateBulkActionsBar();
+  if (bucketId === 'paid') {
+    // Obsługa paid bucket
+    const checkboxes = document.querySelectorAll(`.order-checkbox-paid[data-bucket="paid"]`);
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = checked;
+      const orderId = checkbox.dataset.orderId;
+      const row = checkbox.closest('.bucket-order-row');
+      
+      if (checked) {
+        selectedOrdersPaid.add(orderId);
+        if (row) row.classList.add('selected');
+      } else {
+        selectedOrdersPaid.delete(orderId);
+        if (row) row.classList.remove('selected');
+      }
+    });
+    updateBulkActionsBarPaid();
+  } else if (bucketId === 'due_today' || bucketId === 'overdue') {
+    // Obsługa pending buckets (tylko proforma mają checkboxy)
+    const checkboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]:not(.order-checkbox-paid)`);
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = checked;
+      const orderId = checkbox.dataset.orderId;
+      const row = checkbox.closest('.bucket-order-row');
+      
+      if (checked) {
+        selectedOrdersPending.add(orderId);
+        if (row) row.classList.add('selected');
+      } else {
+        selectedOrdersPending.delete(orderId);
+        if (row) row.classList.remove('selected');
+      }
+    });
+    updateBulkActionsBar();
+  }
 }
 
-// Update selection state
+// Update selection state for pending orders (due_today, overdue)
 function updateSelection() {
-  selectedOrders.clear();
+  selectedOrdersPending.clear();
   
-  document.querySelectorAll('.order-checkbox').forEach(checkbox => {
-    // Support both old (bucket-order-item) and new (bucket-order-row) structure
-    const item = checkbox.closest('.bucket-order-item') || checkbox.closest('.bucket-order-row');
+  document.querySelectorAll('.order-checkbox:not(.order-checkbox-paid)').forEach(checkbox => {
+    const item = checkbox.closest('.bucket-order-row');
     
     if (checkbox.checked) {
-      selectedOrders.add(checkbox.dataset.orderId);
+      selectedOrdersPending.add(checkbox.dataset.orderId);
       if (item) item.classList.add('selected');
     } else {
       if (item) item.classList.remove('selected');
     }
   });
   
-  // Update bucket checkboxes (indeterminate state)
-  document.querySelectorAll('.bucket-checkbox').forEach(bucketCheckbox => {
-    const bucketId = bucketCheckbox.dataset.bucket;
-    const allCheckboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]`);
-    const checkedCheckboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]:checked`);
+  // Update bucket checkboxes (indeterminate state) for pending buckets
+  ['due_today', 'overdue'].forEach(bucketId => {
+    const bucketCheckbox = document.querySelector(`.bucket-checkbox[data-bucket="${bucketId}"]`);
+    if (!bucketCheckbox) return;
+    
+    const allCheckboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]:not(.order-checkbox-paid)`);
+    const checkedCheckboxes = document.querySelectorAll(`.order-checkbox[data-bucket="${bucketId}"]:not(.order-checkbox-paid):checked`);
     
     if (allCheckboxes.length === 0) {
       bucketCheckbox.checked = false;
@@ -481,15 +524,69 @@ function updateSelection() {
   updateBulkActionsBar();
 }
 
-// Update bulk actions bar visibility
+// Update selection state for paid orders
+function updateSelectionPaid() {
+  selectedOrdersPaid.clear();
+  
+  document.querySelectorAll('.order-checkbox-paid').forEach(checkbox => {
+    const item = checkbox.closest('.bucket-order-row');
+    
+    if (checkbox.checked) {
+      selectedOrdersPaid.add(checkbox.dataset.orderId);
+      if (item) item.classList.add('selected');
+    } else {
+      if (item) item.classList.remove('selected');
+    }
+  });
+  
+  // Update paid bucket checkbox
+  const bucketCheckbox = document.querySelector(`.bucket-checkbox[data-bucket="paid"]`);
+  if (bucketCheckbox) {
+    const allCheckboxes = document.querySelectorAll('.order-checkbox-paid');
+    const checkedCheckboxes = document.querySelectorAll('.order-checkbox-paid:checked');
+    
+    if (allCheckboxes.length === 0) {
+      bucketCheckbox.checked = false;
+      bucketCheckbox.indeterminate = false;
+    } else if (checkedCheckboxes.length === 0) {
+      bucketCheckbox.checked = false;
+      bucketCheckbox.indeterminate = false;
+    } else if (checkedCheckboxes.length === allCheckboxes.length) {
+      bucketCheckbox.checked = true;
+      bucketCheckbox.indeterminate = false;
+    } else {
+      bucketCheckbox.checked = false;
+      bucketCheckbox.indeterminate = true;
+    }
+  }
+  
+  updateBulkActionsBarPaid();
+}
+
+// Update bulk actions bar visibility for pending orders
 function updateBulkActionsBar() {
   const bar = document.getElementById('bulk-actions-bar');
   const countEl = document.getElementById('selected-count');
   
   if (bar && countEl) {
-    if (selectedOrders.size > 0) {
+    if (selectedOrdersPending.size > 0) {
       bar.classList.remove('hidden');
-      countEl.textContent = selectedOrders.size;
+      countEl.textContent = selectedOrdersPending.size;
+    } else {
+      bar.classList.add('hidden');
+    }
+  }
+}
+
+// Update bulk actions bar visibility for paid orders
+function updateBulkActionsBarPaid() {
+  const bar = document.getElementById('bulk-actions-bar-paid');
+  const countEl = document.getElementById('selected-count-paid');
+  
+  if (bar && countEl) {
+    if (selectedOrdersPaid.size > 0) {
+      bar.classList.remove('hidden');
+      countEl.textContent = selectedOrdersPaid.size;
     } else {
       bar.classList.add('hidden');
     }
@@ -498,20 +595,27 @@ function updateBulkActionsBar() {
 
 // Bulk action handler
 function bulkAction(action) {
-  if (selectedOrders.size === 0) return;
+  let orderIds = [];
   
-  const orderIds = Array.from(selectedOrders);
+  // Określ które zamówienia są zaznaczone na podstawie akcji
+  if (action === 'send_confirmation') {
+    orderIds = Array.from(selectedOrdersPaid);
+  } else {
+    orderIds = Array.from(selectedOrdersPending);
+  }
+  
+  if (orderIds.length === 0) return;
   
   let confirmMessage = '';
   switch (action) {
     case 'send_reminder':
-      confirmMessage = `Wysłać przypomnienie do ${orderIds.length} zamówień?`;
-      break;
-    case 'resend_proforma':
-      confirmMessage = `Wysłać proformę do ${orderIds.length} zamówień?`;
+      confirmMessage = `Wysłać przypomnienie o płatności do ${orderIds.length} zamówień?`;
       break;
     case 'mark_paid':
       confirmMessage = `Oznaczyć ${orderIds.length} zamówień jako opłacone?`;
+      break;
+    case 'send_confirmation':
+      confirmMessage = `Wysłać potwierdzenie uczestnictwa do ${orderIds.length} zamówień?`;
       break;
   }
   
@@ -544,8 +648,7 @@ document.addEventListener('DOMContentLoaded', function() {
   ['due_today', 'overdue'].forEach(bucketId => {
     const content = document.getElementById(`content-${bucketId}`);
     const toggle = document.getElementById(`toggle-${bucketId}`);
-    // Support both old (bucket-order-item) and new (bucket-order-row) structure
-    if (content && (content.querySelector('.bucket-order-item') || content.querySelector('.bucket-order-row'))) {
+    if (content && content.querySelector('.bucket-order-row')) {
       content.classList.add('expanded');
       if (toggle) toggle.classList.add('expanded');
     }
