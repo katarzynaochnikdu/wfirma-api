@@ -736,12 +736,12 @@
     </div>
   </div>
   
-  <div class="card filters-card" style="margin-bottom: 1rem;">
-    <form class="filters-grid" method="GET">
+  <div class="card filters-card" style="margin-top: 0; margin-bottom: 0; border-top: none; border-radius: 0;">
+    <form class="filters-grid" method="GET" style="grid-template-columns: 1fr auto auto auto;">
       <input type="hidden" name="tab" value="participants">
       <div class="filter-search">
         <i data-lucide="search" class="search-icon"></i>
-        <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj uczestników..." class="search-input">
+        <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Szukaj po imieniu, nazwisku lub emailu..." class="search-input">
       </div>
       <button type="submit" class="btn btn-primary">Szukaj</button>
       <button type="button" class="btn btn-outline" id="send-msg-participants-btn" onclick="openEventParticipantsMessageModal()" disabled>
@@ -755,59 +755,134 @@
     </form>
   </div>
   
-  <div class="card">
-    <table class="data-table">
+  <div class="card table-card" style="margin-top: 0; padding: 0; border-radius: 0; border-top: 1px solid var(--border);">
+    <table class="data-table sortable-table event-participants-table" style="margin: 0;">
       <thead>
         <tr>
           <th style="width: 40px; display: none;">
             <input type="checkbox" class="checkbox" id="select-all-event-participants" onchange="toggleSelectAllEventParticipants(this.checked)">
           </th>
-          <th>Uczestnik</th>
-          <th>Bilet</th>
-          <th class="text-center">Status</th>
-          <th class="text-right">Data</th>
+          <th class="sortable-header text-right" data-sort="date" style="width: 90px;">
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.375rem;">
+              Data
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header" data-sort="name">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Uczestnik
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header" data-sort="company">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Firma
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header" data-sort="ticket">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              Bilet
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="sortable-header text-center" data-sort="status" style="width: 80px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 0.375rem;">
+              Status
+              <i data-lucide="arrow-up-down" style="width: 14px; height: 14px; opacity: 0.4;"></i>
+            </div>
+          </th>
+          <th class="text-center" style="width: 60px;">
+            <div style="display: flex; align-items: center; justify-content: center;">
+              Płatność
+            </div>
+          </th>
         </tr>
       </thead>
       <tbody>
         {% for p in participants %}
+        {% set payment_option = (p.payment_option_name or '')|lower %}
+        {% set is_foc = p.is_free_ticket or 'foc' in payment_option or (p.price_gross is defined and p.price_gross <= 0) %}
+        {% set is_proforma = 'proforma' in payment_option or 'pro forma' in payment_option or 'pro' in payment_option %}
+        {% set is_stripe = 'online' in payment_option or 'stripe' in payment_option or 'karta' in payment_option %}
         <tr data-participant-id="{{ p.participant_id }}" data-email="{{ p.email }}" data-name="{{ p.first_name }} {{ p.last_name }}" class="clickable-row" onclick="goToParticipantDetail(event, {{ p.participant_id }})" style="cursor: pointer;">
           <td onclick="event.stopPropagation();" style="display: none;">
             <input type="checkbox" class="checkbox event-participant-checkbox" data-participant-id="{{ p.participant_id }}" onchange="updateEventParticipantSelection()">
           </td>
+          <!-- Data -->
+          <td class="text-right">
+            <div>
+              <p style="font-size: 0.875rem;">{{ p.created_at.strftime('%d.%m.%Y') if p.created_at else '—' }}</p>
+              <p style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground);">{{ p.created_at.strftime('%H:%M') if p.created_at else '' }}</p>
+            </div>
+          </td>
+          <!-- Uczestnik z avatarem -->
           <td>
             <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <div class="avatar-initials small">{{ p.first_name[:1]|upper }}{{ p.last_name[:1]|upper }}</div>
-              <div class="buyer-cell">
-                <span class="buyer-name">{{ p.first_name }} {{ p.last_name }}</span>
-                <span class="buyer-email">{{ p.email }}</span>
-                {% if p.company %}<p style="font-size: 0.625rem; color: var(--muted-foreground);">{{ p.company }}</p>{% endif %}
+              <div class="avatar-initials small">
+                {{ (p.first_name or '')[:1]|upper }}{{ (p.last_name or '')[:1]|upper }}
+              </div>
+              <div style="min-width: 0;">
+                <p style="font-size: 0.875rem; font-weight: 500;">{{ p.first_name or '' }} {{ p.last_name or '' }}</p>
+                <p style="font-size: 0.75rem; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.email or '—' }}</p>
               </div>
             </div>
           </td>
-          <td>{{ p.ticket_name or 'Standard' }}</td>
+          <!-- Firma -->
+          <td>
+            <span style="font-size: 0.875rem; color: var(--muted-foreground);">{{ p.company or '—' }}</span>
+          </td>
+          <!-- Bilet -->
+          <td>
+            <span style="font-size: 0.875rem;">{{ p.ticket_class_name or p.ticket_name or 'Standard' }}</span>
+          </td>
+          <!-- Status (ikona) -->
           <td class="text-center">
             {% if p.is_notified %}
-            <i data-lucide="mail-check" style="width: 20px; height: 20px; color: var(--primary);" title="Powiadomiony"></i>
+            <span title="Powiadomiony" style="display: inline-flex; align-items: center; justify-content: center;">
+              <i data-lucide="mail-check" style="width: 20px; height: 20px; color: var(--primary);"></i>
+            </span>
             {% else %}
-            <i data-lucide="user-plus" style="width: 20px; height: 20px; color: var(--muted-foreground);" title="Niepowiadomiony"></i>
+            <span title="Niepowiadomiony" style="display: inline-flex; align-items: center; justify-content: center;">
+              <i data-lucide="user-plus" style="width: 20px; height: 20px; color: var(--muted-foreground);"></i>
+            </span>
             {% endif %}
           </td>
-          <td class="text-right">
-            <div>
-              <p style="font-size: 0.875rem;">{{ p.created_at.strftime('%d %B') }}</p>
-              <p style="font-size: 0.75rem; color: var(--muted-foreground);">{{ p.created_at.year }}</p>
-            </div>
+          <!-- Typ płatności (ikona) -->
+          <td class="text-center">
+            {% if is_foc %}
+            <span class="payment-type-icon payment-type-foc" title="FOC (bezpłatne)">
+              <i data-lucide="gift" style="width: 18px; height: 18px;"></i>
+            </span>
+            {% elif is_stripe %}
+            <span class="payment-type-icon payment-type-stripe" title="Płatność online (Stripe)">
+              <i data-lucide="credit-card" style="width: 18px; height: 18px;"></i>
+            </span>
+            {% elif is_proforma %}
+            <span class="payment-type-icon payment-type-proforma" title="Przelew (Proforma)">
+              <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
+            </span>
+            {% else %}
+            <span class="payment-type-icon" title="{{ p.payment_option_name or 'Nieokreślona' }}">
+              <i data-lucide="help-circle" style="width: 18px; height: 18px;"></i>
+            </span>
+            {% endif %}
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
+          <td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
             Brak uczestników
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% if participants %}
+    <div class="table-footer">
+      <span class="table-info">Wyświetlono {{ participants|length }} uczestników</span>
+    </div>
+    {% endif %}
   </div>
   </div>
   
@@ -2399,11 +2474,37 @@
     border: 1px solid hsl(270, 80%, 85%);
   }
   
-  .payment-type-badge.payment-type-foc,
-  .payment-type-icon.payment-type-foc {
+  .payment-type-badge.payment-type-foc {
     background: hsl(160, 82%, 95%);
     color: hsl(160, 82%, 35%);
     border: 1px solid hsl(160, 82%, 85%);
+  }
+  
+  /* Payment type icons */
+  .payment-type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius);
+    color: var(--muted-foreground);
+    background: var(--muted);
+  }
+
+  .payment-type-icon.payment-type-foc {
+    background: hsl(160, 82%, 44%, 0.1);
+    color: hsl(160, 82%, 44%);
+  }
+
+  .payment-type-icon.payment-type-stripe {
+    background: hsl(280, 80%, 50%, 0.1);
+    color: hsl(280, 80%, 50%);
+  }
+
+  .payment-type-icon.payment-type-proforma {
+    background: hsl(212, 100%, 42%, 0.1);
+    color: hsl(212, 100%, 42%);
   }
   
   .bucket-empty {
@@ -3554,6 +3655,77 @@ function goToOrderDetail(event, orderId) {
       
       rows.forEach(row => tbody.appendChild(row));
       lucide.createIcons();
+    });
+  });
+})();
+
+// ===== EVENT PARTICIPANTS TABLE SORTING =====
+(function() {
+  const table = document.querySelector('.event-participants-table');
+  if (!table) return;
+  
+  const headers = table.querySelectorAll('.sortable-header');
+  const tbody = table.querySelector('tbody');
+  
+  headers.forEach((header) => {
+    header.addEventListener('click', function() {
+      const sortKey = this.dataset.sort;
+      const rows = Array.from(tbody.querySelectorAll('tr.clickable-row'));
+      
+      if (rows.length === 0) return;
+      
+      // Toggle direction
+      const isAsc = this.classList.contains('sorted-asc');
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      this.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
+      
+      // Get column index (skip checkbox column which is hidden)
+      const headerIndex = Array.from(this.parentNode.children).indexOf(this);
+      
+      rows.sort((a, b) => {
+        const aCell = a.children[headerIndex];
+        const bCell = b.children[headerIndex];
+        
+        if (!aCell || !bCell) return 0;
+        
+        let aVal, bVal;
+        
+        if (sortKey === 'date') {
+          // Data - parsuj z formatu DD.MM.YYYY HH:MM
+          const aText = aCell.textContent.replace(/\s+/g, ' ').trim();
+          const bText = bCell.textContent.replace(/\s+/g, ' ').trim();
+          const parseDate = (text) => {
+            const match = text.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2}):(\d{2})?/);
+            if (match) {
+              return new Date(match[3], parseInt(match[2])-1, match[1], match[4] || 0, match[5] || 0);
+            }
+            return new Date(0);
+          };
+          aVal = parseDate(aText);
+          bVal = parseDate(bText);
+          return isAsc ? bVal - aVal : aVal - bVal;
+        } else if (sortKey === 'status') {
+          // Status - po title ikony
+          const aIcon = aCell.querySelector('[title]');
+          const bIcon = bCell.querySelector('[title]');
+          aVal = aIcon ? aIcon.getAttribute('title') : '';
+          bVal = bIcon ? bIcon.getAttribute('title') : '';
+          return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+        } else {
+          // Tekstowe - po treści komórki
+          aVal = aCell.textContent.trim().toLowerCase();
+          bVal = bCell.textContent.trim().toLowerCase();
+          return isAsc ? bVal.localeCompare(aVal, 'pl') : aVal.localeCompare(bVal, 'pl');
+        }
+      });
+      
+      // Przenieś posortowane wiersze
+      rows.forEach(row => tbody.appendChild(row));
+      
+      // Re-init icons po sortowaniu
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
     });
   });
 })();
