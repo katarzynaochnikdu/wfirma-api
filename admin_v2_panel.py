@@ -1608,6 +1608,9 @@ def _handle_mark_paid(order_id: str, user: dict):
             # #endregion
             
             # Przygotuj dane zamówienia dla wFirma
+            # Pobierz sandbox z zamówienia (zapisane przy tworzeniu proformy)
+            is_sandbox = order.get("sandbox", False)
+            
             order_data_for_invoice = {
                 "event_order_id": order_id,
                 "purchaser_email": purchaser_email,
@@ -1618,8 +1621,11 @@ def _handle_mark_paid(order_id: str, user: dict):
                 "purchaser_phone": order.get("purchaser_phone", ""),
                 "total": total_value,
                 "currency": currency_value,
+                "sandbox": is_sandbox,  # Tryb testowy - używany do wyboru serii testowych
                 "raw": order.get("raw", {}),
             }
+            
+            print(f"[V2 MARK-PAID] order_data sandbox={is_sandbox}")
             
             success, invoice_result, invoice_error = _create_paid_invoice(
                 order_data=order_data_for_invoice,
