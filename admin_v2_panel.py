@@ -1585,9 +1585,10 @@ def _handle_mark_paid(order_id: str, user: dict):
     existing_proforma = next(((d or {}) for d in existing_docs if (d or {}).get("document_type") == "proforma"), None)
     proforma_wfirma_id = existing_proforma.get("wfirma_invoice_id") if existing_proforma else None
     proforma_number = existing_proforma.get("wfirma_number") if existing_proforma else None
+    proforma_contractor_id = existing_proforma.get("wfirma_contractor_id") if existing_proforma else None
     
     if existing_proforma:
-        print(f"[V2 MARK-PAID] Znaleziono proformę: {proforma_number} (ID: {proforma_wfirma_id})")
+        print(f"[V2 MARK-PAID] Znaleziono proformę: {proforma_number} (ID: {proforma_wfirma_id}, contractor_id: {proforma_contractor_id})")
     
     errors = []
     invoice_generated = False
@@ -1625,6 +1626,7 @@ def _handle_mark_paid(order_id: str, user: dict):
                 event_name=event_name,
                 send_email=False,  # Email wyślemy osobno z naszym szablonem
                 proforma_reference=proforma_number,  # Referencja do proformy w opisie faktury
+                existing_contractor_id=proforma_contractor_id,  # Użyj tego samego kontrahenta co w proformie
             )
             
             if success:

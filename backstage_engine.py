@@ -1739,6 +1739,8 @@ def _create_wfirma_invoice(
     payment_status: str = "paid",   # "paid" lub "unpaid"
     send_email: bool = True,
     proforma_reference: str = None,  # Numer proformy do referencji (tylko dla document_type="normal")
+    existing_contractor_id: str = None,  # ID kontrahenta z wFirma (np. z proformy)
+    is_sandbox: bool = None,  # Tryb sandbox - jeśli True, używa serii testowych
 ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
     """
     Tworzy fakturę w wFirma przez wewnętrzne wywołanie API.
@@ -1750,14 +1752,24 @@ def _create_wfirma_invoice(
         payment_status: "paid" (opłacona) lub "unpaid" (nieopłacona)
         send_email: Czy wysłać fakturę emailem
         proforma_reference: Numer proformy do referencji w opisie (np. "W nawiązaniu do proformy: X")
+        existing_contractor_id: ID kontrahenta z wFirma - jeśli podany, użyje tego samego kontrahenta
+        is_sandbox: Tryb sandbox - jeśli True, używa serii testowych (Eventy Faktura VAT TEST, itp.)
     
     Returns:
         (success, invoice_data, error_message)
     """
     event_order_id = order_data.get("event_order_id", "")
     
+    # Określ czy to tryb testowy:
+    # 1. Najpierw parametr is_sandbox z funkcji
+    # 2. Fallback do order_data.sandbox (z payloadu webhooka)
+    # 3. Fallback do WFIRMA_COMPANY (zmienna ENV)
+    if is_sandbox is None:
+        is_sandbox = order_data.get("sandbox", False)
+    use_test_series = is_sandbox or WFIRMA_COMPANY in ('test', 'md_test')
+    
     # Wybierz odpowiednią serię w zależności od typu dokumentu i trybu (test/prod)
-    if WFIRMA_COMPANY in ('test', 'md_test'):
+    if use_test_series:
         # Serie testowe
         if document_type == "proforma":
             series_name = WFIRMA_SERIES_PROFORMA_TEST
@@ -1775,6 +1787,8 @@ def _create_wfirma_invoice(
         "event_order_id": event_order_id,
         "payment_status": payment_status,
         "company": WFIRMA_COMPANY,
+        "is_sandbox": is_sandbox,
+        "use_test_series": use_test_series,
         "series_name": series_name,
         "event_name": event_name[:30] if event_name else None,
         "total": order_data.get("total", 0),
@@ -1876,6 +1890,10 @@ def _create_wfirma_invoice(
         "email": purchaser_email,
     }
     
+    # Jeśli mamy existing_contractor_id (np. z proformy) - użyj tego samego kontrahenta
+    if existing_contractor_id:
+        invoice_payload["existing_contractor_id"] = existing_contractor_id
+    
     _log("DEBUG", "WFIRMA: Payload faktury", {
         "document_type": document_type,
         "positions_count": len(positions),
@@ -1926,17 +1944,21 @@ def _create_wfirma_invoice(
         if status_code == 200 and result.get("success"):
             invoice_id = result.get("invoice", {}).get("id")
             invoice_number = result.get("invoice", {}).get("fullnumber")
+            # Wyciągnij contractor_id z odpowiedzi (do użycia przy fakturze końcowej)
+            contractor_data = result.get("contractor", {})
+            contractor_id = contractor_data.get("id") if isinstance(contractor_data, dict) else None
             
             _log("INFO", "WFIRMA: SUCCESS dokument utworzony", {
                 "invoice_id": invoice_id,
                 "invoice_number": invoice_number,
+                "contractor_id": contractor_id,
                 "email_sent": result.get("email_sent", False),
                 "document_type": document_type,
                 "payment_status": payment_status,
                 "duration_ms": dt_ms,
             })
             
-            # Zapisz do bazy
+            # Zapisz do bazy (z contractor_id dla późniejszego użycia przy fakturze końcowej)
             try:
                 from pg_storage import save_wfirma_document
                 save_wfirma_document(
@@ -1946,6 +1968,7 @@ def _create_wfirma_invoice(
                     document_type=document_type,
                     email_to=purchaser_email,
                     raw=result,
+                    wfirma_contractor_id=str(contractor_id) if contractor_id else None,
                 )
             except Exception as db_err:
                 err_txt = str(db_err)
@@ -2050,6 +2073,7 @@ def _create_paid_invoice(
     event_name: str,
     send_email: bool = True,
     proforma_reference: str = None,  # Numer proformy do referencji w opisie faktury
+    existing_contractor_id: str = None,  # ID kontrahenta z wFirma (z proformy)
 ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
     """
     Tworzy opłaconą fakturę VAT po płatności Stripe.
@@ -2057,16 +2081,19 @@ def _create_paid_invoice(
     Args:
         proforma_reference: Numer proformy (np. "PROF/EV/TEST/1/01/2026") - 
                            jeśli podany, zostanie dodany do opisu faktury
+        existing_contractor_id: ID kontrahenta z wFirma (np. z proformy) -
+                               jeśli podany, użyje tego samego kontrahenta
     """
     # #region agent log
     import traceback
     _caller = ''.join(traceback.format_stack()[-4:-1])
-    print(f"[DEBUG-PAID-INVOICE] CALLED | order_id={order_data.get('event_order_id','')}, proforma_ref={proforma_reference}, caller_snippet={_caller[:300]}")
+    print(f"[DEBUG-PAID-INVOICE] CALLED | order_id={order_data.get('event_order_id','')}, proforma_ref={proforma_reference}, contractor_id={existing_contractor_id}, caller_snippet={_caller[:300]}")
     # #endregion
     _log("INFO", "WFIRMA: Wywołanie _create_paid_invoice", {
         "event_order_id": order_data.get("event_order_id", ""),
         "event_name": event_name[:30] if event_name else None,
         "proforma_reference": proforma_reference,
+        "existing_contractor_id": existing_contractor_id,
     })
     return _create_wfirma_invoice(
         order_data=order_data,
@@ -2075,6 +2102,7 @@ def _create_paid_invoice(
         payment_status="paid",
         send_email=send_email,
         proforma_reference=proforma_reference,
+        existing_contractor_id=existing_contractor_id,
     )
 
 

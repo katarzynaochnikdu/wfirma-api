@@ -885,6 +885,7 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
             "total": total_value,
             "currency": currency_value,
             "tickets": enriched_tickets,  # Użyj wzbogaconych biletów
+            "sandbox": is_sandbox,  # Tryb sandbox - używany do wyboru serii testowych
         }
         
         print(f"[STRIPE] Tworzę fakturę VAT (wFirma) | order={event_order_id}, send_email={bool(purchaser_email)}")

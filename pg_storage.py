@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS wfirma_documents (
   event_order_id TEXT NOT NULL REFERENCES orders(event_order_id) ON DELETE CASCADE,
   wfirma_invoice_id TEXT,
   wfirma_number TEXT,
+  wfirma_contractor_id TEXT, -- ID kontrahenta z wFirma (do użycia przy fakturze końcowej)
   document_type TEXT, -- proforma/normal/...
   status TEXT NOT NULL DEFAULT 'created', -- created/sent/failed
   pdf_path TEXT,
@@ -180,6 +181,13 @@ CREATE TABLE IF NOT EXISTS wfirma_documents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migracja: dodaj kolumnę wfirma_contractor_id jeśli nie istnieje
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='wfirma_documents' AND column_name='wfirma_contractor_id') THEN
+    ALTER TABLE wfirma_documents ADD COLUMN wfirma_contractor_id TEXT;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_wfirma_docs_order_id ON wfirma_documents(event_order_id);
 -- Twarda ochrona przed podwójną fakturą VAT (normal) dla tego samego zamówienia
@@ -1592,6 +1600,7 @@ def save_wfirma_document(
     email_to: Optional[str] = None,
     email_cc: Optional[str] = None,
     raw: Optional[Dict[str, Any]] = None,
+    wfirma_contractor_id: Optional[str] = None,  # ID kontrahenta z wFirma
 ) -> Dict[str, Any]:
     """Zapisuje informacje o dokumencie wFirma."""
     ensure_schema()
@@ -1603,15 +1612,16 @@ def save_wfirma_document(
         cur.execute(
             """
             INSERT INTO wfirma_documents (
-                event_order_id, wfirma_invoice_id, wfirma_number, document_type,
+                event_order_id, wfirma_invoice_id, wfirma_number, wfirma_contractor_id, document_type,
                 pdf_path, email_to, email_cc, raw
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, event_order_id, wfirma_invoice_id, wfirma_number, document_type, status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, event_order_id, wfirma_invoice_id, wfirma_number, wfirma_contractor_id, document_type, status
             """,
             (
                 str(event_order_id),
                 str(wfirma_invoice_id),
                 str(wfirma_number),
+                str(wfirma_contractor_id) if wfirma_contractor_id else None,
                 str(document_type),
                 pdf_path,
                 email_to,

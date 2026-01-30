@@ -5727,6 +5727,11 @@ def workflow_create_invoice():
     clean_nip = re.sub(r'[^0-9]', '', nip_raw)
     nip_valid = len(clean_nip) == 10  # Flaga czy NIP jest poprawny
     
+    # Istniejący contractor_id z wFirma (np. z proformy - żeby użyć tego samego kontrahenta)
+    existing_contractor_id = body.get('existing_contractor_id')
+    if existing_contractor_id:
+        print(f"[WORKFLOW] Przekazano existing_contractor_id: {existing_contractor_id}")
+    
     # Dane kontrahenta z wywołania (fallback gdy brak/niepoprawny NIP)
     # wFirma wymaga name, street, zip, city - domyślne wartości jeśli puste
     purchaser_name = (body.get('purchaser_name') or '').strip()
@@ -5831,10 +5836,21 @@ def workflow_create_invoice():
     contractor = None
     contractor_id = None
     contractor_created = False
-    contractor_source = None  # 'wfirma', 'gus', 'purchaser'
+    contractor_source = None  # 'wfirma', 'gus', 'purchaser', 'existing'
     resp_find = None  # Inicjalizacja dla przypadku gdy nie szukamy po NIP
     
-    if nip_valid:
+    # Jeśli mamy existing_contractor_id (np. z proformy) - użyj go bezpośrednio
+    if existing_contractor_id:
+        try:
+            contractor_id = int(existing_contractor_id)
+            contractor = {"id": contractor_id}  # Minimalny obiekt kontrahenta
+            contractor_source = 'existing'
+            print(f"[WORKFLOW] Używam istniejącego kontrahenta ID={contractor_id} (z proformy)")
+        except (ValueError, TypeError) as e:
+            print(f"[WORKFLOW] Błąd parsowania existing_contractor_id: {e}")
+            existing_contractor_id = None  # Fallback do normalnego szukania
+    
+    if not contractor_id and nip_valid:
         # NIP poprawny - szukamy w wFirma
         contractor, resp_find = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
         contractor_id = _extract_contractor_id(contractor)
