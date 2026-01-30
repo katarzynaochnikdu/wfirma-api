@@ -2652,22 +2652,27 @@ def decode_bir_inner_xml(encoded: str) -> str:
     """
     Dekodowanie wewnętrznego XML zwracanego przez GUS (DaneSzukajPodmiotyResult).
     Port funkcji decodeBirInnerXml z backendu Googie_GUS.
+    UWAGA: NIE dekodujemy &amp; na & - xml.etree.ElementTree sam to robi poprawnie!
     """
     if not isinstance(encoded, str):
         return ""
 
-    return (
+    result = (
         encoded.lstrip("\ufeff")
-        .replace("&amp;amp;", "&amp;")
+        .replace("&amp;amp;", "&amp;")  # podwójne kodowanie → pojedyncze (dla parsera XML)
         .replace("&#xD;", "\r")
         .replace("&#xA;", "\n")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", '"')
         .replace("&apos;", "'")
-        .replace("&amp;", "&")
+        # USUNIĘTO: .replace("&amp;", "&") - to psuło XML! Parser sam dekoduje &amp;
         .strip()
     )
+    # #region agent log
+    print(f"[DEBUG-H3-FIX] decode_bir_inner_xml hasAmpAfter={('&amp;' in result)} snippet={repr(result[:200])}")
+    # #endregion
+    return result
 
 
 def post_soap_gus(bir_host: str, envelope: str, sid: str | None, timeout: int = 10) -> requests.Response:
