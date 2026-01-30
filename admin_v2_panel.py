@@ -1577,13 +1577,22 @@ def _handle_mark_paid(order_id: str, user: dict):
     total_value = float(order.get("total", 0) or 0)
     currency_value = order.get("currency", "PLN") or "PLN"
     
-    # 1. Sprawdź czy faktura końcowa już istnieje
+    # 1. Sprawdź czy faktura końcowa już istnieje i pobierz proformę
     existing_docs = get_wfirma_documents(order_id) or []
     has_final_invoice = any((d or {}).get("document_type") == "normal" for d in existing_docs)
+    
+    # Pobierz istniejącą proformę (jeśli istnieje)
+    existing_proforma = next(((d or {}) for d in existing_docs if (d or {}).get("document_type") == "proforma"), None)
+    proforma_wfirma_id = existing_proforma.get("wfirma_invoice_id") if existing_proforma else None
+    proforma_number = existing_proforma.get("wfirma_number") if existing_proforma else None
+    
+    if existing_proforma:
+        print(f"[V2 MARK-PAID] Znaleziono proformę: {proforma_number} (ID: {proforma_wfirma_id})")
     
     errors = []
     invoice_generated = False
     email_sent = False
+    proforma_marked_paid = False
     
     # 2. Generuj fakturę końcową jeśli nie istnieje
     if not has_final_invoice and total_value > 0:
@@ -1593,7 +1602,7 @@ def _handle_mark_paid(order_id: str, user: dict):
             # #region agent log
             try:
                 with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:gen_invoice","message":"Generating invoice","data":{"order_id":order_id,"total":total_value},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+                    _f.write(_json.dumps({"location":"admin_v2_panel.py:_handle_mark_paid:gen_invoice","message":"Generating invoice","data":{"order_id":order_id,"total":total_value,"proforma_ref":proforma_number},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
             except: pass
             # #endregion
             
@@ -1615,11 +1624,37 @@ def _handle_mark_paid(order_id: str, user: dict):
                 order_data=order_data_for_invoice,
                 event_name=event_name,
                 send_email=False,  # Email wyślemy osobno z naszym szablonem
+                proforma_reference=proforma_number,  # Referencja do proformy w opisie faktury
             )
             
             if success:
                 invoice_generated = True
                 print(f"[V2 MARK-PAID] Wygenerowano fakturę dla {order_id}")
+                
+                # 2b. Oznacz proformę jako opłaconą w wFirma (jeśli istnieje)
+                if proforma_wfirma_id and total_value > 0:
+                    try:
+                        from app import wfirma_add_payment, load_token, wfirma_get_company_id
+                        
+                        # Pobierz token wFirma
+                        token = load_token(silent=True)
+                        if token:
+                            company_id = wfirma_get_company_id(token)
+                            payment_result, payment_resp = wfirma_add_payment(
+                                token=token,
+                                invoice_id=proforma_wfirma_id,
+                                amount=total_value,
+                                company_id=company_id,
+                            )
+                            if payment_result:
+                                proforma_marked_paid = True
+                                print(f"[V2 MARK-PAID] Proforma {proforma_number} oznaczona jako opłacona w wFirma")
+                            else:
+                                print(f"[V2 MARK-PAID] Nie udało się oznaczyć proformy jako opłaconej: {payment_resp.text if payment_resp else 'brak odpowiedzi'}")
+                        else:
+                            print(f"[V2 MARK-PAID] Brak tokena wFirma - nie można oznaczyć proformy jako opłaconej")
+                    except Exception as e:
+                        print(f"[V2 MARK-PAID] Wyjątek oznaczania proformy: {e}")
             else:
                 errors.append(f"Błąd generowania faktury: {invoice_error or 'nieznany'}")
                 print(f"[V2 MARK-PAID] Błąd faktury: {invoice_error}")

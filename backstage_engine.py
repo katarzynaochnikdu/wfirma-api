@@ -1722,9 +1722,13 @@ def _build_mail_task(
 
 # Konfiguracja wFirma
 WFIRMA_COMPANY = os.environ.get("WFIRMA_COMPANY", "md")  # md lub test
+# Serie produkcyjne
 WFIRMA_SERIES_NAME = os.environ.get("WFIRMA_SERIES_NAME", "Eventy Faktura VAT")  # Seria dla faktur VAT
 WFIRMA_SERIES_PROFORMA = os.environ.get("WFIRMA_SERIES_PROFORMA", "Eventy Pro forma")  # Seria dla proform
 WFIRMA_SERIES_CORRECTION = os.environ.get("WFIRMA_SERIES_CORRECTION", "Eventy Korekta")  # Seria dla korekt
+# Serie testowe (używane gdy WFIRMA_COMPANY in ['test', 'md_test'])
+WFIRMA_SERIES_NAME_TEST = os.environ.get("WFIRMA_SERIES_NAME_TEST", "Eventy Faktura VAT TEST")
+WFIRMA_SERIES_PROFORMA_TEST = os.environ.get("WFIRMA_SERIES_PROFORMA_TEST", "Eventy Pro forma TEST")
 WFIRMA_API_KEY = os.environ.get("MAKE_RENDER_API_KEY", "")  # Ten sam klucz co dla innych API
 
 
@@ -1734,6 +1738,7 @@ def _create_wfirma_invoice(
     document_type: str = "normal",  # "normal" (VAT) lub "proforma"
     payment_status: str = "paid",   # "paid" lub "unpaid"
     send_email: bool = True,
+    proforma_reference: str = None,  # Numer proformy do referencji (tylko dla document_type="normal")
 ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
     """
     Tworzy fakturę w wFirma przez wewnętrzne wywołanie API.
@@ -1744,17 +1749,26 @@ def _create_wfirma_invoice(
         document_type: "normal" (faktura VAT) lub "proforma"
         payment_status: "paid" (opłacona) lub "unpaid" (nieopłacona)
         send_email: Czy wysłać fakturę emailem
+        proforma_reference: Numer proformy do referencji w opisie (np. "W nawiązaniu do proformy: X")
     
     Returns:
         (success, invoice_data, error_message)
     """
     event_order_id = order_data.get("event_order_id", "")
     
-    # Wybierz odpowiednią serię w zależności od typu dokumentu
-    if document_type == "proforma":
-        series_name = WFIRMA_SERIES_PROFORMA
+    # Wybierz odpowiednią serię w zależności od typu dokumentu i trybu (test/prod)
+    if WFIRMA_COMPANY in ('test', 'md_test'):
+        # Serie testowe
+        if document_type == "proforma":
+            series_name = WFIRMA_SERIES_PROFORMA_TEST
+        else:
+            series_name = WFIRMA_SERIES_NAME_TEST
     else:
-        series_name = WFIRMA_SERIES_NAME
+        # Serie produkcyjne
+        if document_type == "proforma":
+            series_name = WFIRMA_SERIES_PROFORMA
+        else:
+            series_name = WFIRMA_SERIES_NAME
     
     _log("INFO", "WFIRMA: START tworzenia dokumentu", {
         "document_type": document_type,
@@ -1831,13 +1845,18 @@ def _create_wfirma_invoice(
     # Data faktury
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     
+    # Opis faktury - zawiera nazwę wydarzenia i opcjonalnie referencję do proformy
+    invoice_description = event_name
+    if proforma_reference and document_type == "normal":
+        invoice_description = f"W nawiązaniu do proformy: {proforma_reference}\n{event_name}"
+    
     # Payload do workflow endpoint
     invoice_payload = {
         "company": WFIRMA_COMPANY,
         "series_name": series_name,
         "payment_status": payment_status,
         "payment_due_days": 0 if payment_status == "paid" else 7,
-        "description": event_name,
+        "description": invoice_description,
         "nip": purchaser_nip,
         "purchaser_name": purchaser_name or "Uczestnik",
         "purchaser_address": billing_address,
@@ -2030,22 +2049,32 @@ def _create_paid_invoice(
     order_data: Dict[str, Any],
     event_name: str,
     send_email: bool = True,
+    proforma_reference: str = None,  # Numer proformy do referencji w opisie faktury
 ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
     """
     Tworzy opłaconą fakturę VAT po płatności Stripe.
+    
+    Args:
+        proforma_reference: Numer proformy (np. "PROF/EV/TEST/1/01/2026") - 
+                           jeśli podany, zostanie dodany do opisu faktury
     """
     # #region agent log
     import traceback
     _caller = ''.join(traceback.format_stack()[-4:-1])
-    print(f"[DEBUG-PAID-INVOICE] CALLED | order_id={order_data.get('event_order_id','')}, caller_snippet={_caller[:300]}")
+    print(f"[DEBUG-PAID-INVOICE] CALLED | order_id={order_data.get('event_order_id','')}, proforma_ref={proforma_reference}, caller_snippet={_caller[:300]}")
     # #endregion
-    _log("INFO", "WFIRMA: Wywołanie _create_paid_invoice", {"event_order_id": order_data.get("event_order_id", ""), "event_name": event_name[:30] if event_name else None})
+    _log("INFO", "WFIRMA: Wywołanie _create_paid_invoice", {
+        "event_order_id": order_data.get("event_order_id", ""),
+        "event_name": event_name[:30] if event_name else None,
+        "proforma_reference": proforma_reference,
+    })
     return _create_wfirma_invoice(
         order_data=order_data,
         event_name=event_name,
         document_type="normal",
         payment_status="paid",
         send_email=send_email,
+        proforma_reference=proforma_reference,
     )
 
 

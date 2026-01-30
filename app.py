@@ -5737,9 +5737,28 @@ def workflow_create_invoice():
     invoice_input = body.get('invoice')
     email_address = (body.get('email') or '').strip()
     send_email_requested = bool(body.get('send_email')) or bool(email_address)
+    
+    # Typ dokumentu: "normal" (faktura VAT), "proforma", "accounting_note" (nota księgowa), "receipt_fiscal_normal" (paragon)
+    # UWAGA: Musi być przed wyborem serii (series_name zależy od document_type)
+    document_type_param = (body.get('document_type') or 'normal').lower().strip()
+    if document_type_param not in ('normal', 'proforma', 'proforma_bill', 'accounting_note', 'receipt_fiscal_normal'):
+        document_type_param = 'normal'  # Domyślnie faktura VAT
+    
     # Seria faktur - dla wydarzeń: FV/EV/nr/miesiąc/rok
     # W wFirma sama "seria" (series_name) musi istnieć i mieć ustawiony format numeracji.
-    default_series = 'FV/EV'  # Używana dla obu firm (MD/TEST)
+    # Dla trybu testowego (test, md_test) automatycznie wybieramy serie testowe
+    if company in ('test', 'md_test'):
+        # Serie testowe (z obrazka wFirma)
+        if document_type_param == 'proforma':
+            default_series = 'Eventy Pro forma TEST'
+        else:
+            default_series = 'Eventy Faktura VAT TEST'
+    else:
+        # Serie produkcyjne
+        if document_type_param == 'proforma':
+            default_series = 'Eventy Pro forma'
+        else:
+            default_series = 'Eventy Faktura VAT'
     series_name = (body.get('series_name') or default_series).strip()
     
     # Status płatności faktury - dwa sposoby przekazania:
@@ -5764,11 +5783,6 @@ def workflow_create_invoice():
     
     # Komentarz/opis na fakturze (np. nazwa wydarzenia)
     description_param = (body.get('description') or '').strip()
-    
-    # Typ dokumentu: "normal" (faktura VAT), "proforma", "accounting_note" (nota księgowa), "receipt_fiscal_normal" (paragon)
-    document_type_param = (body.get('document_type') or 'normal').lower().strip()
-    if document_type_param not in ('normal', 'proforma', 'proforma_bill', 'accounting_note', 'receipt_fiscal_normal'):
-        document_type_param = 'normal'  # Domyślnie faktura VAT
     
     # E-paragon: email do wysyłki (tylko dla receipt_fiscal_normal)
     ereceipt_email = (body.get('ereceipt_email') or '').strip()
