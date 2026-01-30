@@ -1894,6 +1894,13 @@ def _create_wfirma_invoice(
     if existing_contractor_id:
         invoice_payload["existing_contractor_id"] = existing_contractor_id
     
+    # Jeśli mamy proforma_invoice_id - powiąż fakturę końcową z proformą (systemowo)
+    if proforma_reference and document_type == "normal":
+        # Wyciągnij ID proformy z order_data (jeśli przekazane)
+        proforma_id = order_data.get("proforma_invoice_id")
+        if proforma_id:
+            invoice_payload["parent_invoice_id"] = proforma_id
+    
     _log("DEBUG", "WFIRMA: Payload faktury", {
         "document_type": document_type,
         "positions_count": len(positions),

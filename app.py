@@ -5533,7 +5533,7 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None) -> tuple[dict | None, str | None]:
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None, parent_invoice_id: int = None) -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
@@ -5541,6 +5541,7 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     Jeśli mark_as_paid=True - dodaje alreadypaid_initial z obliczoną kwotą brutto.
     document_type: 'normal' (faktura VAT), 'proforma', 'proforma_bill', 'accounting_note' (nota księgowa), 'receipt_fiscal_normal' (paragon)
     ereceipt_email: email do wysyłki e-paragonu (tylko dla receipt_fiscal_normal)
+    parent_invoice_id: ID faktury nadrzędnej (np. proformy) - do systemowego powiązania
     """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
@@ -5588,6 +5589,11 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     if series_id:
         payload["series"] = {"id": series_id}
         print(f"[WFIRMA DEBUG] Używam serii ID: {series_id}")
+    
+    # Parent invoice (np. powiązanie faktury końcowej z proformą)
+    if parent_invoice_id and document_type == 'normal':
+        payload["parent"] = {"id": int(parent_invoice_id)}
+        print(f"[WFIRMA DEBUG] Powiązanie z parent invoice ID: {parent_invoice_id}")
     
     if sale_date:
         payload["sale_date"] = sale_date
@@ -5788,6 +5794,11 @@ def workflow_create_invoice():
     
     # Komentarz/opis na fakturze (np. nazwa wydarzenia)
     description_param = (body.get('description') or '').strip()
+    
+    # Parent invoice ID - do powiązania faktury końcowej z proformą
+    parent_invoice_id_param = body.get('parent_invoice_id')
+    if parent_invoice_id_param:
+        print(f"[WORKFLOW] parent_invoice_id (proforma): {parent_invoice_id_param}")
     
     # E-paragon: email do wysyłki (tylko dla receipt_fiscal_normal)
     ereceipt_email = (body.get('ereceipt_email') or '').strip()
@@ -6045,7 +6056,8 @@ def workflow_create_invoice():
                     print(f"[WORKFLOW]   - '{s['name']}' (ID: {s['id']}, szablon: {s['template']})")
     
     # 4) Budujemy payload faktury/proformy/paragonu (z alreadypaid_initial jeśli mark_as_paid=True)
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email)
+    # parent_invoice_id - powiązanie z proformą (jeśli faktura końcowa)
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email, parent_invoice_id=parent_invoice_id_param)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:

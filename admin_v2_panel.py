@@ -1609,7 +1609,14 @@ def _handle_mark_paid(order_id: str, user: dict):
             
             # Przygotuj dane zamówienia dla wFirma
             # Pobierz sandbox z zamówienia (zapisane przy tworzeniu proformy)
+            # Fallback do raw.sandbox dla zamówień sprzed migracji kolumny sandbox
+            raw_data = order.get("raw", {}) or {}
             is_sandbox = order.get("sandbox", False)
+            if not is_sandbox and raw_data:
+                # Fallback: sprawdź raw payload (dla starych zamówień bez kolumny sandbox)
+                raw_sandbox = raw_data.get("sandbox")
+                if raw_sandbox is True or str(raw_sandbox).lower() == "true":
+                    is_sandbox = True
             
             order_data_for_invoice = {
                 "event_order_id": order_id,
@@ -1622,10 +1629,11 @@ def _handle_mark_paid(order_id: str, user: dict):
                 "total": total_value,
                 "currency": currency_value,
                 "sandbox": is_sandbox,  # Tryb testowy - używany do wyboru serii testowych
-                "raw": order.get("raw", {}),
+                "proforma_invoice_id": proforma_wfirma_id,  # ID proformy w wFirma (do systemowego powiązania)
+                "raw": raw_data,
             }
             
-            print(f"[V2 MARK-PAID] order_data sandbox={is_sandbox}")
+            print(f"[V2 MARK-PAID] order_data sandbox={is_sandbox} (from_raw={raw_data.get('sandbox')}), proforma_id={proforma_wfirma_id}")
             
             success, invoice_result, invoice_error = _create_paid_invoice(
                 order_data=order_data_for_invoice,
