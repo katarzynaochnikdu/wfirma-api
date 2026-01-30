@@ -729,7 +729,7 @@
 
   // ===== UNIVERSAL ACTION MODAL =====
   function showActionModal(options) {
-    const { title, text, info, icon, iconColor, confirmText, confirmClass, onConfirm } = options;
+    const { title, text, info, icon, iconColor, confirmText, confirmClass, onConfirm, closeOnConfirm } = options;
     
     document.getElementById('action-modal-title').textContent = title || 'Potwierdź akcję';
     document.getElementById('action-modal-text').innerHTML = text || '';
@@ -755,11 +755,18 @@
     confirmBtn.className = confirmClass || 'btn btn-primary';
     
     pendingActionCallback = onConfirm;
+    const shouldCloseOnConfirm = closeOnConfirm !== false;
     confirmBtn.onclick = () => {
       if (pendingActionCallback) {
-        pendingActionCallback();
+        const result = pendingActionCallback();
+        if (shouldCloseOnConfirm && result !== false) {
+          closeActionModal();
+        }
+        return;
       }
-      closeActionModal();
+      if (shouldCloseOnConfirm) {
+        closeActionModal();
+      }
     };
     
     document.getElementById('action-confirm-modal').classList.remove('hidden');
@@ -1001,7 +1008,21 @@
       text: 'Czy na pewno chcesz oznaczyć to zamówienie jako opłacone?',
       info: infoHtml,
       confirmText: 'Oznacz jako opłacone',
+      closeOnConfirm: false,
       onConfirm: () => {
+        const confirmBtn = document.getElementById('action-confirm-btn');
+        const cancelBtn = confirmBtn ? confirmBtn.previousElementSibling : null;
+        const closeBtn = document.querySelector('#action-confirm-modal .modal-close');
+        const originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
+        const loadingText = hasInvoice ? 'Przetwarzanie...' : 'Generowanie faktury...';
+        
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = `<span class="btn-spinner"></span> ${loadingText}`;
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+        if (closeBtn) closeBtn.disabled = true;
+        
         fetch(`/admin-v2/orders/${orderId}/status`, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1014,9 +1035,23 @@
               location.reload();
             } else {
               showToast(data.error || 'Błąd zmiany statusu', 'error');
+              if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalHtml;
+              }
+              if (cancelBtn) cancelBtn.disabled = false;
+              if (closeBtn) closeBtn.disabled = false;
             }
           })
-          .catch(err => showToast('Błąd zmiany statusu', 'error'));
+          .catch(err => {
+            showToast('Błąd zmiany statusu', 'error');
+            if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.innerHTML = originalHtml;
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+            if (closeBtn) closeBtn.disabled = false;
+          });
       }
     });
   }
@@ -1258,10 +1293,23 @@
       info: infoHtml,
       confirmText: confirmButtonText,
       confirmClass: 'btn btn-outline btn-destructive-outline',
+      closeOnConfirm: false,
       onConfirm: () => {
         // Sprawdź czy checkbox zwrotu jest zaznaczony
         const refundCheckbox = document.getElementById('cancel-with-refund');
         const withRefund = refundCheckbox ? refundCheckbox.checked : false;
+        const confirmBtn = document.getElementById('action-confirm-btn');
+        const cancelBtn = confirmBtn ? confirmBtn.previousElementSibling : null;
+        const closeBtn = document.querySelector('#action-confirm-modal .modal-close');
+        const originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
+        const loadingText = hasInvoice ? 'Generowanie korekty...' : 'Przetwarzanie...';
+        
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = `<span class="btn-spinner"></span> ${loadingText}`;
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+        if (closeBtn) closeBtn.disabled = true;
         
         const formData = new FormData();
         formData.append('with_refund', withRefund ? '1' : '0');
@@ -1277,9 +1325,23 @@
               location.reload();
             } else {
               showToast(data.error || 'Błąd anulowania', 'error');
+              if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalHtml;
+              }
+              if (cancelBtn) cancelBtn.disabled = false;
+              if (closeBtn) closeBtn.disabled = false;
             }
           })
-          .catch(err => showToast('Błąd anulowania', 'error'));
+          .catch(err => {
+            showToast('Błąd anulowania', 'error');
+            if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.innerHTML = originalHtml;
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+            if (closeBtn) closeBtn.disabled = false;
+          });
       }
     });
   }
