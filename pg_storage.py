@@ -1657,7 +1657,7 @@ def get_wfirma_documents(event_order_id: str) -> List[Dict[str, Any]]:
         cur = _dict_cursor(conn)
         cur.execute(
             """
-            SELECT id, event_order_id, wfirma_invoice_id, wfirma_number, document_type,
+            SELECT id, event_order_id, wfirma_invoice_id, wfirma_number, wfirma_contractor_id, document_type,
                    status, pdf_path, email_to, email_cc, raw, created_at, updated_at
             FROM wfirma_documents
             WHERE event_order_id = %s

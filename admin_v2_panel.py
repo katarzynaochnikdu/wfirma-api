@@ -1589,6 +1589,9 @@ def _handle_mark_paid(order_id: str, user: dict):
     
     if existing_proforma:
         print(f"[V2 MARK-PAID] Znaleziono proformę: {proforma_number} (ID: {proforma_wfirma_id}, contractor_id: {proforma_contractor_id})")
+        print(f"[V2 MARK-PAID] existing_proforma keys: {list(existing_proforma.keys())}")
+    else:
+        print(f"[V2 MARK-PAID] BRAK proformy w bazie dla tego zamówienia")
     
     errors = []
     invoice_generated = False

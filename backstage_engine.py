@@ -1890,8 +1890,10 @@ def _create_wfirma_invoice(
     }
     
     # Jeśli mamy existing_contractor_id (np. z proformy) - użyj tego samego kontrahenta
+    print(f"[BACKSTAGE DEBUG] existing_contractor_id parameter: {existing_contractor_id} (type: {type(existing_contractor_id).__name__})")
     if existing_contractor_id:
         invoice_payload["existing_contractor_id"] = existing_contractor_id
+        print(f"[BACKSTAGE DEBUG] Added existing_contractor_id to payload: {existing_contractor_id}")
     
     # Jeśli mamy proforma_invoice_id - powiąż fakturę końcową z proformą (systemowo)
     if proforma_reference and document_type == "normal":
@@ -1965,6 +1967,7 @@ def _create_wfirma_invoice(
             })
             
             # Zapisz do bazy (z contractor_id dla późniejszego użycia przy fakturze końcowej)
+            print(f"[BACKSTAGE DEBUG] Saving document: order={event_order_id}, type={document_type}, contractor_id={contractor_id}")
             try:
                 from pg_storage import save_wfirma_document
                 save_wfirma_document(
@@ -1976,6 +1979,7 @@ def _create_wfirma_invoice(
                     raw=result,
                     wfirma_contractor_id=str(contractor_id) if contractor_id else None,
                 )
+                print(f"[BACKSTAGE DEBUG] Document saved with wfirma_contractor_id={contractor_id}")
             except Exception as db_err:
                 err_txt = str(db_err)
                 # Jeśli to duplikat (unikalny indeks na normal invoice) – traktuj jako "już istnieje"
