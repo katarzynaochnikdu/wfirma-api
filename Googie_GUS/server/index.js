@@ -35,7 +35,11 @@ function decodeBirInnerXml(encoded) {
   if (typeof encoded !== 'string') {
     return '';
   }
-  return encoded
+  // #region agent log
+  var hasAmpAmpBefore = encoded.indexOf('&amp;amp;') > -1;
+  var hasAmpBefore = encoded.indexOf('&amp;') > -1;
+  // #endregion
+  var result = encoded
     .replace(/^\ufeff/, '')
     .replace(/&amp;amp;/g, '&amp;')
     .replace(/&#xD;/gi, '\r')
@@ -46,6 +50,10 @@ function decodeBirInnerXml(encoded) {
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
     .trim();
+  // #region agent log
+  console.log('[DEBUG-H3] decodeBirInnerXml', JSON.stringify({hasAmpAmpBefore:hasAmpAmpBefore,hasAmpBefore:hasAmpBefore,hasNakedAmpAfter:result.indexOf('&')>-1&&result.indexOf('&amp;')===-1,resultSnippet:result.substring(0,300)}));
+  // #endregion
+  return result;
 }
 
 process.env.PWD = process.env.PWD || process.cwd();
@@ -430,6 +438,9 @@ expressApp.post('/api/gus/name-by-nip', function (req, res) {
 
         // Dekodujemy encje HTML zwrócone przez GUS przed parsowaniem XML
         var decodedXml = decodeBirInnerXml(innerXml);
+        // #region agent log
+        console.log('[DEBUG-H1] before-xml2js-parse', JSON.stringify({hasNakedAmpersand:decodedXml.indexOf('&')>-1&&decodedXml.indexOf('&amp;')===-1,snippet:decodedXml.substring(0,300)}));
+        // #endregion
         if (!decodedXml) {
           console.error(chalk.red('[GUS] Dekodowanie innerXml zwróciło pusty tekst'));
           return res.status(502).json({ error: 'Brak danych po dekodowaniu odpowiedzi GUS' });
@@ -437,6 +448,9 @@ expressApp.post('/api/gus/name-by-nip', function (req, res) {
 
         // Parsuj dane (format root->dane)
         return xml2js.parseStringPromise(decodedXml).then(function(parsed) {
+          // #region agent log
+          console.log('[DEBUG-H1] xml2js-parsed-OK', JSON.stringify({hasDane:!!(parsed&&parsed.root&&parsed.root.dane)}));
+          // #endregion
           var dane = parsed && parsed.root && parsed.root.dane ? parsed.root.dane : [];
           var mapped = dane.map(function(entry) {
             return {
@@ -457,17 +471,29 @@ expressApp.post('/api/gus/name-by-nip', function (req, res) {
               krs: entry.Krs ? entry.Krs[0] : null
             };
           });
+          // #region agent log
+          console.log('[DEBUG-H4] before-res-json', JSON.stringify({mappedCount:mapped.length,firstName:mapped.length>0?mapped[0].nazwa:''}));
+          // #endregion
           return res.status(200).json({ data: mapped });
         }).catch(function(parseErr) {
+          // #region agent log
+          console.log('[DEBUG-H1-H2] xml2js-PARSE-ERROR', JSON.stringify({errMsg:parseErr&&parseErr.message?parseErr.message:String(parseErr)}));
+          // #endregion
           console.error(chalk.red('[GUS] Problem z parsowaniem XML'), parseErr);
           return res.status(502).json({ error: 'Nie udało się sparsować danych GUS', message: parseErr && parseErr.message ? parseErr.message : String(parseErr) });
         });
       });
     }).catch(function(err) {
+      // #region agent log
+      console.log('[DEBUG-H2] main-catch-error', JSON.stringify({errMsg:err&&err.message?err.message:String(err)}));
+      // #endregion
       console.error(chalk.red('[GUS] błąd'), err && err.stack ? err.stack : err);
       return res.status(502).json({ error: 'Błąd komunikacji z GUS', message: String(err && err.message ? err.message : err) });
     });
   } catch (e) {
+    // #region agent log
+    console.log('[DEBUG-H2] try-catch-error', JSON.stringify({errMsg:e&&e.message?e.message:String(e)}));
+    // #endregion
     console.error(chalk.red('[GUS] błąd endpointu'), e && e.stack ? e.stack : e);
     return res.status(500).json({ error: 'Błąd serwera', message: String(e && e.message ? e.message : e) });
   }
