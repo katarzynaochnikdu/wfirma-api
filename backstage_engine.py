@@ -1859,10 +1859,9 @@ def _create_wfirma_invoice(
     # Data faktury
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     
-    # Opis faktury - zawiera nazwę wydarzenia i opcjonalnie referencję do proformy
+    # Opis faktury - zawiera nazwę wydarzenia
+    # (powiązanie z proformą jest teraz systemowe przez pole parent w wFirma)
     invoice_description = event_name
-    if proforma_reference and document_type == "normal":
-        invoice_description = f"W nawiązaniu do proformy: {proforma_reference}\n{event_name}"
     
     # Payload do workflow endpoint
     invoice_payload = {
