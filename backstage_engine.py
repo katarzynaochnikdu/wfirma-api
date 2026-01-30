@@ -3243,6 +3243,7 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             total=order_data["total"],
             currency=order_data["currency"],
             status="received",
+            sandbox=order_data.get("sandbox", False),  # Zapisz tryb testowy
             raw=payload,
         )
         _log("INFO", "Zamówienie zapisane w bazie", {"event_order_id": event_order_id, "status": "received"})

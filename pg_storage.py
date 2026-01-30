@@ -80,12 +80,20 @@ CREATE TABLE IF NOT EXISTS orders (
   total NUMERIC(12,2),
   currency TEXT NOT NULL DEFAULT 'PLN',
   status TEXT NOT NULL DEFAULT 'received', -- received/pending_payment/paid/failed/cancelled
+  sandbox BOOLEAN NOT NULL DEFAULT FALSE, -- Tryb testowy (sandbox=true z payloadu)
   payment_due_date TIMESTAMPTZ, -- Termin płatności (dla proform: created_at + 7 dni)
   paid_at TIMESTAMPTZ, -- Data i czas potwierdzenia płatności
   raw JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migracja: dodaj kolumnę sandbox jeśli nie istnieje
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='sandbox') THEN
+    ALTER TABLE orders ADD COLUMN sandbox BOOLEAN NOT NULL DEFAULT FALSE;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_orders_event_id ON orders(event_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
@@ -1269,6 +1277,7 @@ def upsert_order(
     total: Optional[float] = None,
     currency: str = "PLN",
     status: str = "received",
+    sandbox: bool = False,  # Tryb testowy
     payment_due_date: Optional[int] = None,  # Unix timestamp
     raw: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -1291,8 +1300,8 @@ def upsert_order(
             INSERT INTO orders (
                 event_order_id, event_id, purchaser_email, purchaser_first_name, purchaser_last_name,
                 purchaser_phone, purchaser_nip, payment_option_name, payment_type, promo_code,
-                total, currency, status, payment_due_date, raw
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                total, currency, status, sandbox, payment_due_date, raw
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_order_id) DO UPDATE SET
                 purchaser_email = COALESCE(EXCLUDED.purchaser_email, orders.purchaser_email),
                 purchaser_first_name = COALESCE(EXCLUDED.purchaser_first_name, orders.purchaser_first_name),
@@ -1304,6 +1313,7 @@ def upsert_order(
                 promo_code = COALESCE(EXCLUDED.promo_code, orders.promo_code),
                 total = COALESCE(EXCLUDED.total, orders.total),
                 currency = COALESCE(EXCLUDED.currency, orders.currency),
+                sandbox = EXCLUDED.sandbox,
                 payment_due_date = COALESCE(EXCLUDED.payment_due_date, orders.payment_due_date),
                 raw = EXCLUDED.raw,
                 updated_at = NOW()
@@ -1322,6 +1332,7 @@ def upsert_order(
                 total,
                 currency,
                 status,
+                bool(sandbox),
                 payment_due_date_ts,
                 psycopg2.extras.Json(raw or {}),  # type: ignore[attr-defined]
             ),
