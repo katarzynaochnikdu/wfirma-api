@@ -197,6 +197,12 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Migracja: uzupełnij wfirma_contractor_id z pola raw JSONB dla istniejących dokumentów
+UPDATE wfirma_documents 
+SET wfirma_contractor_id = raw->'contractor'->>'id'
+WHERE wfirma_contractor_id IS NULL 
+  AND raw->'contractor'->>'id' IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_wfirma_docs_order_id ON wfirma_documents(event_order_id);
 -- Twarda ochrona przed podwójną fakturą VAT (normal) dla tego samego zamówienia
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_wfirma_normal_per_order
