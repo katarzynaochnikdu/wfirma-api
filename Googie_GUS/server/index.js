@@ -31,27 +31,27 @@ function escapeXml(unsafe) {
 }
 
 // Dekoduje wewnętrzny XML z GUS (przychodzi jako tekst z encjami HTML)
+// UWAGA: NIE dekodujemy &amp; na & - xml2js sam to robi poprawnie!
 function decodeBirInnerXml(encoded) {
   if (typeof encoded !== 'string') {
     return '';
   }
   // #region agent log
   var hasAmpAmpBefore = encoded.indexOf('&amp;amp;') > -1;
-  var hasAmpBefore = encoded.indexOf('&amp;') > -1;
   // #endregion
   var result = encoded
     .replace(/^\ufeff/, '')
-    .replace(/&amp;amp;/g, '&amp;')
+    .replace(/&amp;amp;/g, '&amp;')  // podwójne kodowanie → pojedyncze (dla xml2js)
     .replace(/&#xD;/gi, '\r')
     .replace(/&#xA;/gi, '\n')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
+    // USUNIĘTO: .replace(/&amp;/g, '&') - to psuło XML! xml2js sam dekoduje &amp;
     .trim();
   // #region agent log
-  console.log('[DEBUG-H3] decodeBirInnerXml', JSON.stringify({hasAmpAmpBefore:hasAmpAmpBefore,hasAmpBefore:hasAmpBefore,hasNakedAmpAfter:result.indexOf('&')>-1&&result.indexOf('&amp;')===-1,resultSnippet:result.substring(0,300)}));
+  console.log('[DEBUG-H3-FIX] decodeBirInnerXml', JSON.stringify({hasAmpAmpBefore:hasAmpAmpBefore,hasAmpAfter:result.indexOf('&amp;')>-1,resultSnippet:result.substring(0,300)}));
   // #endregion
   return result;
 }
