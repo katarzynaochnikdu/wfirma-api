@@ -2657,7 +2657,7 @@ def decode_bir_inner_xml(encoded: str) -> str:
     if not isinstance(encoded, str):
         return ""
 
-    result = (
+    return (
         encoded.lstrip("\ufeff")
         .replace("&amp;amp;", "&amp;")  # podwójne kodowanie → pojedyncze (dla parsera XML)
         .replace("&#xD;", "\r")
@@ -2666,13 +2666,9 @@ def decode_bir_inner_xml(encoded: str) -> str:
         .replace("&gt;", ">")
         .replace("&quot;", '"')
         .replace("&apos;", "'")
-        # USUNIĘTO: .replace("&amp;", "&") - to psuło XML! Parser sam dekoduje &amp;
+        # NIE dekodujemy &amp; → & tutaj - parser XML robi to automatycznie
         .strip()
     )
-    # #region agent log
-    print(f"[DEBUG-H3-FIX] decode_bir_inner_xml hasAmpAfter={('&amp;' in result)} snippet={repr(result[:200])}")
-    # #endregion
-    return result
 
 
 def post_soap_gus(bir_host: str, envelope: str, sid: str | None, timeout: int = 10) -> requests.Response:
