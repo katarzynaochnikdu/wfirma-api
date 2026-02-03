@@ -3795,6 +3795,12 @@ def _parse_event_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
             data["event_attendees_link"] = f"https://backstage.zoho.eu/home#/portal/{portal_id}/event/{event_id}/attendees"
         mapped_fields.extend(["event_config_link", "event_orders_link", "event_attendees_link"])
     
+    # --- Backstage IDs (kanoniczne nazwy dla _normalize_event_data i panelu admin) ---
+    data["backstage_event_id"] = event_id
+    data["backstage_portal_id"] = portal_id
+    if brand_id:
+        data["backstage_brand_id"] = brand_id
+
     # --- Surowe dane (do debugowania) ---
     data["_backstage_raw_event_id"] = event_id
     data["_backstage_portal_id"] = portal_id
@@ -3846,19 +3852,46 @@ def process_backstage_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         
         # 2. Sprawdź czy wydarzenie już istnieje
         from pg_storage import get_event, upsert_event
-        
+
         existing = get_event(event_id)
         action = "updated" if existing else "created"
-        
+
         # 3. Zapisz/zaktualizuj wydarzenie ze statusem "pending_config" (wymaga uzupełnienia)
         event_status = "pending_config" if not existing else (existing.get("status") or "pending_config")
-        
+
+        # Dla istniejących wydarzeń: merguj dane z webhooka z lokalnymi (webhook nadpisuje tylko pola które zwraca)
+        # Zachowaj lokalne konfiguracje (kolory, URL-e, kontakty, kod pocztowy) które nie przychodzą z Backstage
+        if existing:
+            existing_data = existing.get("data") or {}
+            merged_data = {**existing_data, **data}  # webhook fields overwrite, but local-only fields survive
+            save_data = merged_data
+            notes = existing.get("notes") or ""
+        else:
+            # NOWE wydarzenie: jednorazowo generujemy linki backstage do pól panelowych
+            # Po zapisie są edytowalne ręcznie; kolejne webhooky ich nie nadpiszą (merge)
+            portal_id = data.get("backstage_portal_id", "")
+            brand_id = data.get("backstage_brand_id", "")
+            if event_id and portal_id:
+                if brand_id:
+                    backstage_base = f"https://backstage.zoho.eu/home#/portal/{portal_id}/brand/{brand_id}/event/{event_id}"
+                else:
+                    backstage_base = f"https://backstage.zoho.eu/home#/portal/{portal_id}/event/{event_id}"
+                data["backstage_url"] = f"{backstage_base}/overview"
+                data["backstage_details_url"] = f"{backstage_base}/details"
+                data["backstage_orders_url"] = f"{backstage_base}/registrations/order-details"
+                data["backstage_attendees_url"] = f"{backstage_base}/registrations/detail/attendees?openImportAttendee=false&showCreditsPurchase=false"
+                mapped_fields.extend(["backstage_url", "backstage_details_url", "backstage_orders_url", "backstage_attendees_url"])
+                _log("INFO", f"Wygenerowano linki backstage dla nowego wydarzenia {event_id}")
+
+            save_data = data
+            notes = f"Utworzono automatycznie z webhooka Backstage ({datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC)"
+
         upsert_event(
             event_id=event_id,
             event_name=event_name,
             status=event_status,
-            notes=f"Utworzono automatycznie z webhooka Backstage ({datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC)",
-            data=data,
+            notes=notes,
+            data=save_data,
             is_active=True,
         )
         

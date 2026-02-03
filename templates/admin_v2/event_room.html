@@ -67,6 +67,10 @@
       <i data-lucide="settings"></i>
       Ogólne
     </a>
+    <a href="{{ event.backstage_details_url }}" target="_blank" class="backstage-dropdown-item">
+      <i data-lucide="file-text"></i>
+      Szczegóły wydarzenia
+    </a>
     <a href="{{ event.backstage_orders_url }}" target="_blank" class="backstage-dropdown-item">
       <i data-lucide="shopping-cart"></i>
       Zamówienia
@@ -80,6 +84,7 @@
 
 <!-- Debug: wartości zmiennych (usuń po testach) -->
 <!-- backstage_url: {{ event.backstage_url }} -->
+<!-- backstage_details_url: {{ event.backstage_details_url }} -->
 <!-- backstage_orders_url: {{ event.backstage_orders_url }} -->
 <!-- backstage_attendees_url: {{ event.backstage_attendees_url }} -->
 <!-- event_public_url: {{ event.data.event_public_url or 'BRAK' }} -->
@@ -1267,6 +1272,13 @@
           <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.5;"></i>
         </a>
         {% endif %}
+        {% if event.backstage_details_url %}
+        <a href="{{ event.backstage_details_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="file-text" style="width: 14px; height: 14px;"></i>
+          Szczegóły wydarzenia
+          <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.5;"></i>
+        </a>
+        {% endif %}
         {% if event.backstage_orders_url %}
         <a href="{{ event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem;">
           <i data-lucide="shopping-cart" style="width: 14px; height: 14px;"></i>
@@ -1281,7 +1293,7 @@
           <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.5;"></i>
         </a>
         {% endif %}
-        {% if not event.backstage_url and not event.backstage_orders_url and not event.backstage_attendees_url %}
+        {% if not event.backstage_url and not event.backstage_details_url and not event.backstage_orders_url and not event.backstage_attendees_url %}
         <div style="padding: 1rem; color: var(--muted-foreground); font-size: 0.875rem; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); width: 100%;">
           Brak skonfigurowanych linków Backstage
         </div>
