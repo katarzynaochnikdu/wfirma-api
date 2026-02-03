@@ -676,34 +676,46 @@ input[type="color"].form-input {
       <!-- Zoho Backstage Links -->
       <div class="form-group" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
         <label class="form-label" style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem;">Linki Zoho Backstage</label>
-        
-        <!-- Backstage Ustawienia -->
+
+        <!-- Backstage Ogólne (Dashboard) -->
         <div class="form-group" style="margin-bottom: 0.75rem;">
-          <label class="form-label" style="font-size: 0.8125rem;">Strona Ustawień</label>
+          <label class="form-label" style="font-size: 0.8125rem;">Ogólne (Dashboard)</label>
           <div class="url-input-group">
             <input type="url" name="backstage_url" class="form-input url-input"
-                   value="{{ event_data.backstage_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/...">
+                   value="{{ event_data.backstage_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../overview">
             <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
               <i data-lucide="external-link"></i>
             </button>
           </div>
         </div>
-        
+
+        <!-- Backstage Szczegóły wydarzenia -->
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-size: 0.8125rem;">Szczegóły wydarzenia (lokalizacja, daty)</label>
+          <div class="url-input-group">
+            <input type="url" name="backstage_details_url" class="form-input url-input"
+                   value="{{ event_data.backstage_details_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../details">
+            <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
+              <i data-lucide="external-link"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- Backstage Zamówienia -->
         <div class="form-group" style="margin-bottom: 0.75rem;">
-          <label class="form-label" style="font-size: 0.8125rem;">Strona Zamówień</label>
+          <label class="form-label" style="font-size: 0.8125rem;">Zamówienia</label>
           <div class="url-input-group">
             <input type="url" name="backstage_orders_url" class="form-input url-input"
-                   value="{{ event_data.backstage_orders_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../orders">
+                   value="{{ event_data.backstage_orders_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../order-details">
             <button type="button" class="url-open-btn" onclick="openUrlFromInput(this)" title="Otwórz link">
               <i data-lucide="external-link"></i>
             </button>
           </div>
         </div>
-        
+
         <!-- Backstage Uczestnicy -->
         <div class="form-group" style="margin-bottom: 0;">
-          <label class="form-label" style="font-size: 0.8125rem;">Strona Uczestników</label>
+          <label class="form-label" style="font-size: 0.8125rem;">Uczestnicy</label>
           <div class="url-input-group">
             <input type="url" name="backstage_attendees_url" class="form-input url-input"
                    value="{{ event_data.backstage_attendees_url if event_data else '' }}" placeholder="https://backstage.zoho.eu/.../attendees">

@@ -4036,6 +4036,12 @@ def event_edit(event_id: str):
                 "md_email_technical": request.form.get("md_email_technical") or "adminzoho@medidesk.com",
                 "md_phone_technical": request.form.get("md_phone_technical") or "+48888469553",
             })
+
+            # Linki Backstage (zapisz tylko jeśli podane - nie nadpisuj pustym stringiem)
+            for bfield in ("backstage_url", "backstage_details_url", "backstage_orders_url", "backstage_attendees_url"):
+                val = (request.form.get(bfield) or "").strip()
+                if val:
+                    data[bfield] = val
             
             try:
                 upsert_event(

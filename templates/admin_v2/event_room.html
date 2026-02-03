@@ -64,8 +64,8 @@
     {% endif %}
     <div class="dropdown-section-label">Zoho Backstage</div>
     <a href="{{ event.backstage_url }}" target="_blank" class="backstage-dropdown-item">
-      <i data-lucide="settings"></i>
-      Ogólne
+      <i data-lucide="layout-dashboard"></i>
+      Ogólne (Dashboard)
     </a>
     <a href="{{ event.backstage_details_url }}" target="_blank" class="backstage-dropdown-item">
       <i data-lucide="file-text"></i>
@@ -1255,6 +1255,25 @@
     </div>
   </div>
   
+  <!-- Strona publiczna wydarzenia -->
+  {% if event.data.url_event or event.data.event_public_url %}
+  <div class="card" style="margin-bottom: 1rem;">
+    <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+      <h3 style="font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="globe" style="width: 16px; height: 16px;"></i>
+        Strona publiczna
+      </h3>
+    </div>
+    <div style="padding: 1rem;">
+      <a href="{{ event.data.url_event or event.data.event_public_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="globe" style="width: 14px; height: 14px;"></i>
+        {{ event.data.url_event or event.data.event_public_url }}
+        <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.7;"></i>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Zoho Backstage Links -->
   <div class="card">
     <div class="card-header" style="padding: 1rem; border-bottom: 1px solid var(--border);">
@@ -1267,8 +1286,8 @@
       <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
         {% if event.backstage_url %}
         <a href="{{ event.backstage_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem;">
-          <i data-lucide="settings" style="width: 14px; height: 14px;"></i>
-          Strona Ustawień
+          <i data-lucide="layout-dashboard" style="width: 14px; height: 14px;"></i>
+          Ogólne (Dashboard)
           <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.5;"></i>
         </a>
         {% endif %}
@@ -1282,14 +1301,14 @@
         {% if event.backstage_orders_url %}
         <a href="{{ event.backstage_orders_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem;">
           <i data-lucide="shopping-cart" style="width: 14px; height: 14px;"></i>
-          Strona Zamówień
+          Zamówienia
           <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.5;"></i>
         </a>
         {% endif %}
         {% if event.backstage_attendees_url %}
         <a href="{{ event.backstage_attendees_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 0.5rem;">
           <i data-lucide="users" style="width: 14px; height: 14px;"></i>
-          Strona Uczestników
+          Uczestnicy
           <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.5;"></i>
         </a>
         {% endif %}
