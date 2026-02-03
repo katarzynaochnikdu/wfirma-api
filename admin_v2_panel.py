@@ -3929,12 +3929,29 @@ def event_new():
                     "event_end_date_time": event_end_date_time,
                     "event_description": event_description,
                     "event_summary": event_summary,
-                    # Pola tylko lokalne
+                    # Pola tylko lokalne - branding
                     "color_gradient_1": request.form.get("color_gradient_1") or "#2563eb",
                     "color_gradient_2": request.form.get("color_gradient_2") or "#1e40af",
+                    "gradient_angle": request.form.get("gradient_angle") or "135",
+                    "logo_url": request.form.get("logo_url") or "",
+                    "logo_white_url": request.form.get("logo_white_url") or "",
+                    "logo_color_url": request.form.get("logo_color_url") or "",
+                    # Grafiki email
                     "event_mail_link_top_banner": request.form.get("event_mail_link_top_banner") or "",
+                    "event_mail_link_bottom_banner": request.form.get("event_mail_link_bottom_banner") or "",
+                    "photo_1_url": request.form.get("photo_1_url") or "",
+                    # Linki zewnętrzne
                     "url_event": request.form.get("url_event") or "",
-                    "md_email_kontakt": request.form.get("md_email_kontakt") or "konferencje@medidesk.com",
+                    "url_success": request.form.get("url_success") or "",
+                    "url_cancel": request.form.get("url_cancel") or "",
+                    "map_hotel_link": request.form.get("map_hotel_link") or "",
+                    # Lokalizacja
+                    "event_location_zip": (request.form.get("event_location_zip") or "").strip(),
+                    # Dane kontaktowe
+                    "md_email_kontakt": request.form.get("md_email_kontakt") or "eventy@medidesk.com",
+                    "md_phone_kontakt": request.form.get("md_phone_kontakt") or "+48729927389",
+                    "md_email_technical": request.form.get("md_email_technical") or "adminzoho@medidesk.com",
+                    "md_phone_technical": request.form.get("md_phone_technical") or "+48888469553",
                 }
                 
                 try:
@@ -4023,7 +4040,13 @@ def event_edit(event_id: str):
             data.update({
                 "color_gradient_1": request.form.get("color_gradient_1") or "#2563eb",
                 "color_gradient_2": request.form.get("color_gradient_2") or "#1e40af",
+                "gradient_angle": request.form.get("gradient_angle") or data.get("gradient_angle", "135"),
+                "logo_url": request.form.get("logo_url") or "",
+                "logo_white_url": request.form.get("logo_white_url") or "",
+                "logo_color_url": request.form.get("logo_color_url") or "",
                 "event_mail_link_top_banner": request.form.get("event_mail_link_top_banner") or "",
+                "event_mail_link_bottom_banner": request.form.get("event_mail_link_bottom_banner") or "",
+                "photo_1_url": request.form.get("photo_1_url") or "",
                 "url_event": request.form.get("url_event") or "",
                 "url_success": request.form.get("url_success") or "",
                 "url_cancel": request.form.get("url_cancel") or "",

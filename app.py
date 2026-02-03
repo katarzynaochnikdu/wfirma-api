@@ -6266,7 +6266,7 @@ def workflow_create_invoice():
 
 # ==================== ENDPOINTY GUS / REGON ====================
 
-@app.route('/api/gus/name-by-nip', methods=['POST'])
+@app.route('/api/gus/name-by-nip', methods=['POST', 'OPTIONS'])
 def gus_name_by_nip():
     """
     Prosty port endpointu /api/gus/name-by-nip z backendu Googie_GUS.
@@ -6274,12 +6274,16 @@ def gus_name_by_nip():
     Wejście: JSON { "nip": "1234567890" }
     Wyjście: { "data": [ { regon, nip, nazwa, ... } ] } albo komunikat błędu.
     """
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     # Sprawdź osobny token dla endpointów GUS/REGON
     api_key_header = request.headers.get('X-API-Key', '')
     if not REGON_API_KEY_TOKEN:
-        return jsonify({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}), 500
+        return cors_response({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}, 500)
     if api_key_header != REGON_API_KEY_TOKEN:
-        return jsonify({'error': 'Unauthorized - nieprawidłowy token'}), 401
+        return cors_response({'error': 'Unauthorized - nieprawidłowy token'}, 401)
     
     body = request.get_json(silent=True) or {}
 
@@ -6291,16 +6295,16 @@ def gus_name_by_nip():
     api_key = from_header_key or GUS_API_KEY or ''
 
     if not clean_nip:
-        return jsonify({'error': 'Brak NIP'}), 400
+        return cors_response({'error': 'Brak NIP'}, 400)
 
     if len(clean_nip) != 10:
-        return jsonify({'error': 'NIP musi składać się z dokładnie 10 cyfr'}), 400
+        return cors_response({'error': 'NIP musi składać się z dokładnie 10 cyfr'}, 400)
 
     if not api_key:
-        return jsonify({
+        return cors_response({
             'error': 'Brak klucza GUS_API_KEY',
             'hint': 'Ustaw zmienną środowiskową GUS_API_KEY / BIR1_medidesk lub przekaż nagłówek x-gus-api-key.'
-        }), 400
+        }, 400)
 
     # Przełącznik środowiska test/produkcyjne – zgodnie z Googie_GUS
     use_test_env = api_key == 'abcde12345abcde12345' or GUS_USE_TEST
@@ -6333,20 +6337,20 @@ def gus_name_by_nip():
         login_snippet = (login_resp.text or '')[:500]
         print(f"[GUS] LOGIN body snippet={repr(login_snippet)}")
     except Exception as e:
-        return jsonify({
+        return cors_response({
             'error': 'Błąd komunikacji z GUS podczas logowania',
             'message': str(e)
-        }), 502
+        }, 502)
 
     sid_match = re.search(r'<ZalogujResult>([^<]*)</ZalogujResult>', login_resp.text or '')
     sid = sid_match.group(1).strip() if sid_match else ''
 
     if not sid:
         snippet = (login_resp.text or '')[:300]
-        return jsonify({
+        return cors_response({
             'error': 'Logowanie do GUS nie powiodło się (brak SID)',
             'debug': snippet
-        }), 502
+        }, 502)
 
     safe_nip = escape_xml(clean_nip)
     search_envelope = (
@@ -6382,10 +6386,10 @@ def gus_name_by_nip():
         search_snippet = (search_resp.text or '')[:800]
         print(f"[GUS] SEARCH body snippet={repr(search_snippet)}")
     except Exception as e:
-        return jsonify({
+        return cors_response({
             'error': 'Błąd komunikacji z GUS podczas wyszukiwania',
             'message': str(e)
-        }), 502
+        }, 502)
 
     soap_part = search_resp.text or ''
 
@@ -6401,9 +6405,9 @@ def gus_name_by_nip():
 
     # Brak wyniku
     if re.search(r'<DaneSzukajResult\s*/>', soap_part):
-        return jsonify({
+        return cors_response({
             'error': 'GUS nie znalazł podmiotu dla podanego NIP'
-        }), 404
+        }, 404)
 
     result_match = re.search(
         r'<DaneSzukajPodmiotyResult>([\s\S]*?)</DaneSzukajPodmiotyResult>',
@@ -6414,25 +6418,25 @@ def gus_name_by_nip():
 
     if not inner_xml:
         print("[GUS] Brak sekcji <DaneSzukajPodmiotyResult> w odpowiedzi GUS")
-        return jsonify({
+        return cors_response({
             'error': 'Brak danych w odpowiedzi GUS (DaneSzukajPodmiotyResult pusty)'
-        }), 404
+        }, 404)
 
     decoded_xml = decode_bir_inner_xml(inner_xml)
     decoded_snippet = decoded_xml[:800]
     print(f"[GUS] DECODED inner XML snippet={repr(decoded_snippet)}")
     if not decoded_xml:
-        return jsonify({
+        return cors_response({
             'error': 'Brak danych po dekodowaniu odpowiedzi GUS'
-        }), 502
+        }, 502)
 
     try:
         root = ET.fromstring(decoded_xml)
     except ET.ParseError as e:
-        return jsonify({
+        return cors_response({
             'error': 'Nie udało się sparsować danych GUS',
             'message': str(e)
-        }), 502
+        }, 502)
 
     data_list: list[dict] = []
 
@@ -6465,10 +6469,10 @@ def gus_name_by_nip():
         # Dla podglądu logujemy tylko pierwszy rekord
         print(f"[GUS] FIRST record={repr(data_list[0])}")
 
-    return jsonify({'data': data_list}), 200
+    return cors_response({'data': data_list})
 
 
-@app.route('/api/gus/validate-nip', methods=['POST'])
+@app.route('/api/gus/validate-nip', methods=['POST', 'OPTIONS'])
 def gus_validate_nip():
     """
     Sprawdź czy NIP jest poprawny i czy istnieje w bazie GUS/REGON.
@@ -6476,12 +6480,16 @@ def gus_validate_nip():
     Wejście: JSON { "nip": "1234567890" }
     Wyjście: { "nip_status": "brak/niepoprawny/poprawny", "gus_data": {...} lub null }
     """
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     # Sprawdź osobny token dla endpointów GUS/REGON
     api_key_header = request.headers.get('X-API-Key', '')
     if not REGON_API_KEY_TOKEN:
-        return jsonify({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}), 500
+        return cors_response({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}, 500)
     if api_key_header != REGON_API_KEY_TOKEN:
-        return jsonify({'error': 'Unauthorized - nieprawidłowy token'}), 401
+        return cors_response({'error': 'Unauthorized - nieprawidłowy token'}, 401)
     
     body = request.get_json(silent=True) or {}
 
@@ -6491,11 +6499,11 @@ def gus_validate_nip():
     # Brak NIP
     if not clean_nip:
         print(f"[GUS] validate-nip BRAK nip_raw='{nip_raw}'")
-        return jsonify({
+        return cors_response({
             'nip_status': 'brak',
             'nip_provided': nip_raw,
             'gus_data': None
-        }), 200
+        })
 
     # Sprawdź w GUS/REGON
     print(f"[GUS] validate-nip START nip={clean_nip}")
@@ -6505,11 +6513,11 @@ def gus_validate_nip():
     # Nie znaleziono w GUS lub błąd
     if gus_err or not gus_records or len(gus_records) == 0:
         print(f"[GUS] validate-nip NIEPOPRAWNY nip={clean_nip} (err={gus_err}, records={gus_records})")
-        return jsonify({
+        return cors_response({
             'nip_status': 'niepoprawny',
             'nip': clean_nip,
             'gus_data': None
-        }), 200
+        })
 
     # NIP znaleziony w GUS
     print(f"[GUS] validate-nip POPRAWNY nip={clean_nip}")
@@ -6527,7 +6535,7 @@ def gus_validate_nip():
     voivodeship = gus_first.get('wojewodztwo') or ''
     voivodeship_lower = voivodeship.lower() if voivodeship else None
     
-    return jsonify({
+    return cors_response({
         'nip_status': 'poprawny',
         'nip': clean_nip,
         'gus_data': {
@@ -6539,7 +6547,7 @@ def gus_validate_nip():
             'voivodeship': voivodeship_lower,
             'krs': gus_first.get('krs')
         }
-    }), 200
+    })
 
 
 @app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
