@@ -5718,10 +5718,10 @@ def workflow_create_invoice():
     # Pobierz parametr company z body (md lub test)
     company = (body.get('company') or DEFAULT_COMPANY).lower().strip()
     if company not in SUPPORTED_COMPANIES:
-        return jsonify({
+        return cors_response({
             'error': f'Nieobsługiwana firma: {company}',
             'supported': SUPPORTED_COMPANIES
-        }), 400
+        }, 400)
     
     config = get_company_config(company)
     print(f"[WORKFLOW] Używam konfiguracji dla firmy: {company.upper()} (prefix: {config['prefix']})")
@@ -5729,11 +5729,11 @@ def workflow_create_invoice():
     # Załaduj token dla wybranej firmy
     token = load_token(silent=False, company=company)
     if not token:
-        return jsonify({
+        return cors_response({
             'error': f'Brak autoryzacji dla firmy {company.upper()}',
             'message': f'Przejdź do /auth?company={company} aby się zalogować',
             'company': company
-        }), 401
+        }, 401)
     
     # Sprawdź ostrzeżenie o wygasającym refresh tokenie
     days_remaining, warning = check_refresh_token_expiry_for_company(company)
@@ -5840,13 +5840,13 @@ def workflow_create_invoice():
 
     # Walidacja: musi być albo poprawny NIP albo dane purchaser
     if not nip_valid and not purchaser_name:
-        return jsonify({
+        return cors_response({
             'error': 'Wymagany poprawny NIP (10 cyfr) lub dane purchaser_name',
             'nip_provided': nip_raw,
             'nip_valid': nip_valid
-        }), 400
+        }, 400)
     if not invoice_input:
-        return jsonify({'error': 'Brak sekcji invoice'}), 400
+        return cors_response({'error': 'Brak sekcji invoice'}, 400)
 
     # 0) Pobierz company_id (ID Twojej firmy) - OPCJONALNE
     # Jeśli masz tylko jedną firmę, API użyje jej automatycznie
@@ -5948,7 +5948,7 @@ def workflow_create_invoice():
                 }
                 contractor_source = 'purchaser_fallback'
             else:
-                return jsonify({'error': 'GUS nie znalazł firmy dla podanego NIP i brak danych purchaser'}), 404
+                return cors_response({'error': 'GUS nie znalazł firmy dla podanego NIP i brak danych purchaser'}, 404)
         
         try:
             print("[WFIRMA DEBUG] create contractor payload:", contractor_payload)
@@ -5969,13 +5969,13 @@ def workflow_create_invoice():
         
         if not new_contractor:
             status = resp_add.status_code if resp_add else None
-            return jsonify({
+            return cors_response({
                 'error': 'Nie udało się dodać kontrahenta w wFirma',
                 'status': status,
                 'details': resp_add.text if resp_add else 'Brak odpowiedzi',
                 'contractor_payload': contractor_payload,
                 'contractor_source': contractor_source
-            }), status or 502
+            }, status or 502)
 
         contractor = new_contractor
         contractor_id = _extract_contractor_id(contractor)
@@ -6025,13 +6025,13 @@ def workflow_create_invoice():
         
         if not new_contractor:
             status = resp_add.status_code if resp_add else None
-            return jsonify({
+            return cors_response({
                 'error': 'Nie udało się dodać kontrahenta w wFirma',
                 'status': status,
                 'details': resp_add.text if resp_add else 'Brak odpowiedzi',
                 'contractor_payload': contractor_payload,
                 'contractor_source': contractor_source
-            }), status or 502
+            }, status or 502)
 
         contractor = new_contractor
         contractor_id = _extract_contractor_id(contractor)
