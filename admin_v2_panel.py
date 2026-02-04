@@ -1486,9 +1486,17 @@ def order_update_status(order_id: str):
     
     # Support both form data and JSON
     new_status = ""
+    selected_proforma_id = None
+    selected_proforma_wfirma_id = None
+    selected_contractor_id = None
+    
     if request.is_json:
         json_data = request.get_json(silent=True) or {}
         new_status = json_data.get("status", "").strip()
+        # Pobierz wybraną proformę (opcjonalne - gdy użytkownik wybiera z listy)
+        selected_proforma_id = json_data.get("selected_proforma_id")
+        selected_proforma_wfirma_id = json_data.get("selected_proforma_wfirma_id")
+        selected_contractor_id = json_data.get("selected_contractor_id")
     else:
         new_status = request.form.get("status", "").strip()
     
@@ -1521,10 +1529,15 @@ def order_update_status(order_id: str):
         # #region agent log
         try:
             with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"admin_v2_panel.py:order_update_status:mark_paid","message":"Triggering mark_paid flow","data":{"order_id":order_id},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
+                _f.write(_json.dumps({"location":"admin_v2_panel.py:order_update_status:mark_paid","message":"Triggering mark_paid flow","data":{"order_id":order_id,"selected_proforma_id":selected_proforma_id},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"H3"}) + '\n')
         except: pass
         # #endregion
-        return _handle_mark_paid(order_id, user)
+        return _handle_mark_paid(
+            order_id, 
+            user,
+            selected_proforma_wfirma_id=selected_proforma_wfirma_id,
+            selected_contractor_id=selected_contractor_id,
+        )
     
     result = update_order_status(order_id, new_status)
     if result:
@@ -1541,7 +1554,12 @@ def order_update_status(order_id: str):
     return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
 
 
-def _handle_mark_paid(order_id: str, user: dict):
+def _handle_mark_paid(
+    order_id: str, 
+    user: dict,
+    selected_proforma_wfirma_id: str = None,
+    selected_contractor_id: str = None,
+):
     """
     Pełny flow oznaczania zamówienia jako opłacone:
     1. Sprawdza czy faktura końcowa już istnieje
@@ -1549,6 +1567,10 @@ def _handle_mark_paid(order_id: str, user: dict):
     3. Wysyła email z potwierdzeniem do klienta
     4. Wysyła powiadomienie wewnętrzne
     5. Zmienia status na 'paid'
+    
+    Args:
+        selected_proforma_wfirma_id: ID proformy w wFirma (opcjonalne - gdy użytkownik wybrał konkretną proformę)
+        selected_contractor_id: ID kontrahenta z wybranej proformy (opcjonalne)
     """
     from flask import jsonify
     from pg_storage import update_order_status, get_wfirma_documents
@@ -1586,15 +1608,32 @@ def _handle_mark_paid(order_id: str, user: dict):
     existing_docs = get_wfirma_documents(order_id) or []
     has_final_invoice = any((d or {}).get("document_type") == "normal" for d in existing_docs)
     
-    # Pobierz istniejącą proformę (jeśli istnieje)
-    existing_proforma = next(((d or {}) for d in existing_docs if (d or {}).get("document_type") == "proforma"), None)
+    # Pobierz wszystkie proformy
+    all_proformas = [(d or {}) for d in existing_docs if (d or {}).get("document_type") == "proforma"]
+    
+    # Wybierz proformę: użyj wybranej przez użytkownika lub najnowszej (pierwszej w liście - posortowane DESC)
+    existing_proforma = None
+    if selected_proforma_wfirma_id:
+        # Użytkownik wybrał konkretną proformę
+        existing_proforma = next((p for p in all_proformas if p.get("wfirma_invoice_id") == selected_proforma_wfirma_id), None)
+        if existing_proforma:
+            print(f"[V2 MARK-PAID] Użytkownik wybrał proformę: {existing_proforma.get('wfirma_number')} (ID: {selected_proforma_wfirma_id})")
+        else:
+            print(f"[V2 MARK-PAID] UWAGA: Nie znaleziono wybranej proformy {selected_proforma_wfirma_id}, użyję najnowszej")
+    
+    # Fallback: najnowsza proforma (jeśli nie wybrano lub nie znaleziono)
+    if not existing_proforma and all_proformas:
+        existing_proforma = all_proformas[0]  # Najnowsza (posortowane DESC po created_at)
+        print(f"[V2 MARK-PAID] Używam najnowszej proformy: {existing_proforma.get('wfirma_number')}")
+    
+    # Użyj contractor_id z wybranej proformy lub z parametru (jeśli przekazany)
     proforma_wfirma_id = existing_proforma.get("wfirma_invoice_id") if existing_proforma else None
     proforma_number = existing_proforma.get("wfirma_number") if existing_proforma else None
-    proforma_contractor_id = existing_proforma.get("wfirma_contractor_id") if existing_proforma else None
+    proforma_contractor_id = selected_contractor_id or (existing_proforma.get("wfirma_contractor_id") if existing_proforma else None)
     
     if existing_proforma:
-        print(f"[V2 MARK-PAID] Znaleziono proformę: {proforma_number} (ID: {proforma_wfirma_id}, contractor_id: {proforma_contractor_id})")
-        print(f"[V2 MARK-PAID] existing_proforma keys: {list(existing_proforma.keys())}")
+        print(f"[V2 MARK-PAID] Wybrana proforma: {proforma_number} (ID: {proforma_wfirma_id}, contractor_id: {proforma_contractor_id})")
+        print(f"[V2 MARK-PAID] Wszystkich proform: {len(all_proformas)}")
     else:
         print(f"[V2 MARK-PAID] BRAK proformy w bazie dla tego zamówienia")
     
@@ -3061,6 +3100,443 @@ def order_generate_proforma(order_id: str):
         return jsonify({"success": True, "message": f"Proforma {proforma_number} utworzona, ale email nie został wysłany: {email_error}"})
     else:
         return jsonify({"success": True, "message": f"Proforma {proforma_number} utworzona"})
+
+
+@admin_v2_bp.route("/orders/<order_id>/regenerate-proforma", methods=["POST"])
+@_require_permission("orders")
+def order_regenerate_proforma(order_id: str):
+    """
+    Wystawia NOWĄ proformę dla zamówienia (np. gdy poprzednia miała błędną kwotę).
+    
+    Flow:
+    1. Generuje nową proformę na aktualną kwotę zamówienia
+    2. Aktualizuje dane zamówienia (proforma_number, proforma_invoice_id)
+    3. Wysyła email z nową proformą do klienta
+    
+    Poprzednia proforma pozostaje w systemie wFirma jako nieaktualna.
+    """
+    from flask import jsonify
+    from pg_storage import get_order, get_event, get_wfirma_documents, update_order_status, save_mail_log
+    
+    user = _get_current_admin_user()
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może generować proform
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do generowania proform"}), 403
+    
+    # Sprawdź czy zamówienie jest w odpowiednim statusie
+    if order.get("status") in ["paid", "cancelled", "refunded"]:
+        return jsonify({"success": False, "error": "Nie można wystawić proformy dla zamówienia o statusie: " + order.get("status")}), 400
+    
+    # Pobierz dane eventu
+    event_id = order.get("event_id", "")
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+    event_data = (ev.get("data") if ev else {}) or {}
+    
+    # Dane kupującego
+    purchaser_email = order.get("purchaser_email", "") or ""
+    purchaser_first_name = order.get("purchaser_first_name", "") or ""
+    purchaser_last_name = order.get("purchaser_last_name", "") or ""
+    purchaser_nip = order.get("purchaser_nip", "") or ""
+    
+    # Kwota - WAŻNE: używamy total z zamówienia (prawidłowa kwota po rabacie)
+    total_raw = order.get("total", 0)
+    try:
+        total_value = float(total_raw or 0)
+    except Exception:
+        total_value = 0.0
+    currency_value = order.get("currency", "PLN") or "PLN"
+    
+    # Pobierz informacje o starej proformie
+    existing_docs = get_wfirma_documents(order_id)
+    old_proforma = next(((d or {}) for d in (existing_docs or []) if (d or {}).get("document_type") == "proforma"), None)
+    old_proforma_number = old_proforma.get("wfirma_number") if old_proforma else None
+    
+    print(f"[ADMIN-V2 REGEN-PROFORMA] Wystawiam NOWĄ proformę dla {order_id} | stara={old_proforma_number} | total={total_value}")
+    
+    # Przygotuj dane do faktury
+    raw_payload = order.get("raw", {}) or {}
+    
+    billing_address_data = raw_payload.get("eventOrder_billingAddress", {}) or {}
+    billing_address = billing_address_data.get("streetAddress1") or billing_address_data.get("street") or "-"
+    billing_zip = billing_address_data.get("zipcode") or billing_address_data.get("zip") or "00-000"
+    billing_city = billing_address_data.get("city") or "-"
+    
+    # Wyciągnij i wzbogać bilety - UŻYWAMY POPRAWIONEJ LOGIKI która uwzględnia rabaty
+    enriched_tickets = []
+    try:
+        from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+        
+        raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+        if raw_tickets and event_id:
+            enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+            print(f"[ADMIN-V2 REGEN-PROFORMA] Wygenerowano {len(enriched_tickets)} pozycji biletów (z uwzględnieniem rabatów)")
+    except Exception as e:
+        print(f"[ADMIN-V2 REGEN-PROFORMA] Błąd pobierania biletów: {e}")
+    
+    order_data_for_invoice = {
+        "event_order_id": order_id,
+        "event_id": event_id,
+        "purchaser_email": purchaser_email,
+        "purchaser_first_name": purchaser_first_name,
+        "purchaser_last_name": purchaser_last_name,
+        "purchaser_nip": purchaser_nip,
+        "billing_address": billing_address,
+        "billing_zip": billing_zip,
+        "billing_city": billing_city,
+        "total": total_value,
+        "currency": currency_value,
+        "tickets": enriched_tickets,
+    }
+    
+    # Generuj NOWĄ proformę
+    proforma_created = False
+    proforma_number = None
+    proforma_error = None
+    
+    try:
+        from backstage_engine import _create_proforma_invoice
+        
+        success, proforma_result, error = _create_proforma_invoice(
+            order_data=order_data_for_invoice,
+            event_name=event_name,
+            send_email=False,  # Nie wysyłamy przez wFirma, sami wyślemy
+        )
+        
+        if success and proforma_result:
+            proforma_created = True
+            proforma_number = proforma_result.get("invoice", {}).get("fullnumber")
+            print(f"[ADMIN-V2 REGEN-PROFORMA] NOWA proforma utworzona: {proforma_number} (stara: {old_proforma_number})")
+        else:
+            proforma_error = error
+            print(f"[ADMIN-V2 REGEN-PROFORMA] BŁĄD tworzenia proformy: {error}")
+    except Exception as e:
+        proforma_error = str(e)
+        print(f"[ADMIN-V2 REGEN-PROFORMA] WYJĄTEK podczas tworzenia proformy: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    if not proforma_created:
+        return jsonify({"success": False, "error": f"Błąd generowania proformy: {proforma_error}"}), 500
+    
+    # Aktualizuj status zamówienia i termin płatności
+    import time
+    payment_due_timestamp = int(time.time() + 7 * 24 * 60 * 60)
+    update_order_status(order_id, "pending_payment", payment_due_date=payment_due_timestamp)
+    
+    # Wyślij email z NOWĄ proformą
+    email_sent = False
+    email_error = None
+    
+    if purchaser_email:
+        try:
+            from email_templates import render_proforma_reservation_email
+            from backstage_engine import _send_email_via_make
+            
+            proforma_subject = f"Zaktualizowana proforma - {event_name}"
+            
+            proforma_body_html = render_proforma_reservation_email(
+                event_name=event_name,
+                purchaser_first_name=purchaser_first_name or "Uczestnik",
+                purchaser_last_name=purchaser_last_name,
+                purchaser_email=purchaser_email,
+                purchaser_phone=order.get("purchaser_phone", "") or "",
+                event_config=event_data,
+                tickets=enriched_tickets,
+                proforma_number=proforma_number,
+                payment_due_date=None,  # Będzie obliczone w szablonie
+            )
+            
+            # Zapisz mail log (nowy wpis, nie nadpisujemy starego)
+            save_mail_log(
+                event_order_id=order_id,
+                direction="purchaser",
+                template_key="proforma_regenerated",
+                to_email=purchaser_email,
+                subject=proforma_subject,
+                data={
+                    "event_order_id": order_id,
+                    "event_name": event_name,
+                    "proforma_number": proforma_number,
+                    "old_proforma_number": old_proforma_number,
+                    "total": total_value,
+                    "currency": currency_value,
+                },
+            )
+            
+            result = _send_email_via_make(
+                to_email=purchaser_email,
+                subject=proforma_subject,
+                body_html=proforma_body_html,
+                event_order_id=order_id,
+                template_type="proforma_regenerated",
+            )
+            
+            if result.get("success"):
+                email_sent = True
+                print(f"[ADMIN-V2 REGEN-PROFORMA] Email z NOWĄ proformą wysłany do {purchaser_email}")
+            else:
+                email_error = result.get("error", "Nieznany błąd")
+                print(f"[ADMIN-V2 REGEN-PROFORMA] BŁĄD wysyłki emaila: {email_error}")
+        except Exception as e:
+            email_error = str(e)
+            print(f"[ADMIN-V2 REGEN-PROFORMA] WYJĄTEK wysyłki emaila: {e}")
+    
+    # Audit log
+    insert_admin_audit_log(
+        action="proforma_regenerated",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={
+            "new_proforma_number": proforma_number,
+            "old_proforma_number": old_proforma_number,
+            "total": total_value,
+            "email_sent": email_sent,
+        },
+        ip=request.remote_addr,
+    )
+    
+    # Odpowiedź
+    msg_parts = [f"Nowa proforma {proforma_number} wystawiona"]
+    if old_proforma_number:
+        msg_parts.append(f"(poprzednia: {old_proforma_number})")
+    if email_sent:
+        msg_parts.append(f"i wysłana do {purchaser_email}")
+    elif email_error:
+        msg_parts.append(f"- email nie został wysłany: {email_error}")
+    
+    return jsonify({"success": True, "message": " ".join(msg_parts)})
+
+
+@admin_v2_bp.route("/orders/<order_id>/create-correction", methods=["POST"])
+@_require_permission("orders")
+def order_create_correction(order_id: str):
+    """
+    Wystawia fakturę korygującą do faktury VAT.
+    
+    Wejście JSON:
+    {
+        "invoice_wfirma_id": "12345",       # ID faktury w wFirma
+        "original_amount": 1000.00,          # Oryginalna kwota brutto
+        "new_amount": 800.00,                # Nowa kwota brutto (po korekcie)
+        "correction_reason": "Korekta kwoty" # Powód korekty
+    }
+    """
+    from flask import jsonify
+    from pg_storage import get_order, get_event, get_wfirma_documents, save_wfirma_document
+    
+    user = _get_current_admin_user()
+    
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+    
+    # Sprawdź dostęp do wydarzenia zamówienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    
+    # Viewer nie może wystawiać korekt
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do wystawiania korekt"}), 403
+    
+    # Pobierz dane z requesta
+    json_data = request.get_json(silent=True) or {}
+    invoice_wfirma_id = json_data.get("invoice_wfirma_id")
+    original_amount = json_data.get("original_amount")
+    new_amount = json_data.get("new_amount")
+    correction_reason = (json_data.get("correction_reason") or "Korekta kwoty").strip()
+    
+    # Walidacja
+    if not invoice_wfirma_id:
+        return jsonify({"success": False, "error": "Brak ID faktury do korekty"}), 400
+    
+    try:
+        original_amount = float(original_amount)
+        new_amount = float(new_amount)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "Nieprawidłowe kwoty"}), 400
+    
+    if new_amount < 0:
+        return jsonify({"success": False, "error": "Nowa kwota nie może być ujemna"}), 400
+    
+    if new_amount == original_amount:
+        return jsonify({"success": False, "error": "Nowa kwota musi się różnić od oryginalnej"}), 400
+    
+    # Pobierz dane eventu
+    event_id = order.get("event_id", "")
+    ev = get_event(event_id) if event_id else None
+    event_name = ev.get("event_name", "") if ev else ""
+    
+    print(f"[ADMIN-V2 CORRECTION] Tworzę korektę dla {order_id} | faktura={invoice_wfirma_id} | {original_amount} -> {new_amount}")
+    
+    # Pobierz token wFirma i dane faktury
+    try:
+        from app import load_token, wfirma_get_company_id, wfirma_get_invoice, wfirma_create_invoice, wfirma_find_series_by_name
+        
+        token = load_token(silent=True)
+        if not token:
+            return jsonify({"success": False, "error": "Brak tokenu wFirma - zaloguj się ponownie"}), 500
+        
+        company_id = wfirma_get_company_id(token)
+        
+        # Pobierz oryginalną fakturę
+        original_invoice, err = wfirma_get_invoice(token, str(invoice_wfirma_id), company_id)
+        if err or not original_invoice:
+            return jsonify({"success": False, "error": f"Nie udało się pobrać faktury: {err}"}), 400
+        
+        original_number = original_invoice.get("fullnumber", "")
+        print(f"[ADMIN-V2 CORRECTION] Pobrano fakturę oryginalną: {original_number}")
+        
+        # Pobierz contractor_id z oryginalnej faktury
+        contractor_data = original_invoice.get("contractor", {})
+        contractor_id = contractor_data.get("id") if isinstance(contractor_data, dict) else None
+        contractor_email = contractor_data.get("email") if isinstance(contractor_data, dict) else None
+        
+        if not contractor_id:
+            return jsonify({"success": False, "error": "Nie można odczytać kontrahenta z faktury oryginalnej"}), 400
+        
+        # Pobierz pozycje oryginalnej faktury
+        original_contents = original_invoice.get("invoicecontents", [])
+        if not original_contents:
+            return jsonify({"success": False, "error": "Faktura oryginalna nie ma pozycji"}), 400
+        
+        # Znajdź serię korekt
+        series_name = "Eventy Korekta"
+        series_id = None
+        series = wfirma_find_series_by_name(token, series_name, company_id)
+        if series and series.get("id"):
+            series_id = int(series.get("id"))
+            print(f"[ADMIN-V2 CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
+        
+        # Oblicz współczynnik korekty
+        correction_factor = new_amount / original_amount if original_amount > 0 else 0
+        
+        # Mapowanie stawek VAT
+        vat_code_map = {"23": 222, "8": 223, "5": 224, "0": 225, "zw": 226, "np": 227}
+        
+        # Buduj pozycje korekty - proporcjonalnie korygujemy każdą pozycję
+        invoice_contents_dict = {}
+        for idx, orig_pos in enumerate(original_contents):
+            parent_pos_id = orig_pos.get("id")
+            name = orig_pos.get("name", f"Pozycja {idx+1}")
+            orig_qty = float(orig_pos.get("count", 1))
+            orig_unit_price = float(orig_pos.get("price", 0))
+            vat_rate_str = str(orig_pos.get("vat", "23"))
+            
+            # Nowa cena = oryginalna * współczynnik korekty
+            new_unit_price = round(orig_unit_price * correction_factor, 2)
+            
+            vat_code = vat_code_map.get(vat_rate_str, 222)
+            
+            invoice_contents_dict[f"invoicecontent{idx}"] = {
+                "name": name,
+                "unit": orig_pos.get("unit", "szt."),
+                "count": orig_qty,
+                "price": new_unit_price,
+                "vat": vat_code,
+                "invoicecontent": {"id": parent_pos_id} if parent_pos_id else None,
+            }
+            
+            # Usuń None values
+            if not parent_pos_id:
+                del invoice_contents_dict[f"invoicecontent{idx}"]["invoicecontent"]
+        
+        # Payload korekty
+        import datetime
+        today = datetime.date.today().isoformat()
+        
+        correction_payload = {
+            "contractor": {"id": contractor_id},
+            "invoice": {"id": invoice_wfirma_id},
+            "type": "correction",
+            "date": today,
+            "description": f"{correction_reason} - {event_name}",
+            "invoicecontents": invoice_contents_dict,
+        }
+        
+        if series_id:
+            correction_payload["series"] = {"id": series_id}
+        
+        print(f"[ADMIN-V2 CORRECTION] Payload: contractor={contractor_id}, parent={invoice_wfirma_id}, positions={len(invoice_contents_dict)}")
+        
+        # Utwórz korektę
+        correction_result, resp = wfirma_create_invoice(token, correction_payload, company_id)
+        
+        if not correction_result:
+            error_detail = resp.text[:300] if resp and resp.text else "Brak szczegółów"
+            print(f"[ADMIN-V2 CORRECTION] BŁĄD: {error_detail}")
+            return jsonify({"success": False, "error": f"Błąd wFirma: {error_detail}"}), 500
+        
+        correction_id = correction_result.get("id")
+        correction_number = correction_result.get("fullnumber")
+        
+        print(f"[ADMIN-V2 CORRECTION] Korekta utworzona: {correction_number} (ID: {correction_id})")
+        
+        # Zapisz korektę do bazy
+        save_wfirma_document(
+            event_order_id=order_id,
+            wfirma_invoice_id=str(correction_id),
+            wfirma_number=correction_number,
+            document_type="correction",
+            raw=correction_result,
+        )
+        
+        # Wyślij email do kontrahenta (jeśli jest email)
+        email_sent = False
+        if contractor_email:
+            try:
+                from app import wfirma_send_invoice_email
+                resp_email = wfirma_send_invoice_email(token, str(correction_id), contractor_email, company_id)
+                if resp_email and resp_email.status_code in (200, 201):
+                    email_sent = True
+                    print(f"[ADMIN-V2 CORRECTION] Email wysłany do {contractor_email}")
+                else:
+                    print(f"[ADMIN-V2 CORRECTION] Błąd wysyłki email: {resp_email.text[:200] if resp_email else 'brak'}")
+            except Exception as email_ex:
+                print(f"[ADMIN-V2 CORRECTION] Wyjątek wysyłki email: {email_ex}")
+        
+        # Audit log
+        insert_admin_audit_log(
+            action="correction_created",
+            admin_user_id=user.get("id") if user else None,
+            target_id=order_id,
+            extra={
+                "correction_number": correction_number,
+                "original_invoice": original_number,
+                "original_amount": original_amount,
+                "new_amount": new_amount,
+                "correction_reason": correction_reason,
+                "email_sent": email_sent,
+            },
+            ip=request.remote_addr,
+        )
+        
+        # Odpowiedź
+        message = f"Korekta {correction_number} wystawiona"
+        if email_sent:
+            message += f" i wysłana do {contractor_email}"
+        
+        return jsonify({
+            "success": True, 
+            "message": message,
+            "correction_number": correction_number,
+            "correction_id": correction_id,
+        })
+        
+    except Exception as e:
+        print(f"[ADMIN-V2 CORRECTION] WYJĄTEK: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Błąd: {str(e)}"}), 500
 
 
 @admin_v2_bp.route("/orders/<order_id>/send-proforma", methods=["POST"])

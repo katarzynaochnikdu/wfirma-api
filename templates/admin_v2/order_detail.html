@@ -607,10 +607,23 @@
             Wygeneruj proformę
           </button>
           {% endif %}
+          {% if is_proforma_payment and has_proforma and order.status not in ['paid', 'cancelled', 'refunded'] %}
+          <button class="btn" style="background: hsl(270, 60%, 50%); color: white; border: none;" onclick="regenerateProforma()">
+            <i data-lucide="refresh-cw"></i>
+            Wystaw nową proformę
+          </button>
+          {% endif %}
           {% if order.status == 'paid' %}
           <button class="btn btn-outline" onclick="resendTickets()">
             <i data-lucide="mail"></i>
             Wyślij potwierdzenie uczestnictwa
+          </button>
+          {% endif %}
+          {% set has_vat_invoice = wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 %}
+          {% if has_vat_invoice and order.status == 'paid' %}
+          <button class="btn btn-outline" onclick="showCorrectionModal()" style="border-color: hsl(270, 60%, 50%); color: hsl(270, 60%, 40%);">
+            <i data-lucide="file-minus"></i>
+            Wystaw korektę
           </button>
           {% endif %}
           {% if order.status not in ['cancelled', 'refunded'] %}
@@ -696,6 +709,20 @@
   let pendingStatus = null;
   const currentStatus = '{{ order.status }}';
   const isStripePayment = {{ 'true' if 'online' in (order.payment_type or '')|string|lower or 'stripe' in (order.payment_option_name or '')|string|lower else 'false' }};
+  
+  // Dane faktur VAT do korekty
+  const vatInvoices = [
+    {% for doc in wfirma_documents if doc.document_type == 'normal' %}
+    {
+      id: {{ doc.id }},
+      wfirma_id: '{{ doc.wfirma_invoice_id or "" }}',
+      number: '{{ doc.wfirma_number or "Faktura" }}',
+      created_at: '{{ doc.created_at.strftime("%d.%m.%Y") if doc.created_at else "" }}'
+    },
+    {% endfor %}
+  ];
+  const orderTotal = {{ order.total or 0 }};
+  const orderCurrency = '{{ order.currency or "PLN" }}';
   const isProformaPayment = {{ 'true' if 'pro' in (order.payment_option_name or '')|string|lower or 'proforma' in (order.payment_type or '')|string|lower else 'false' }};
   let pendingActionCallback = null;
 
@@ -938,6 +965,20 @@
     const hasInvoice = {{ 'true' if wfirma_documents and wfirma_documents|selectattr('document_type', 'equalto', 'normal')|list|length > 0 else 'false' }};
     const purchaserEmail = '{{ order.purchaser_email or "" }}';
     
+    // Lista proform (gdy więcej niż jedna, użytkownik wybiera którą opłacono)
+    const proformas = [
+      {% for doc in wfirma_documents if doc.document_type == 'proforma' %}
+      {
+        id: {{ doc.id }},
+        wfirma_id: '{{ doc.wfirma_invoice_id or "" }}',
+        number: '{{ doc.wfirma_number or "Proforma" }}',
+        contractor_id: '{{ doc.wfirma_contractor_id or "" }}',
+        created_at: '{{ doc.created_at.strftime("%d.%m.%Y %H:%M") if doc.created_at else "" }}'
+      },
+      {% endfor %}
+    ];
+    const hasMultipleProformas = proformas.length > 1;
+    
     let infoHtml = '';
     
     // Sekcja: Co zrobi system
@@ -960,6 +1001,21 @@
           <i data-lucide="file-text" style="width: 18px; height: 18px; color: hsl(212, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
           <div style="font-size: 0.8125rem; color: hsl(212, 100%, 25%);">
             <strong>Faktura VAT:</strong> Zostanie wygenerowana faktura końcowa w systemie wFirma.
+          </div>
+        </div>
+      </div>`;
+    }
+    
+    // 2b. Wybór proformy (gdy jest więcej niż jedna)
+    if (hasMultipleProformas && !hasInvoice) {
+      infoHtml += `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 70%); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%); width: 100%;">
+            <strong>Uwaga:</strong> Istnieje więcej niż jedna proforma. Wybierz którą klient opłacił:
+            <select id="proforma-select" style="width: 100%; margin-top: 8px; padding: 8px; border-radius: 6px; border: 1px solid hsl(38, 100%, 60%); font-size: 0.8125rem;">
+              ${proformas.map((p, i) => `<option value="${p.id}" data-wfirma-id="${p.wfirma_id}" data-contractor-id="${p.contractor_id}" ${i === 0 ? 'selected' : ''}>${p.number} (${p.created_at})</option>`).join('')}
+            </select>
           </div>
         </div>
       </div>`;
@@ -1023,10 +1079,27 @@
         if (cancelBtn) cancelBtn.disabled = true;
         if (closeBtn) closeBtn.disabled = true;
         
+        // Pobierz wybraną proformę (jeśli jest dropdown)
+        let selectedProformaId = null;
+        let selectedProformaWfirmaId = null;
+        let selectedContractorId = null;
+        const proformaSelect = document.getElementById('proforma-select');
+        if (proformaSelect) {
+          const selectedOption = proformaSelect.options[proformaSelect.selectedIndex];
+          selectedProformaId = proformaSelect.value;
+          selectedProformaWfirmaId = selectedOption.dataset.wfirmaId;
+          selectedContractorId = selectedOption.dataset.contractorId;
+        }
+        
         fetch(`/admin-v2/orders/${orderId}/status`, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'paid' })
+          body: JSON.stringify({ 
+            status: 'paid',
+            selected_proforma_id: selectedProformaId,
+            selected_proforma_wfirma_id: selectedProformaWfirmaId,
+            selected_contractor_id: selectedContractorId
+          })
         })
           .then(response => response.json())
           .then(data => {
@@ -1093,6 +1166,211 @@
           });
       }
     });
+  }
+
+  function regenerateProforma() {
+    showActionModal({
+      title: 'Wystaw nową proformę',
+      icon: 'refresh-cw',
+      iconColor: 'hsl(270, 60%, 50%)',
+      text: 'Zostanie wystawiona <strong>nowa faktura proforma</strong> na aktualną kwotę zamówienia. Poprzednia proforma pozostanie w systemie jako nieaktualna.',
+      info: `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 75%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
+            <strong>Uwaga:</strong> Użyj tej opcji jeśli poprzednia proforma miała błędną kwotę 
+            (np. bez rabatu). Nowa proforma zostanie wysłana do klienta.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Wystaw nową proformę',
+      onConfirm: () => {
+        fetch(`/admin-v2/orders/${orderId}/regenerate-proforma`, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast(data.message || 'Nowa proforma wystawiona pomyślnie', 'success');
+              setTimeout(() => location.reload(), 1500);
+            } else {
+              showToast(data.error || 'Błąd wystawiania proformy', 'error');
+            }
+          })
+          .catch(err => {
+            showToast('Błąd połączenia: ' + err.message, 'error');
+          });
+      }
+    });
+  }
+
+  function showCorrectionModal() {
+    if (!vatInvoices.length) {
+      showToast('Brak faktury VAT do skorygowania', 'error');
+      return;
+    }
+    
+    const invoice = vatInvoices[0]; // Najnowsza faktura
+    const currentAmount = orderTotal;
+    const currentAmountNet = Math.round(currentAmount / 1.23 * 100) / 100;
+    
+    let formHtml = `
+      <div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Faktura do korekty:</div>
+      <div style="background: hsl(212, 100%, 97%); border: 1px solid hsl(212, 100%, 75%); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+        <div style="font-size: 0.9rem; font-weight: 600; color: hsl(212, 100%, 30%);">${invoice.number}</div>
+        <div style="font-size: 0.8rem; color: hsl(212, 100%, 40%);">Data: ${invoice.created_at}</div>
+      </div>
+      
+      <div style="font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Kwoty korekty:</div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+        <div>
+          <label style="display: block; font-size: 0.8125rem; font-weight: 500; margin-bottom: 4px; color: var(--foreground);">Kwota oryginalna (brutto)</label>
+          <input type="number" id="correction-original-amount" value="${currentAmount}" step="0.01" min="0" 
+                 style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem;"
+                 onchange="updateCorrectionPreview()">
+          <div style="font-size: 0.75rem; color: var(--muted-foreground); margin-top: 2px;">netto: <span id="original-net">${currentAmountNet.toFixed(2)}</span> zł</div>
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.8125rem; font-weight: 500; margin-bottom: 4px; color: var(--foreground);">Nowa kwota (brutto)</label>
+          <input type="number" id="correction-new-amount" value="" step="0.01" min="0" placeholder="Wpisz nową kwotę"
+                 style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem;"
+                 onchange="updateCorrectionPreview()">
+          <div style="font-size: 0.75rem; color: var(--muted-foreground); margin-top: 2px;">netto: <span id="new-net">—</span> zł</div>
+        </div>
+      </div>
+      
+      <div>
+        <label style="display: block; font-size: 0.8125rem; font-weight: 500; margin-bottom: 4px; color: var(--foreground);">Powód korekty</label>
+        <input type="text" id="correction-reason" value="Korekta kwoty" placeholder="Np. Błąd w cenie, zmiana zamówienia..."
+               style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem;">
+      </div>
+      
+      <div id="correction-preview" style="background: hsl(142, 71%, 97%); border: 1px solid hsl(142, 71%, 75%); border-radius: 8px; padding: 12px; margin-top: 16px; display: none;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="arrow-right" style="width: 18px; height: 18px; color: hsl(142, 71%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(142, 71%, 25%);">
+            <strong>Różnica:</strong> <span id="correction-diff">—</span> ${orderCurrency}
+          </div>
+        </div>
+      </div>
+      
+      <div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 70%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
+            <strong>Uwaga:</strong> Korekta zostanie wystawiona w wFirma i wysłana do klienta. Ta operacja jest nieodwracalna.
+          </div>
+        </div>
+      </div>
+    `;
+    
+    showActionModal({
+      title: 'Wystaw korektę faktury',
+      icon: 'file-minus',
+      iconColor: 'hsl(270, 60%, 50%)',
+      text: '',
+      info: formHtml,
+      confirmText: 'Wystaw korektę',
+      closeOnConfirm: false,
+      onConfirm: () => {
+        const originalAmount = parseFloat(document.getElementById('correction-original-amount').value) || 0;
+        const newAmount = parseFloat(document.getElementById('correction-new-amount').value);
+        const reason = document.getElementById('correction-reason').value.trim() || 'Korekta kwoty';
+        
+        if (isNaN(newAmount) || newAmount < 0) {
+          showToast('Podaj prawidłową nową kwotę', 'error');
+          return;
+        }
+        
+        if (newAmount === originalAmount) {
+          showToast('Nowa kwota musi się różnić od oryginalnej', 'error');
+          return;
+        }
+        
+        const confirmBtn = document.getElementById('action-confirm-btn');
+        const cancelBtn = confirmBtn ? confirmBtn.previousElementSibling : null;
+        const closeBtn = document.querySelector('#action-confirm-modal .modal-close');
+        const originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
+        
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = '<span class="btn-spinner"></span> Wystawianie korekty...';
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+        if (closeBtn) closeBtn.disabled = true;
+        
+        fetch(`/admin-v2/orders/${orderId}/create-correction`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invoice_wfirma_id: invoice.wfirma_id,
+            original_amount: originalAmount,
+            new_amount: newAmount,
+            correction_reason: reason
+          })
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showToast(data.message || 'Korekta wystawiona pomyślnie', 'success');
+              setTimeout(() => location.reload(), 1500);
+            } else {
+              showToast(data.error || 'Błąd wystawiania korekty', 'error');
+              if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalHtml;
+              }
+              if (cancelBtn) cancelBtn.disabled = false;
+              if (closeBtn) closeBtn.disabled = false;
+            }
+          })
+          .catch(err => {
+            showToast('Błąd połączenia: ' + err.message, 'error');
+            if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.innerHTML = originalHtml;
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+            if (closeBtn) closeBtn.disabled = false;
+          });
+      }
+    });
+    
+    // Reinitialize lucide icons in modal
+    setTimeout(() => {
+      if (window.lucide) lucide.createIcons();
+    }, 100);
+  }
+  
+  function updateCorrectionPreview() {
+    const originalAmount = parseFloat(document.getElementById('correction-original-amount').value) || 0;
+    const newAmount = parseFloat(document.getElementById('correction-new-amount').value);
+    
+    // Update net amounts
+    document.getElementById('original-net').textContent = (originalAmount / 1.23).toFixed(2);
+    
+    if (!isNaN(newAmount) && newAmount >= 0) {
+      document.getElementById('new-net').textContent = (newAmount / 1.23).toFixed(2);
+      
+      const diff = newAmount - originalAmount;
+      const diffText = diff >= 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2);
+      document.getElementById('correction-diff').textContent = diffText;
+      document.getElementById('correction-preview').style.display = 'block';
+      
+      // Change color based on direction
+      const previewDiv = document.getElementById('correction-preview');
+      if (diff < 0) {
+        previewDiv.style.background = 'hsl(0, 70%, 97%)';
+        previewDiv.style.borderColor = 'hsl(0, 70%, 75%)';
+        previewDiv.querySelector('div > div').style.color = 'hsl(0, 70%, 35%)';
+      } else {
+        previewDiv.style.background = 'hsl(142, 71%, 97%)';
+        previewDiv.style.borderColor = 'hsl(142, 71%, 75%)';
+        previewDiv.querySelector('div > div').style.color = 'hsl(142, 71%, 25%)';
+      }
+    } else {
+      document.getElementById('new-net').textContent = '—';
+      document.getElementById('correction-preview').style.display = 'none';
+    }
   }
 
   function sendReminder() {

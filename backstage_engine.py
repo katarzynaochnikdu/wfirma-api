@@ -1077,13 +1077,24 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
         except (ValueError, TypeError):
             discount_amount = 0.0
 
+        # POPRAWKA: Odejmij rabat od ceny netto
+        # itemPrice/ticketPrice to cena CENNIKOWA (przed rabatem), discountAmount to rabat netto
+        # Musimy odjąć rabat żeby dostać rzeczywistą cenę po rabacie
+        unit_net_before_discount = unit_net  # Zachowaj cenę przed rabatem do logów
+        if discount_amount > 0 and unit_net > 0:
+            unit_net = max(0.0, unit_net - discount_amount)
+            # Przelicz VAT amount proporcjonalnie (jeśli był podany dla ceny cennikowej)
+            if vat_amount > 0 and unit_net_before_discount > 0:
+                vat_amount = round(vat_amount * (unit_net / unit_net_before_discount), 2)
+
         try:
             vat_rate = float(tax_percent_raw) if tax_percent_raw is not None else 23.0
         except (ValueError, TypeError):
             vat_rate = 23.0
 
         # Gross unit: jeśli totalAmount jest podane (na 1 bilet), użyj go; w przeciwnym razie wylicz z netto+VAT
-        if unit_gross_raw is not None:
+        # UWAGA: totalAmount z Backstage może być też przed rabatem - przeliczamy z unit_net po rabacie
+        if unit_gross_raw is not None and discount_amount == 0:
             try:
                 unit_gross = float(unit_gross_raw)
             except (ValueError, TypeError):
@@ -1136,11 +1147,13 @@ def _extract_tickets_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any
                 "src_discountAmount": (line_item or {}).get("discountAmount") if line_item else t.get("discountAmount"),
                 "src_ticketPrice": t.get("ticketPrice"),
                 "src_actualTicketPrice": t.get("actualTicketPrice"),
+                "calc_unit_net_before_discount": round(unit_net_before_discount, 2),
                 "calc_unit_net": round(unit_net, 2),
                 "calc_unit_gross": round(unit_gross, 2),
                 "calc_vat_rate": vat_rate,
                 "calc_vat_amount": round(vat_amount, 2),
                 "calc_discount_amount": round(discount_amount, 2),
+                "discount_applied": discount_amount > 0,
             })
     
     # Agreguj bilety o tym samym ticket_class_id
