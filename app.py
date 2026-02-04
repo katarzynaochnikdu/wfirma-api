@@ -4093,7 +4093,7 @@ def stripe_status():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
-@app.route('/api/stripe/create-session', methods=['POST'])
+@app.route('/api/stripe/create-session', methods=['POST', 'OPTIONS'])
 @require_api_key
 def stripe_create_session():
     """
@@ -4123,39 +4123,43 @@ def stripe_create_session():
         "currency": "PLN"
     }
     """
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     try:
         from stripe_integration import create_checkout_session, is_stripe_configured
         
         if not is_stripe_configured():
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Stripe nie jest skonfigurowany (brak STRIPE_RENDER_API_KEY)'
-            }), 500
+            }, 500)
         
         body = request.get_json(silent=True) or {}
         
         event_order_id = (body.get('event_order_id') or '').strip()
         if not event_order_id:
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Wymagany parametr: event_order_id'
-            }), 400
+            }, 400)
         
         # Kwota - przyjmujemy w PLN, przeliczamy na grosze
         amount = body.get('amount', 0)
         try:
             amount_cents = int(float(amount) * 100)
         except (ValueError, TypeError):
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Nieprawidłowa kwota (amount)'
-            }), 400
+            }, 400)
         
         if amount_cents <= 0:
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Kwota musi być większa od 0'
-            }), 400
+            }, 400)
         
         currency = (body.get('currency') or 'PLN').upper()
         customer_email = (body.get('customer_email') or '').strip() or None
@@ -4176,21 +4180,21 @@ def stripe_create_session():
         )
         
         if error:
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': error
-            }), 400
+            }, 400)
         
-        return jsonify({
+        return cors_response({
             'status': 'ok',
             **result
-        }), 200
+        })
         
     except Exception as e:
-        return jsonify({
+        return cors_response({
             'status': 'error',
             'error': str(e)
-        }), 500
+        }, 500)
 
 
 @app.route('/api/stripe/webhook', methods=['POST'])
@@ -4306,7 +4310,7 @@ def stripe_sandbox_status():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
-@app.route('/api/stripe/sandbox/create-session', methods=['POST'])
+@app.route('/api/stripe/sandbox/create-session', methods=['POST', 'OPTIONS'])
 @require_api_key
 def stripe_sandbox_create_session():
     """
@@ -4337,39 +4341,43 @@ def stripe_sandbox_create_session():
         "url": "https://checkout.stripe.com/c/pay/cs_test_..."
     }
     """
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     try:
         from stripe_integration import create_checkout_session, is_stripe_configured
         
         if not is_stripe_configured(sandbox=True):
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Stripe sandbox nie jest skonfigurowany (brak STRIPE_RENDER_API_KEY_SANDBOX)'
-            }), 500
+            }, 500)
         
         body = request.get_json(silent=True) or {}
         
         event_order_id = (body.get('event_order_id') or '').strip()
         if not event_order_id:
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Wymagany parametr: event_order_id'
-            }), 400
+            }, 400)
         
         # Kwota - przyjmujemy w PLN, przeliczamy na grosze
         amount = body.get('amount', 0)
         try:
             amount_cents = int(float(amount) * 100)
         except (ValueError, TypeError):
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Nieprawidłowa kwota (amount)'
-            }), 400
+            }, 400)
         
         if amount_cents <= 0:
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': 'Kwota musi być większa od 0'
-            }), 400
+            }, 400)
         
         currency = (body.get('currency') or 'PLN').upper()
         customer_email = (body.get('customer_email') or '').strip() or None
@@ -4391,22 +4399,22 @@ def stripe_sandbox_create_session():
         )
         
         if error:
-            return jsonify({
+            return cors_response({
                 'status': 'error',
                 'error': error
-            }), 400
+            }, 400)
         
-        return jsonify({
+        return cors_response({
             'status': 'ok',
             'mode': 'sandbox',
             **result
-        }), 200
+        })
         
     except Exception as e:
-        return jsonify({
+        return cors_response({
             'status': 'error',
             'error': str(e)
-        }), 500
+        }, 500)
 
 
 @app.route('/api/stripe/sandbox/webhook', methods=['POST'])
@@ -5696,10 +5704,14 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     return payload, None
 
 
-@app.route('/api/workflow/create-invoice-from-nip', methods=['POST'])
+@app.route('/api/workflow/create-invoice-from-nip', methods=['POST', 'OPTIONS'])
 @require_api_key
 def workflow_create_invoice():
     """Pełny workflow: NIP -> (GUS) -> kontrahent -> faktura."""
+    
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
     
     body = request.get_json(silent=True) or {}
     
