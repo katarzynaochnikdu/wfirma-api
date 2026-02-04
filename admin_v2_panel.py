@@ -1885,7 +1885,7 @@ def order_send_reminder(order_id: str):
     """Wysyła przypomnienie o płatności."""
     from flask import jsonify
     from datetime import datetime, timedelta
-    from pg_storage import get_stripe_session_by_order_id, save_mail_log
+    from pg_storage import get_stripe_session_by_order_id, save_mail_log, get_wfirma_documents
     from backstage_engine import _send_email_via_make
     from email_templates import render_checkout_reminder_email
     
@@ -1990,7 +1990,10 @@ def order_send_reminder(order_id: str):
     if is_proforma and not checkout_url:
         # Dla proformy bez Stripe - email z przypomnieniem o proformie
         from email_templates import render_proforma_reminder_email
-        proforma_number = order.get("proforma_number", "")
+        # Proforma number bierzemy z wfirma_documents (orders nie przechowuje proforma_number)
+        wfirma_docs = get_wfirma_documents(order_id) or []
+        latest_proforma = next(((d or {}) for d in wfirma_docs if (d or {}).get("document_type") == "proforma"), None)
+        proforma_number = (latest_proforma or {}).get("wfirma_number", "") or ""
         
         # Pobierz bilety z zamówienia
         tickets = []
@@ -3380,16 +3383,27 @@ def order_create_correction(order_id: str):
     
     # Pobierz token wFirma i dane faktury
     try:
-        from app import load_token, wfirma_get_company_id, wfirma_get_invoice, wfirma_create_invoice, wfirma_find_series_by_name
+        from app import (
+            WFIRMA_SERIES_CORRECTION,
+            load_token,
+            wfirma_get_company_id,
+            wfirma_get_invoice,
+            wfirma_create_invoice,
+            wfirma_find_series_by_name,
+        )
         
         token = load_token(silent=True)
         if not token:
             return jsonify({"success": False, "error": "Brak tokenu wFirma - zaloguj się ponownie"}), 500
         
         company_id = wfirma_get_company_id(token)
+        try:
+            parent_invoice_id = int(str(invoice_wfirma_id))
+        except Exception:
+            return jsonify({"success": False, "error": "Nieprawidłowe ID faktury wFirma"}), 400
         
         # Pobierz oryginalną fakturę
-        original_invoice, err = wfirma_get_invoice(token, str(invoice_wfirma_id), company_id)
+        original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id), company_id)
         if err or not original_invoice:
             return jsonify({"success": False, "error": f"Nie udało się pobrać faktury: {err}"}), 400
         
@@ -3404,13 +3418,18 @@ def order_create_correction(order_id: str):
         if not contractor_id:
             return jsonify({"success": False, "error": "Nie można odczytać kontrahenta z faktury oryginalnej"}), 400
         
-        # Pobierz pozycje oryginalnej faktury
-        original_contents = original_invoice.get("invoicecontents", [])
-        if not original_contents:
-            return jsonify({"success": False, "error": "Faktura oryginalna nie ma pozycji"}), 400
-        
-        # Znajdź serię korekt
-        series_name = "Eventy Korekta"
+        # Ustal kwotę bazową faktury (źródło prawdy: brutto z wFirma, fallback: kwota z UI)
+        original_brutto = 0.0
+        try:
+            original_brutto = float(original_invoice.get("brutto") or 0)
+        except Exception:
+            original_brutto = 0.0
+        base_amount = original_brutto if original_brutto > 0 else float(original_amount or 0)
+        if base_amount <= 0:
+            return jsonify({"success": False, "error": "Nie można wyliczyć kwoty bazowej faktury (brak brutto)"}), 400
+
+        # Znajdź serię korekt (z ENV)
+        series_name = (WFIRMA_SERIES_CORRECTION or "Eventy Korekta").strip()
         series_id = None
         series = wfirma_find_series_by_name(token, series_name, company_id)
         if series and series.get("id"):
@@ -3418,55 +3437,107 @@ def order_create_correction(order_id: str):
             print(f"[ADMIN-V2 CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
         
         # Oblicz współczynnik korekty
-        correction_factor = new_amount / original_amount if original_amount > 0 else 0
-        
-        # Mapowanie stawek VAT
+        correction_factor = float(new_amount) / float(base_amount)
+
+        # Pobierz pozycje oryginalnej faktury (wFirma zwraca dict z kluczami liczbowymi)
+        original_contents_raw = original_invoice.get("invoicecontents") or {}
+        original_positions = []
+        if isinstance(original_contents_raw, dict):
+            for _k, wrapper in original_contents_raw.items():
+                if isinstance(wrapper, dict):
+                    ic = wrapper.get("invoicecontent")
+                    if isinstance(ic, dict):
+                        original_positions.append(ic)
+        elif isinstance(original_contents_raw, list):
+            for wrapper in original_contents_raw:
+                if isinstance(wrapper, dict):
+                    ic = wrapper.get("invoicecontent") if "invoicecontent" in wrapper else wrapper
+                    if isinstance(ic, dict):
+                        original_positions.append(ic)
+
+        if not original_positions:
+            return jsonify({"success": False, "error": "Faktura oryginalna nie ma pozycji (invoicecontents)"}), 400
+
+        # Buduj pozycje korekty (proporcjonalna korekta cen netto per pozycja)
         vat_code_map = {"23": 222, "8": 223, "5": 224, "0": 225, "zw": 226, "np": 227}
-        
-        # Buduj pozycje korekty - proporcjonalnie korygujemy każdą pozycję
+        reverse_vat_code_map = {222: "23", 223: "8", 224: "5", 225: "0", 226: "zw", 227: "np"}
+
         invoice_contents_dict = {}
-        for idx, orig_pos in enumerate(original_contents):
+        for idx, orig_pos in enumerate(original_positions):
             parent_pos_id = orig_pos.get("id")
-            name = orig_pos.get("name", f"Pozycja {idx+1}")
-            orig_qty = float(orig_pos.get("count", 1))
-            orig_unit_price = float(orig_pos.get("price", 0))
-            vat_rate_str = str(orig_pos.get("vat", "23"))
-            
-            # Nowa cena = oryginalna * współczynnik korekty
-            new_unit_price = round(orig_unit_price * correction_factor, 2)
-            
-            vat_code = vat_code_map.get(vat_rate_str, 222)
-            
-            invoice_contents_dict[f"invoicecontent{idx}"] = {
-                "name": name,
-                "unit": orig_pos.get("unit", "szt."),
-                "count": orig_qty,
-                "price": new_unit_price,
-                "vat": vat_code,
-                "invoicecontent": {"id": parent_pos_id} if parent_pos_id else None,
-            }
-            
-            # Usuń None values
             if not parent_pos_id:
-                del invoice_contents_dict[f"invoicecontent{idx}"]["invoicecontent"]
-        
-        # Payload korekty
+                continue
+            try:
+                parent_pos_id_int = int(parent_pos_id)
+            except Exception:
+                continue
+
+            name = orig_pos.get("name") or f"Pozycja {idx+1}"
+            unit = orig_pos.get("unit") or "szt."
+
+            qty_raw = orig_pos.get("count", 1)
+            try:
+                qty = float(qty_raw) if isinstance(qty_raw, str) else float(qty_raw)
+            except Exception:
+                qty = 1.0
+
+            price_raw = orig_pos.get("price", 0)
+            try:
+                price_net = float(price_raw) if isinstance(price_raw, str) else float(price_raw)
+            except Exception:
+                price_net = 0.0
+
+            new_unit_price_net = round(price_net * correction_factor, 2)
+
+            # VAT code id: prefer vat_code.id z oryginału
+            vat_code_id = None
+            vat_code_obj = orig_pos.get("vat_code")
+            if isinstance(vat_code_obj, dict) and vat_code_obj.get("id"):
+                try:
+                    vat_code_id = int(vat_code_obj.get("id"))
+                except Exception:
+                    vat_code_id = None
+            if not vat_code_id:
+                vat_val = orig_pos.get("vat")
+                vat_rate_str = None
+                if isinstance(vat_val, str):
+                    vat_rate_str = vat_val.strip().lower()
+                elif isinstance(vat_val, (int, float)):
+                    # czasem vat może być w formie kodu
+                    vat_rate_str = reverse_vat_code_map.get(int(vat_val))
+                vat_code_id = vat_code_map.get(vat_rate_str or "23", 222)
+
+            invoice_contents_dict[str(len(invoice_contents_dict))] = {
+                "invoicecontent": {
+                    "name": name,
+                    "unit": unit,
+                    "count": qty,
+                    "price": new_unit_price_net,
+                    "vat_code": {"id": int(vat_code_id)},
+                    "parent": {"id": parent_pos_id_int},
+                }
+            }
+
+        if not invoice_contents_dict:
+            return jsonify({"success": False, "error": "Nie udało się zbudować pozycji korekty"}), 400
+
+        # Payload korekty zgodny z istniejącym workflow_create_correction w app.py
         import datetime
         today = datetime.date.today().isoformat()
-        
+
         correction_payload = {
-            "contractor": {"id": contractor_id},
-            "invoice": {"id": invoice_wfirma_id},
-            "type": "correction",
+            "contractor_id": int(contractor_id),
             "date": today,
-            "description": f"{correction_reason} - {event_name}",
+            "type": "correction",
+            "parent": {"id": int(parent_invoice_id)},
+            "description": f"{correction_reason} - {event_name}".strip(" -"),
             "invoicecontents": invoice_contents_dict,
         }
         
         if series_id:
             correction_payload["series"] = {"id": series_id}
         
-        print(f"[ADMIN-V2 CORRECTION] Payload: contractor={contractor_id}, parent={invoice_wfirma_id}, positions={len(invoice_contents_dict)}")
+        print(f"[ADMIN-V2 CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(invoice_contents_dict)}")
         
         # Utwórz korektę
         correction_result, resp = wfirma_create_invoice(token, correction_payload, company_id)
@@ -3544,7 +3615,7 @@ def order_create_correction(order_id: str):
 def order_send_proforma(order_id: str):
     """Wysyła email z proformą do kupującego."""
     from flask import jsonify
-    from pg_storage import get_order
+    from pg_storage import get_order, get_wfirma_documents
     
     user = _get_current_admin_user()
     
@@ -3561,34 +3632,55 @@ def order_send_proforma(order_id: str):
         return jsonify({"success": False, "error": "Nie masz uprawnień do wysyłania proform"}), 403
     
     try:
-        from email_templates import render_proforma_sent_email
+        from email_templates import render_proforma_reservation_email
         
-        buyer_email = order.get("buyer_email")
-        if not buyer_email:
+        purchaser_email = order.get("purchaser_email")
+        if not purchaser_email:
             return jsonify({"success": False, "error": "Brak adresu email kupującego"}), 400
-        
-        proforma_number = order.get("proforma_number")
+
+        # Proforma number bierzemy z wfirma_documents
+        wfirma_docs = get_wfirma_documents(order_id) or []
+        latest_proforma = next(((d or {}) for d in wfirma_docs if (d or {}).get("document_type") == "proforma"), None)
+        proforma_number = (latest_proforma or {}).get("wfirma_number")
         if not proforma_number:
-            return jsonify({"success": False, "error": "Zamówienie nie ma numeru proformy"}), 400
+            return jsonify({"success": False, "error": "Brak proformy w wFirma dla tego zamówienia"}), 400
         
         # Pobierz dane wydarzenia
         event = get_event(order.get("event_id"))
         event_name = event.get("event_name", "Wydarzenie") if event else "Wydarzenie"
+        event_data = (event.get("data") if event else {}) or {}
+
+        # Zbuduj listę biletów (z raw payloadu) - najlepiej odwzorowuje pozycje i rabaty
+        enriched_tickets = []
+        try:
+            from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+
+            raw_payload = order.get("raw", {}) or {}
+            raw_tickets = _extract_tickets_from_payload(raw_payload) if raw_payload else []
+            if raw_tickets and order.get("event_id"):
+                enriched_tickets, _unknown = _enrich_tickets_with_names(raw_tickets, order.get("event_id"))
+            else:
+                enriched_tickets = raw_tickets or []
+        except Exception as e:
+            print(f"[order_send_proforma] Nie udało się zbudować pozycji biletów: {e}")
         
         # Renderuj email
-        html_content = render_proforma_sent_email(
-            buyer_name=f"{order.get('buyer_first_name', '')} {order.get('buyer_last_name', '')}".strip(),
+        html_content = render_proforma_reservation_email(
             event_name=event_name,
+            purchaser_first_name=order.get("purchaser_first_name", "") or "Uczestnik",
+            purchaser_last_name=order.get("purchaser_last_name", "") or "",
+            purchaser_email=purchaser_email,
+            purchaser_phone=order.get("purchaser_phone", "") or "",
+            event_config=event_data,
+            tickets=enriched_tickets,
             proforma_number=proforma_number,
-            total=order.get("total", 0),
-            payment_deadline=order.get("payment_deadline", "7 dni"),
-            checkout_url=order.get("checkout_url", ""),
+            payment_due_date=None,
         )
         
         # Wyślij przez Make webhook
         from backstage_engine import _send_email_via_make
         result = _send_email_via_make(
-            to_email=buyer_email,
+            to_email=purchaser_email,
             subject=f"Faktura proforma {proforma_number} - {event_name}",
             body_html=html_content,
             event_order_id=order_id,
@@ -3601,10 +3693,10 @@ def order_send_proforma(order_id: str):
                 action="proforma_sent",
                 admin_user_id=user.get("id") if user else None,
                 target_id=order_id,
-                extra={"proforma_number": proforma_number, "email": buyer_email},
+                extra={"proforma_number": proforma_number, "email": purchaser_email},
                 ip=request.remote_addr,
             )
-            return jsonify({"success": True, "message": f"Proforma wysłana do {buyer_email}"})
+            return jsonify({"success": True, "message": f"Proforma wysłana do {purchaser_email}"})
         else:
             return jsonify({"success": False, "error": result.get("error", "Błąd wysyłki")}), 500
             
