@@ -5431,26 +5431,30 @@ def add_contractor(token):
         'details': resp.text if resp else 'Brak odpowiedzi'
     }), status or 500
 
-@app.route('/api/invoice/create', methods=['POST'])
+@app.route('/api/invoice/create', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token
 def create_invoice(token):
     """Utwórz fakturę"""
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     data = request.json
     
     if not data:
-        return jsonify({'error': 'Brak danych w żądaniu'}), 400
+        return cors_response({'error': 'Brak danych w żądaniu'}, 400)
     company_id = wfirma_get_company_id(token)
     invoice, resp = wfirma_create_invoice(token, data, company_id)
     if invoice:
-        return jsonify({'success': True, 'invoice': invoice})
+        return cors_response({'success': True, 'invoice': invoice})
 
     status = resp.status_code if resp else None
-    return jsonify({
+    return cors_response({
         'error': 'Błąd podczas tworzenia faktury',
         'status': status,
         'details': resp.text if resp else 'Brak odpowiedzi'
-    }), status or 500
+    }, status or 500)
 
 
 @app.route('/api/invoice/<invoice_id>/pdf', methods=['GET'])
@@ -5507,16 +5511,20 @@ def list_series(token):
     })
 
 
-@app.route('/api/invoice/<invoice_id>/send', methods=['POST'])
+@app.route('/api/invoice/<invoice_id>/send', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token
 def send_invoice_email(token, invoice_id):
     """Wyślij fakturę emailem"""
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     data = request.json or {}
     email = data.get('email', '').strip()
     
     if not email or '@' not in email:
-        return jsonify({'error': 'Brak lub niepoprawny email'}), 400
+        return cors_response({'error': 'Brak lub niepoprawny email'}, 400)
     
     company_id = wfirma_get_company_id(token)
     
@@ -5524,19 +5532,19 @@ def send_invoice_email(token, invoice_id):
         resp = wfirma_send_invoice_email(token, invoice_id, email, company_id)
         
         if resp.status_code == 200:
-            return jsonify({
+            return cors_response({
                 'success': True,
                 'message': f'Faktura wysłana na {email}',
                 'response': resp.json()
             })
         else:
-            return jsonify({
+            return cors_response({
                 'error': 'Nie udało się wysłać emaila',
                 'status': resp.status_code,
                 'details': resp.text[:500] if resp.text else ''
-            }), resp.status_code
+            }, resp.status_code)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return cors_response({'error': str(e)}, 500)
 
 
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
@@ -6047,10 +6055,10 @@ def workflow_create_invoice():
             print("[WFIRMA DEBUG] contractor object before failure:", contractor)
         except Exception:
             pass
-        return jsonify({
+        return cors_response({
             'error': 'Nie udało się uzyskać ID kontrahenta w wFirma',
             'status': status
-        }), status or 502
+        }, status or 502)
 
     # 3) Szukamy serii faktur (opcjonalnie)
     series_id = None
@@ -6079,7 +6087,7 @@ def workflow_create_invoice():
     except Exception as e:
         print("[WFIRMA DEBUG] log error:", e)
     if map_err:
-        return jsonify({'error': map_err}), 400
+        return cors_response({'error': map_err}, 400)
 
     # Dodaj description (komentarz/nazwa wydarzenia) do faktury
     if invoice_payload:
@@ -6118,26 +6126,26 @@ def workflow_create_invoice():
         
         # Specjalny komunikat dla błędu schematu księgowego
         if 'schematu księgowego' in error_details.lower() or 'schematu ksiegowego' in error_details.lower():
-            return jsonify({
+            return cors_response({
                 'error': 'Brak konfiguracji schematu księgowego w wFirma',
                 'message': 'W panelu wFirma ustaw: Ustawienia → Firma → Księgowość → Schematy księgowe',
                 'details': error_details,
                 'status': status
-            }), 400
+            }, 400)
         
-        return jsonify({
+        return cors_response({
             'error': 'Błąd podczas tworzenia faktury',
             'status': status,
             'details': error_details
-        }), status or 502
+        }, status or 502)
 
     # Pobierz ID faktury
     invoice_id = str(invoice.get('id') or invoice.get('invoice_id') or '')
     if not invoice_id:
-        return jsonify({
+        return cors_response({
             'error': 'Brak ID faktury w odpowiedzi',
             'invoice': invoice
-        }), 502
+        }, 502)
     
     # Sprawdź status płatności faktury
     # (alreadypaid_initial jest ustawiony przy tworzeniu faktury jeśli mark_as_paid=True)
@@ -6196,11 +6204,11 @@ def workflow_create_invoice():
     email_result = None
     if send_email_requested:
         if not email_address or '@' not in email_address:
-            return jsonify({
+            return cors_response({
                 'error': 'Brak lub niepoprawny email do wysyłki faktury',
                 'invoice': invoice,
                 'pdf_saved': pdf_filename
-            }), 400
+            }, 400)
 
         resp_email = wfirma_send_invoice_email(token, invoice_id, email_address, company_id)
         try:
@@ -6212,13 +6220,13 @@ def workflow_create_invoice():
         except Exception:
             pass
         if resp_email.status_code != 200:
-            return jsonify({
+            return cors_response({
                 'error': 'Nie udało się wysłać faktury mailem',
                 'status': resp_email.status_code,
                 'details': resp_email.text[:500] if resp_email.text else '',
                 'invoice': invoice,
                 'pdf_saved': pdf_filename
-            }), resp_email.status_code
+            }, resp_email.status_code)
         try:
             email_result = resp_email.json()
         except Exception:
@@ -6271,7 +6279,7 @@ def workflow_create_invoice():
         response['token_warning'] = warning
         response['refresh_token_days_remaining'] = round(days_remaining, 1) if days_remaining else 0
     
-    return jsonify(response)
+    return cors_response(response)
 
 
 # ==================== ENDPOINTY GUS / REGON ====================
@@ -6562,15 +6570,19 @@ def gus_validate_nip():
     })
 
 
-@app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
+@app.route('/api/invoice/<invoice_id>/send-email', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token
 def invoice_send_email(token, invoice_id):
     """Wyślij fakturę mailem przez wFirma."""
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     body = request.get_json(silent=True) or {}
     email = (body.get('email') or '').strip()
     if not email or '@' not in email:
-        return jsonify({'error': 'Brak lub niepoprawny email'}), 400
+        return cors_response({'error': 'Brak lub niepoprawny email'}, 400)
 
     company_id = wfirma_get_company_id(token)
     resp = wfirma_send_invoice_email(token, invoice_id, email, company_id)
@@ -6579,13 +6591,13 @@ def invoice_send_email(token, invoice_id):
             data = resp.json()
         except Exception:
             data = {}
-        return jsonify({'success': True, 'wfirma_response': data})
+        return cors_response({'success': True, 'wfirma_response': data})
 
-    return jsonify({
+    return cors_response({
         'error': 'Nie udało się wysłać faktury mailem',
         'status': resp.status_code,
         'details': resp.text[:500] if resp.text else ''
-    }), resp.status_code
+    }, resp.status_code)
 
 
 # ==================== FAKTURA KORYGUJĄCA ====================
@@ -6619,7 +6631,7 @@ def wfirma_get_invoice(token: str, invoice_id: str, company_id: str = None) -> t
         return None, str(e)
 
 
-@app.route('/api/workflow/correction', methods=['POST'])
+@app.route('/api/workflow/correction', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token
 def workflow_create_correction(token):
@@ -6644,6 +6656,10 @@ def workflow_create_correction(token):
         "series_name": "Korekty"              # Opcjonalnie - seria numeracji
     }
     """
+    # Obsługa CORS preflight (OPTIONS)
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
     body = request.get_json(silent=True) or {}
     
     # Parametry
@@ -6656,15 +6672,15 @@ def workflow_create_correction(token):
     
     # Walidacja
     if not parent_invoice_id:
-        return jsonify({'error': 'Brak parent_invoice_id - ID faktury oryginalnej jest wymagane'}), 400
+        return cors_response({'error': 'Brak parent_invoice_id - ID faktury oryginalnej jest wymagane'}, 400)
     
     if not positions or not isinstance(positions, list):
-        return jsonify({'error': 'Brak pozycji korekty (positions)'}), 400
+        return cors_response({'error': 'Brak pozycji korekty (positions)'}, 400)
     
     # Sprawdź czy wszystkie pozycje mają parent_position_id
     for idx, pos in enumerate(positions):
         if not pos.get('parent_position_id'):
-            return jsonify({'error': f'Pozycja {idx+1} nie ma parent_position_id'}), 400
+            return cors_response({'error': f'Pozycja {idx+1} nie ma parent_position_id'}, 400)
     
     print(f"[CORRECTION] Tworzę korektę dla faktury ID={parent_invoice_id}, company={company}")
     
@@ -6674,11 +6690,11 @@ def workflow_create_correction(token):
     # 1) Pobierz oryginalną fakturę żeby uzyskać dane kontrahenta i pozycji
     original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id), wfirma_company_id)
     if err or not original_invoice:
-        return jsonify({
+        return cors_response({
             'error': 'Nie udało się pobrać faktury oryginalnej',
             'details': err,
             'parent_invoice_id': parent_invoice_id
-        }), 404
+        }, 404)
     
     print(f"[CORRECTION] Pobrano fakturę oryginalną: {original_invoice.get('fullnumber')}")
     
@@ -6686,7 +6702,7 @@ def workflow_create_correction(token):
     contractor_data = original_invoice.get('contractor', {})
     contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
     if not contractor_id:
-        return jsonify({'error': 'Nie można odczytać kontrahenta z faktury oryginalnej'}), 400
+        return cors_response({'error': 'Nie można odczytać kontrahenta z faktury oryginalnej'}, 400)
     
     # 2) Pobierz serię jeśli podano nazwę
     series_id = None
@@ -6761,7 +6777,7 @@ def workflow_create_correction(token):
     invoice_result, resp = wfirma_create_invoice(token, correction_payload, wfirma_company_id)
     
     if invoice_result and invoice_result.get('id'):
-        return jsonify({
+        return cors_response({
             'success': True,
             'message': 'Faktura korygująca utworzona',
             'correction_invoice': {
@@ -6778,7 +6794,7 @@ def workflow_create_correction(token):
                 'id': original_invoice.get('id'),
                 'fullnumber': original_invoice.get('fullnumber')
             }
-        }), 200
+        })
     else:
         # Błąd
         error_details = ''
@@ -6787,11 +6803,11 @@ def workflow_create_correction(token):
                 error_details = resp.text[:1000]
             except Exception:
                 pass
-        return jsonify({
+        return cors_response({
             'error': 'Nie udało się utworzyć faktury korygującej',
             'details': error_details,
             'parent_invoice_id': parent_invoice_id
-        }), 500
+        }, 500)
 
 
 # ==================== ENDPOINT STOPKA EMAIL - UPLOAD ZDJĘĆ ====================
