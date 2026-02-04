@@ -34,3 +34,17 @@ Thumbs.db
 # Logs
 *.log
 
+# Archive (legacy code, migrations, references)
+archive/
+
+# Development tools (exclude from production)
+BACKSTAGE_TESTY_ENDPOINT/
+tools/
+
+# Generated/downloaded files
+invoices/*.pdf
+
+# Data files
+*.csv
+*.xlsx
+
