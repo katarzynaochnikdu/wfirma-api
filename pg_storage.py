@@ -208,10 +208,11 @@ CREATE INDEX IF NOT EXISTS idx_wfirma_docs_order_id ON wfirma_documents(event_or
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_wfirma_normal_per_order
 ON wfirma_documents(event_order_id)
 WHERE document_type = 'normal';
--- Twarda ochrona przed podwójną proformą dla tego samego zamówienia
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_wfirma_proforma_per_order
-ON wfirma_documents(event_order_id)
-WHERE document_type = 'proforma';
+-- Proform może być wiele dla jednego zamówienia (np. po korekcie/rabacie) – nie blokuj.
+-- Za to chroń przed duplikatami tego samego dokumentu z wFirma.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_wfirma_invoice_id
+ON wfirma_documents(wfirma_invoice_id)
+WHERE wfirma_invoice_id IS NOT NULL AND wfirma_invoice_id <> '';
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id BIGSERIAL PRIMARY KEY,
@@ -506,6 +507,14 @@ def ensure_schema(force: bool = False) -> Dict[str, Any]:
         
         # 1f) Migracja orders - dodanie paid_at (data potwierdzenia płatności)
         cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ")
+        
+        # 1f2) Migracja orders - śledzenie aktualnej proformy (opcjonalne, dla panelu/admin)
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS proforma_wfirma_id TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS proforma_number TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS proforma_contractor_id TEXT")
+        
+        # 1f3) Migracja wfirma_documents - pozwól na wiele proform na jedno zamówienie
+        cur.execute("DROP INDEX IF EXISTS uniq_wfirma_proforma_per_order")
 
         # 1g) Backfill dla istniejących rekordów (żeby nie blokować dostępu)
         cur.execute("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''")
@@ -1111,7 +1120,9 @@ def get_order(event_order_id: str) -> Optional[Dict[str, Any]]:
             """
             SELECT event_order_id, event_id, purchaser_email, purchaser_first_name, purchaser_last_name,
                    purchaser_phone, purchaser_nip, payment_option_name, payment_type, promo_code,
-                   total, currency, status, payment_due_date, paid_at, raw, created_at, updated_at
+                   total, currency, status, sandbox, payment_due_date, paid_at,
+                   proforma_wfirma_id, proforma_number, proforma_contractor_id,
+                   raw, created_at, updated_at
             FROM orders
             WHERE event_order_id = %s
             """,
@@ -1647,6 +1658,30 @@ def save_wfirma_document(
             ),
         )
         row = cur.fetchone()
+
+        # Jeśli to proforma - zaktualizuj "śledzoną" proformę na zamówieniu
+        try:
+            if str(document_type).lower() == "proforma":
+                cur.execute(
+                    """
+                    UPDATE orders
+                    SET proforma_wfirma_id = %s,
+                        proforma_number = %s,
+                        proforma_contractor_id = %s,
+                        updated_at = NOW()
+                    WHERE event_order_id = %s
+                    """,
+                    (
+                        str(wfirma_invoice_id) if wfirma_invoice_id else None,
+                        str(wfirma_number) if wfirma_number else None,
+                        str(wfirma_contractor_id) if wfirma_contractor_id else None,
+                        str(event_order_id),
+                    ),
+                )
+        except Exception:
+            # Nie blokuj zapisu dokumentu jeśli update orders się nie uda
+            pass
+
         return dict(row) if row else {"event_order_id": event_order_id}
     finally:
         if pool is not None and conn is not None:
@@ -2165,6 +2200,88 @@ def get_mail_log_by_email(to_email: str, limit: int = 50) -> List[Dict[str, Any]
         return [dict(r) for r in rows]
     except Exception as e:
         print(f"[DB] get_mail_log_by_email error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def list_mail_log_for_order(event_order_id: str, template_keys: Optional[List[str]] = None, limit: int = 200) -> List[Dict[str, Any]]:
+    """
+    Pobiera mail_log dla zamówienia (do sync/diagnostyki).
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        if template_keys:
+            cur.execute(
+                """
+                SELECT id, event_order_id, direction, template_key, to_email, subject, status, error, data, created_at
+                FROM mail_log
+                WHERE event_order_id = %s AND template_key = ANY(%s)
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (str(event_order_id), template_keys, int(limit)),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, event_order_id, direction, template_key, to_email, subject, status, error, data, created_at
+                FROM mail_log
+                WHERE event_order_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (str(event_order_id), int(limit)),
+            )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] list_mail_log_for_order error: {e}")
+        return []
+    finally:
+        if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+def list_admin_audit_log_for_target(target_id: str, actions: Optional[List[str]] = None, limit: int = 200) -> List[Dict[str, Any]]:
+    """
+    Pobiera admin_audit_log dla konkretnego target_id (order_id jest zapisywany w data.target_id).
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = _dict_cursor(conn)
+        if actions:
+            cur.execute(
+                """
+                SELECT id, admin_user_id, action, target_email, ip, user_agent, data, created_at
+                FROM admin_audit_log
+                WHERE (data->>'target_id') = %s AND action = ANY(%s)
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (str(target_id), actions, int(limit)),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, admin_user_id, action, target_email, ip, user_agent, data, created_at
+                FROM admin_audit_log
+                WHERE (data->>'target_id') = %s
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (str(target_id), int(limit)),
+            )
+        return [dict(r) for r in (cur.fetchall() or [])]
+    except Exception as e:
+        print(f"[DB] list_admin_audit_log_for_target error: {e}")
         return []
     finally:
         if pool is not None and conn is not None:

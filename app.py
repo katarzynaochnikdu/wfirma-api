@@ -6631,6 +6631,67 @@ def wfirma_get_invoice(token: str, invoice_id: str, company_id: str = None) -> t
         return None, str(e)
 
 
+def wfirma_find_invoice_by_fullnumber(token: str, fullnumber: str, company_id: str = None) -> tuple[dict | None, str | None]:
+    """
+    Wyszukaj fakturę w wFirma po pełnym numerze (fullnumber), np. "PROF 4/2026".
+    Zwraca (invoice_dict, error_message).
+    """
+    fullnumber = (fullnumber or "").strip()
+    if not fullnumber:
+        return None, "Brak fullnumber"
+
+    api_url = "https://api2.wfirma.pl/invoices/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+
+    headers = get_wfirma_headers(token)
+
+    # Szukamy po polu fullnumber (eq) – zgodnie z konwencją find w wFirma (jak companies/find, goods/find)
+    body = {
+        "invoices": {
+            "parameters": {
+                "conditions": {
+                    "condition": {
+                        "field": "fullnumber",
+                        "operator": "eq",
+                        "value": fullnumber,
+                    }
+                },
+                "limit": "10",
+            }
+        }
+    }
+
+    try:
+        resp = requests.post(api_url, headers=headers, json=body)
+        print(f"[WFIRMA] invoices/find fullnumber='{fullnumber}' status={resp.status_code}")
+
+        if resp.status_code != 200:
+            return None, f"Błąd API: {resp.status_code} - {resp.text[:300]}"
+
+        data = resp.json()
+        invoices = data.get("invoices", {})
+        if not isinstance(invoices, dict):
+            return None, "Nieprawidłowa odpowiedź invoices/find"
+
+        # W odpowiedzi są klucze liczbowe: {"0": {"invoice": {...}}}
+        found = []
+        for k, v in invoices.items():
+            if not (isinstance(k, str) and k.isdigit()):
+                continue
+            if isinstance(v, dict) and isinstance(v.get("invoice"), dict):
+                found.append(v["invoice"])
+
+        if not found:
+            return None, "Nie znaleziono faktury po fullnumber"
+
+        # Jeśli jest kilka, wybierz dokładny match fullnumber, w przeciwnym razie pierwszy
+        exact = next((inv for inv in found if str(inv.get("fullnumber") or "").strip() == fullnumber), None)
+        return exact or found[0], None
+    except Exception as e:
+        return None, str(e)
+
+
 @app.route('/api/workflow/correction', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token

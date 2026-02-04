@@ -546,10 +546,18 @@
     <!-- DOCUMENTS -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
-          <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
-          Dokumenty
-        </h3>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <h3 class="card-title" style="display: flex; align-items: center; gap: 8px; margin:0;">
+            <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
+            Dokumenty
+          </h3>
+          {% if user_role != 'viewer' %}
+          <button class="btn btn-outline btn-sm" onclick="syncWfirmaDocuments()" title="Dopisze brakujące proformy do listy dokumentów (tylko jeśli istnieją w wFirma)">
+            <i data-lucide="refresh-cw"></i>
+            Synchronizuj
+          </button>
+          {% endif %}
+        </div>
       </div>
       <div class="card-content">
         <div class="document-list">
@@ -918,6 +926,63 @@
     {% else %}
     showToast('Brak dokumentów do pobrania', 'error');
     {% endif %}
+  }
+
+  function syncWfirmaDocuments() {
+    showActionModal({
+      title: 'Synchronizuj dokumenty wFirma',
+      icon: 'refresh-cw',
+      iconColor: 'hsl(212, 100%, 45%)',
+      text: 'System spróbuje dopisać brakujące proformy do listy dokumentów na podstawie historii (maile/audyt).',
+      info: `<div style="background: hsl(38, 100%, 97%); border: 1px solid hsl(38, 100%, 70%); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <i data-lucide="alert-triangle" style="width: 18px; height: 18px; color: hsl(38, 100%, 35%); flex-shrink: 0; margin-top: 2px;"></i>
+          <div style="font-size: 0.8125rem; color: hsl(38, 100%, 25%);">
+            <strong>Uwaga:</strong> Jeśli proforma została usunięta w wFirma, pojawi się w raporcie jako „brak”.
+          </div>
+        </div>
+      </div>`,
+      confirmText: 'Synchronizuj',
+      closeOnConfirm: false,
+      onConfirm: () => {
+        const confirmBtn = document.getElementById('action-confirm-btn');
+        const cancelBtn = confirmBtn ? confirmBtn.previousElementSibling : null;
+        const closeBtn = document.querySelector('#action-confirm-modal .modal-close');
+        const originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = '<span class="btn-spinner"></span> Synchronizacja...';
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+        if (closeBtn) closeBtn.disabled = true;
+
+        fetch(`/admin-v2/orders/${orderId}/sync-wfirma-documents`, { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              showToast(data.message || 'Synchronizacja zakończona', 'success');
+              setTimeout(() => location.reload(), 1200);
+            } else {
+              showToast(data.error || 'Błąd synchronizacji', 'error');
+              if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalHtml;
+              }
+              if (cancelBtn) cancelBtn.disabled = false;
+              if (closeBtn) closeBtn.disabled = false;
+            }
+          })
+          .catch(err => {
+            showToast('Błąd połączenia: ' + err.message, 'error');
+            if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.innerHTML = originalHtml;
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+            if (closeBtn) closeBtn.disabled = false;
+          });
+      }
+    });
   }
 
   // Quick actions

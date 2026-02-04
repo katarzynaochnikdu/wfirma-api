@@ -3320,6 +3320,170 @@ def order_regenerate_proforma(order_id: str):
     return jsonify({"success": True, "message": " ".join(msg_parts)})
 
 
+@admin_v2_bp.route("/orders/<order_id>/sync-wfirma-documents", methods=["POST"])
+@_require_permission("orders")
+def order_sync_wfirma_documents(order_id: str):
+    """
+    Sync dokumentów wFirma dla ISTNIEJĄCEGO zamówienia.
+    Cel: dopisać brakujące proformy do `wfirma_documents` na podstawie historii (mail_log/audit),
+    ale NIE tworzyć nowych dokumentów w wFirma. Jeśli proforma została usunięta w wFirma – pokaż w raporcie.
+    """
+    from flask import jsonify
+    from pg_storage import (
+        get_order,
+        get_event,
+        get_wfirma_documents,
+        save_wfirma_document,
+        list_mail_log_for_order,
+        list_admin_audit_log_for_target,
+    )
+
+    user = _get_current_admin_user()
+    order = get_order(order_id)
+    if not order:
+        return jsonify({"success": False, "error": "Nie znaleziono zamówienia"}), 404
+
+    # uprawnienia
+    if order.get("event_id") and not _user_has_event_access(user, order["event_id"]):
+        return jsonify({"success": False, "error": "Brak dostępu do tego zamówienia"}), 403
+    if _is_viewer(user):
+        return jsonify({"success": False, "error": "Nie masz uprawnień do synchronizacji"}), 403
+
+    # źródła kandydatów
+    existing_docs = get_wfirma_documents(order_id) or []
+    existing_numbers = set()
+    existing_ids = set()
+    for d in existing_docs:
+        if (d or {}).get("wfirma_number"):
+            existing_numbers.add(str(d.get("wfirma_number")).strip())
+        if (d or {}).get("wfirma_invoice_id"):
+            existing_ids.add(str(d.get("wfirma_invoice_id")).strip())
+
+    # zbierz potencjalne numery proform z mail_log i audit log (istniejące zamówienia)
+    mail_templates = ["proforma_sent", "proforma_regenerated", "proforma_reminder", "proforma_resent"]
+    audit_actions = ["proforma_generated", "proforma_regenerated", "proforma_sent", "order_reminder_sent"]
+    mail_logs = list_mail_log_for_order(order_id, template_keys=mail_templates, limit=300) or []
+    audits = list_admin_audit_log_for_target(order_id, actions=audit_actions, limit=300) or []
+
+    candidate_numbers = set(existing_numbers)
+    # z orders (jeśli już mamy)
+    if order.get("proforma_number"):
+        candidate_numbers.add(str(order.get("proforma_number")).strip())
+
+    def _add_candidate(v):
+        if v and isinstance(v, str):
+            vv = v.strip()
+            if vv:
+                candidate_numbers.add(vv)
+
+    for ml in mail_logs:
+        data = (ml or {}).get("data") or {}
+        if isinstance(data, dict):
+            _add_candidate(data.get("proforma_number"))
+            _add_candidate(data.get("old_proforma_number"))
+
+    for al in audits:
+        data = (al or {}).get("data") or {}
+        if isinstance(data, dict):
+            _add_candidate(data.get("proforma_number"))
+            _add_candidate(data.get("new_proforma_number"))
+            _add_candidate(data.get("old_proforma_number"))
+
+    # usuń puste
+    candidate_numbers = {c for c in candidate_numbers if c}
+
+    # wFirma lookup
+    try:
+        from app import load_token, wfirma_get_company_id, wfirma_get_invoice, wfirma_find_invoice_by_fullnumber
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Brak funkcji wFirma do sync: {e}"}), 500
+
+    token = load_token(silent=True)
+    if not token:
+        return jsonify({"success": False, "error": "Brak tokenu wFirma - zaloguj się ponownie"}), 500
+
+    company_id = wfirma_get_company_id(token)
+    if not company_id:
+        return jsonify({"success": False, "error": "Nie udało się pobrać company_id wFirma"}), 500
+
+    added = []
+    found = []
+    missing_in_wfirma = []
+    errors = []
+
+    # 1) najpierw zweryfikuj istniejące ID (jeśli dokument został usunięty – pokaż w raporcie)
+    for inv_id in sorted(existing_ids):
+        inv, err = wfirma_get_invoice(token, inv_id, company_id)
+        if err or not inv:
+            missing_in_wfirma.append({"type": "by_id", "invoice_id": inv_id, "error": err})
+
+    # 2) wyszukaj po numerach (historyczne)
+    for number in sorted(candidate_numbers):
+        try:
+            inv, err = wfirma_find_invoice_by_fullnumber(token, number, company_id)
+            if err or not inv:
+                missing_in_wfirma.append({"type": "by_number", "fullnumber": number, "error": err})
+                continue
+
+            wfirma_id = str(inv.get("id") or "").strip()
+            fullnumber = str(inv.get("fullnumber") or number).strip()
+
+            found.append({"wfirma_invoice_id": wfirma_id, "wfirma_number": fullnumber})
+
+            # jeśli już mamy to ID w bazie – pomiń
+            if wfirma_id and wfirma_id in existing_ids:
+                continue
+
+            contractor = inv.get("contractor") if isinstance(inv.get("contractor"), dict) else {}
+            contractor_id = contractor.get("id") if isinstance(contractor, dict) else None
+
+            # Dopisz jako proforma (sync dotyczy tylko proform)
+            try:
+                save_wfirma_document(
+                    event_order_id=order_id,
+                    wfirma_invoice_id=wfirma_id,
+                    wfirma_number=fullnumber,
+                    document_type="proforma",
+                    raw=inv,
+                    wfirma_contractor_id=str(contractor_id) if contractor_id else None,
+                )
+                added.append({"wfirma_invoice_id": wfirma_id, "wfirma_number": fullnumber})
+                existing_ids.add(wfirma_id)
+            except Exception as db_e:
+                # duplikat – OK, ale loguj
+                errors.append({"type": "db_save", "fullnumber": fullnumber, "wfirma_invoice_id": wfirma_id, "error": str(db_e)})
+        except Exception as e:
+            errors.append({"type": "exception", "fullnumber": number, "error": str(e)})
+
+    # audit
+    insert_admin_audit_log(
+        action="wfirma_documents_synced",
+        admin_user_id=user.get("id") if user else None,
+        target_id=order_id,
+        extra={
+            "added_count": len(added),
+            "candidates_count": len(candidate_numbers),
+            "missing_count": len(missing_in_wfirma),
+            "errors_count": len(errors),
+        },
+        ip=request.remote_addr,
+    )
+
+    ev = get_event(order.get("event_id")) if order.get("event_id") else None
+    event_name = (ev or {}).get("event_name") if isinstance(ev, dict) else None
+
+    return jsonify(
+        {
+            "success": True,
+            "message": f"Sync zakończony. Dopisano: {len(added)}. Brak w wFirma: {len(missing_in_wfirma)}. Błędy: {len(errors)}.",
+            "event_name": event_name,
+            "added": added,
+            "missing_in_wfirma": missing_in_wfirma,
+            "errors": errors,
+        }
+    )
+
+
 @admin_v2_bp.route("/orders/<order_id>/create-correction", methods=["POST"])
 @_require_permission("orders")
 def order_create_correction(order_id: str):
