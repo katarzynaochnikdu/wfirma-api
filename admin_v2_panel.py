@@ -1665,16 +1665,42 @@ def _handle_mark_paid(
                 if raw_sandbox is True or str(raw_sandbox).lower() == "true":
                     is_sandbox = True
             
+            # Wyciągnij i wzbogać bilety (tak samo jak przy generowaniu proformy)
+            # Dzięki temu na fakturze będą właściwe pozycje: nazwa biletu, cena jednostkowa, ilość
+            enriched_tickets = []
+            try:
+                from backstage_engine import _extract_tickets_from_payload, _enrich_tickets_with_names
+                
+                raw_tickets = _extract_tickets_from_payload(raw_data) if raw_data else []
+                if raw_tickets and event_id:
+                    enriched_tickets, unknown_ids = _enrich_tickets_with_names(raw_tickets, event_id)
+                    print(f"[V2 MARK-PAID] Wygenerowano {len(enriched_tickets)} pozycji biletów do faktury")
+                    if unknown_ids:
+                        print(f"[V2 MARK-PAID] Nierozpoznane ticket_class_id: {unknown_ids[:5]}")
+            except Exception as e:
+                print(f"[V2 MARK-PAID] Błąd pobierania biletów: {e}")
+            
+            # Wyciągnij dane adresowe rozliczeniowe
+            billing_address_data = raw_data.get("eventOrder_billingAddress", {}) or {}
+            billing_address = billing_address_data.get("streetAddress1") or billing_address_data.get("street") or "-"
+            billing_zip = billing_address_data.get("zipcode") or billing_address_data.get("zip") or "00-000"
+            billing_city = billing_address_data.get("city") or "-"
+            
             order_data_for_invoice = {
                 "event_order_id": order_id,
+                "event_id": event_id,
                 "purchaser_email": purchaser_email,
                 "purchaser_first_name": purchaser_first_name,
                 "purchaser_last_name": purchaser_last_name,
                 "purchaser_company": order.get("purchaser_company", ""),
                 "purchaser_nip": order.get("purchaser_nip", ""),
                 "purchaser_phone": order.get("purchaser_phone", ""),
+                "billing_address": billing_address,
+                "billing_zip": billing_zip,
+                "billing_city": billing_city,
                 "total": total_value,
                 "currency": currency_value,
+                "tickets": enriched_tickets,  # Pozycje na fakturze: nazwa biletu, cena jednostkowa, ilość
                 "sandbox": is_sandbox,  # Tryb testowy - używany do wyboru serii testowych
                 "proforma_invoice_id": proforma_wfirma_id,  # ID proformy w wFirma (do systemowego powiązania)
                 "raw": raw_data,
