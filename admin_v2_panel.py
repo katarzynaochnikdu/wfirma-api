@@ -374,15 +374,19 @@ def _generate_admin_invitation_email_html(first_name: str, message_intro: str, t
 
 
 def _require_login(f):
-    """Dekorator wymagający zalogowania do panelu V2."""
+    """Dekorator wymagający zalogowania do panelu V2.
+    Przekierowuje WSZYSTKICH na nowy panel, CHYBA ŻE sesja ma flagę legacy_mode
+    (ustawianą przez logowanie przez /admin-v2/login?legacy=true).
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
         user = _get_current_admin_user()
-        if not user:
-            # Jeśli nie zalogowany: przekieruj na nowy panel (chyba że legacy sesja)
-            return redirect("https://md-order-portal-frontend-react.onrender.com/login", code=302)
-        request.admin_user = user
-        return f(*args, **kwargs)
+        # Legacy mode: wpuść normalnie (zalogowany przez ?legacy=true)
+        if user and session.get("legacy_mode"):
+            request.admin_user = user
+            return f(*args, **kwargs)
+        # Każdy inny przypadek (niezalogowany LUB zalogowany bez legacy): przekieruj na nowy panel
+        return redirect("https://md-order-portal-frontend-react.onrender.com/login", code=302)
     return decorated
 
 
