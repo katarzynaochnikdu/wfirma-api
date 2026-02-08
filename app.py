@@ -220,6 +220,9 @@ WFIRMA_AUTH_URL_MD = os.environ.get("WFIRMA_AUTH_URL_MD", "https://wfirma-api.on
 # Seria faktur korygujących (używana w wfirma_create_correction)
 WFIRMA_SERIES_CORRECTION = os.environ.get("WFIRMA_SERIES_CORRECTION", "Eventy Korekta")
 
+# Flaga blokująca follow-up po otrzymaniu zamówienia (backup mode)
+LOCK_BACKSTAGE_ORDERS_FOLLOW_UP = os.environ.get("LOCK_BACKSTAGE_ORDERS_FOLLOW_UP", "false").lower() == "true"
+
 # SCOPES per firma - muszą odpowiadać konfiguracji w wFirma!
 SCOPES_MD = [
     # Zgodne z konfiguracją w wFirma dla Medidesk (API_RENDER_ADMIN_ZOHO)

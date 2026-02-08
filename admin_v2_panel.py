@@ -379,7 +379,8 @@ def _require_login(f):
     def decorated(*args, **kwargs):
         user = _get_current_admin_user()
         if not user:
-            return redirect(url_for("admin_v2_bp.login"))
+            # Jeśli nie zalogowany: przekieruj na nowy panel (chyba że legacy sesja)
+            return redirect("https://md-order-portal-frontend-react.onrender.com/login", code=302)
         request.admin_user = user
         return f(*args, **kwargs)
     return decorated
@@ -652,38 +653,46 @@ def _normalize_event_data(event: Dict[str, Any]) -> Dict[str, Any]:
 
 @admin_v2_bp.route("/login", methods=["GET", "POST"])
 def login():
-    """Strona logowania V2 (używa tego samego systemu sesji co V1)."""
-    if _get_current_admin_user():
-        return redirect(url_for("admin_v2_bp.dashboard"))
-    
-    error = None
-    if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
-        password = request.form.get("password") or ""
-        
-        user = get_admin_user_by_email(email)
-        if user and user.get("is_active") and check_password_hash(user.get("password_hash", ""), password):
-            session["admin_user_id"] = user["id"]
-            update_admin_user_last_login(user["id"])
-            insert_admin_audit_log(
-                action="login_success",
-                admin_user_id=user["id"],
-                target_email=email,
-                ip=request.remote_addr,
-            )
+    """Strona logowania V2.
+    Domyślnie przekierowuje na nowy panel. Aby użyć starego logowania: /admin-v2/login?legacy=true
+    """
+    # Bypass: ?legacy=true pozwala wejść na stary panel
+    if request.args.get("legacy") == "true" or request.form.get("legacy") == "true":
+        if _get_current_admin_user():
             return redirect(url_for("admin_v2_bp.dashboard"))
-        else:
-            error = "Nieprawidłowy email lub hasło"
-            if user:
-                increment_admin_user_failed_login(user["id"])
+        
+        error = None
+        if request.method == "POST":
+            email = (request.form.get("email") or "").strip().lower()
+            password = request.form.get("password") or ""
+            
+            user = get_admin_user_by_email(email)
+            if user and user.get("is_active") and check_password_hash(user.get("password_hash", ""), password):
+                session["admin_user_id"] = user["id"]
+                session["legacy_mode"] = True  # Oznacz sesję jako legacy
+                update_admin_user_last_login(user["id"])
                 insert_admin_audit_log(
-                    action="login_failed",
+                    action="login_success",
                     admin_user_id=user["id"],
                     target_email=email,
                     ip=request.remote_addr,
                 )
+                return redirect(url_for("admin_v2_bp.dashboard"))
+            else:
+                error = "Nieprawidłowy email lub hasło"
+                if user:
+                    increment_admin_user_failed_login(user["id"])
+                    insert_admin_audit_log(
+                        action="login_failed",
+                        admin_user_id=user["id"],
+                        target_email=email,
+                        ip=request.remote_addr,
+                    )
+        
+        return render_template("admin_v2/login.html", error=error)
     
-    return render_template("admin_v2/login.html", error=error)
+    # Domyślnie: przekieruj na nowy panel
+    return redirect("https://md-order-portal-frontend-react.onrender.com/login", code=302)
 
 
 @admin_v2_bp.route("/logout", methods=["GET", "POST"])

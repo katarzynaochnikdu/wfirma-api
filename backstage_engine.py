@@ -20,6 +20,10 @@ BACKSTAGE_TECHNICAL_INFO_EMAIL = os.environ.get("BACKSTAGE_TECHNICAL_INFO_EMAIL"
 # Email wewnętrzny - powiadomienia o zamówieniach/płatnościach (nie błędy)
 BACKSTAGE_EVENT_INFO_EMAIL = os.environ.get("BACKSTAGE_EVENT_INFO_EMAIL", "")
 
+# Flaga blokująca follow-up po otrzymaniu zamówienia (backup mode)
+# Gdy true: zamówienie jest zapisywane do bazy, ale żadne flow (maile, faktury, Stripe) nie jest uruchamiane
+LOCK_BACKSTAGE_ORDERS_FOLLOW_UP = os.environ.get("LOCK_BACKSTAGE_ORDERS_FOLLOW_UP", "false").lower() == "true"
+
 
 # ---------------------------------------------------------------------------
 # LOGGING
@@ -609,6 +613,14 @@ def maybe_send_backstage_emails_when_complete(event_order_id: str) -> Dict[str, 
     order = get_order(event_order_id)
     if not order:
         return {"ok": False, "error": "order_not_found"}
+
+    # CHECK LOCK: Jeśli LOCK_BACKSTAGE_ORDERS_FOLLOW_UP=true, nie wysyłaj maili
+    if LOCK_BACKSTAGE_ORDERS_FOLLOW_UP:
+        return {
+            "ok": True,
+            "locked": True,
+            "message": "Email follow-up zablokowane (LOCK_BACKSTAGE_ORDERS_FOLLOW_UP=true)",
+        }
 
     status = (order.get("status") or "").strip().lower()
     purchaser_email = (order.get("purchaser_email") or "").strip()
@@ -3306,6 +3318,22 @@ def process_backstage_order(payload: Dict[str, Any]) -> Dict[str, Any]:
             _process_pending_attendees_for_order(event_order_id)
         except Exception as e:
             _log("WARNING", "Błąd przetwarzania pending_attendees", {"event_order_id": event_order_id, "error": str(e)})
+
+        # 4d. CHECK LOCK: Jeśli LOCK_BACKSTAGE_ORDERS_FOLLOW_UP=true, zakończ tutaj
+        #     Zamówienie i uczestnicy są zapisani, ale żadne flow (maile, faktury, Stripe) nie zostanie uruchomione.
+        if LOCK_BACKSTAGE_ORDERS_FOLLOW_UP:
+            _log("INFO", "LOCKED MODE: Zamówienie zapisane, pomijam wszystkie flow (LOCK_BACKSTAGE_ORDERS_FOLLOW_UP=true)", {
+                "event_order_id": event_order_id,
+                "event_id": event_id,
+                "total": order_data.get("total"),
+            })
+            mark_backstage_webhook_processed(dedupe_key, "processed", "locked_mode")
+            return {
+                "status": "locked",
+                "order_id": event_order_id,
+                "message": "Zamówienie zapisane, follow-up zablokowane (backup mode)",
+                "locked": True,
+            }
 
         # 5. Określ flow
         _log("INFO", "Krok 5: Określanie flow płatności...")

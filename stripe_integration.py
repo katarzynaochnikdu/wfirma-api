@@ -26,6 +26,9 @@ from pg_storage import (
     save_error_task,
 )
 
+# Flaga blokująca follow-up po otrzymaniu zamówienia (backup mode)
+LOCK_BACKSTAGE_ORDERS_FOLLOW_UP = os.environ.get("LOCK_BACKSTAGE_ORDERS_FOLLOW_UP", "false").lower() == "true"
+
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -408,6 +411,19 @@ def handle_checkout_completed(session_data: Dict[str, Any]) -> Dict[str, Any]:
                 "order_id": event_order_id,
             }
     
+    # CHECK LOCK: Jeśli LOCK_BACKSTAGE_ORDERS_FOLLOW_UP=true, tylko oznacz jako paid, bez faktury i maili
+    if LOCK_BACKSTAGE_ORDERS_FOLLOW_UP:
+        print(f"[STRIPE] LOCKED MODE: pomijam fakturę i maile (LOCK_BACKSTAGE_ORDERS_FOLLOW_UP=true) | order={event_order_id}")
+        if not recovery_mode:
+            update_stripe_session_paid(checkout_session_id, payment_intent_id)
+        update_order_status(event_order_id, "paid")
+        return {
+            "status": "locked",
+            "order_id": event_order_id,
+            "message": "Płatność zarejestrowana, follow-up zablokowane (backup mode)",
+            "locked": True,
+        }
+
     # Oznacz sesję jako opłaconą
     if not recovery_mode:
         print(f"[STRIPE] update_stripe_session_paid | session={checkout_session_id}, payment_intent={payment_intent_id}")
