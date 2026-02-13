@@ -57,6 +57,8 @@
 |---------|------|-----------|
 | `WFIRMA_COMPANY` | Firma (md lub test) | `md` |
 | `WFIRMA_SERIES_NAME` | Seria faktur | `FV/EV` |
+| `WFIRMA_SERIES_CORRECTION` | Seria korekt | `Eventy Korekta` |
+| `WFIRMA_SERIES_CORRECTION_TEST` | Seria korekt TEST (dla endpointu `/api/test/correction-payment-flow`) | `Eventy Korekta TEST` |
 | `WFIRMA_AUTH_URL_MD` | URL autoryzacji | auto |
 | `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL` | Email do alertów o wygasającym tokenie | `adam.pragacz@medidesk.com` |
 

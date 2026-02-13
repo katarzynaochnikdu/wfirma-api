@@ -219,6 +219,7 @@ WFIRMA_AUTH_URL_MD = os.environ.get("WFIRMA_AUTH_URL_MD", "https://wfirma-api.on
 
 # Seria faktur korygujących (używana w wfirma_create_correction)
 WFIRMA_SERIES_CORRECTION = os.environ.get("WFIRMA_SERIES_CORRECTION", "Eventy Korekta")
+WFIRMA_SERIES_CORRECTION_TEST = os.environ.get("WFIRMA_SERIES_CORRECTION_TEST", "Eventy Korekta TEST")
 
 # Flaga blokująca follow-up po otrzymaniu zamówienia (backup mode)
 LOCK_BACKSTAGE_ORDERS_FOLLOW_UP = os.environ.get("LOCK_BACKSTAGE_ORDERS_FOLLOW_UP", "false").lower() == "true"
@@ -1939,6 +1940,7 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
             pass
         
         resp = requests.post(api_url, headers=headers, json=request_body)
+        print(f"[WFIRMA DEBUG] wfirma_create_invoice response status: {resp.status_code}")
         if resp.status_code == 200:
             result = resp.json()
             # Odpowiedź: invoices.0.invoice
@@ -1948,10 +1950,26 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
                     if key.isdigit():
                         invoice = invoices[key].get('invoice', {})
                         if invoice:
+                            print(f"[WFIRMA DEBUG] Invoice created successfully: id={invoice.get('id')}, fullnumber={invoice.get('fullnumber')}")
                             return invoice, resp
+            print(f"[WFIRMA DEBUG] wfirma_create_invoice: status 200 but no invoice in response. Full response: {resp.text[:2000]}")
             return None, resp
-        return None, resp
-    except Exception:
+        else:
+            # PEŁNE LOGOWANIE BŁĘDU Z WFIRMA.PL
+            print(f"[WFIRMA ERROR] wfirma_create_invoice FAILED!")
+            print(f"[WFIRMA ERROR] Status code: {resp.status_code}")
+            print(f"[WFIRMA ERROR] Response headers: {dict(resp.headers)}")
+            print(f"[WFIRMA ERROR] Response body (full): {resp.text}")
+            try:
+                error_json = resp.json()
+                print(f"[WFIRMA ERROR] Response JSON parsed: {json_lib.dumps(error_json, ensure_ascii=False, indent=2)}")
+            except Exception:
+                print(f"[WFIRMA ERROR] Response is not valid JSON")
+            return None, resp
+    except Exception as e:
+        print(f"[WFIRMA ERROR] wfirma_create_invoice EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
         return None, resp
 
 
@@ -1959,7 +1977,10 @@ def wfirma_create_correction(
     token: str,
     source_invoice_id: str,
     correction_description: str = "Anulowanie zamówienia",
-    company_id: str = None
+    company_id: str = None,
+    series_name_override: str | None = None,
+    mark_refund_settled: bool = False,
+    send_email: bool = True,
 ) -> tuple[dict | None, requests.Response | None]:
     """
     Utwórz fakturę korygującą (pełna korekta - zerowanie wszystkich pozycji).
@@ -2043,13 +2064,14 @@ def wfirma_create_correction(
         
         # 3.5) Pobierz serię korekty (jeśli skonfigurowana)
         series_id = None
-        if WFIRMA_SERIES_CORRECTION:
-            series = wfirma_find_series_by_name(token, WFIRMA_SERIES_CORRECTION, company_id)
+        series_to_use = series_name_override or WFIRMA_SERIES_CORRECTION
+        if series_to_use:
+            series = wfirma_find_series_by_name(token, series_to_use, company_id)
             if series and series.get('id'):
                 series_id = int(series.get('id'))
-                print(f"[WFIRMA DEBUG] Znaleziono serię korekty: {WFIRMA_SERIES_CORRECTION} -> ID {series_id}")
+                print(f"[WFIRMA DEBUG] Znaleziono serię korekty: {series_to_use} -> ID {series_id}")
             else:
-                print(f"[WFIRMA DEBUG] Nie znaleziono serii korekty: {WFIRMA_SERIES_CORRECTION}")
+                print(f"[WFIRMA DEBUG] Nie znaleziono serii korekty: {series_to_use}")
         
         # 4) Payload faktury korygującej
         import datetime
@@ -2060,7 +2082,7 @@ def wfirma_create_correction(
             "parent": {"id": int(source_invoice_id)},  # Powiązanie z fakturą oryginalną
             "description": correction_description,
             "invoicecontents": invoice_contents_dict,
-            "send": True,  # ✅ FIX: Dodaj parametr wysyłki emaila
+            "send": send_email,
         }
         
         # Dodaj serię korekty jeśli znaleziono
@@ -2097,9 +2119,29 @@ def wfirma_create_correction(
             correction_id = invoice_result.get('id')
             correction_number = invoice_result.get('fullnumber')
             print(f"[WFIRMA DEBUG] Correction created: id={correction_id}, number={correction_number}")
+
+            # Oznacz korektę jako rozliczoną (odhacz przepływ gotówki) jeśli mark_refund_settled
+            if mark_refund_settled:
+                try:
+                    brutto_raw = invoice_result.get('brutto') or invoice_result.get('total') or '0'
+                    try:
+                        brutto_val = float(str(brutto_raw).replace(',', '.'))
+                    except (ValueError, TypeError):
+                        brutto_val = 0.0
+                    amount_to_settle = abs(brutto_val)
+                    if amount_to_settle > 0:
+                        ok, _ = wfirma_mark_invoice_paid(token, str(correction_id), amount_to_settle, company_id)
+                        if ok:
+                            print(f"[WFIRMA DEBUG] Korekta {correction_number} oznaczona jako rozliczona (alreadypaid_initial={amount_to_settle})")
+                        else:
+                            print(f"[WFIRMA DEBUG] Nie udało się oznaczyć korekty jako rozliczonej")
+                    else:
+                        print(f"[WFIRMA DEBUG] Korekta ma brutto=0, pomijam mark_refund_settled")
+                except Exception as ex:
+                    print(f"[WFIRMA DEBUG] Wyjątek przy mark_refund_settled: {ex}")
             
             # Wyślij korektę emailem jeśli kontrahent ma email
-            if contractor_email and '@' in contractor_email:
+            if send_email and contractor_email and '@' in contractor_email:
                 try:
                     print(f"[WFIRMA DEBUG] Sending correction email to: {contractor_email}")
                     resp_email = wfirma_send_invoice_email(token, str(correction_id), contractor_email, company_id)
@@ -2115,11 +2157,23 @@ def wfirma_create_correction(
             
             return invoice_result, resp
         else:
-            print(f"[WFIRMA DEBUG] Nie udało się utworzyć korekty: {resp.text[:500] if resp and resp.text else 'brak odpowiedzi'}")
+            print(f"[WFIRMA ERROR] Nie udało się utworzyć korekty!")
+            if resp:
+                print(f"[WFIRMA ERROR] Status: {resp.status_code}")
+                print(f"[WFIRMA ERROR] Headers: {dict(resp.headers)}")
+                print(f"[WFIRMA ERROR] Full response body: {resp.text}")
+                try:
+                    import json as json_lib2
+                    error_json = resp.json()
+                    print(f"[WFIRMA ERROR] Parsed JSON: {json_lib2.dumps(error_json, ensure_ascii=False, indent=2)}")
+                except Exception:
+                    print(f"[WFIRMA ERROR] Response is not valid JSON")
+            else:
+                print(f"[WFIRMA ERROR] No response object (resp is None)")
             return None, resp
-            
+
     except Exception as e:
-        print(f"[WFIRMA DEBUG] Correction exception: {e}")
+        print(f"[WFIRMA ERROR] Correction exception: {e}")
         import traceback
         traceback.print_exc()
         return None, None
@@ -5434,6 +5488,55 @@ def add_contractor(token):
         'details': resp.text if resp else 'Brak odpowiedzi'
     }), status or 500
 
+@app.route('/api/invoice/find-by-number', methods=['POST', 'OPTIONS'])
+@require_api_key
+@require_token
+def api_find_invoice_by_number(token):
+    """Wyszukaj fakturę po numerze (fullnumber)."""
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+
+    body = request.get_json(silent=True) or {}
+    fullnumber = (body.get('fullnumber') or body.get('number') or '').strip()
+
+    print(f"[API] POST /api/invoice/find-by-number -> fullnumber='{fullnumber}'")
+
+    if not fullnumber:
+        return cors_response({'error': 'Brak parametru fullnumber/number'}, 400)
+
+    company_id = wfirma_get_company_id(token)
+    invoice, err = wfirma_find_invoice_by_fullnumber(token, fullnumber, company_id)
+
+    if invoice:
+        print(f"[API] Znaleziono fakturę: id={invoice.get('id')}, fullnumber={invoice.get('fullnumber')}")
+        return cors_response({'success': True, 'invoice': invoice})
+    else:
+        print(f"[API] Nie znaleziono faktury o numerze '{fullnumber}': {err}")
+        return cors_response({'error': f'Nie znaleziono faktury: {fullnumber}', 'details': err}, 404)
+
+
+@app.route('/api/invoice/<invoice_id>', methods=['GET'])
+@require_api_key
+@require_token
+def api_get_invoice(token, invoice_id):
+    """Pobierz szczegóły faktury po ID."""
+    print(f"[API] GET /api/invoice/{invoice_id}")
+
+    if not invoice_id or invoice_id == 'None':
+        print(f"[API] Invalid invoice_id: {invoice_id}")
+        return cors_response({'error': 'Nieprawidłowe ID faktury', 'invoice_id': invoice_id}, 400)
+
+    company_id = wfirma_get_company_id(token)
+    invoice, err = wfirma_get_invoice(token, str(invoice_id), company_id)
+
+    if invoice:
+        print(f"[API] Pobrano fakturę: id={invoice.get('id')}, fullnumber={invoice.get('fullnumber')}")
+        return cors_response({'success': True, 'invoice': invoice})
+    else:
+        print(f"[API] Nie znaleziono faktury ID={invoice_id}: {err}")
+        return cors_response({'error': f'Nie znaleziono faktury o ID {invoice_id}', 'details': err}, 404)
+
+
 @app.route('/api/invoice/create', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token
@@ -6836,11 +6939,19 @@ def workflow_create_correction(token):
         correction_payload["series"] = {"id": series_id}
     
     print(f"[CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(positions)}")
-    
+
+    # LOG: pełny payload korekty
+    try:
+        import json as json_lib
+        print(f"[CORRECTION] Full correction_payload: {json_lib.dumps(correction_payload, ensure_ascii=False, indent=2)}")
+    except Exception:
+        print(f"[CORRECTION] correction_payload (raw): {correction_payload}")
+
     # 4) Utwórz fakturę korygującą
     invoice_result, resp = wfirma_create_invoice(token, correction_payload, wfirma_company_id)
-    
+
     if invoice_result and invoice_result.get('id'):
+        print(f"[CORRECTION] SUCCESS! Korekta utworzona: id={invoice_result.get('id')}, fullnumber={invoice_result.get('fullnumber')}")
         return cors_response({
             'success': True,
             'message': 'Faktura korygująca utworzona',
@@ -6860,18 +6971,98 @@ def workflow_create_correction(token):
             }
         })
     else:
-        # Błąd
+        # PEŁNE LOGOWANIE BŁĘDU
         error_details = ''
+        resp_status = None
+        resp_headers = None
         if resp:
             try:
-                error_details = resp.text[:1000]
-            except Exception:
-                pass
+                resp_status = resp.status_code
+                resp_headers = dict(resp.headers)
+                error_details = resp.text
+                print(f"[CORRECTION ERROR] wFirma API zwróciło błąd!")
+                print(f"[CORRECTION ERROR] Status: {resp_status}")
+                print(f"[CORRECTION ERROR] Headers: {resp_headers}")
+                print(f"[CORRECTION ERROR] Full response body: {error_details}")
+                try:
+                    error_json = resp.json()
+                    print(f"[CORRECTION ERROR] Parsed JSON: {json_lib.dumps(error_json, ensure_ascii=False, indent=2)}")
+                except Exception:
+                    print(f"[CORRECTION ERROR] Response is not valid JSON")
+            except Exception as log_ex:
+                print(f"[CORRECTION ERROR] Error reading response: {log_ex}")
+        else:
+            print(f"[CORRECTION ERROR] No response object (resp is None)")
+
         return cors_response({
             'error': 'Nie udało się utworzyć faktury korygującej',
-            'details': error_details,
+            'details': error_details[:2000] if error_details else 'brak odpowiedzi',
+            'wfirma_status': resp_status,
             'parent_invoice_id': parent_invoice_id
         }, 500)
+
+
+@app.route('/api/test/correction-payment-flow', methods=['POST', 'OPTIONS'])
+@require_api_key
+@require_token
+def test_correction_payment_flow(token):
+    """
+    Endpoint TESTOWY: pełna korekta (zerowanie) + opcjonalne oznaczenie korekty jako rozliczonej.
+    Używa serii TEST (Eventy Korekta TEST). Do testów na fakturach z serii Eventy Faktura VAT TEST.
+    
+    Body JSON:
+    {
+        "parent_invoice_id": 12345,           # WYMAGANE - ID faktury VAT do skorygowania
+        "mark_correction_settled": true       # Opcjonalnie (domyślnie false) - czy oznaczyć korektę jako rozliczoną (alreadypaid_initial na FK)
+    }
+    """
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+    
+    body = request.get_json(silent=True) or {}
+    parent_invoice_id = body.get('parent_invoice_id')
+    mark_correction_settled = body.get('mark_correction_settled', False) in (True, 'true', '1', 1)
+    
+    if not parent_invoice_id:
+        return cors_response({'error': 'Brak parent_invoice_id - ID faktury do skorygowania jest wymagane'}, 400)
+    
+    print(f"[TEST CORRECTION] parent_invoice_id={parent_invoice_id}, mark_correction_settled={mark_correction_settled}")
+    
+    try:
+        company_id = wfirma_get_company_id(token)
+        correction, resp = wfirma_create_correction(
+            token=token,
+            source_invoice_id=str(parent_invoice_id),
+            correction_description="Test korekty - odhaczanie płatności",
+            company_id=company_id,
+            series_name_override=WFIRMA_SERIES_CORRECTION_TEST,
+            mark_refund_settled=mark_correction_settled,
+            send_email=False,
+        )
+        
+        if correction and correction.get('id'):
+            return cors_response({
+                'success': True,
+                'message': 'Korekta testowa utworzona',
+                'correction': {
+                    'id': correction.get('id'),
+                    'fullnumber': correction.get('fullnumber'),
+                    'brutto': correction.get('brutto'),
+                    'mark_refund_settled': mark_correction_settled,
+                },
+                'parent_invoice_id': parent_invoice_id,
+            })
+        else:
+            err = (resp.text[:500] if resp and resp.text else 'brak odpowiedzi') if resp else 'brak odpowiedzi'
+            return cors_response({
+                'error': 'Nie udało się utworzyć korekty testowej',
+                'details': err,
+                'parent_invoice_id': parent_invoice_id,
+            }, 500)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return cors_response({'error': str(e), 'parent_invoice_id': parent_invoice_id}, 500)
 
 
 # ==================== ENDPOINT STOPKA EMAIL - UPLOAD ZDJĘĆ ====================

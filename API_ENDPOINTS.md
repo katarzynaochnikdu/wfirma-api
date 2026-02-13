@@ -371,6 +371,26 @@ Pola pozycji korekty: `parent_position_id` (wymagane), `name`, `quantity`, `unit
 
 ---
 
+### `POST /api/test/correction-payment-flow` (TESTOWY)
+
+Pełna korekta (zerowanie pozycji) + opcjonalne oznaczenie korekty jako rozliczonej. Używa serii **Eventy Korekta TEST**. Do testów na fakturach z serii Eventy Faktura VAT TEST.
+
+| Parametr | Typ | Wymagany | Opis |
+|----------|-----|----------|------|
+| `parent_invoice_id` | int | **TAK** | ID faktury VAT do skorygowania |
+| `mark_correction_settled` | bool | Nie | `true` = oznaczyć korektę jako rozliczoną (alreadypaid_initial na FK) |
+
+```bash
+curl -X POST "https://wfirma-api.onrender.com/api/test/correction-payment-flow" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: TWOJ_MAKE_RENDER_API_KEY" \
+  -d '{"parent_invoice_id": 12345, "mark_correction_settled": true}'
+```
+
+**Uwaga:** Seria „Eventy Korekta TEST” musi istnieć w wFirma (ENV: `WFIRMA_SERIES_CORRECTION_TEST`).
+
+---
+
 ## 3. Walidacja NIP (GUS/REGON)
 
 ### `POST /api/gus/validate-nip`
