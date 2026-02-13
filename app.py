@@ -6994,12 +6994,36 @@ def workflow_create_correction(token):
     invoice_result, resp = wfirma_create_invoice(token, correction_payload, wfirma_company_id)
 
     if invoice_result and invoice_result.get('id'):
-        print(f"[CORRECTION] SUCCESS! Korekta utworzona: id={invoice_result.get('id')}, fullnumber={invoice_result.get('fullnumber')}")
-        return cors_response({
+        correction_id = invoice_result.get('id')
+        print(f"[CORRECTION] SUCCESS! Korekta utworzona: id={correction_id}, fullnumber={invoice_result.get('fullnumber')}")
+
+        # Pobierz PDF korekty
+        pdf_base64 = None
+        pdf_filename = None
+        try:
+            resp_pdf = wfirma_get_invoice_pdf(token, str(correction_id), wfirma_company_id)
+            if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
+                pdf_content = resp_pdf.content
+                pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
+                os.makedirs('invoices', exist_ok=True)
+                pdf_filename = f"invoices/korekta_{correction_id}.pdf"
+                with open(pdf_filename, 'wb') as f:
+                    f.write(pdf_content)
+                print(f"[CORRECTION] PDF saved: {pdf_filename} ({len(pdf_content)} bytes)")
+            else:
+                print(f"[CORRECTION] PDF download failed: {resp_pdf.status_code}")
+        except Exception as e:
+            print(f"[CORRECTION] PDF exception: {e}")
+
+        # Buduj URL do PDF
+        base_url = request.url_root.rstrip('/')
+        pdf_url = f"{base_url}/api/invoice/{correction_id}/pdf"
+
+        response_data = {
             'success': True,
             'message': 'Faktura korygująca utworzona',
             'correction_invoice': {
-                'id': invoice_result.get('id'),
+                'id': correction_id,
                 'fullnumber': invoice_result.get('fullnumber'),
                 'type': invoice_result.get('type'),
                 'parent_invoice_id': parent_invoice_id,
@@ -7011,8 +7035,17 @@ def workflow_create_correction(token):
             'original_invoice': {
                 'id': original_invoice.get('id'),
                 'fullnumber': original_invoice.get('fullnumber')
-            }
-        })
+            },
+            'invoice_id': correction_id,
+            'invoice_number': invoice_result.get('fullnumber'),
+            'pdf_url': pdf_url,
+            'pdf_saved': pdf_filename
+        }
+
+        if pdf_base64:
+            response_data['pdf_base64'] = pdf_base64
+
+        return cors_response(response_data)
     else:
         # PEŁNE LOGOWANIE BŁĘDU
         error_details = ''
