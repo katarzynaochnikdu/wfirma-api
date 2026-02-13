@@ -1949,11 +1949,7 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
             wfirma_status = result.get('status', {})
             if isinstance(wfirma_status, dict) and wfirma_status.get('code') == 'ERROR':
                 print(f"[WFIRMA ERROR] wFirma zwróciło HTTP 200 ale status.code=ERROR!")
-                print(f"[WFIRMA ERROR] Full response body: {resp.text}")
-                try:
-                    print(f"[WFIRMA ERROR] Parsed JSON: {json_lib.dumps(result, ensure_ascii=False, indent=2)}")
-                except Exception:
-                    pass
+                print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
                 return None, resp
 
             # Odpowiedź: invoices.0.invoice
@@ -1968,16 +1964,9 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
             print(f"[WFIRMA DEBUG] wfirma_create_invoice: status 200 but no invoice in response. Full response: {resp.text[:2000]}")
             return None, resp
         else:
-            # PEŁNE LOGOWANIE BŁĘDU Z WFIRMA.PL
-            print(f"[WFIRMA ERROR] wfirma_create_invoice FAILED!")
-            print(f"[WFIRMA ERROR] Status code: {resp.status_code}")
-            print(f"[WFIRMA ERROR] Response headers: {dict(resp.headers)}")
-            print(f"[WFIRMA ERROR] Response body (full): {resp.text}")
-            try:
-                error_json = resp.json()
-                print(f"[WFIRMA ERROR] Response JSON parsed: {json_lib.dumps(error_json, ensure_ascii=False, indent=2)}")
-            except Exception:
-                print(f"[WFIRMA ERROR] Response is not valid JSON")
+            # Logowanie błędu z wFirma.pl (ograniczone do 2000 znaków żeby nie jeść RAM)
+            print(f"[WFIRMA ERROR] wfirma_create_invoice FAILED! Status: {resp.status_code}")
+            print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
             return None, resp
     except Exception as e:
         print(f"[WFIRMA ERROR] wfirma_create_invoice EXCEPTION: {e}")
@@ -2172,15 +2161,7 @@ def wfirma_create_correction(
         else:
             print(f"[WFIRMA ERROR] Nie udało się utworzyć korekty!")
             if resp:
-                print(f"[WFIRMA ERROR] Status: {resp.status_code}")
-                print(f"[WFIRMA ERROR] Headers: {dict(resp.headers)}")
-                print(f"[WFIRMA ERROR] Full response body: {resp.text}")
-                try:
-                    import json as json_lib2
-                    error_json = resp.json()
-                    print(f"[WFIRMA ERROR] Parsed JSON: {json_lib2.dumps(error_json, ensure_ascii=False, indent=2)}")
-                except Exception:
-                    print(f"[WFIRMA ERROR] Response is not valid JSON")
+                print(f"[WFIRMA ERROR] Status: {resp.status_code}, Body: {resp.text[:2000]}")
             else:
                 print(f"[WFIRMA ERROR] No response object (resp is None)")
             return None, resp
@@ -7040,17 +7021,9 @@ def workflow_create_correction(token):
         if resp:
             try:
                 resp_status = resp.status_code
-                resp_headers = dict(resp.headers)
                 error_details = resp.text
-                print(f"[CORRECTION ERROR] wFirma API zwróciło błąd!")
-                print(f"[CORRECTION ERROR] Status: {resp_status}")
-                print(f"[CORRECTION ERROR] Headers: {resp_headers}")
-                print(f"[CORRECTION ERROR] Full response body: {error_details}")
-                try:
-                    error_json = resp.json()
-                    print(f"[CORRECTION ERROR] Parsed JSON: {json_lib.dumps(error_json, ensure_ascii=False, indent=2)}")
-                except Exception:
-                    print(f"[CORRECTION ERROR] Response is not valid JSON")
+                print(f"[CORRECTION ERROR] wFirma API zwróciło błąd! Status: {resp_status}")
+                print(f"[CORRECTION ERROR] Response body: {error_details[:2000]}")
             except Exception as log_ex:
                 print(f"[CORRECTION ERROR] Error reading response: {log_ex}")
         else:
