@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:doc.wfirma.pl)"
+      "WebFetch(domain:doc.wfirma.pl)",
+      "Bash(python3:*)"
     ]
   }
 }

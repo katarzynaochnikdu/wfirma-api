@@ -2050,18 +2050,19 @@ def wfirma_create_correction(
         print(f"[WFIRMA DEBUG] Znaleziono {len(positions)} pozycji do skorygowania")
         
         # 3) Buduj pozycje korekty (zerowanie - count=0 i price=0)
-        # Wg dokumentacji wFirma: przy korekcie z parent_id NIE wysyłamy name, unit, good_id, gtu
+        # Wg Postman: wysyłamy parent_id, name (oryginalne), count, price
         invoice_contents_dict = {}
         for idx, pos in enumerate(positions):
             content = {
                 "invoicecontent": {
+                    "parent_id": int(pos.get('id')),
+                    "name": pos.get('name', ''),
                     "count": 0,
-                    "price": 0,
-                    "parent_id": int(pos.get('id'))
+                    "price": 0
                 }
             }
             invoice_contents_dict[str(idx)] = content
-            print(f"[WFIRMA DEBUG] Correction pos {idx}: parent_id={pos.get('id')}, zerowanie")
+            print(f"[WFIRMA DEBUG] Correction pos {idx}: parent_id={pos.get('id')}, name={pos.get('name')}, zerowanie")
         
         # 3.5) Pobierz serię korekty (jeśli skonfigurowana)
         series_id = None
@@ -5706,10 +5707,11 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         payload["series"] = {"id": series_id}
         print(f"[WFIRMA DEBUG] Używam serii ID: {series_id}")
     
-    # Parent invoice (np. powiązanie faktury końcowej z proformą)
+    # Powiązanie faktury końcowej z proformą/zamówieniem
+    # UWAGA: "parent" w wFirma = powiązanie z korektą, "order" = powiązanie z proformą
     if parent_invoice_id and document_type == 'normal':
-        payload["parent"] = {"id": int(parent_invoice_id)}
-        print(f"[WFIRMA DEBUG] Powiązanie z parent invoice ID: {parent_invoice_id}")
+        payload["order"] = {"id": int(parent_invoice_id)}
+        print(f"[WFIRMA DEBUG] Powiązanie z order (proforma) ID: {parent_invoice_id}")
     
     if sale_date:
         payload["sale_date"] = sale_date
@@ -6903,16 +6905,17 @@ def workflow_create_correction(token):
         # TRYB PEŁNEJ KOREKTY: zeruj wszystkie pozycje z oryginalnej faktury
         print(f"[CORRECTION] Tryb pełnej korekty - zeruję {len(original_positions)} pozycji")
         for idx, orig_pos in enumerate(original_positions):
-            # Wg dokumentacji wFirma: przy korekcie z parent_id NIE wysyłamy name, unit, good_id, gtu
+            # Wg Postman: wysyłamy parent_id, name (oryginalne), count=0, price=0
             content = {
                 "invoicecontent": {
+                    "parent_id": int(orig_pos['id']),
+                    "name": orig_pos.get('name', ''),
                     "count": 0,
-                    "price": 0,
-                    "parent_id": int(orig_pos['id'])
+                    "price": 0
                 }
             }
             invoice_contents_dict[str(idx)] = content
-            print(f"[CORRECTION] Pozycja {idx}: parent_id={orig_pos['id']}, zerowanie (count=0, price=0)")
+            print(f"[CORRECTION] Pozycja {idx}: parent_id={orig_pos['id']}, name={orig_pos.get('name')}, zerowanie")
     else:
         # TRYB RĘCZNY: użyj pozycji z requestu, ale WALIDUJ parent_position_id
         for idx, pos in enumerate(positions):
@@ -6945,16 +6948,24 @@ def workflow_create_correction(token):
             qty = pos.get('quantity', 0)
             price_net = pos.get('unit_price_net', 0)
 
-            # Wg dokumentacji wFirma: przy korekcie z parent_id NIE wysyłamy name, unit, good_id, gtu
+            # Wg Postman: wysyłamy parent_id, name (oryginalne z faktury), count, price
+            # Znajdź oryginalną pozycję żeby pobrać name
+            orig_name = ''
+            for op in original_positions:
+                if str(op['id']) == str(parent_pos_id):
+                    orig_name = op.get('name', '')
+                    break
+
             content = {
                 "invoicecontent": {
+                    "parent_id": int(parent_pos_id),
+                    "name": pos.get('name') or orig_name,
                     "count": qty,
-                    "price": price_net,
-                    "parent_id": int(parent_pos_id)
+                    "price": price_net
                 }
             }
             invoice_contents_dict[str(idx)] = content
-            print(f"[CORRECTION] Pozycja {idx}: parent_id={parent_pos_id}, count={qty}, price={price_net}")
+            print(f"[CORRECTION] Pozycja {idx}: parent_id={parent_pos_id}, name={pos.get('name') or orig_name}, count={qty}, price={price_net}")
 
     # Payload faktury korygującej
     correction_payload = {
@@ -7024,6 +7035,134 @@ def workflow_create_correction(token):
             'wfirma_status': resp_status,
             'parent_invoice_id': parent_invoice_id
         }, 500)
+
+
+@app.route('/api/test/correction-debug', methods=['POST', 'OPTIONS'])
+@require_api_key
+def test_correction_debug():
+    """
+    Endpoint diagnostyczny do testowania korekt.
+    Pobiera fakturę, loguje jej strukturę, buduje payload korekty i wysyła do wFirma.
+
+    JSON body:
+    {
+        "invoice_id": 12345,         # WYMAGANE - ID faktury do skorygowania
+        "company": "md",             # Opcjonalnie
+        "dry_run": true              # Opcjonalnie - jeśli true, tylko pokaże payload bez wysyłania
+    }
+    """
+    if request.method == 'OPTIONS':
+        return cors_response({'status': 'ok'})
+
+    body = request.get_json(silent=True) or {}
+    invoice_id = body.get('invoice_id')
+    company = (body.get('company') or DEFAULT_COMPANY).lower().strip()
+    dry_run = body.get('dry_run', False)
+
+    if not invoice_id:
+        return cors_response({'error': 'Brak invoice_id'}, 400)
+
+    token = get_wfirma_token(company)
+    if not token:
+        return cors_response({'error': f'Brak tokena OAuth dla firmy: {company}'}, 401)
+
+    wfirma_company_id = wfirma_get_company_id(token)
+
+    # 1) Pobierz fakturę
+    invoice, err = wfirma_get_invoice(token, str(invoice_id), wfirma_company_id)
+    if err or not invoice:
+        return cors_response({'error': 'Nie udało się pobrać faktury', 'details': err}, 404)
+
+    # 2) Analiza struktury faktury
+    invoice_info = {
+        'id': invoice.get('id'),
+        'fullnumber': invoice.get('fullnumber'),
+        'type': invoice.get('type'),
+        'netto': invoice.get('netto'),
+        'brutto': invoice.get('brutto'),
+        'parent': invoice.get('parent'),
+        'order': invoice.get('order'),
+    }
+
+    # 3) Analiza pozycji
+    positions_info = []
+    original_contents = invoice.get('invoicecontents', {})
+    if isinstance(original_contents, dict):
+        for key, val in original_contents.items():
+            if isinstance(val, dict) and 'invoicecontent' in val:
+                content = val['invoicecontent']
+                positions_info.append({
+                    'id': content.get('id'),
+                    'name': content.get('name'),
+                    'count': content.get('count'),
+                    'price': content.get('price'),
+                    'unit': content.get('unit'),
+                    'parent': content.get('parent'),
+                    'invoice_id_from_content': content.get('invoice', {}).get('id') if isinstance(content.get('invoice'), dict) else None,
+                })
+
+    # Contractor
+    contractor_data = invoice.get('contractor', {})
+    contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
+
+    # 4) Buduj payload korekty (wg Postman)
+    import datetime
+    invoice_contents_dict = {}
+    for idx, pos in enumerate(positions_info):
+        invoice_contents_dict[str(idx)] = {
+            "invoicecontent": {
+                "parent_id": int(pos['id']),
+                "name": pos.get('name', ''),
+                "count": 0,
+                "price": 0
+            }
+        }
+
+    correction_payload = {
+        "contractor_id": int(contractor_id) if contractor_id else None,
+        "date": datetime.date.today().isoformat(),
+        "type": "correction",
+        "parent_id": int(invoice_id),
+        "description": "Test korekty (debug endpoint)",
+        "invoicecontents": invoice_contents_dict
+    }
+
+    result = {
+        'invoice_info': invoice_info,
+        'positions': positions_info,
+        'contractor_id': contractor_id,
+        'correction_payload': correction_payload,
+        'dry_run': dry_run
+    }
+
+    if not dry_run:
+        # Wyślij do wFirma
+        print(f"[CORRECTION-DEBUG] Wysyłam payload korekty dla faktury {invoice_id}")
+        import json as json_lib
+        print(f"[CORRECTION-DEBUG] Payload: {json_lib.dumps(correction_payload, ensure_ascii=False)[:2000]}")
+
+        invoice_result, resp = wfirma_create_invoice(token, correction_payload, wfirma_company_id)
+
+        if invoice_result and invoice_result.get('id'):
+            result['correction_result'] = {
+                'success': True,
+                'id': invoice_result.get('id'),
+                'fullnumber': invoice_result.get('fullnumber')
+            }
+        else:
+            resp_text = ''
+            if resp:
+                try:
+                    resp_text = resp.text[:2000]
+                except:
+                    resp_text = str(resp.status_code)
+            result['correction_result'] = {
+                'success': False,
+                'status_code': resp.status_code if resp else None,
+                'response': resp_text
+            }
+
+    return cors_response(result)
 
 
 @app.route('/api/test/correction-payment-flow', methods=['POST', 'OPTIONS'])
