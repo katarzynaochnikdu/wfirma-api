@@ -1943,13 +1943,26 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
         print(f"[WFIRMA DEBUG] wfirma_create_invoice response status: {resp.status_code}")
         if resp.status_code == 200:
             result = resp.json()
+
+            # WAŻNE: wFirma.pl zwraca HTTP 200 nawet przy błędach!
+            # Sprawdź status.code w JSON
+            wfirma_status = result.get('status', {})
+            if isinstance(wfirma_status, dict) and wfirma_status.get('code') == 'ERROR':
+                print(f"[WFIRMA ERROR] wFirma zwróciło HTTP 200 ale status.code=ERROR!")
+                print(f"[WFIRMA ERROR] Full response body: {resp.text}")
+                try:
+                    print(f"[WFIRMA ERROR] Parsed JSON: {json_lib.dumps(result, ensure_ascii=False, indent=2)}")
+                except Exception:
+                    pass
+                return None, resp
+
             # Odpowiedź: invoices.0.invoice
             invoices = result.get('invoices', {})
             if isinstance(invoices, dict):
                 for key in invoices:
                     if key.isdigit():
                         invoice = invoices[key].get('invoice', {})
-                        if invoice:
+                        if invoice and invoice.get('id'):
                             print(f"[WFIRMA DEBUG] Invoice created successfully: id={invoice.get('id')}, fullnumber={invoice.get('fullnumber')}")
                             return invoice, resp
             print(f"[WFIRMA DEBUG] wfirma_create_invoice: status 200 but no invoice in response. Full response: {resp.text[:2000]}")
@@ -6836,24 +6849,21 @@ def workflow_create_correction(token):
     positions = body.get('positions') or []
     issue_date = body.get('issue_date') or datetime.date.today().isoformat()
     series_name = (body.get('series_name') or '').strip()
-    
+    full_correction = body.get('full_correction', False)  # Tryb pełnej korekty (zerowanie wszystkich pozycji)
+
     # Walidacja
     if not parent_invoice_id:
         return cors_response({'error': 'Brak parent_invoice_id - ID faktury oryginalnej jest wymagane'}, 400)
-    
-    if not positions or not isinstance(positions, list):
-        return cors_response({'error': 'Brak pozycji korekty (positions)'}, 400)
-    
-    # Sprawdź czy wszystkie pozycje mają parent_position_id
-    for idx, pos in enumerate(positions):
-        if not pos.get('parent_position_id'):
-            return cors_response({'error': f'Pozycja {idx+1} nie ma parent_position_id'}, 400)
-    
-    print(f"[CORRECTION] Tworzę korektę dla faktury ID={parent_invoice_id}, company={company}")
-    
+
+    # positions nie są wymagane jeśli full_correction=True
+    if not full_correction and (not positions or not isinstance(positions, list)):
+        return cors_response({'error': 'Brak pozycji korekty (positions). Użyj full_correction=true dla pełnej korekty (zerowanie wszystkich pozycji).'}, 400)
+
+    print(f"[CORRECTION] Tworzę korektę dla faktury ID={parent_invoice_id}, company={company}, full_correction={full_correction}")
+
     # Pobierz company_id (wymagane przez wFirma API)
     wfirma_company_id = wfirma_get_company_id(token)
-    
+
     # 1) Pobierz oryginalną fakturę żeby uzyskać dane kontrahenta i pozycji
     original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id), wfirma_company_id)
     if err or not original_invoice:
@@ -6862,15 +6872,40 @@ def workflow_create_correction(token):
             'details': err,
             'parent_invoice_id': parent_invoice_id
         }, 404)
-    
+
     print(f"[CORRECTION] Pobrano fakturę oryginalną: {original_invoice.get('fullnumber')}")
-    
+
     # Pobierz contractor_id z oryginalnej faktury
     contractor_data = original_invoice.get('contractor', {})
     contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
     if not contractor_id:
         return cors_response({'error': 'Nie można odczytać kontrahenta z faktury oryginalnej'}, 400)
-    
+
+    # 1.5) Pobierz PRAWDZIWE pozycje z oryginalnej faktury
+    original_contents = original_invoice.get('invoicecontents', {})
+    original_positions = []  # Lista dict: {id, name, count, price, unit, vat_code_id}
+    if isinstance(original_contents, dict):
+        for key, val in original_contents.items():
+            if isinstance(val, dict) and 'invoicecontent' in val:
+                content = val['invoicecontent']
+                orig_pos = {
+                    'id': content.get('id'),
+                    'name': content.get('name'),
+                    'count': content.get('count'),
+                    'price': content.get('price'),
+                    'unit': content.get('unit', 'szt.'),
+                    'vat_code_id': content.get('vat_code', {}).get('id') if isinstance(content.get('vat_code'), dict) else 222,
+                }
+                original_positions.append(orig_pos)
+
+    print(f"[CORRECTION] Oryginalna faktura ma {len(original_positions)} pozycji: {[{'id': p['id'], 'name': p['name']} for p in original_positions]}")
+
+    if not original_positions:
+        return cors_response({'error': 'Faktura oryginalna nie ma pozycji (invoicecontents)'}, 400)
+
+    # Buduj mapę ID pozycji oryginalnej (do walidacji)
+    original_pos_ids = {str(p['id']) for p in original_positions}
+
     # 2) Pobierz serię jeśli podano nazwę
     series_id = None
     if series_name:
@@ -6880,60 +6915,87 @@ def workflow_create_correction(token):
             print(f"[CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
         else:
             print(f"[CORRECTION] Nie znaleziono serii: {series_name}")
-    
-    # 3) Buduj payload faktury korygującej
-    # Mapowanie stawek VAT
-    vat_code_map = {
-        "23": 222, "8": 223, "5": 224, "0": 225, "zw": 226, "np": 227
-    }
-    vat_rate_percent = {
-        "23": 0.23, "8": 0.08, "5": 0.05, "0": 0.0, "zw": 0.0, "np": 0.0
-    }
-    
-    # Pozycje korekty
+
+    # 3) Buduj pozycje korekty
     invoice_contents_dict = {}
-    total_brutto = 0.0
-    
-    for idx, pos in enumerate(positions):
-        parent_pos_id = pos.get('parent_position_id')
-        name = pos.get('name', f'Pozycja korekty {idx+1}')
-        qty = pos.get('quantity', 1)
-        price_net = pos.get('unit_price_net', 0)
-        vat_rate = str(pos.get('vat_rate', '23')).lower()
-        
-        try:
-            qty_num = float(qty) if isinstance(qty, str) else qty
-            price_num = float(price_net) if isinstance(price_net, str) else price_net
-            vat_percent = vat_rate_percent.get(vat_rate, 0.23)
-            pos_brutto = qty_num * price_num * (1 + vat_percent)
-            total_brutto += pos_brutto
-        except Exception:
-            pass
-        
-        vat_code_id = vat_code_map.get(vat_rate, 222)
-        
-        content = {
-            "invoicecontent": {
-                "name": name,
-                "unit": pos.get('unit', 'szt.'),
-                "count": qty,
-                "price": price_net,
-                "vat_code": {"id": vat_code_id},
-                "parent": {"id": int(parent_pos_id)}  # Powiązanie z oryginalną pozycją
+
+    if full_correction or not positions:
+        # TRYB PEŁNEJ KOREKTY: zeruj wszystkie pozycje z oryginalnej faktury
+        print(f"[CORRECTION] Tryb pełnej korekty - zeruję {len(original_positions)} pozycji")
+        for idx, orig_pos in enumerate(original_positions):
+            content = {
+                "invoicecontent": {
+                    "name": orig_pos['name'],
+                    "unit": orig_pos.get('unit', 'szt.'),
+                    "count": 0,
+                    "price": 0,
+                    "vat_code": {"id": orig_pos.get('vat_code_id', 222)},
+                    "parent": {"id": int(orig_pos['id'])}
+                }
             }
-        }
-        invoice_contents_dict[str(idx)] = content
-    
+            invoice_contents_dict[str(idx)] = content
+    else:
+        # TRYB RĘCZNY: użyj pozycji z requestu, ale WALIDUJ parent_position_id
+        for idx, pos in enumerate(positions):
+            parent_pos_id = pos.get('parent_position_id')
+
+            # Walidacja: sprawdź czy parent_position_id należy do oryginalnej faktury
+            if parent_pos_id and str(parent_pos_id) not in original_pos_ids:
+                print(f"[CORRECTION] UWAGA: parent_position_id={parent_pos_id} NIE należy do faktury {parent_invoice_id}!")
+                print(f"[CORRECTION] Dostępne ID pozycji oryginalnej: {original_pos_ids}")
+
+                # Auto-fix: jeśli jest tylko 1 pozycja na oryginale i 1 w requescie, użyj oryginalnej
+                if len(original_positions) == 1 and len(positions) == 1:
+                    parent_pos_id = original_positions[0]['id']
+                    print(f"[CORRECTION] Auto-fix: użyto ID pozycji z oryginału: {parent_pos_id}")
+                else:
+                    return cors_response({
+                        'error': f'Pozycja {idx+1}: parent_position_id={pos.get("parent_position_id")} nie należy do faktury {parent_invoice_id}',
+                        'available_position_ids': list(original_pos_ids),
+                        'hint': 'Użyj full_correction=true dla pełnej korekty lub podaj prawidłowe parent_position_id'
+                    }, 400)
+
+            if not parent_pos_id:
+                # Brak parent_position_id - spróbuj dopasować po indeksie
+                if idx < len(original_positions):
+                    parent_pos_id = original_positions[idx]['id']
+                    print(f"[CORRECTION] Auto-assign: pozycja {idx} -> parent_position_id={parent_pos_id}")
+                else:
+                    return cors_response({'error': f'Pozycja {idx+1} nie ma parent_position_id i nie można dopasować automatycznie'}, 400)
+
+            name = pos.get('name', f'Pozycja korekty {idx+1}')
+            qty = pos.get('quantity', 1)
+            price_net = pos.get('unit_price_net', 0)
+            vat_rate = str(pos.get('vat_rate', '23')).lower()
+
+            # Mapowanie stawek VAT
+            vat_code_map = {
+                "23": 222, "8": 223, "5": 224, "0": 225, "zw": 226, "np": 227
+            }
+            vat_code_id = vat_code_map.get(vat_rate, 222)
+
+            content = {
+                "invoicecontent": {
+                    "name": name,
+                    "unit": pos.get('unit', 'szt.'),
+                    "count": qty,
+                    "price": price_net,
+                    "vat_code": {"id": vat_code_id},
+                    "parent": {"id": int(parent_pos_id)}
+                }
+            }
+            invoice_contents_dict[str(idx)] = content
+
     # Payload faktury korygującej
     correction_payload = {
         "contractor_id": int(contractor_id),
         "date": issue_date,
         "type": "correction",
-        "parent": {"id": int(parent_invoice_id)},  # Powiązanie z fakturą oryginalną
+        "parent": {"id": int(parent_invoice_id)},
         "description": correction_reason,
         "invoicecontents": invoice_contents_dict
     }
-    
+
     # Seria (opcjonalnie)
     if series_id:
         correction_payload["series"] = {"id": series_id}
