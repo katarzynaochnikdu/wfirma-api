@@ -2070,7 +2070,7 @@ def wfirma_create_correction(
                     "count": 0,  # Zerujemy ilość
                     "price": 0,  # Zerujemy cenę
                     "vat_code": {"id": pos.get('vat_code_id', 222)},
-                    "parent": {"id": int(pos.get('id'))}  # Powiązanie z oryginalną pozycją
+                    "parent_id": int(pos.get('id'))  # FLAT parent_id (nie obiekt parent.id!)
                 }
             }
             invoice_contents_dict[str(idx)] = content
@@ -2092,7 +2092,7 @@ def wfirma_create_correction(
             "contractor_id": int(contractor_id),
             "date": datetime.date.today().isoformat(),
             "type": "correction",
-            "parent": {"id": int(source_invoice_id)},  # Powiązanie z fakturą oryginalną
+            "parent_id": int(source_invoice_id),  # FLAT parent_id (nie obiekt parent.id!)
             "description": correction_description,
             "invoicecontents": invoice_contents_dict,
             "send": send_email,
@@ -2100,7 +2100,7 @@ def wfirma_create_correction(
         
         # Dodaj serię korekty jeśli znaleziono
         if series_id:
-            correction_payload["series"] = {"id": series_id}
+            correction_payload["series_id"] = series_id
         
         # Dodaj email kontrahenta jeśli dostępny
         if contractor_email:
@@ -6930,7 +6930,7 @@ def workflow_create_correction(token):
                     "count": 0,
                     "price": 0,
                     "vat_code": {"id": orig_pos.get('vat_code_id', 222)},
-                    "parent": {"id": int(orig_pos['id'])}
+                    "parent_id": int(orig_pos['id'])  # FLAT parent_id wg dokumentacji wFirma
                 }
             }
             invoice_contents_dict[str(idx)] = content
@@ -6981,7 +6981,7 @@ def workflow_create_correction(token):
                     "count": qty,
                     "price": price_net,
                     "vat_code": {"id": vat_code_id},
-                    "parent": {"id": int(parent_pos_id)}
+                    "parent_id": int(parent_pos_id)  # FLAT parent_id wg dokumentacji wFirma
                 }
             }
             invoice_contents_dict[str(idx)] = content
@@ -6991,16 +6991,16 @@ def workflow_create_correction(token):
         "contractor_id": int(contractor_id),
         "date": issue_date,
         "type": "correction",
-        "parent": {"id": int(parent_invoice_id)},
+        "parent_id": int(parent_invoice_id),  # FLAT parent_id wg dokumentacji wFirma
         "description": correction_reason,
         "invoicecontents": invoice_contents_dict
     }
 
     # Seria (opcjonalnie)
     if series_id:
-        correction_payload["series"] = {"id": series_id}
-    
-    print(f"[CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(positions)}")
+        correction_payload["series_id"] = series_id
+
+    print(f"[CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(invoice_contents_dict)}")
 
     # LOG: pełny payload korekty
     try:
