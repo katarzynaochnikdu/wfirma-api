@@ -2050,19 +2050,18 @@ def wfirma_create_correction(
         print(f"[WFIRMA DEBUG] Znaleziono {len(positions)} pozycji do skorygowania")
         
         # 3) Buduj pozycje korekty (zerowanie - count=0 i price=0)
+        # Wg dokumentacji wFirma: przy korekcie z parent_id NIE wysyłamy name, unit, good_id, gtu
         invoice_contents_dict = {}
         for idx, pos in enumerate(positions):
             content = {
                 "invoicecontent": {
-                    "name": pos.get('name', f'Pozycja {idx+1}'),
-                    "unit": "szt.",
-                    "count": 0,  # Zerujemy ilość
-                    "price": 0,  # Zerujemy cenę
-                    "vat_code": {"id": pos.get('vat_code_id', 222)},
-                    "parent_id": int(pos.get('id'))  # FLAT parent_id (nie obiekt parent.id!)
+                    "count": 0,
+                    "price": 0,
+                    "parent_id": int(pos.get('id'))
                 }
             }
             invoice_contents_dict[str(idx)] = content
+            print(f"[WFIRMA DEBUG] Correction pos {idx}: parent_id={pos.get('id')}, zerowanie")
         
         # 3.5) Pobierz serię korekty (jeśli skonfigurowana)
         series_id = None
@@ -6904,17 +6903,16 @@ def workflow_create_correction(token):
         # TRYB PEŁNEJ KOREKTY: zeruj wszystkie pozycje z oryginalnej faktury
         print(f"[CORRECTION] Tryb pełnej korekty - zeruję {len(original_positions)} pozycji")
         for idx, orig_pos in enumerate(original_positions):
+            # Wg dokumentacji wFirma: przy korekcie z parent_id NIE wysyłamy name, unit, good_id, gtu
             content = {
                 "invoicecontent": {
-                    "name": orig_pos['name'],
-                    "unit": orig_pos.get('unit', 'szt.'),
                     "count": 0,
                     "price": 0,
-                    "vat_code": {"id": orig_pos.get('vat_code_id', 222)},
-                    "parent_id": int(orig_pos['id'])  # FLAT parent_id wg dokumentacji wFirma
+                    "parent_id": int(orig_pos['id'])
                 }
             }
             invoice_contents_dict[str(idx)] = content
+            print(f"[CORRECTION] Pozycja {idx}: parent_id={orig_pos['id']}, zerowanie (count=0, price=0)")
     else:
         # TRYB RĘCZNY: użyj pozycji z requestu, ale WALIDUJ parent_position_id
         for idx, pos in enumerate(positions):
@@ -6944,28 +6942,19 @@ def workflow_create_correction(token):
                 else:
                     return cors_response({'error': f'Pozycja {idx+1} nie ma parent_position_id i nie można dopasować automatycznie'}, 400)
 
-            name = pos.get('name', f'Pozycja korekty {idx+1}')
-            qty = pos.get('quantity', 1)
+            qty = pos.get('quantity', 0)
             price_net = pos.get('unit_price_net', 0)
-            vat_rate = str(pos.get('vat_rate', '23')).lower()
 
-            # Mapowanie stawek VAT
-            vat_code_map = {
-                "23": 222, "8": 223, "5": 224, "0": 225, "zw": 226, "np": 227
-            }
-            vat_code_id = vat_code_map.get(vat_rate, 222)
-
+            # Wg dokumentacji wFirma: przy korekcie z parent_id NIE wysyłamy name, unit, good_id, gtu
             content = {
                 "invoicecontent": {
-                    "name": name,
-                    "unit": pos.get('unit', 'szt.'),
                     "count": qty,
                     "price": price_net,
-                    "vat_code": {"id": vat_code_id},
-                    "parent_id": int(parent_pos_id)  # FLAT parent_id wg dokumentacji wFirma
+                    "parent_id": int(parent_pos_id)
                 }
             }
             invoice_contents_dict[str(idx)] = content
+            print(f"[CORRECTION] Pozycja {idx}: parent_id={parent_pos_id}, count={qty}, price={price_net}")
 
     # Payload faktury korygującej
     correction_payload = {
