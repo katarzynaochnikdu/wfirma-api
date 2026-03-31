@@ -254,9 +254,8 @@ def create_checkout_session(
         # Parametry sesji
         expires_at_timestamp = int(time.time()) + CHECKOUT_SESSION_TTL_SECONDS - 60
         session_params = {
-            # Dynamic Payment Methods — Stripe automatycznie pokazuje metody
-            # włączone w Dashboard (card, blik) na podstawie waluty i lokalizacji.
-            # NIE ustawiaj payment_method_types ręcznie, bo blokuje to Dynamic PM.
+            # Jawna lista metod płatności (card + blik). P24 zablokowany na koncie.
+            "payment_method_types": ["card", "blik"],
             "line_items": final_line_items,
             "mode": "payment",
             "metadata": meta,
