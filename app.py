@@ -6,7 +6,6 @@ from flask import Flask, request, redirect, jsonify, Response, send_file, sessio
 import requests
 import json
 import os
-import os
 import time
 import re
 import datetime
@@ -579,6 +578,93 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
             prefix=prefix
         )
 
+def _refresh_access_token_inner(config, company, company_name, pg_company, prefix, log_prefix, skip_fresh_check, get_wfirma_token_fn=None):
+    """Wewnętrzna logika refreshu tokena — wywoływana wewnątrz advisory_lock_ctx."""
+    try:
+        print(f"{log_prefix} START skip_fresh_check={skip_fresh_check} pg_company={pg_company}")
+        now_ts = int(time.time())
+        pg_tok = None
+        if get_wfirma_token_fn:
+            pg_tok = get_wfirma_token_fn(pg_company)
+        
+        # Pomijamy sprawdzanie świeżości jeśli skip_fresh_check=True (wymuszony refresh)
+        if not skip_fresh_check and pg_tok and pg_tok.get("access_token") and int(pg_tok.get("access_token_expires_at") or 0) > (now_ts + 60):
+            access_token = str(pg_tok["access_token"])
+            expires_at = int(pg_tok["access_token_expires_at"])
+            os.environ[f"{prefix}ACCESS_TOKEN"] = access_token
+            os.environ[f"{prefix}TOKEN_EXPIRES"] = str(expires_at)
+            if pg_tok.get("refresh_token"):
+                os.environ[f"{prefix}REFRESH_TOKEN"] = str(pg_tok["refresh_token"])
+            if pg_tok.get("refresh_token_expires_at"):
+                os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(int(pg_tok["refresh_token_expires_at"]))
+            print(f"{log_prefix} Token już świeży w Postgres – pomijam refresh")
+            return access_token
+        
+        if skip_fresh_check:
+            print(f"{log_prefix} WYMUSZONY REFRESH (skip_fresh_check=True)")
+
+        # Wybór refresh tokena: WYŁĄCZNIE z Postgres (bez ENV/file fallbacks)
+        refresh_token = None
+        refresh_source = None
+        if pg_tok and pg_tok.get("refresh_token"):
+            refresh_token = _normalize_env_secret(pg_tok.get("refresh_token"))
+            refresh_source = "pg"
+
+        if not refresh_token:
+            print(f"{log_prefix} Brak refresh tokena w Postgres - wymagana autoryzacja /auth?company={company_name}")
+            return None
+
+        old_refresh_fp = _token_fingerprint(refresh_token)
+        print(f"{log_prefix} refresh_source={refresh_source} fp={old_refresh_fp}")
+        
+        token_url = "https://api2.wfirma.pl/oauth2/token"
+        payload = {
+            'grant_type': 'refresh_token',
+            'client_id': config['client_id'],
+            'client_secret': config['client_secret'],
+            'refresh_token': refresh_token
+        }
+
+        response = requests.post(token_url, data=payload)
+        print(f"{log_prefix} RESPONSE status_code={response.status_code}")
+        
+        if response.status_code == 200:
+            new_tokens = response.json()
+            new_access = new_tokens.get('access_token')
+            new_refresh = new_tokens.get('refresh_token')
+            expires_in = int(new_tokens.get('expires_in', 3600))
+            
+            if new_access:
+                if new_refresh:
+                    print(f"{log_prefix} ROTACJA REFRESH TOKEN old_fp={old_refresh_fp} new_fp={_token_fingerprint(new_refresh)}")
+                
+                save_token(
+                    new_access,
+                    expires_in,
+                    refresh_token=new_refresh,
+                    company=company,
+                    send_refresh_email=False,
+                    refresh_token_source="refresh_rotation" if new_refresh else None,
+                )
+                print(f"{log_prefix} SUKCES - Access token odświeżony")
+                return new_access
+
+            print(f"{log_prefix} BŁĄD - Brak access_token w odpowiedzi, keys={list(new_tokens.keys())}")
+            return None
+
+        print(f"{log_prefix} BŁĄD API status={response.status_code} body={response.text[:500] if response.text else 'PUSTY'}")
+        return None
+    except Exception as e:
+        print(f"{log_prefix} EXCEPTION: {e}")
+        traceback.print_exc()
+        return None
+    finally:
+        try:
+            print(f"{log_prefix} END")
+        except Exception:
+            pass
+
+
 def refresh_access_token(company=None, skip_fresh_check=False):
     """
     Odśwież access_token używając refresh_token z Postgres.
@@ -600,149 +686,17 @@ def refresh_access_token(company=None, skip_fresh_check=False):
     pg_company = config['pg_company']  # nazwa firmy w Postgres (md_test -> md)
 
     lock_id = _wfirma_access_refresh_lock_id(pg_company)  # lock per-pg_company
-    advisory_lock = None
-    advisory_unlock = None
-    get_wfirma_token = None
+    log_prefix = f"[TOKEN REFRESH] [{company_name.upper()}]"
+
+    # Użyj context managera — lock i unlock na TYM SAMYM połączeniu
     try:
-        from pg_storage import advisory_lock as _al, advisory_unlock as _au, get_wfirma_token as _gwt
-        advisory_lock = _al
-        advisory_unlock = _au
-        get_wfirma_token = _gwt
+        from pg_storage import advisory_lock_ctx, get_wfirma_token as _gwt
     except Exception as e:
-        print(f"[LOG] [{company_name.upper()}] Brak pg_storage dla locka (fallback bez locka): {e}")
+        print(f"[LOG] [{company_name.upper()}] Brak pg_storage (fallback bez locka): {e}")
+        return _refresh_access_token_inner(config, company, company_name, pg_company, prefix, log_prefix, skip_fresh_check, get_wfirma_token_fn=None)
 
-    if advisory_lock and advisory_unlock:
-        advisory_lock(lock_id)
-
-    try:
-        log_prefix = f"[TOKEN REFRESH] [{company_name.upper()}]"
-        print(f"{log_prefix} START skip_fresh_check={skip_fresh_check} pg_company={pg_company}")
-        # Jeśli inny worker już odświeżył token (i zapisał do Postgres) – użyj i nie rób refreshu ponownie
-        now_ts = int(time.time())
-        pg_tok = None
-        if get_wfirma_token:
-            pg_tok = get_wfirma_token(pg_company)
-        
-        # Pomijamy sprawdzanie świeżości jeśli skip_fresh_check=True (wymuszony refresh)
-        if not skip_fresh_check and pg_tok and pg_tok.get("access_token") and int(pg_tok.get("access_token_expires_at") or 0) > (now_ts + 60):
-            access_token = str(pg_tok["access_token"])
-            expires_at = int(pg_tok["access_token_expires_at"])
-            os.environ[f"{prefix}ACCESS_TOKEN"] = access_token
-            os.environ[f"{prefix}TOKEN_EXPIRES"] = str(expires_at)
-            if pg_tok.get("refresh_token"):
-                os.environ[f"{prefix}REFRESH_TOKEN"] = str(pg_tok["refresh_token"])
-            if pg_tok.get("refresh_token_expires_at"):
-                os.environ[f"{prefix}REFRESH_TOKEN_EXPIRES"] = str(int(pg_tok["refresh_token_expires_at"]))
-            print(f"{log_prefix} Token już świeży w Postgres – pomijam refresh")
-            return access_token
-        
-        if skip_fresh_check:
-            print(f"{log_prefix} WYMUSZONY REFRESH (skip_fresh_check=True)")
-
-        # Wybór refresh tokena: WYŁĄCZNIE z Postgres (bez ENV/file fallbacks)
-        refresh_token = None
-        refresh_source = None
-
-        # Jedyne źródło prawdy: Postgres
-        if pg_tok and pg_tok.get("refresh_token"):
-            refresh_token = _normalize_env_secret(pg_tok.get("refresh_token"))
-            refresh_source = "pg"
-
-        if not refresh_token:
-            print(f"{log_prefix} Brak refresh tokena w Postgres - wymagana autoryzacja /auth?company={company_name}")
-            return None
-
-        old_refresh_fp = _token_fingerprint(refresh_token)
-        print(f"{log_prefix} ========== WYWOŁANIE wFirma API ==========")
-        print(f"{log_prefix} refresh_source={refresh_source}")
-        print(f"{log_prefix} refresh_token_fp={old_refresh_fp}")
-        print(f"{log_prefix} refresh_token_len={len(refresh_token) if refresh_token else 0}")
-        
-        token_url = "https://api2.wfirma.pl/oauth2/token"
-        payload = {
-            'grant_type': 'refresh_token',
-            'client_id': config['client_id'],
-            'client_secret': config['client_secret'],
-            'refresh_token': refresh_token
-        }
-
-        print(f"{log_prefix} REQUEST URL: {token_url}")
-        print(f"{log_prefix} REQUEST grant_type=refresh_token")
-        print(f"{log_prefix} REQUEST client_id={config['client_id'][:12]}..." if config['client_id'] else f"{log_prefix} REQUEST client_id=BRAK!")
-        print(f"{log_prefix} REQUEST client_secret={'***' if config['client_secret'] else 'BRAK!'}")
-        print(f"{log_prefix} REQUEST refresh_token_fp={old_refresh_fp}")
-        
-        response = requests.post(token_url, data=payload)
-        
-        print(f"{log_prefix} ========== ODPOWIEDŹ wFirma API ==========")
-        print(f"{log_prefix} RESPONSE status_code={response.status_code}")
-        print(f"{log_prefix} RESPONSE headers Content-Type={response.headers.get('Content-Type', 'N/A')}")
-        
-        if response.status_code == 200:
-            new_tokens = response.json()
-            new_access = new_tokens.get('access_token')
-            new_refresh = new_tokens.get('refresh_token')
-            expires_in = int(new_tokens.get('expires_in', 3600))
-            
-            # Szczegółowe logowanie odpowiedzi
-            print(f"{log_prefix} RESPONSE keys={list(new_tokens.keys())}")
-            print(f"{log_prefix} RESPONSE access_token={'TAK len=' + str(len(new_access)) if new_access else 'BRAK'}")
-            print(f"{log_prefix} RESPONSE refresh_token={'TAK len=' + str(len(new_refresh)) if new_refresh else 'BRAK'}")
-            print(f"{log_prefix} RESPONSE expires_in={expires_in}")
-            
-            if new_access:
-                new_access_fp = _token_fingerprint(new_access)
-                print(f"{log_prefix} access_token_fp={new_access_fp}")
-                
-                if new_refresh:
-                    new_refresh_fp = _token_fingerprint(new_refresh)
-                    refresh_changed = (old_refresh_fp != new_refresh_fp)
-                    print(f"{log_prefix} *** ROTACJA REFRESH TOKEN ***")
-                    print(f"{log_prefix} refresh_old_fp={old_refresh_fp}")
-                    print(f"{log_prefix} refresh_new_fp={new_refresh_fp}")
-                    print(f"{log_prefix} refresh_CHANGED={refresh_changed}")
-                else:
-                    print(f"{log_prefix} refresh_token NIE zwrócony (brak rotacji)")
-                
-                print(f"{log_prefix} ========== ZAPIS TOKENA ==========")
-                print(f"{log_prefix} save_token: access_fp={new_access_fp}, expires_in={expires_in}")
-                print(f"{log_prefix} save_token: refresh={'TAK fp=' + _token_fingerprint(new_refresh) if new_refresh else 'NIE (zachowaj stary)'}")
-                
-                save_token(
-                    new_access,
-                    expires_in,
-                    refresh_token=new_refresh,
-                    company=company,
-                    send_refresh_email=False,
-                    refresh_token_source="refresh_rotation" if new_refresh else None,
-                )
-                print(f"{log_prefix} ========== SUKCES ==========")
-                print(f"{log_prefix} Access token odświeżony pomyślnie")
-                return new_access
-
-            print(f"{log_prefix} ========== BŁĄD ==========")
-            print(f"{log_prefix} Brak access_token w odpowiedzi!")
-            print(f"{log_prefix} Otrzymane klucze: {list(new_tokens.keys())}")
-            return None
-
-        print(f"{log_prefix} ========== BŁĄD API ==========")
-        print(f"{log_prefix} status_code={response.status_code}")
-        print(f"{log_prefix} response_text={response.text[:500] if response.text else 'PUSTY'}")
-        return None
-    except Exception as e:
-        print(f"[TOKEN REFRESH] [{company_name.upper()}] EXCEPTION: {e}")
-        traceback.print_exc()
-        return None
-    finally:
-        if advisory_unlock:
-            try:
-                advisory_unlock(lock_id)
-            except Exception:
-                pass
-        try:
-            print(f"{log_prefix} END")
-        except Exception:
-            pass
+    with advisory_lock_ctx(lock_id):
+        return _refresh_access_token_inner(config, company, company_name, pg_company, prefix, log_prefix, skip_fresh_check, get_wfirma_token_fn=_gwt)
 
 def is_token_valid():
     """Sprawdź czy zapisany token jest ważny dla domyślnej firmy"""
@@ -1625,13 +1579,7 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
         # KLUCZOWE: Wrapper "invoices"!
         request_body = {"invoices": {"invoice": invoice_payload}}
         
-        # #region agent log
-        import json as _json
-        try:
-            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"app.py:wfirma_create_invoice:request_body","message":"Full request to wFirma API","data":{"api_url":api_url,"has_send_in_payload":"send" in invoice_payload,"has_email_in_payload":"email" in invoice_payload,"invoice_type":invoice_payload.get('type'),"payload_keys":list(invoice_payload.keys())},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H2,H3,H4"}) + '\n')
-        except: pass
-        # #endregion
+
         
         # LOG: pełny request body
         try:
@@ -1715,13 +1663,7 @@ def wfirma_create_correction(
         contractor_id = contractor_data.get('id') if isinstance(contractor_data, dict) else None
         contractor_email = contractor_data.get('email') if isinstance(contractor_data, dict) else None
         
-        # #region agent log
-        import json as _json
-        try:
-            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:contractor_data","message":"Contractor data from original invoice","data":{"contractor_id":contractor_id,"contractor_email":contractor_email,"has_email":bool(contractor_email)},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H5"}) + '\n')
-        except: pass
-        # #endregion
+
         
         if not contractor_id:
             print(f"[WFIRMA DEBUG] Nie można odczytać kontrahenta z faktury oryginalnej")
@@ -1799,24 +1741,10 @@ def wfirma_create_correction(
         else:
             print(f"[WFIRMA DEBUG] Warning: No contractor email, correction may not be sent")
         
-        # #region agent log
-        try:
-            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:payload_after_fix","message":"Correction payload AFTER adding send parameter","data":{"has_send_param":"send" in correction_payload,"has_email_param":"email" in correction_payload,"send_value":correction_payload.get("send"),"contractor_email":contractor_email,"payload_keys":list(correction_payload.keys())},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","runId":"post-fix","hypothesisId":"H1,H2,H3,H4"}) + '\n')
-        except: pass
-        # #endregion
-        
         print(f"[WFIRMA DEBUG] Correction payload: contractor_id={contractor_id}, parent_id={source_invoice_id}, positions={len(positions)}, send=True, email={contractor_email or 'BRAK'}")
         
         # 5) Utwórz fakturę korygującą
         invoice_result, resp = wfirma_create_invoice(token, correction_payload, company_id)
-        
-        # #region agent log
-        try:
-            with open(r'c:\Users\kochn\.cursor\Medidesk\wFirma\APIV1\.cursor\debug.log', 'a', encoding='utf-8') as _f:
-                _f.write(_json.dumps({"location":"app.py:wfirma_create_correction:after_create","message":"Correction created result","data":{"success":bool(invoice_result),"invoice_id":invoice_result.get('id') if invoice_result else None,"invoice_number":invoice_result.get('fullnumber') if invoice_result else None,"resp_status":resp.status_code if resp else None,"resp_preview":resp.text[:300] if resp and resp.text else None},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1,H2,H3,H4"}) + '\n')
-        except: pass
-        # #endregion
         
         if invoice_result and invoice_result.get('id'):
             correction_id = invoice_result.get('id')
@@ -2522,30 +2450,25 @@ def token_health():
             "auth_url": f"/auth?company={company}"
         }), 200
 
-    now = datetime.datetime.utcnow()
-    # access token config
+    now_ts = time.time()
+    # access token: sprawdź Unix timestamp z Postgres (klucz: access_token_expires_at)
     is_access_valid = False
-    access_expires_at = token_data.get('expires_at')
-    if access_expires_at:
+    access_expires_at_ts = token_data.get('access_token_expires_at')
+    if access_expires_at_ts:
         try:
-            exp_date = datetime.datetime.fromisoformat(access_expires_at.replace("Z", "+00:00")).replace(tzinfo=None)
-            if exp_date > now:
+            if now_ts < float(access_expires_at_ts):
                 is_access_valid = True
         except Exception:
             pass
 
-    # refresh token validity (zazwyczaj ważne długo, tu sprawdzimy na sztywno pole 'refresh_token_expires_at' z monitora
-    # lub po prostu policzymy czas)
-    # wFirma refresh token jest wazny 6 miesiecy, ale tu możemy odczytac co mamy.
-    # W monitorze jest refresh_expires_at ale tutaj możemy zajrzeć wprost:
-    refresh_expires_at = token_data.get('refresh_expires_at')
+    # refresh token: sprawdź Unix timestamp (klucz: refresh_token_expires_at)
+    refresh_expires_at_ts = token_data.get('refresh_token_expires_at')
     
     days_remaining = 0
-    if refresh_expires_at:
+    if refresh_expires_at_ts:
         try:
-            r_exp_date = datetime.datetime.fromisoformat(refresh_expires_at.replace("Z", "+00:00")).replace(tzinfo=None)
-            delta = r_exp_date - now
-            days_remaining = round(delta.total_seconds() / 86400.0, 1)
+            delta_s = float(refresh_expires_at_ts) - now_ts
+            days_remaining = round(delta_s / 86400.0, 1)
         except Exception:
             days_remaining = 0
             
@@ -2571,7 +2494,7 @@ def token_health():
             "message": f"Token ważny, wygasa za {days_remaining} dni",
             "access_token_valid": is_access_valid,
             "refresh_token_days_remaining": days_remaining,
-            "refresh_token_expires_at": refresh_expires_at,
+            "refresh_token_expires_at_unix": refresh_expires_at_ts,
             "company": company
         }), 200
 
@@ -3116,6 +3039,7 @@ def create_invoice(token):
 
 
 @app.route('/api/invoice/<invoice_id>/pdf', methods=['GET'])
+@require_api_key
 @require_token
 def download_invoice_pdf(token, invoice_id):
     """Pobierz PDF faktury i zwróć jako plik do pobrania"""
@@ -3125,7 +3049,14 @@ def download_invoice_pdf(token, invoice_id):
         resp = wfirma_get_invoice_pdf(token, invoice_id, company_id)
         
         if resp.status_code == 200 and 'pdf' in resp.headers.get('Content-Type', '').lower():
-            # Zwróć PDF jako response
+            # Walidacja: sprawdź magic bytes PDF (%PDF-)
+            if not _is_valid_pdf(resp.content):
+                print(f"[WFIRMA WARN] PDF response is not a valid PDF! Size={len(resp.content)}, magic={resp.content[:10]}")
+                return jsonify({
+                    'error': 'Odpowiedź wFirma nie zawiera prawidłowego PDF',
+                    'content_size': len(resp.content),
+                    'hint': 'wFirma mogła zwrócić stronę błędu zamiast PDF'
+                }), 502
             return Response(
                 resp.content,
                 mimetype='application/pdf',
@@ -3896,15 +3827,20 @@ def workflow_create_invoice():
         resp_pdf = wfirma_get_invoice_pdf(token, invoice_id, company_id)
         if resp_pdf.status_code == 200 and 'pdf' in resp_pdf.headers.get('Content-Type', '').lower():
             pdf_content = resp_pdf.content
-            # Koduj PDF jako base64 dla zwrócenia w odpowiedzi
-            pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
-            
-            # Zapisz też lokalnie
-            os.makedirs('invoices', exist_ok=True)
-            pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
-            with open(pdf_filename, 'wb') as f:
-                f.write(pdf_content)
-            print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename} ({len(pdf_content)} bytes)")
+            # Walidacja: sprawdź magic bytes PDF (%PDF-)
+            if not _is_valid_pdf(pdf_content):
+                print(f"[WFIRMA WARN] PDF response is NOT a valid PDF! Size={len(pdf_content)}, first_bytes={pdf_content[:20]}")
+                pdf_content = None  # Nie zapisuj garbage jako PDF
+            else:
+                # Koduj PDF jako base64 dla zwrócenia w odpowiedzi
+                pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
+                
+                # Zapisz też lokalnie
+                os.makedirs('invoices', exist_ok=True)
+                pdf_filename = f"invoices/faktura_{invoice_id}.pdf"
+                with open(pdf_filename, 'wb') as f:
+                    f.write(pdf_content)
+                print(f"[WFIRMA DEBUG] PDF saved: {pdf_filename} ({len(pdf_content)} bytes)")
         else:
             print(f"[WFIRMA DEBUG] PDF download failed: {resp_pdf.status_code}")
     except Exception as e:
@@ -4710,7 +4646,7 @@ def test_correction_debug():
     if not invoice_id:
         return cors_response({'error': 'Brak invoice_id'}, 400)
 
-    token = get_wfirma_token(company)
+    token = load_token(company=company)
     if not token:
         return cors_response({'error': f'Brak tokena OAuth dla firmy: {company}'}, 401)
 
@@ -4986,9 +4922,30 @@ def upload_stopka_photo():
         return cors_response({'success': False, 'error': str(e)}, 500)
 
 
+# ==================== HELPERY WALIDACJI ====================
+
+def _is_valid_pdf(content: bytes) -> bool:
+    """Sprawdź czy content to rzeczywisty PDF (magic bytes + min size)."""
+    if not content or len(content) < 100:
+        return False
+    return content[:5] == b'%PDF-'
+
+
 # ==================== START SERWERA ====================
+
+# Auto-start: inicjalizacja schematu DB i monitora tokenów
+try:
+    from pg_storage import ensure_schema
+    ensure_schema()
+    print("[STARTUP] Schemat DB zainicjalizowany")
+except Exception as e:
+    print(f"[STARTUP] Schema init error (non-fatal): {e}")
+
+try:
+    start_wfirma_token_monitor()
+except Exception as e:
+    print(f"[STARTUP] Token monitor start error (non-fatal): {e}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-

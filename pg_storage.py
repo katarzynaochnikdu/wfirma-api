@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -171,9 +172,11 @@ def _dict_cursor(conn: Any):
 
 
 
+# --- DEPRECATED: te funkcje mają bug - lock/unlock na różnych połączeniach z puli ---
+# Użyj advisory_lock_ctx() / try_advisory_lock_ctx() zamiast nich.
 
 def try_advisory_lock(lock_id: int) -> bool:
-    """Próbuje przejąć globalny lock w Postgres (dla wielu workerów)."""
+    """DEPRECATED: Użyj try_advisory_lock_ctx(). Lock może nie działać poprawnie z connection pool."""
     ensure_schema()
     pool = None
     conn = None
@@ -189,10 +192,7 @@ def try_advisory_lock(lock_id: int) -> bool:
 
 
 def advisory_lock(lock_id: int) -> None:
-    """
-    Blokujący lock w Postgres (dla wielu workerów).
-    Uwaga: to jest mechanizm kontroli współbieżności, nie "sleep" – blokuje do czasu przejęcia locka.
-    """
+    """DEPRECATED: Użyj advisory_lock_ctx(). Lock może nie działać poprawnie z connection pool."""
     ensure_schema()
     pool = None
     conn = None
@@ -206,7 +206,7 @@ def advisory_lock(lock_id: int) -> None:
 
 
 def advisory_unlock(lock_id: int) -> None:
-    """Zwalnia globalny lock w Postgres."""
+    """DEPRECATED: Użyj advisory_lock_ctx(). Unlock może trafić na inne połączenie niż lock."""
     ensure_schema()
     pool = None
     conn = None
@@ -216,6 +216,62 @@ def advisory_unlock(lock_id: int) -> None:
         cur.execute("SELECT pg_advisory_unlock(%s)", (int(lock_id),))
     finally:
         if pool is not None and conn is not None:
+            _put_conn(pool, conn)
+
+
+# --- NOWE: Context managery utrzymujące jedno połączenie dla lock+unlock ---
+
+@contextmanager
+def advisory_lock_ctx(lock_id: int):
+    """
+    Blokujący advisory lock w Postgres jako context manager.
+    Lock i unlock operują na TYM SAMYM połączeniu (wymagane przez PostgreSQL).
+    Użycie: with advisory_lock_ctx(lock_id): ...
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_lock(%s)", (int(lock_id),))
+        yield conn
+    finally:
+        if pool is not None and conn is not None:
+            try:
+                cur2 = conn.cursor()
+                cur2.execute("SELECT pg_advisory_unlock(%s)", (int(lock_id),))
+            except Exception:
+                pass
+            _put_conn(pool, conn)
+
+
+@contextmanager
+def try_advisory_lock_ctx(lock_id: int):
+    """
+    Non-blocking advisory lock jako context manager.
+    Yield: (conn, acquired: bool). Lock i unlock na tym samym połączeniu.
+    Użycie: with try_advisory_lock_ctx(lock_id) as (conn, acquired): ...
+    """
+    ensure_schema()
+    pool = None
+    conn = None
+    acquired = False
+    try:
+        pool, conn = _with_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (int(lock_id),))
+        row = cur.fetchone()
+        acquired = bool(row and row[0])
+        yield conn, acquired
+    finally:
+        if pool is not None and conn is not None:
+            if acquired:
+                try:
+                    cur2 = conn.cursor()
+                    cur2.execute("SELECT pg_advisory_unlock(%s)", (int(lock_id),))
+                except Exception:
+                    pass
             _put_conn(pool, conn)
 
 
