@@ -203,6 +203,38 @@ HTML_GENERATOR_API_KEY_TOKEN = os.environ.get('HTML_GENERATOR_API_KEY_TOKEN')
 # Token dla endpointów GUS/REGON (osobny od MAKE_RENDER_API_KEY)
 REGON_API_KEY_TOKEN = os.environ.get('REGON_API_KEY_TOKEN')
 
+# CORS tylko dla /api/gus/* (oddzielnie od cors_response używanego m.in. przez wFirma).
+# Lista dozwolonych Origin rozdzielona przecinkami, np.:
+#   https://xxxx.ngrok-free.app,https://twoj-widget.zohobackstage.eu
+# Puste = nagłówek Access-Control-Allow-Origin: * (jak wcześniej, kompatybilność wsteczna).
+def _parse_gus_cors_origins(raw: str) -> tuple[str, ...]:
+    out: list[str] = []
+    for part in (raw or '').split(','):
+        s = part.strip().rstrip('/')
+        if s:
+            out.append(s)
+    return tuple(out)
+
+
+GUS_CORS_ALLOWED_ORIGINS = _parse_gus_cors_origins(os.environ.get('GUS_CORS_ORIGINS', ''))
+
+
+def gus_cors_response(data, status=200):
+    """JSON + CORS dla endpointów GUS — whitelist z GUS_CORS_ORIGINS; pusta lista = Allow-Origin *."""
+    response = jsonify(data)
+    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, x-gus-api-key'
+    response.headers['Access-Control-Max-Age'] = '86400'
+    origin = (request.headers.get('Origin') or '').strip().rstrip('/')
+    if GUS_CORS_ALLOWED_ORIGINS:
+        if origin and origin in GUS_CORS_ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Vary'] = 'Origin'
+    else:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+    return response, status
+
+
 # Powiadomienia o wygasającym refresh tokenie
 EMAIL_REFRESH_TOKEN_EXPIRE = os.environ.get('EMAIL_REFRESH_TOKEN_EXPIRE')  # Email do powiadomień
 WEBHOOK_TOKEN_EXPIRE_NOTIFY = os.environ.get('WEBHOOK_TOKEN_EXPIRE_NOTIFY')  # URL webhooka (np. Make.com)
@@ -1714,6 +1746,43 @@ def wfirma_find_contractor_by_nip(token: str, nip: str, company_id: str = None) 
                         "field": "nip",
                         "operator": "eq",
                         "value": clean_nip
+                    }
+                }
+            }
+        }
+    }
+    resp = None
+    try:
+        resp = requests.post(api_url, headers=headers, json=search_data)
+        if resp.status_code == 200:
+            data = resp.json()
+            contractors = data.get('contractors', {})
+            if contractors and isinstance(contractors, dict):
+                for key in contractors:
+                    if key.isdigit():
+                        return contractors[key].get('contractor'), resp
+                if 'contractor' in contractors:
+                    return contractors['contractor'], resp
+        return None, resp
+    except Exception:
+        return None, resp
+
+
+def wfirma_find_contractor_by_name(token: str, name: str, company_id: str = None) -> tuple[dict | None, requests.Response | None]:
+    """Znajdź kontrahenta po nazwie; zwraca (contractor_dict|None, response)."""
+    api_url = "https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    print(f"[WFIRMA DEBUG] find_contractor_by_name URL: {api_url}")
+    headers = get_wfirma_headers(token)
+    search_data = {
+        "contractors": {
+            "parameters": {
+                "conditions": {
+                    "condition": {
+                        "field": "name",
+                        "operator": "like",
+                        "value": f"%{name}%"
                     }
                 }
             }
@@ -6078,27 +6147,33 @@ def workflow_create_invoice():
         
         if not new_contractor:
             status = resp_add.status_code if resp_add else None
-            return cors_response({
-                'error': 'Nie udało się dodać kontrahenta w wFirma',
-                'status': status,
-                'details': resp_add.text if resp_add else 'Brak odpowiedzi',
-                'contractor_payload': contractor_payload,
-                'contractor_source': contractor_source
-            }, status or 502)
-
-        contractor = new_contractor
-        contractor_id = _extract_contractor_id(contractor)
-        contractor_created = True
-        
-        # FALLBACK: jeśli add nie zwrócił ID, spróbuj re-find po NIP
-        if not contractor_id and clean_nip:
-            print(f"[WORKFLOW] add_contractor nie zwrócił ID, próbuję re-find po NIP {clean_nip}")
+            
+            # FALLBACK: Zanim zwrócimy błąd, spróbuj re-find po NIP i Nazwie
+            print(f"[WORKFLOW] add_contractor failed, próbuję re-find po NIP {clean_nip}")
             refind_contractor, _ = wfirma_find_contractor_by_nip(token, clean_nip, company_id)
+            if not refind_contractor and contractor_payload.get('name'):
+                print(f"[WORKFLOW] re-find po NIP nieudany, próbuję re-find po nazwie: {contractor_payload['name']}")
+                refind_contractor, _ = wfirma_find_contractor_by_name(token, contractor_payload['name'], company_id)
+            
             if refind_contractor:
                 contractor_id = _extract_contractor_id(refind_contractor)
                 if contractor_id:
                     contractor = refind_contractor
-                    print(f"[WORKFLOW] re-find po NIP znalazł kontrahenta ID={contractor_id}")
+                    contractor_created = False
+                    print(f"[WORKFLOW] re-find znalazł kontrahenta ID={contractor_id}")
+            
+            if not contractor:
+                return cors_response({
+                    'error': 'Nie udało się dodać kontrahenta w wFirma',
+                    'status': status,
+                    'details': resp_add.text if resp_add else 'Brak odpowiedzi',
+                    'contractor_payload': contractor_payload,
+                    'contractor_source': contractor_source
+                }, status or 502)
+        else:
+            contractor = new_contractor
+            contractor_id = _extract_contractor_id(contractor)
+            contractor_created = True
     
     # 3) Jeśli NIP niepoprawny - użyj danych purchaser (osoba fizyczna)
     elif not contractor_id and not nip_valid and purchaser_name:
@@ -6134,17 +6209,29 @@ def workflow_create_invoice():
         
         if not new_contractor:
             status = resp_add.status_code if resp_add else None
-            return cors_response({
-                'error': 'Nie udało się dodać kontrahenta w wFirma',
-                'status': status,
-                'details': resp_add.text if resp_add else 'Brak odpowiedzi',
-                'contractor_payload': contractor_payload,
-                'contractor_source': contractor_source
-            }, status or 502)
-
-        contractor = new_contractor
-        contractor_id = _extract_contractor_id(contractor)
-        contractor_created = True
+            
+            # FALLBACK: Zanim zwrócimy błąd, spróbuj re-find po Nazwie (bo tu nie ma NIP)
+            print(f"[WORKFLOW] add_contractor failed, próbuję re-find po nazwie: {purchaser_name}")
+            refind_contractor, _ = wfirma_find_contractor_by_name(token, purchaser_name, company_id)
+            if refind_contractor:
+                contractor_id = _extract_contractor_id(refind_contractor)
+                if contractor_id:
+                    contractor = refind_contractor
+                    contractor_created = False
+                    print(f"[WORKFLOW] re-find znalazł kontrahenta ID={contractor_id}")
+            
+            if not contractor:
+                return cors_response({
+                    'error': 'Nie udało się dodać kontrahenta w wFirma',
+                    'status': status,
+                    'details': resp_add.text if resp_add else 'Brak odpowiedzi',
+                    'contractor_payload': contractor_payload,
+                    'contractor_source': contractor_source
+                }, status or 502)
+        else:
+            contractor = new_contractor
+            contractor_id = _extract_contractor_id(contractor)
+            contractor_created = True
 
     if not contractor_id:
         status = resp_find.status_code if resp_find else None
@@ -6397,14 +6484,14 @@ def gus_name_by_nip():
     """
     # Obsługa CORS preflight (OPTIONS)
     if request.method == 'OPTIONS':
-        return cors_response({'status': 'ok'})
+        return gus_cors_response({'status': 'ok'})
     
     # Sprawdź osobny token dla endpointów GUS/REGON
     api_key_header = request.headers.get('X-API-Key', '')
     if not REGON_API_KEY_TOKEN:
-        return cors_response({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}, 500)
+        return gus_cors_response({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}, 500)
     if api_key_header != REGON_API_KEY_TOKEN:
-        return cors_response({'error': 'Unauthorized - nieprawidłowy token'}, 401)
+        return gus_cors_response({'error': 'Unauthorized - nieprawidłowy token'}, 401)
     
     body = request.get_json(silent=True) or {}
 
@@ -6416,13 +6503,13 @@ def gus_name_by_nip():
     api_key = from_header_key or GUS_API_KEY or ''
 
     if not clean_nip:
-        return cors_response({'error': 'Brak NIP'}, 400)
+        return gus_cors_response({'error': 'Brak NIP'}, 400)
 
     if len(clean_nip) != 10:
-        return cors_response({'error': 'NIP musi składać się z dokładnie 10 cyfr'}, 400)
+        return gus_cors_response({'error': 'NIP musi składać się z dokładnie 10 cyfr'}, 400)
 
     if not api_key:
-        return cors_response({
+        return gus_cors_response({
             'error': 'Brak klucza GUS_API_KEY',
             'hint': 'Ustaw zmienną środowiskową GUS_API_KEY / BIR1_medidesk lub przekaż nagłówek x-gus-api-key.'
         }, 400)
@@ -6458,7 +6545,7 @@ def gus_name_by_nip():
         login_snippet = (login_resp.text or '')[:500]
         print(f"[GUS] LOGIN body snippet={repr(login_snippet)}")
     except Exception as e:
-        return cors_response({
+        return gus_cors_response({
             'error': 'Błąd komunikacji z GUS podczas logowania',
             'message': str(e)
         }, 502)
@@ -6468,7 +6555,7 @@ def gus_name_by_nip():
 
     if not sid:
         snippet = (login_resp.text or '')[:300]
-        return cors_response({
+        return gus_cors_response({
             'error': 'Logowanie do GUS nie powiodło się (brak SID)',
             'debug': snippet
         }, 502)
@@ -6507,7 +6594,7 @@ def gus_name_by_nip():
         search_snippet = (search_resp.text or '')[:800]
         print(f"[GUS] SEARCH body snippet={repr(search_snippet)}")
     except Exception as e:
-        return cors_response({
+        return gus_cors_response({
             'error': 'Błąd komunikacji z GUS podczas wyszukiwania',
             'message': str(e)
         }, 502)
@@ -6526,7 +6613,7 @@ def gus_name_by_nip():
 
     # Brak wyniku
     if re.search(r'<DaneSzukajResult\s*/>', soap_part):
-        return cors_response({
+        return gus_cors_response({
             'error': 'GUS nie znalazł podmiotu dla podanego NIP'
         }, 404)
 
@@ -6539,7 +6626,7 @@ def gus_name_by_nip():
 
     if not inner_xml:
         print("[GUS] Brak sekcji <DaneSzukajPodmiotyResult> w odpowiedzi GUS")
-        return cors_response({
+        return gus_cors_response({
             'error': 'Brak danych w odpowiedzi GUS (DaneSzukajPodmiotyResult pusty)'
         }, 404)
 
@@ -6547,14 +6634,14 @@ def gus_name_by_nip():
     decoded_snippet = decoded_xml[:800]
     print(f"[GUS] DECODED inner XML snippet={repr(decoded_snippet)}")
     if not decoded_xml:
-        return cors_response({
+        return gus_cors_response({
             'error': 'Brak danych po dekodowaniu odpowiedzi GUS'
         }, 502)
 
     try:
         root = ET.fromstring(decoded_xml)
     except ET.ParseError as e:
-        return cors_response({
+        return gus_cors_response({
             'error': 'Nie udało się sparsować danych GUS',
             'message': str(e)
         }, 502)
@@ -6590,7 +6677,7 @@ def gus_name_by_nip():
         # Dla podglądu logujemy tylko pierwszy rekord
         print(f"[GUS] FIRST record={repr(data_list[0])}")
 
-    return cors_response({'data': data_list})
+    return gus_cors_response({'data': data_list})
 
 
 @app.route('/api/gus/validate-nip', methods=['POST', 'OPTIONS'])
@@ -6603,14 +6690,14 @@ def gus_validate_nip():
     """
     # Obsługa CORS preflight (OPTIONS)
     if request.method == 'OPTIONS':
-        return cors_response({'status': 'ok'})
+        return gus_cors_response({'status': 'ok'})
     
     # Sprawdź osobny token dla endpointów GUS/REGON
     api_key_header = request.headers.get('X-API-Key', '')
     if not REGON_API_KEY_TOKEN:
-        return cors_response({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}, 500)
+        return gus_cors_response({'error': 'Brak REGON_API_KEY_TOKEN w konfiguracji serwera'}, 500)
     if api_key_header != REGON_API_KEY_TOKEN:
-        return cors_response({'error': 'Unauthorized - nieprawidłowy token'}, 401)
+        return gus_cors_response({'error': 'Unauthorized - nieprawidłowy token'}, 401)
     
     body = request.get_json(silent=True) or {}
 
@@ -6620,7 +6707,7 @@ def gus_validate_nip():
     # Brak NIP
     if not clean_nip:
         print(f"[GUS] validate-nip BRAK nip_raw='{nip_raw}'")
-        return cors_response({
+        return gus_cors_response({
             'nip_status': 'brak',
             'nip_provided': nip_raw,
             'gus_data': None
@@ -6634,7 +6721,7 @@ def gus_validate_nip():
     # Nie znaleziono w GUS lub błąd
     if gus_err or not gus_records or len(gus_records) == 0:
         print(f"[GUS] validate-nip NIEPOPRAWNY nip={clean_nip} (err={gus_err}, records={gus_records})")
-        return cors_response({
+        return gus_cors_response({
             'nip_status': 'niepoprawny',
             'nip': clean_nip,
             'gus_data': None
@@ -6656,7 +6743,7 @@ def gus_validate_nip():
     voivodeship = gus_first.get('wojewodztwo') or ''
     voivodeship_lower = voivodeship.lower() if voivodeship else None
     
-    return cors_response({
+    return gus_cors_response({
         'nip_status': 'poprawny',
         'nip': clean_nip,
         'gus_data': {
@@ -6667,7 +6754,8 @@ def gus_validate_nip():
             'city': gus_first.get('miejscowosc'),
             'voivodeship': voivodeship_lower,
             'krs': gus_first.get('krs')
-        }
+        },
+        'data': gus_first
     })
 
 
@@ -6830,7 +6918,7 @@ def workflow_create_correction(token):
     correction_reason = (body.get('correction_reason') or 'Korekta faktury').strip()
     positions = body.get('positions') or []
     issue_date = body.get('issue_date') or datetime.date.today().isoformat()
-    series_name = (body.get('series_name') or '').strip()
+    series_name = (body.get('series_name') or '').strip() or WFIRMA_SERIES_CORRECTION  # Fallback na domyślną serię korekt
     full_correction = body.get('full_correction', False)  # Tryb pełnej korekty (zerowanie wszystkich pozycji)
 
     # Walidacja
@@ -7036,8 +7124,13 @@ def workflow_create_correction(token):
                 'id': original_invoice.get('id'),
                 'fullnumber': original_invoice.get('fullnumber')
             },
+            # Pola top-level dla kompatybilności z różnymi klientami
             'invoice_id': correction_id,
+            'correction_invoice_id': correction_id,
+            'wfirma_invoice_id': correction_id,
             'invoice_number': invoice_result.get('fullnumber'),
+            'correction_number': invoice_result.get('fullnumber'),
+            'fullnumber': invoice_result.get('fullnumber'),
             'pdf_url': pdf_url,
             'pdf_saved': pdf_filename
         }
