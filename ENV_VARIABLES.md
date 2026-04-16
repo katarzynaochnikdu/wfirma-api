@@ -7,24 +7,10 @@
 |---------|------|----------|
 | `DATABASE_URL` | Connection string do PostgreSQL | `postgresql://user:pass@host:5432/db` |
 
-### Stripe (płatności)
+### API Key (autoryzacja)
 | Zmienna | Opis |
 |---------|------|
-| `STRIPE_RENDER_API_KEY` | Klucz API Stripe (produkcja) |
-| `STRIPE_WEBHOOK_SECRET` | Secret do walidacji webhooków Stripe |
-| `STRIPE_RENDER_API_KEY_SANDBOX` | Klucz API Stripe (sandbox/test) |
-| `STRIPE_SANDBOX_WEBHOOK_SECRET` | Secret webhooków sandbox |
-
-### Make.com (wysyłka emaili)
-| Zmienna | Opis |
-|---------|------|
-| `MAKE_WEBHOOK_SEND_EMAIL_REQUEST` | URL webhooka Make do wysyłki emaili |
-| `RENDER_EMAIL_KEY_SEND_REQUEST` | Klucz autoryzacji dla Make |
-
-### API Key (autoryzacja webhooków)
-| Zmienna | Opis |
-|---------|------|
-| `MAKE_RENDER_API_KEY` | Klucz X-API-Key dla webhooków (Zoho, Make) |
+| `MAKE_RENDER_API_KEY` | Klucz X-API-Key wykorzystywany do zabezpieczenia endpointów |
 
 ---
 
@@ -58,7 +44,7 @@
 | `WFIRMA_COMPANY` | Firma (md lub test) | `md` |
 | `WFIRMA_SERIES_NAME` | Seria faktur | `FV/EV` |
 | `WFIRMA_SERIES_CORRECTION` | Seria korekt | `Eventy Korekta` |
-| `WFIRMA_SERIES_CORRECTION_TEST` | Seria korekt TEST (dla endpointu `/api/test/correction-payment-flow`) | `Eventy Korekta TEST` |
+| `WFIRMA_SERIES_CORRECTION_TEST` | Seria korekt TEST | `Eventy Korekta TEST` |
 | `WFIRMA_AUTH_URL_MD` | URL autoryzacji | auto |
 | `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL` | Email do alertów o wygasającym tokenie | `adam.pragacz@medidesk.com` |
 
@@ -81,31 +67,8 @@
 
 | Zmienna | Opis |
 |---------|------|
-| `BACKSTAGE_TECHNICAL_INFO_EMAIL` | Email do powiadomień o **błędach** (GUS error, email error, payment failed) |
-| `BACKSTAGE_EVENT_INFO_EMAIL` | Email do powiadomień o **zamówieniach/płatnościach** (nowe zamówienie, płatność OK) |
 | `WFIRMA_TOKEN_EXPIRES_ALERT_EMAIL` | Email do alertów o wygasającym tokenie wFirma (domyślnie: adam.pragacz@medidesk.com) |
 | `WEBHOOK_TOKEN_EXPIRE_NOTIFY` | URL webhooka do powiadomień o tokenie |
-
----
-
-## 🔄 Zoho Flow
-
-| Zmienna | Opis |
-|---------|------|
-| `ZOHO_FLOW_EVENT_UPDATE_WEBHOOK` | URL webhooka Zoho Flow do synchronizacji aktualizacji wydarzeń z panelu Admin V2 |
-
----
-
-## 🎪 Zoho Backstage API (pobieranie danych wydarzeń)
-
-| Zmienna | Opis | Wymagane |
-|---------|------|----------|
-| `BACKSTAGE_CLIENT_ID` | OAuth2 Client ID dla Zoho Backstage | ✅ |
-| `BACKSTAGE_CLIENT_SECRET` | OAuth2 Client Secret | ✅ |
-| `BACKSTAGE_REFRESH_TOKEN` | Refresh token (długowieczny) | ✅ |
-| `BACKSTAGE_PORTAL_ID` | ID portalu Backstage (domyślnie: 20101549222) | opcjonalne |
-
-**Użycie:** Umożliwia pobieranie pełnych danych wydarzenia z Backstage (venue, description, ticket_classes) przez przycisk "Pobierz z Backstage" w panelu Admin V2.
 
 ---
 
@@ -122,7 +85,7 @@
 
 | Zmienna | Opis |
 |---------|------|
-| ~~`REDIRECT_URI`~~ | ⚠️ **DEPRECATED** - użyj `WFIRMA_<COMPANY>_REDIRECT_URI` per firma |
+| ~~`REDIRECT_URI`~~ | ⚠️ **DEPRECATED** - użyj `WFIRMA_<COMPANY>_REDIRECT_URI` |
 | `GITHUB_STOPKA_TOKEN` | Token GitHub (stopka) |
 | `HTML_GENERATOR_API_KEY_TOKEN` | Token HTML generator |
 | `REGON_API_KEY_TOKEN` | Alternatywny klucz REGON |
@@ -135,12 +98,7 @@
 # Database
 DATABASE_URL=postgresql://...
 
-# Stripe
-STRIPE_RENDER_API_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# Make.com
-MAKE_WEBHOOK_SEND_EMAIL_REQUEST=https://hook.eu1.make.com/...
+# API key
 MAKE_RENDER_API_KEY=twoj-klucz-api
 
 # GUS
@@ -150,14 +108,4 @@ GUS_API_KEY=twoj-klucz-gus
 WFIRMA_MD_CLIENT_ID=...                              # lub CLIENT_ID
 WFIRMA_MD_CLIENT_SECRET=...                          # lub CLIENT_SECRET
 WFIRMA_MD_REDIRECT_URI=https://your-app.onrender.com/callback  # WYMAGANE! Musi zgadzać się z konfiguracją w wFirma
-WFIRMA_MD_ACCESS_TOKEN=auto                          # wypełni się po /auth
-WFIRMA_MD_REFRESH_TOKEN=auto                         # wypełni się po /auth
-
-# Powiadomienia
-BACKSTAGE_TECHNICAL_INFO_EMAIL=adminzoho@medidesk.com  # błędy
-BACKSTAGE_EVENT_INFO_EMAIL=eventy@medidesk.com        # zamówienia/płatności
 ```
-
----
-
-*Ostatnia aktualizacja: 20 stycznia 2026*
