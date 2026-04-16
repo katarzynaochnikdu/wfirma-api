@@ -1833,6 +1833,28 @@ def wfirma_add_contractor(token: str, contractor_payload: dict, company_id: str 
         return None, resp
 
 
+def _extract_wfirma_errors(contractor: dict | None) -> list[str]:
+    """Wyciąga listę błędów walidacji z odpowiedzi wFirma contractor.
+    
+    wFirma zwraca errors jako zagnieżdżony dict:
+    {"errors": {"0": {"error": {"field": "email", "message": "Nieprawidłowy adres e-mail."}}}}
+    """
+    if not contractor or not isinstance(contractor, dict):
+        return []
+    errors_dict = contractor.get('errors')
+    if not errors_dict or not isinstance(errors_dict, dict):
+        return []
+    messages = []
+    for key in errors_dict:
+        err = errors_dict[key]
+        if isinstance(err, dict):
+            inner = err.get('error', err)
+            field = inner.get('field', '?')
+            msg = inner.get('message', str(inner))
+            messages.append(f"{field}: {msg}")
+    return messages
+
+
 def _extract_contractor_id(contractor: dict | None) -> int | None:
     """
     Wyciąga ID kontrahenta z różnych możliwych kształtów odpowiedzi wFirma.
@@ -6174,6 +6196,15 @@ def workflow_create_invoice():
             contractor = new_contractor
             contractor_id = _extract_contractor_id(contractor)
             contractor_created = True
+            # Wykryj sytuację: wFirma zwróciła obiekt z errors ale BEZ id
+            if not contractor_id and new_contractor:
+                wf_errors = _extract_wfirma_errors(new_contractor)
+                if wf_errors:
+                    print(f"[WORKFLOW] UWAGA: wFirma zwróciła kontrahenta BEZ ID z błędami walidacji: {wf_errors}")
+                    print(f"[WORKFLOW] Payload który wywołał błąd: NIP={clean_nip}, email={contractor_payload.get('email')}, name={contractor_payload.get('name')}")
+                else:
+                    print(f"[WORKFLOW] UWAGA: wFirma zwróciła kontrahenta BEZ ID (brak errors w odpowiedzi)")
+                    print(f"[WORKFLOW] Contractor object: {new_contractor}")
     
     # 3) Jeśli NIP niepoprawny - użyj danych purchaser (osoba fizyczna)
     elif not contractor_id and not nip_valid and purchaser_name:
@@ -6232,20 +6263,44 @@ def workflow_create_invoice():
             contractor = new_contractor
             contractor_id = _extract_contractor_id(contractor)
             contractor_created = True
+            # Wykryj sytuację: wFirma zwróciła obiekt z errors ale BEZ id
+            if not contractor_id and new_contractor:
+                wf_errors = _extract_wfirma_errors(new_contractor)
+                if wf_errors:
+                    print(f"[WORKFLOW] UWAGA: wFirma zwróciła kontrahenta BEZ ID z błędami walidacji: {wf_errors}")
+                    print(f"[WORKFLOW] Payload który wywołał błąd: email={contractor_payload.get('email')}, name={contractor_payload.get('name')}")
+                else:
+                    print(f"[WORKFLOW] UWAGA: wFirma zwróciła kontrahenta BEZ ID (brak errors w odpowiedzi)")
+                    print(f"[WORKFLOW] Contractor object: {new_contractor}")
 
     if not contractor_id:
         status = resp_find.status_code if resp_find else None
-        # Log diagnostyczny z odpowiedzi find (bez wrażliwych danych) – ułatwia debug na Render
+        # Wyciągnij szczegółowe błędy walidacji z wFirma (jeśli są)
+        wf_validation_errors = _extract_wfirma_errors(contractor) if contractor else []
+        # Log diagnostyczny
         try:
             print("[WFIRMA DEBUG] find response status:", status)
             if resp_find is not None:
                 print("[WFIRMA DEBUG] find response body snippet:", (resp_find.text or "")[:500])
             print("[WFIRMA DEBUG] contractor object before failure:", contractor)
+            if wf_validation_errors:
+                print(f"[WFIRMA ERROR] Błędy walidacji wFirma które zablokowały utworzenie kontrahenta: {wf_validation_errors}")
         except Exception:
             pass
+        
+        # Zbuduj czytelny komunikat błędu
+        if wf_validation_errors:
+            error_msg = f"wFirma odrzuciła dane kontrahenta: {'; '.join(wf_validation_errors)}"
+        else:
+            error_msg = 'Nie udało się uzyskać ID kontrahenta w wFirma'
+        
         return cors_response({
-            'error': 'Nie udało się uzyskać ID kontrahenta w wFirma',
-            'status': status
+            'error': error_msg,
+            'wfirma_validation_errors': wf_validation_errors or None,
+            'status': status,
+            'nip': clean_nip if nip_valid else None,
+            'email_used': email_address or None,
+            'contractor_source': contractor_source,
         }, status or 502)
 
     # 3) Szukamy serii faktur (opcjonalnie)
