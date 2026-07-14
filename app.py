@@ -1708,6 +1708,8 @@ def wfirma_create_correction(
             print(f"[WFIRMA DEBUG] Correction pos {idx}: parent_id={pos.get('id')}, name={pos.get('name')}, zerowanie")
         
         # 3.5) Pobierz serię korekty (jeśli skonfigurowana)
+        # Brak żądanej serii = TWARDY BŁĄD - korekta bez serii dostałaby domyślną
+        # numerację, co maskuje wystawianie dokumentu w niewłaściwej firmie
         series_id = None
         series_to_use = series_name_override or WFIRMA_SERIES_CORRECTION
         if series_to_use:
@@ -1716,7 +1718,8 @@ def wfirma_create_correction(
                 series_id = int(series.get('id'))
                 print(f"[WFIRMA DEBUG] Znaleziono serię korekty: {series_to_use} -> ID {series_id}")
             else:
-                print(f"[WFIRMA DEBUG] Nie znaleziono serii korekty: {series_to_use}")
+                print(f"[WFIRMA ERROR] Nie znaleziono serii korekty '{series_to_use}' (company_id={company_id}) - przerywam, korekta NIE zostanie wystawiona")
+                return None, None
         
         # 4) Payload faktury korygującej
         import datetime
@@ -1886,30 +1889,65 @@ def wfirma_find_series_by_name(token: str, series_name: str, company_id: str = N
         return None
 
 
-def wfirma_get_company_id(token: str) -> str | None:
-    """Pobierz ID pierwszej firmy użytkownika"""
+# Przypięte ID firm w wFirma per zestaw (md/test).
+# INCYDENT 2026-07-09: konto integracyjne widzi 2 firmy (Medidesk 130706 i Vetidesk 545419),
+# a companies/find zwraca je w NIEGWARANTOWANEJ kolejności (podąża za firmą wybraną w panelu).
+# Branie "pierwszej z listy" wystawiło proformę w księgach Vetidesk. Dlatego ID firmy
+# NIGDY nie może być zgadywane - musi być przypięte tutaj lub w ENV WFIRMA_<COMPANY>_COMPANY_ID.
+WFIRMA_KNOWN_COMPANY_IDS = {
+    'md': '130706',  # Medidesk Sp. z o.o.
+}
+
+
+def wfirma_get_company_id(token: str, company: str = None) -> str | None:
+    """
+    Zwraca ID firmy wFirma dla zestawu md/test/md_test.
+
+    Kolejność źródeł:
+    1. ENV WFIRMA_<COMPANY>_COMPANY_ID (np. WFIRMA_MD_COMPANY_ID) - jawne przypięcie.
+    2. WFIRMA_KNOWN_COMPANY_IDS (wbudowane, md -> Medidesk 130706).
+    3. companies/find - TYLKO gdy konto widzi dokładnie jedną firmę.
+       Przy >1 firmach zwraca None (fail-loud) zamiast zgadywać.
+    """
+    config = get_company_config(company)
+    pinned = (os.environ.get(f"{config['prefix']}COMPANY_ID") or '').strip()
+    if pinned:
+        return pinned
+    known = WFIRMA_KNOWN_COMPANY_IDS.get(config['pg_company'])
+    if known:
+        return known
+
     api_url = "https://api2.wfirma.pl/companies/find?inputFormat=json&outputFormat=json&oauth_version=2"
     headers = get_wfirma_headers(token)
-    body = {"companies": {"parameters": {"limit": "1"}}}
-    
+    body = {"companies": {"parameters": {"limit": "20"}}}
+
     try:
         resp = requests.post(api_url, headers=headers, json=body)
         print(f"[WFIRMA DEBUG] get_company_id status: {resp.status_code}")
         print(f"[WFIRMA DEBUG] get_company_id response: {resp.text[:500]}")
-        
+
         if resp.status_code == 200:
             data = resp.json()
             companies = data.get('companies', {})
             print(f"[WFIRMA DEBUG] companies keys: {list(companies.keys()) if companies else None}")
-            
+
+            found = []
             if isinstance(companies, dict):
                 for key in companies:
                     if key.isdigit() or key == '0':
                         comp = companies[key].get('company', {})
-                        company_id = comp.get('id')
-                        if company_id:
-                            print(f"[WFIRMA DEBUG] Found company_id: {company_id}")
-                            return str(company_id)
+                        if comp.get('id'):
+                            found.append(comp)
+
+            if len(found) == 1:
+                company_id = str(found[0].get('id'))
+                print(f"[WFIRMA DEBUG] Found company_id: {company_id}")
+                return company_id
+            if len(found) > 1:
+                print(f"[WFIRMA ERROR] Konto widzi {len(found)} firm - odmawiam zgadywania, ustaw {config['prefix']}COMPANY_ID:")
+                for comp in found:
+                    print(f"[WFIRMA ERROR]   - id={comp.get('id')}, name={comp.get('name')}, nip={comp.get('nip')}")
+                return None
         return None
     except Exception as e:
         print(f"[WFIRMA DEBUG] get_company_id exception: {e}")
@@ -2843,11 +2881,11 @@ def wfirma_ping():
         }), 401
     
     # 2. Pobierz company_id (wymagane przez wFirma API) + lekki retry
-    wfirma_company_id = wfirma_get_company_id(token)
+    wfirma_company_id = wfirma_get_company_id(token, company)
     if not wfirma_company_id:
         for _ in range(2):
             time.sleep(0.4)
-            wfirma_company_id = wfirma_get_company_id(token)
+            wfirma_company_id = wfirma_get_company_id(token, company)
             if wfirma_company_id:
                 break
     if not wfirma_company_id:
@@ -3089,7 +3127,7 @@ def list_series(token):
             'message': f'Przejdź do /auth?company={company}'
         }), 401
     
-    company_id = wfirma_get_company_id(token)
+    company_id = wfirma_get_company_id(token, company)
     series_list = wfirma_list_series(token, company_id)
     
     return jsonify({
@@ -3446,13 +3484,19 @@ def workflow_create_invoice():
     if not invoice_input:
         return cors_response({'error': 'Brak sekcji invoice'}, 400)
 
-    # 0) Pobierz company_id (ID Twojej firmy) - OPCJONALNE
-    # Jeśli masz tylko jedną firmę, API użyje jej automatycznie
-    company_id = wfirma_get_company_id(token)
+    # 0) Pobierz company_id (ID Twojej firmy) - WYMAGANE
+    # Bez jednoznacznego company_id NIE wystawiamy dokumentu - wFirma użyłaby
+    # "domyślnej" firmy konta, która może być inna niż Medidesk (incydent Vetidesk 2026-07-09).
+    company_id = wfirma_get_company_id(token, company)
     if company_id:
         print(f"[WFIRMA DEBUG] company_id: {company_id}")
     else:
-        print(f"[WFIRMA DEBUG] company_id: brak (użyje domyślnej firmy)")
+        print(f"[WFIRMA ERROR] Nie udało się jednoznacznie ustalić company_id dla '{company}' - przerywam")
+        return cors_response({
+            'error': 'Nie udało się jednoznacznie ustalić firmy w wFirma - dokument NIE został wystawiony',
+            'company': company,
+            'hint': f"Ustaw ENV {get_company_config(company)['prefix']}COMPANY_ID na ID właściwej firmy w wFirma"
+        }, 502)
 
     # 1) Szukamy kontrahenta lub tworzymy na podstawie danych z wywołania
     contractor = None
@@ -3701,7 +3745,10 @@ def workflow_create_invoice():
             'contractor_source': contractor_source,
         }, status or 502)
 
-    # 3) Szukamy serii faktur (opcjonalnie)
+    # 3) Szukamy serii faktur
+    # Brak żądanej serii = TWARDY BŁĄD. Fallback na serię domyślną maskował wystawienie
+    # dokumentu w księgach niewłaściwej firmy (incydent Vetidesk 2026-07-09: seria
+    # "Eventy Pro forma" nie istniała w Vetidesk, więc proforma dostała domyślny numer).
     series_id = None
     if series_name:
         series = wfirma_find_series_by_name(token, series_name, company_id)
@@ -3709,13 +3756,21 @@ def workflow_create_invoice():
             series_id = int(series.get('id'))
             print(f"[WORKFLOW] Znaleziono serię '{series_name}' -> ID {series_id}")
         else:
-            print(f"[WORKFLOW] UWAGA: Nie znaleziono serii '{series_name}', użyję domyślnej")
+            print(f"[WORKFLOW] BŁĄD: Nie znaleziono serii '{series_name}' (company_id={company_id}) - przerywam, dokument NIE zostanie wystawiony")
             # Loguj dostępne serie żeby ułatwić debugowanie
             available_series = wfirma_list_series(token, company_id)
             if available_series:
                 print(f"[WORKFLOW] Dostępne serie ({len(available_series)}):")
                 for s in available_series:
                     print(f"[WORKFLOW]   - '{s['name']}' (ID: {s['id']}, szablon: {s['template']})")
+            return cors_response({
+                'error': f"Nie znaleziono serii '{series_name}' w wFirma - dokument NIE został wystawiony",
+                'series_name': series_name,
+                'company': company,
+                'wfirma_company_id': company_id,
+                'available_series': [s.get('name') for s in (available_series or [])],
+                'hint': 'Sprawdź nazwę serii w wFirma (Ustawienia -> Serie numeracji) lub czy company_id wskazuje właściwą firmę'
+            }, 422)
     
     # 4) Budujemy payload faktury/proformy/paragonu (z alreadypaid_initial jeśli mark_as_paid=True)
     # parent_invoice_id - powiązanie z proformą (jeśli faktura końcowa)
@@ -4390,7 +4445,13 @@ def workflow_create_correction(token):
     print(f"[CORRECTION] Tworzę korektę dla faktury ID={parent_invoice_id}, company={company}, full_correction={full_correction}")
 
     # Pobierz company_id (wymagane przez wFirma API)
-    wfirma_company_id = wfirma_get_company_id(token)
+    wfirma_company_id = wfirma_get_company_id(token, company)
+    if not wfirma_company_id:
+        return cors_response({
+            'error': 'Nie udało się jednoznacznie ustalić firmy w wFirma - korekta NIE została wystawiona',
+            'company': company,
+            'hint': f"Ustaw ENV {get_company_config(company)['prefix']}COMPANY_ID na ID właściwej firmy w wFirma"
+        }, 502)
 
     # 1) Pobierz oryginalną fakturę żeby uzyskać dane kontrahenta i pozycji
     original_invoice, err = wfirma_get_invoice(token, str(parent_invoice_id), wfirma_company_id)
@@ -4435,6 +4496,7 @@ def workflow_create_correction(token):
     original_pos_ids = {str(p['id']) for p in original_positions}
 
     # 2) Pobierz serię jeśli podano nazwę
+    # Brak żądanej serii = TWARDY BŁĄD (żadnych cichych fallbacków na serię domyślną)
     series_id = None
     if series_name:
         series = wfirma_find_series_by_name(token, series_name, wfirma_company_id)
@@ -4442,7 +4504,14 @@ def workflow_create_correction(token):
             series_id = int(series.get('id'))
             print(f"[CORRECTION] Znaleziono serię: {series_name} -> ID {series_id}")
         else:
-            print(f"[CORRECTION] Nie znaleziono serii: {series_name}")
+            print(f"[CORRECTION] BŁĄD: Nie znaleziono serii '{series_name}' (company_id={wfirma_company_id}) - przerywam")
+            return cors_response({
+                'error': f"Nie znaleziono serii '{series_name}' w wFirma - korekta NIE została wystawiona",
+                'series_name': series_name,
+                'company': company,
+                'wfirma_company_id': wfirma_company_id,
+                'hint': 'Sprawdź nazwę serii w wFirma (Ustawienia -> Serie numeracji) lub czy company_id wskazuje właściwą firmę'
+            }, 422)
 
     # 3) Buduj pozycje korekty
     invoice_contents_dict = {}
@@ -4650,7 +4719,7 @@ def test_correction_debug():
     if not token:
         return cors_response({'error': f'Brak tokena OAuth dla firmy: {company}'}, 401)
 
-    wfirma_company_id = wfirma_get_company_id(token)
+    wfirma_company_id = wfirma_get_company_id(token, company)
 
     # 1) Pobierz fakturę
     invoice, err = wfirma_get_invoice(token, str(invoice_id), wfirma_company_id)

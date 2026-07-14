@@ -25,6 +25,7 @@
 | `WFIRMA_MD_REFRESH_TOKEN` | Token odświeżania (ważny ~30 dni) | auto |
 | `WFIRMA_MD_TOKEN_EXPIRES` | Timestamp wygaśnięcia access token | auto |
 | `WFIRMA_MD_REFRESH_TOKEN_EXPIRES` | Timestamp wygaśnięcia refresh token | auto |
+| `WFIRMA_MD_COMPANY_ID` | **Przypięte ID firmy w wFirma** (Medidesk = `130706`). Bez ustawienia używany jest wbudowany default `130706`. NIGDY nie polegamy na "pierwszej firmie z konta" - konto widzi też Vetidesk (545419) i 2026-07-09 proforma wystawiła się w złej firmie | zalecane |
 
 **Alternatywnie (fallback):** `CLIENT_ID`, `CLIENT_SECRET` - używane gdy brak WFIRMA_MD_*
 
@@ -35,6 +36,7 @@
 | `WFIRMA_TEST_CLIENT_ID` | OAuth2 Client ID dla konta testowego | jeśli używasz test |
 | `WFIRMA_TEST_CLIENT_SECRET` | OAuth2 Client Secret | jeśli używasz test |
 | `WFIRMA_TEST_REDIRECT_URI` | **URL callback OAuth** dla konta testowego | jeśli używasz test |
+| `WFIRMA_TEST_COMPANY_ID` | Przypięte ID firmy w wFirma dla konta testowego. Bez ustawienia: auto-detekcja działa TYLKO gdy konto widzi dokładnie 1 firmę (przy >1 błąd) | jeśli konto test widzi >1 firmę |
 
 **WAŻNE:** `WFIRMA_<COMPANY>_REDIRECT_URI` jest **wymagane** dla autoryzacji OAuth. Bez tej zmiennej `/auth` i `/callback` zwrócą błąd 500.
 

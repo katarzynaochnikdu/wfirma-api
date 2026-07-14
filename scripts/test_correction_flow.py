@@ -42,7 +42,7 @@ def main():
         print("[TEST] Brak tokenu wFirma. Zaloguj się: /auth?company=md lub /auth?company=test")
         return 1
 
-    company_id = wfirma_get_company_id(token)
+    company_id = wfirma_get_company_id(token, company)
     if not company_id:
         print("[TEST] Nie udało się pobrać company_id")
         return 1
