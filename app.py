@@ -3560,19 +3560,45 @@ def workflow_create_invoice():
             else:
                 street_full = street_base
 
+            # 2026-08-09: GUS potrafi zwrócić rekord BEZ adresu — dotyczy zwłaszcza
+            # jednoosobowych działalności (`typ: 'F'`), dla których wyszukiwarka REGON
+            # nie oddaje adresu w podstawowym zapytaniu (spółki, `typ: 'P'`, mają komplet).
+            # Wcześniej adres brany był z GUS BEZWARUNKOWO, więc puste kod/miasto szły do
+            # wFirmy, ta odrzucała kontrahenta ("zip: Pole nie może być puste.; city: ..."),
+            # a opłacone zamówienie zostawało bez faktury (incydent CART-533B018855D1,
+            # 08.08.2026). Paradoks: gdy GUS nie znał NIP-u W OGÓLE, fallback niżej ratował
+            # sytuację — szkodziła dopiero odpowiedź CZĘŚCIOWA.
+            #
+            # Fallback jest teraz POLOWY, nie całościowy: każde puste pole adresu bierzemy
+            # z danych wywołującego (`purchaser_*` mają domyślniki '-' / '00-000' ustawione
+            # przy parsowaniu body, więc nigdy nie są puste). Nazwa zostaje z GUS — to
+            # oficjalna nazwa z rejestru i na fakturze jest właściwsza niż wpis klienta.
+            gus_zip = gus_first.get('kodPocztowy') or ""
+            gus_city = gus_first.get('miejscowosc') or ""
+            _addr_gaps = [
+                label
+                for label, gus_value in (("street", street_full), ("zip", gus_zip), ("city", gus_city))
+                if not gus_value
+            ]
+
             contractor_payload = {
                 "name": gus_first.get('nazwa') or clean_nip,
                 "altname": gus_first.get('nazwa') or clean_nip,
                 "nip": clean_nip,
                 "tax_id_type": "nip",
-                "street": street_full,
-                "zip": gus_first.get('kodPocztowy') or "",
-                "city": gus_first.get('miejscowosc') or "",
+                "street": street_full or purchaser_address,
+                "zip": gus_zip or purchaser_zip,
+                "city": gus_city or purchaser_city,
                 "country": "PL",
                 "email": email_address or "",
             }
-            contractor_source = 'gus'
+            contractor_source = 'gus+purchaser' if _addr_gaps else 'gus'
             print(f"[WORKFLOW] Tworzę kontrahenta z danych GUS: {contractor_payload.get('name')}")
+            if _addr_gaps:
+                print(
+                    f"[WORKFLOW] GUS nie podał adresu ({', '.join(_addr_gaps)}) dla NIP {clean_nip} "
+                    f"(typ={gus_first.get('typ')}) — uzupełniam z danych purchaser"
+                )
         else:
             # GUS nie znalazł - fallback na dane purchaser jeśli dostępne
             if purchaser_name:
