@@ -1369,8 +1369,50 @@ def wfirma_find_contractor_by_name(token: str, name: str, company_id: str = None
         return None, resp
 
 
+_ZIP_PL_RE = re.compile(r'^\d{2}-\d{3}$')
+
+
+def _normalize_zip_pl(value) -> str | None:
+    """Sprowadza polski kod pocztowy do formatu XX-XXX, którego wymaga wFirma.
+
+    Zwraca None, gdy z wejścia nie da się odczytać dokładnie pięciu cyfr. Wtedy
+    jakiekolwiek "naprawianie" byłoby zmyślaniem adresu nabywcy, więc decyzję
+    zostawiamy wywołującemu.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if _ZIP_PL_RE.match(text):
+        return text
+    digits = re.sub(r'\D', '', text)
+    if len(digits) == 5:
+        return f"{digits[:2]}-{digits[2:]}"
+    return None
+
+
 def wfirma_add_contractor(token: str, contractor_payload: dict, company_id: str = None) -> tuple[dict | None, requests.Response | None]:
     """Dodaj kontrahenta; zwraca (contractor_dict|None, response)."""
+    # 2026-08-09: wFirma przyjmuje polski kod pocztowy WYŁĄCZNIE jako XX-XXX i przy
+    # innym zapisie odrzuca całego kontrahenta ("zip: Niepoprawny format kodu
+    # pocztowego."), przez co opłacone zamówienie zostaje bez faktury (incydent
+    # CART-27847BCD0017 — klientka wpisała kod bez myślnika). Prostujemy tutaj, bo to
+    # jedyna brama do wFirmy dla kontrahentów: workflow (GUS i purchaser) oraz ręczne
+    # /api/contractor/add. Dzięki temu żadna ścieżka — także dopisana później — nie
+    # może tego pominąć.
+    #
+    # Kodów spoza PL nie ruszamy: XX-XXX ich nie dotyczy, a wymuszenie go zepsułoby
+    # poprawny adres (np. brytyjski "SW1A 1AA" czy niemiecki "10115").
+    country = str(contractor_payload.get('country') or 'PL').strip().upper()
+    raw_zip = contractor_payload.get('zip')
+    if raw_zip and country in ('PL', 'POLSKA', 'POLAND'):
+        fixed_zip = _normalize_zip_pl(raw_zip)
+        if not fixed_zip:
+            print(f"[WFIRMA] UWAGA: kod pocztowy '{raw_zip}' nie jest w formacie XX-XXX "
+                  f"i nie da się go odtworzyć — wysyłam bez zmian, wFirma prawdopodobnie odmówi")
+        elif fixed_zip != str(raw_zip).strip():
+            print(f"[WFIRMA] Poprawiono format kodu pocztowego: '{raw_zip}' -> '{fixed_zip}'")
+            contractor_payload = {**contractor_payload, 'zip': fixed_zip}
+
     api_url = "https://api2.wfirma.pl/contractors/add?inputFormat=json&outputFormat=json&oauth_version=2"
     if company_id:
         api_url += f"&company_id={company_id}"
@@ -3391,7 +3433,21 @@ def workflow_create_invoice():
     # wFirma wymaga name, street, zip, city - domyślne wartości jeśli puste
     purchaser_name = (body.get('purchaser_name') or '').strip()
     purchaser_address = (body.get('purchaser_address') or '').strip() or '-'  # Domyślnie "-"
-    purchaser_zip = (body.get('purchaser_zip') or '').strip() or '00-000'     # Domyślnie "00-000"
+    # Kod pocztowy prostujemy już przy parsowaniu, żeby ta sama, poprawna wartość
+    # trafiła do wszystkich trzech ścieżek tworzenia kontrahenta (purchaser, GUS
+    # z uzupełnieniem, purchaser_fallback). Gdy zapisu nie da się odczytać, zostaje
+    # '00-000' — tak samo jak dla pustego pola. Dokument dla OPŁACONEGO zamówienia
+    # jest ważniejszy niż idealny adres: fakturę bez kodu da się skorygować, brakiem
+    # faktury zajmuje się już księgowość i klient.
+    purchaser_zip_raw = (body.get('purchaser_zip') or '').strip()
+    purchaser_zip = _normalize_zip_pl(purchaser_zip_raw)
+    if not purchaser_zip:
+        if purchaser_zip_raw:
+            print(f"[WORKFLOW] UWAGA: kod pocztowy '{purchaser_zip_raw}' jest nieczytelny — "
+                  f"podstawiam 00-000, adres na fakturze wymaga ręcznej poprawki")
+        purchaser_zip = '00-000'                                              # Domyślnie "00-000"
+    elif purchaser_zip != purchaser_zip_raw:
+        print(f"[WORKFLOW] Poprawiono kod pocztowy purchaser: '{purchaser_zip_raw}' -> '{purchaser_zip}'")
     purchaser_city = (body.get('purchaser_city') or '').strip() or '-'        # Domyślnie "-"
     
     invoice_input = body.get('invoice')
