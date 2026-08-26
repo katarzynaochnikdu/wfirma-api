@@ -1512,6 +1512,175 @@ def _extract_contractor_id(contractor: dict | None) -> int | None:
     return None
 
 
+# ==================== ODBIORCA INNY NIZ NABYWCA (WO-471) ====================
+#
+# Faktura wFirma potrafi miec Odbiorce odrebnego od Nabywcy. Uklad wymagany m.in. przez
+# GRUPY VAT: podatnikiem jest grupa (Nabywca), a swiadczenie odbiera jej czlonek (Odbiorca).
+#
+# ⚠️ WFIRMA GUBI ODBIORCE PO CICHU — najwazniejsza rzecz w tym module.
+# Payload z samym `contractor_receiver_id` konczy sie `status: OK`, dokument POWSTAJE,
+# a odczyt zwrotny pokazuje `contractor_receiver: {"id": 0}`. Zmierzone 2026-08-26 na
+# dokumencie PROF/EV/TEST/4/8/2026. Zeby Odbiorca sie zapisal, musza pojsc OBA klucze:
+#   * `contractor_receiver_id`     — wskazanie kontrahenta,
+#   * `contractor_detail_receiver` — pelna migawka (rola + nazwa + identyfikator + adres).
+# Sama rola bez adresu tez nie wystarcza (sprawdzone).
+#
+# Dlatego `workflow_create_invoice` po utworzeniu dokumentu SPRAWDZA ODCZYTEM, czy Odbiorca
+# tam jest. Bez tej asercji faktura pojechalaby do klienta bez Odbiorcy, a system
+# zaraportowalby sukces — czyli najgorszy mozliwy wariant: cichy blad na dokumencie ksiegowym.
+
+#: Rola migawki odbiorcy. Puste pole = wFirma odrzuca CALA fakture
+#: ("role: Pole nie moze byc puste.").
+RECEIVER_ROLE = "receiver"
+
+
+def _resolve_tax_id_type(identifier: str | None) -> str:
+    """Typ identyfikatora podatkowego dla wFirmy: `nip` | `custom` | `none`.
+
+    wFirma dopuszcza `nip|vat|pesel|regon|custom|none` i WALIDUJE `nip`. Identyfikator
+    jednostki wewnetrznej grupy VAT (`5272663852-80408` — NIP grupy + kod czlonka) dostaje
+    przy typie `nip` odpowiedz "Nieprawidlowy NIP. Jesli identyfikator nie jest polskim
+    numerem NIP nalezy zmienic jego typ". Stad: ksztalt polskiego NIP-u -> `nip`,
+    cokolwiek innego niepustego -> `custom` (przechodzi doslownie), pusto -> `none`.
+    """
+    raw = (identifier or "").strip()
+    if not raw:
+        return "none"
+    compact = re.sub(r"[\s\-]", "", raw)
+    if re.fullmatch(r"\d{10}", compact):
+        return "nip"
+    return "custom"
+
+
+def build_receiver_snapshot(receiver: dict) -> dict:
+    """Migawka odbiorcy do `contractor_detail_receiver`.
+
+    Kod pocztowy prostujemy tym samym `_normalize_zip_pl` co dla nabywcy — wFirma przyjmuje
+    polski kod WYLACZNIE jako XX-XXX i przy innym zapisie odrzuca dokument.
+    """
+    identifier = (receiver.get("nip") or "").strip()
+    country = ((receiver.get("country") or "PL").strip().upper()) or "PL"
+
+    zip_raw = (receiver.get("zip") or "").strip()
+    zip_value = zip_raw
+    if zip_raw and country in ("PL", "POLSKA", "POLAND"):
+        fixed = _normalize_zip_pl(zip_raw)
+        if fixed:
+            if fixed != zip_raw:
+                print(f"[RECEIVER] Poprawiono kod pocztowy odbiorcy: '{zip_raw}' -> '{fixed}'")
+            zip_value = fixed
+
+    snapshot = {
+        "role": RECEIVER_ROLE,
+        "name": (receiver.get("name") or "").strip(),
+        "tax_id_type": (receiver.get("tax_id_type") or "").strip() or _resolve_tax_id_type(identifier),
+        "street": (receiver.get("street") or "").strip(),
+        "zip": zip_value,
+        "city": (receiver.get("city") or "").strip(),
+        "country": country,
+    }
+    if identifier:
+        snapshot["nip"] = identifier
+    return snapshot
+
+
+def receiver_stored_id(stored_invoice: dict | None) -> int:
+    """Odczytuje `contractor_receiver.id` z dokumentu pobranego z wFirmy.
+
+    Zwraca 0, gdy odbiorcy nie ma — a to jest wlasnie objaw cichej utraty, ktorego
+    szukamy. Brak dokumentu tez daje 0 (nie potrafimy potwierdzic = traktujemy jak brak).
+    """
+    if not isinstance(stored_invoice, dict):
+        return 0
+    node = stored_invoice.get('contractor_receiver')
+    if not isinstance(node, dict):
+        return 0
+    try:
+        return int(node.get('id') or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def wfirma_find_contractor_by_tax_id(token: str, identifier: str, company_id: str = None) -> dict | None:
+    """Szuka kontrahenta po polu `nip` — DOSLOWNIE, a dopiero potem bez separatorow.
+
+    `wfirma_find_contractor_by_nip` czysci myslniki, wiec NIE znajduje kontrahenta zapisanego
+    z identyfikatorem jednostki wewnetrznej (`5272663852-80408` w bazie vs `527266385280408`
+    w zapytaniu). Bez tej funkcji kazda kolejna faktura zakladalaby DUPLIKAT odbiorcy.
+    """
+    raw = (identifier or "").strip()
+    if not raw:
+        return None
+
+    candidates = [raw]
+    compact = raw.replace("-", "").replace(" ", "")
+    if compact and compact != raw:
+        candidates.append(compact)
+
+    api_url = "https://api2.wfirma.pl/contractors/find?inputFormat=json&outputFormat=json&oauth_version=2"
+    if company_id:
+        api_url += f"&company_id={company_id}"
+    headers = get_wfirma_headers(token)
+
+    for value in candidates:
+        body = {"contractors": {"parameters": {"conditions": {"condition": {
+            "field": "nip", "operator": "eq", "value": value}}}}}
+        try:
+            resp = requests.post(api_url, headers=headers, json=body)
+            if resp.status_code != 200:
+                continue
+            contractors = resp.json().get("contractors", {})
+            if not isinstance(contractors, dict):
+                continue
+            for key in contractors:
+                if not (key.isdigit() or key == "contractor"):
+                    continue
+                node = contractors[key]
+                found = node.get("contractor") if isinstance(node, dict) else None
+                if found and _extract_contractor_id(found):
+                    return found
+        except Exception as exc:
+            print(f"[RECEIVER] Szukanie po identyfikatorze '{value}' nie powiodlo sie: {exc}")
+    return None
+
+
+def wfirma_resolve_receiver_contractor(
+    token: str, receiver: dict, company_id: str = None
+) -> tuple[dict | None, list[str]]:
+    """Znajdz albo zaloz kontrahenta-odbiorce. Zwraca `(contractor|None, bledy)`.
+
+    Kaskada jak dla nabywcy: po identyfikatorze -> po nazwie -> zalozenie. Roznica jest
+    jedna i istotna: szukamy `wfirma_find_contractor_by_tax_id`, bo identyfikator odbiorcy
+    czesto NIE jest polskim NIP-em i wersja czyszczaca myslniki go nie trafia.
+    """
+    name = (receiver.get("name") or "").strip()
+    identifier = (receiver.get("nip") or "").strip()
+
+    if identifier:
+        found = wfirma_find_contractor_by_tax_id(token, identifier, company_id)
+        if found:
+            print(f"[RECEIVER] Odbiorca znaleziony po identyfikatorze: id={_extract_contractor_id(found)}")
+            return found, []
+
+    if name:
+        found, _resp = wfirma_find_contractor_by_name(token, name, company_id)
+        if found and _extract_contractor_id(found):
+            print(f"[RECEIVER] Odbiorca znaleziony po nazwie: id={_extract_contractor_id(found)}")
+            return found, []
+    else:
+        return None, ["name: Odbiorca wymaga nazwy"]
+
+    payload = {k: v for k, v in build_receiver_snapshot(receiver).items() if k != "role"}
+    payload["altname"] = payload.get("name")
+    created, _resp_add = wfirma_add_contractor(token, payload, company_id)
+    if created and _extract_contractor_id(created):
+        print(f"[RECEIVER] Odbiorca zalozony: id={_extract_contractor_id(created)}")
+        return created, []
+
+    errors = _extract_wfirma_errors(created)
+    return None, errors or ["wFirma nie zwrocila ID kontrahenta-odbiorcy"]
+
+
 # ==================== POMOCNICZE: PRODUKTY (GOODS) ====================
 
 
@@ -3091,8 +3260,19 @@ def add_contractor(token):
         return jsonify({'error': 'Brak danych w żądaniu'}), 400
     company_id = wfirma_get_company_id(token)
     contractor, resp = wfirma_add_contractor(token, data, company_id)
-    if contractor:
+    # WO-471: wFirma odrzuca kontrahenta przez HTTP **200** z `status.code: ERROR` i echem
+    # payloadu wzbogaconym o `errors`. Do WO-471 ta trasa raportowala wtedy `success: True`
+    # dla kontrahenta, ktory NIE powstal (brak `id`). Sciezka workflow byla odporna, ta nie.
+    if contractor and _extract_contractor_id(contractor):
         return jsonify({'success': True, 'contractor': contractor})
+
+    wf_errors = _extract_wfirma_errors(contractor)
+    if wf_errors:
+        return jsonify({
+            'error': f"wFirma odrzuciła dane kontrahenta: {'; '.join(wf_errors)}",
+            'wfirma_validation_errors': wf_errors,
+            'contractor': contractor,
+        }), 400
 
     status = resp.status_code if resp else None
     return jsonify({
@@ -3277,7 +3457,7 @@ def send_invoice_email(token, invoice_id):
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None, parent_invoice_id: int = None) -> tuple[dict | None, str | None]:
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None, parent_invoice_id: int = None, receiver_contractor_id: int = None, receiver_snapshot: dict = None) -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
@@ -3328,7 +3508,18 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
         "type": document_type,  # 'normal', 'proforma', 'proforma_bill'
         "currency": invoice_input.get('currency', 'PLN'),
     }
-    
+
+    # Odbiorca inny niz Nabywca (WO-471). OBA klucze sa wymagane — sam
+    # `contractor_receiver_id` wFirma przyjmuje i po cichu gubi (patrz RECEIVER_ROLE).
+    if receiver_contractor_id and receiver_snapshot:
+        payload["contractor_receiver_id"] = int(receiver_contractor_id)
+        payload["contractor_detail_receiver"] = receiver_snapshot
+        print(f"[WFIRMA DEBUG] Odbiorca: contractor_receiver_id={receiver_contractor_id}, "
+              f"nazwa='{receiver_snapshot.get('name')}', typ_id={receiver_snapshot.get('tax_id_type')}")
+    elif receiver_contractor_id or receiver_snapshot:
+        # Polowiczne dane = pewna cicha utrata odbiorcy. Lepiej nie wystawiac dokumentu.
+        return None, 'Odbiorca wymaga jednoczesnie ID kontrahenta i migawki danych'
+
     # Seria faktur (opcjonalnie)
     if series_id:
         payload["series"] = {"id": series_id}
@@ -3885,6 +4076,38 @@ def workflow_create_invoice():
             'contractor_source': contractor_source,
         }, status or 502)
 
+    # 2b) Odbiorca inny niz Nabywca (WO-471) — opcjonalny blok `receiver`.
+    # Rozwiazujemy PRZED wystawieniem: dokumentu bez wymaganego Odbiorcy lepiej nie tworzyc
+    # wcale, niz tworzyc i korygowac. Brak bloku = zachowanie identyczne jak dotychczas.
+    receiver_contractor_id = None
+    receiver_snapshot = None
+    receiver_input = body.get('receiver')
+    if receiver_input:
+        if not isinstance(receiver_input, dict):
+            return cors_response({'error': 'Pole "receiver" musi byc obiektem'}, 400)
+        if not (receiver_input.get('name') or '').strip():
+            return cors_response({'error': 'Odbiorca wymaga pola "name"'}, 400)
+
+        receiver_contractor, receiver_errors = wfirma_resolve_receiver_contractor(
+            token, receiver_input, company_id
+        )
+        if not receiver_contractor:
+            print(f"[WORKFLOW] BLAD: nie udalo sie ustalic odbiorcy: {receiver_errors}")
+            return cors_response({
+                'error': (
+                    f"wFirma odrzucila dane Odbiorcy: {'; '.join(receiver_errors)}"
+                    if receiver_errors else 'Nie udalo sie ustalic kontrahenta-odbiorcy'
+                ),
+                'wfirma_validation_errors': receiver_errors or None,
+                'receiver_name': (receiver_input.get('name') or '').strip(),
+                'hint': 'Dokument NIE zostal wystawiony — popraw dane Odbiorcy i ponow.',
+            }, 502)
+
+        receiver_contractor_id = _extract_contractor_id(receiver_contractor)
+        receiver_snapshot = build_receiver_snapshot(receiver_input)
+        print(f"[WORKFLOW] Odbiorca ustalony: id={receiver_contractor_id} "
+              f"nazwa='{receiver_snapshot.get('name')}'")
+
     # 3) Szukamy serii faktur
     # Brak żądanej serii = TWARDY BŁĄD. Fallback na serię domyślną maskował wystawienie
     # dokumentu w księgach niewłaściwej firmy (incydent Vetidesk 2026-07-09: seria
@@ -3914,7 +4137,7 @@ def workflow_create_invoice():
     
     # 4) Budujemy payload faktury/proformy/paragonu (z alreadypaid_initial jeśli mark_as_paid=True)
     # parent_invoice_id - powiązanie z proformą (jeśli faktura końcowa)
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email, parent_invoice_id=parent_invoice_id_param)
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email, parent_invoice_id=parent_invoice_id_param, receiver_contractor_id=receiver_contractor_id, receiver_snapshot=receiver_snapshot)
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
@@ -3982,7 +4205,36 @@ def workflow_create_invoice():
             'error': 'Brak ID faktury w odpowiedzi',
             'invoice': invoice
         }, 502)
-    
+
+    # WO-471: ASERCJA ODBIORCY. wFirma potrafi przyjac dokument ze `status: OK` i ZGUBIC
+    # odbiorce (odczyt pokazuje wtedy `contractor_receiver: {"id": 0}`). Bez tego sprawdzenia
+    # faktura pojechalaby do klienta bez Odbiorcy, a system zaraportowalby sukces.
+    #
+    # UWAGA na ksztalt bledu: dokument JUZ ISTNIEJE. Komunikat musi to powiedziec wprost,
+    # zeby nikt — czlowiek ani automat — nie ponowil wystawienia i nie zrobil duplikatu.
+    if receiver_contractor_id:
+        stored_invoice, stored_err = wfirma_get_invoice(token, invoice_id, company_id)
+        stored_receiver_id = receiver_stored_id(stored_invoice)
+        if stored_receiver_id != int(receiver_contractor_id):
+            invoice_number = invoice.get('fullnumber', '')
+            print(f"[WORKFLOW] BLAD KRYTYCZNY: dokument {invoice_number} (id={invoice_id}) powstal "
+                  f"BEZ Odbiorcy — oczekiwano id={receiver_contractor_id}, w wFirmie id={stored_receiver_id}")
+            return cors_response({
+                'error': 'Dokument zostal wystawiony, ale wFirma nie zapisala Odbiorcy',
+                'message': (
+                    f"Dokument {invoice_number} ISTNIEJE w wFirmie (id={invoice_id}), lecz bez Odbiorcy. "
+                    "NIE wystawiaj ponownie — powstalby duplikat. Popraw dokument w wFirmie "
+                    "albo go anuluj i wystaw na nowo."
+                ),
+                'receiver_verification_failed': True,
+                'invoice_id': invoice_id,
+                'invoice_number': invoice_number,
+                'expected_receiver_id': int(receiver_contractor_id),
+                'stored_receiver_id': stored_receiver_id,
+                'read_back_error': stored_err,
+            }, 502)
+        print(f"[WORKFLOW] Odbiorca potwierdzony odczytem: contractor_receiver.id={stored_receiver_id}")
+
     # Sprawdź status płatności faktury
     # (alreadypaid_initial jest ustawiony przy tworzeniu faktury jeśli mark_as_paid=True)
     payment_result = None
@@ -4095,6 +4347,9 @@ def workflow_create_invoice():
         
         'contractor_created': contractor_created,
         'contractor': contractor,
+        # WO-471: pusty gdy zamowienie nie ma Odbiorcy. Wartosc = potwierdzona ODCZYTEM,
+        # nie samym payloadem — patrz asercja odbiorcy wyzej.
+        'receiver_contractor_id': receiver_contractor_id,
         'invoice': invoice,  # Pełny obiekt faktury (dla zaawansowanych)
         'marked_as_paid': bool(payment_result and payment_result.get('success')),
         'payment_result': payment_result,
