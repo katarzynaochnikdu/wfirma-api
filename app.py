@@ -3456,8 +3456,95 @@ def send_invoice_email(token, invoice_id):
 
 # ==================== ENDPOINT WORKFLOW: NIP -> GUS -> KONTRAHENT -> FAKTURA ====================
 
+# Mapowanie stawek VAT na ID w wFirma (vat_code.id) oraz stawki procentowe.
+# Na poziomie modulu, zeby normalizator stawki mogl z nich korzystac przed petla pozycji.
+VAT_CODE_MAP = {
+    "23": 222,
+    "8": 223,
+    "5": 224,
+    "0": 225,
+    "zw": 226,
+    "np": 227,
+}
+VAT_RATE_PERCENT = {
+    "23": 0.23,
+    "8": 0.08,
+    "5": 0.05,
+    "0": 0.0,
+    "zw": 0.0,
+    "np": 0.0,
+}
 
-def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None, parent_invoice_id: int = None, receiver_contractor_id: int = None, receiver_snapshot: dict = None) -> tuple[dict | None, str | None]:
+# Tryby ceny na dokumencie (WO-486, plan_dokumenty_od_brutto Etap 1).
+PRICE_MODES = ('netto', 'brutto')
+PRICE_FIELD_BY_MODE = {'netto': 'unit_price_net', 'brutto': 'unit_price_gross'}
+
+
+def normalize_vat_key(vat_rate) -> str | None:
+    """Sprowadza stawke VAT do klucza VAT_CODE_MAP. Zwraca None gdy nieznana.
+
+    WHY: do WO-486 kod robil `vat_code_map.get(str(vat_rate), 222)` — czyli KAZDA
+    nierozpoznana wartosc cicho stawala sie 23%. Realny przypadek z audytu: backend
+    wysyla stawke jako string "23.0", ktory nie jest kluczem mapy i trafial w default
+    — przechodzilo tylko dlatego, ze default akurat rowna sie 23%. Przy stawce 8%
+    zapisanej jako "8.0" ten sam mechanizm wystawilby dokument z zawyzonym VAT-em.
+    Normalizujemy wiec jawnie, a to, czego nie da sie rozpoznac, jest bledem (400),
+    nie domyslnikiem.
+    """
+    if vat_rate is None:
+        return None
+    if isinstance(vat_rate, bool):
+        return None
+    if isinstance(vat_rate, str):
+        s = vat_rate.strip().lower().rstrip('%').strip()
+        if s in VAT_CODE_MAP:
+            return s
+        try:
+            num = float(s.replace(',', '.'))
+        except ValueError:
+            return None
+    elif isinstance(vat_rate, (int, float)):
+        num = float(vat_rate)
+    else:
+        return None
+    # Stawka podana ULAMKIEM (0.23, 0.08) — spotykane w integracjach no-code.
+    # Do WO-486 taki zapis trafial w default mapy i przechodzil jako 23% niezaleznie
+    # od tego, co znaczyl; rozpoznajemy go wprost, zeby 0.08 nie stalo sie 23%.
+    if 0 < num < 1:
+        num = round(num * 100, 6)
+    if float(num).is_integer():
+        key = str(int(num))
+        return key if key in VAT_CODE_MAP else None
+    return None
+
+
+def resolve_price_mode(*candidates) -> tuple[str | None, str | None]:
+    """Ustala tryb ceny dokumentu. Zwraca (tryb, blad).
+
+    Brak wartosci = 'netto', czyli zachowanie sprzed WO-486 co do bajtu (patrz
+    build_invoice_payload: w trybie netto payload NIE dostaje nawet `price_type`).
+    """
+    for value in candidates:
+        if value is None:
+            continue
+        mode = str(value).strip().lower()
+        if not mode:
+            continue
+        if mode not in PRICE_MODES:
+            return None, f"Niepoprawny price_mode: '{value}'. Dozwolone: {', '.join(PRICE_MODES)}"
+        return mode, None
+    return 'netto', None
+
+
+def _has_at_most_two_decimals(value: float) -> bool:
+    """True gdy liczba ma najwyzej 2 miejsca po przecinku (tolerancja na float)."""
+    try:
+        return abs(round(float(value), 2) - float(value)) < 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
+def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = None, series_id: int = None, mark_as_paid: bool = False, document_type: str = 'normal', ereceipt_email: str = None, parent_invoice_id: int = None, receiver_contractor_id: int = None, receiver_snapshot: dict = None, price_mode: str = None) -> tuple[dict | None, str | None]:
     """
     Mapper uproszczonego JSON na strukturę wFirma invoices/add.
     Jeśli token podany - automatycznie tworzy produkty w katalogu wFirma.
@@ -3466,6 +3553,15 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     document_type: 'normal' (faktura VAT), 'proforma', 'proforma_bill', 'accounting_note' (nota księgowa), 'receipt_fiscal_normal' (paragon)
     ereceipt_email: email do wysyłki e-paragonu (tylko dla receipt_fiscal_normal)
     parent_invoice_id: ID faktury nadrzędnej (np. proformy) - do systemowego powiązania
+
+    price_mode (WO-486): 'netto' (domyslny, zachowanie sprzed zmiany) albo 'brutto'.
+      - 'netto'  : pozycje niosa `unit_price_net`, payload NIE dostaje `price_type`
+                   (bit w bit jak przed WO-486 — endpoint chroni jeden wspolny klucz
+                   API i nie wiadomo, kto jeszcze go wola).
+      - 'brutto' : pozycje niosa `unit_price_gross`, payload dostaje
+                   `price_type = 'brutto'`, a wFirma liczy VAT metoda "w stu".
+                   Suma dokumentu = zwykla suma cen brutto, co do grosza (dowod:
+                   FV/EV/TEST/2/8/2026, mieszane stawki 23%+8% -> 590,00 rowno).
     """
     if not invoice_input:
         return None, 'Brak sekcji invoice'
@@ -3473,6 +3569,12 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     positions = invoice_input.get('positions') or []
     if not isinstance(positions, list) or len(positions) == 0:
         return None, 'Brak pozycji faktury'
+
+    mode, mode_err = resolve_price_mode(price_mode, invoice_input.get('price_mode'))
+    if mode_err:
+        return None, mode_err
+    price_field = PRICE_FIELD_BY_MODE[mode]
+    foreign_price_field = PRICE_FIELD_BY_MODE['brutto' if mode == 'netto' else 'netto']
 
     # Daty - domyślnie dzisiaj
     issue_date = invoice_input.get('issue_date') or datetime.date.today().isoformat()
@@ -3536,57 +3638,75 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     if invoice_input.get('place'):
         payload["issue_place"] = invoice_input.get('place')
 
-    # Mapowanie stawek VAT na ID w wFirma (vat_code.id) oraz stawki procentowe
-    vat_code_map = {
-        "23": 222,
-        "8": 223,
-        "5": 224,
-        "0": 225,
-        "zw": 226,
-        "np": 227
-    }
-    vat_rate_percent = {
-        "23": 0.23,
-        "8": 0.08,
-        "5": 0.05,
-        "0": 0.0,
-        "zw": 0.0,
-        "np": 0.0
-    }
-
     # Pozycje – wFirma wymaga struktury z kluczami numerycznymi: invoicecontents -> "0" -> invoicecontent
     invoice_contents_dict = {}
     total_brutto = 0.0  # Suma brutto wszystkich pozycji
-    
+
     for idx, pos in enumerate(positions):
         name = pos.get('name')
         qty = pos.get('quantity')
-        price_net = pos.get('unit_price_net')
+        price_raw = pos.get(price_field)
         vat_rate = pos.get('vat_rate')
-        if name is None or qty is None or price_net is None or vat_rate is None:
-            return None, 'Pozycja wymaga pól: name, quantity, unit_price_net, vat_rate'
+        if name is None or qty is None or price_raw is None or vat_rate is None:
+            return None, f'Pozycja wymaga pól: name, quantity, {price_field}, vat_rate (tryb ceny: {mode})'
+
+        # WALIDACJA KRZYZOWA (WO-486). Polmigrowany konsument, ktory w trybie brutto
+        # przysle netto (albo odwrotnie), wystawilby dokument fiskalny cicho o 23%
+        # obok prawdy. Taniej odmowic niz korygowac w KSeF.
+        if pos.get(foreign_price_field) is not None:
+            return None, (
+                f"Pozycja {idx + 1} ('{name}'): tryb ceny '{mode}' wyklucza pole "
+                f"'{foreign_price_field}'. Wyslij wylacznie '{price_field}'."
+            )
+
+        # Stawka VAT — jawne rozpoznanie zamiast cichego domyslnika 23% (patrz normalize_vat_key)
+        vat_str = normalize_vat_key(vat_rate)
+        if vat_str is None:
+            if mode == 'brutto':
+                return None, (
+                    f"Pozycja {idx + 1} ('{name}'): nieznana stawka VAT '{vat_rate}'. "
+                    f"Dozwolone: {', '.join(VAT_CODE_MAP.keys())}"
+                )
+            # W trybie netto zostaje zachowanie sprzed WO-486 (default 23%), bo tego
+            # endpointu moga uzywac konsumenci, ktorych nie znamy (jeden wspolny klucz
+            # API, zero logow per konsument) — nowe 400 w srodku nocy byloby gorsze niz
+            # dotychczasowy domyslnik. Roznica wobec stanu sprzed zmiany: teraz WIDAC to
+            # w logu, a normalizator rozpoznaje juz kazdy realny zapis stawki.
+            print(f"[WFIRMA WARN] Pozycja {idx + 1} ('{name}'): nieznana stawka VAT "
+                  f"{vat_rate!r} — przyjmuje 23% (zachowanie sprzed WO-486)")
+            vat_str = "23"
+        vat_code_id = VAT_CODE_MAP[vat_str]
+        vat_percent = VAT_RATE_PERCENT[vat_str]
 
         # Konwersja na liczby
         try:
             qty_num = float(qty) if isinstance(qty, str) else qty
-            price_num = float(price_net) if isinstance(price_net, str) else price_net
+            price_num = float(price_raw) if isinstance(price_raw, str) else price_raw
 
-            # VAT - pobierz vat_code_id z mapy
-            if isinstance(vat_rate, float) and vat_rate.is_integer():
-                vat_str = str(int(vat_rate))
+            if mode == 'brutto':
+                # Metoda "w stu": cena JEST kwota do zaplaty, wiec suma dokumentu to
+                # zwykla suma cen brutto — bez mnoznika VAT (ten policzy wFirma).
+                position_brutto = qty_num * price_num
             else:
-                vat_str = str(vat_rate)
-
-            vat_code_id = vat_code_map.get(vat_str, 222)  # domyślnie 23%
-            vat_percent = vat_rate_percent.get(vat_str, 0.23)  # domyślnie 23%
-            
-            # Oblicz brutto dla tej pozycji
-            position_netto = qty_num * price_num
-            position_brutto = position_netto * (1 + vat_percent)
+                position_netto = qty_num * price_num
+                position_brutto = position_netto * (1 + vat_percent)
             total_brutto += position_brutto
 
         except (ValueError, TypeError):
             return None, f'Niepoprawne wartości liczbowe w pozycji: {name}'
+
+        # Kwantyzacja: do WO-486 cena i ilosc szly do wFirmy surowym floatem. W trybie
+        # brutto cena JEST kwota do zaplaty, wiec trzecie miejsce po przecinku byloby
+        # cichym rozjazdem z zamowieniem — odmawiamy. W trybie netto zostaje
+        # ostrzezenie, zeby payload byl bit w bit jak przed zmiana.
+        for label, value in (('cena', price_num), ('ilosc', qty_num)):
+            if not _has_at_most_two_decimals(value):
+                if mode == 'brutto':
+                    return None, (
+                        f"Pozycja {idx + 1} ('{name}'): {label} {value} ma wiecej niz 2 miejsca "
+                        f"po przecinku — w trybie brutto to cicha zmiana kwoty dokumentu."
+                    )
+                print(f"[WFIRMA WARN] Pozycja {idx + 1} ('{name}'): {label}={value} ma >2 miejsca po przecinku")
 
         # Tworzymy pozycję faktury z pełnymi danymi
         # KLUCZOWE: używamy vat_code: {id: X} zamiast vat: "23"
@@ -3596,23 +3716,30 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
                 "name": str(name),
                 "count": qty_num,  # jako liczba, nie string
                 "unit": pos.get('unit', 'szt.'),
-                "price": price_num,  # jako liczba, nie string
+                "price": price_num,  # jako liczba, nie string — netto ALBO brutto, wg price_type
                 "vat_code": {"id": vat_code_id}
             }
         }
-        print(f"[WFIRMA DEBUG] Position: {name}, qty={qty_num}, price={price_num}, vat_code_id={vat_code_id}")
+        print(f"[WFIRMA DEBUG] Position: {name}, qty={qty_num}, price={price_num} ({mode}), vat_code_id={vat_code_id}")
 
     # Struktura z kluczami numerycznymi (jak wFirma zwraca w odpowiedziach)
     payload["invoicecontents"] = invoice_contents_dict
-    
+
+    # `price_type` wysylamy WYLACZNIE w trybie brutto. W trybie netto payload zostaje
+    # identyczny jak przed WO-486 — nie wiemy, kto jeszcze wola ten endpoint (jeden
+    # wspolny klucz API, zero logow per konsument), wiec nie zmieniamy im nic.
+    if mode == 'brutto':
+        payload["price_type"] = "brutto"
+        print(f"[WFIRMA DEBUG] price_type=brutto — wFirma policzy VAT metoda 'w stu'")
+
     # Jeśli mark_as_paid - dodaj alreadypaid_initial z obliczoną kwotą brutto
     # To oznacza fakturę jako opłaconą już przy tworzeniu
     if mark_as_paid and total_brutto > 0:
         # Zaokrąglij do 2 miejsc po przecinku
         total_brutto_rounded = round(total_brutto, 2)
         payload["alreadypaid_initial"] = str(total_brutto_rounded)
-        print(f"[WFIRMA DEBUG] mark_as_paid=True, alreadypaid_initial={total_brutto_rounded}")
-    
+        print(f"[WFIRMA DEBUG] mark_as_paid=True, alreadypaid_initial={total_brutto_rounded} (tryb {mode})")
+
     # Debug: loguj typy danych w pierwszej pozycji
     if invoice_contents_dict and "0" in invoice_contents_dict:
         first_pos = invoice_contents_dict["0"]["invoicecontent"]
@@ -4137,7 +4264,9 @@ def workflow_create_invoice():
     
     # 4) Budujemy payload faktury/proformy/paragonu (z alreadypaid_initial jeśli mark_as_paid=True)
     # parent_invoice_id - powiązanie z proformą (jeśli faktura końcowa)
-    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email, parent_invoice_id=parent_invoice_id_param, receiver_contractor_id=receiver_contractor_id, receiver_snapshot=receiver_snapshot)
+    # WO-486: tryb ceny przyjmujemy z top-levelu body ALBO z sekcji `invoice`.
+    # Brak = 'netto', czyli payload bit w bit jak przed zmiana.
+    invoice_payload, map_err = build_invoice_payload(invoice_input, contractor, token, series_id=series_id, mark_as_paid=mark_as_paid, document_type=document_type_param, ereceipt_email=ereceipt_email, parent_invoice_id=parent_invoice_id_param, receiver_contractor_id=receiver_contractor_id, receiver_snapshot=receiver_snapshot, price_mode=body.get('price_mode'))
     try:
         print("[WFIRMA DEBUG] invoice payload:", invoice_payload)
         if invoice_payload and 'invoicecontents' in invoice_payload:
@@ -4904,6 +5033,33 @@ def workflow_create_correction(token):
     if not original_positions:
         return cors_response({'error': 'Faktura oryginalna nie ma pozycji (invoicecontents)'}, 400)
 
+    # WO-486: EPOKA DOKUMENTU-RODZICA. Korekta MUSI byc liczona w tym samym trybie ceny,
+    # w ktorym wystawiono oryginal — `invoicecontent.price` na dokumencie brutto niesie
+    # BRUTTO, a na dokumencie netto NETTO. Pomylenie tych dwoch to bezglosny blad 23%
+    # na dokumencie, ktory jedzie do KSeF. Nie liczymy na dziedziczenie po rodzicu —
+    # ustawiamy `price_type` jawnie.
+    #
+    # Brak pola w odpowiedzi = epoka netto. To jest bezpieczne w JEDYNYM istotnym
+    # kierunku: dokumenty brutto zwracaja `price_type` przy odczycie (potwierdzone
+    # empirycznie na FV/EV/TEST/2/8/2026), wiec "brak" nigdy nie ukrywa brutta.
+    # Wartosc obecna, ale nierozpoznana = odmowa, nigdy domysl.
+    parent_price_type_raw = original_invoice.get('price_type')
+    if parent_price_type_raw is None or str(parent_price_type_raw).strip() == '':
+        parent_price_mode = 'netto'
+        print(f"[CORRECTION] Faktura {parent_invoice_id} bez pola price_type -> epoka NETTO (zachowanie sprzed WO-486)")
+    else:
+        parent_price_mode, parent_mode_err = resolve_price_mode(parent_price_type_raw)
+        if parent_mode_err:
+            return cors_response({
+                'error': f"Nie rozpoznano trybu ceny faktury oryginalnej (price_type='{parent_price_type_raw}') "
+                         f"— korekta NIE zostala wystawiona.",
+                'parent_invoice_id': parent_invoice_id,
+                'hint': 'Korekta liczona w zlym trybie rozjechalaby kwoty o stawke VAT. Zglos to zespolowi.',
+            }, 422)
+    parent_price_field = PRICE_FIELD_BY_MODE[parent_price_mode]
+    parent_foreign_price_field = PRICE_FIELD_BY_MODE['brutto' if parent_price_mode == 'netto' else 'netto']
+    print(f"[CORRECTION] Epoka faktury oryginalnej: {parent_price_mode} (pole ceny w pozycjach: {parent_price_field})")
+
     # Buduj mapę ID pozycji oryginalnej (do walidacji)
     original_pos_ids = {str(p['id']) for p in original_positions}
 
@@ -4973,7 +5129,20 @@ def workflow_create_correction(token):
                     return cors_response({'error': f'Pozycja {idx+1} nie ma parent_position_id i nie można dopasować automatycznie'}, 400)
 
             qty = pos.get('quantity', 0)
-            price_net = pos.get('unit_price_net', 0)
+
+            # WO-486: cene czytamy z pola zgodnego z EPOKA RODZICA. Pole z drugiej epoki
+            # w tym samym zadaniu = pewna pomylka o stawke VAT -> odmowa zamiast korekty.
+            if pos.get(parent_foreign_price_field) is not None:
+                return cors_response({
+                    'error': (
+                        f"Pozycja {idx + 1}: faktura oryginalna jest w trybie '{parent_price_mode}', "
+                        f"a pozycja niesie '{parent_foreign_price_field}'. "
+                        f"Wyslij '{parent_price_field}' — korekta NIE zostala wystawiona."
+                    ),
+                    'parent_invoice_id': parent_invoice_id,
+                    'parent_price_mode': parent_price_mode,
+                }, 400)
+            price_value = pos.get(parent_price_field, 0)
 
             # Wg Postman: wysyłamy parent_id, name (oryginalne z faktury), count, price
             # Znajdź oryginalną pozycję żeby pobrać name
@@ -4988,11 +5157,11 @@ def workflow_create_correction(token):
                     "parent_id": int(parent_pos_id),
                     "name": pos.get('name') or orig_name,
                     "count": qty,
-                    "price": price_net
+                    "price": price_value
                 }
             }
             invoice_contents_dict[str(idx)] = content
-            print(f"[CORRECTION] Pozycja {idx}: parent_id={parent_pos_id}, name={pos.get('name') or orig_name}, count={qty}, price={price_net}")
+            print(f"[CORRECTION] Pozycja {idx}: parent_id={parent_pos_id}, name={pos.get('name') or orig_name}, count={qty}, price={price_value} ({parent_price_mode})")
 
     # Payload faktury korygującej
     correction_payload = {
@@ -5003,6 +5172,11 @@ def workflow_create_correction(token):
         "description": correction_reason,
         "invoicecontents": invoice_contents_dict
     }
+
+    # WO-486: tryb ceny JAWNIE, zgodnie z epoka rodzica — nie liczymy na dziedziczenie.
+    # W epoce netto nie wysylamy nic (payload bit w bit jak przed zmiana).
+    if parent_price_mode == 'brutto':
+        correction_payload["price_type"] = "brutto"
 
     # Seria (opcjonalnie)
     if series_id:
