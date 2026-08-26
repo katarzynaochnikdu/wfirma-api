@@ -114,6 +114,26 @@ MAKE_RENDER_API_KEY = os.environ.get('MAKE_RENDER_API_KEY')  # Ustaw w Render EN
 GUS_API_KEY = os.environ.get('GUS_API_KEY') or os.environ.get('BIR1_medidesk')
 GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 
+# --- Odporność na niedostępność GUS-u (WO-469 / BUG-056, 2026-08-26) -------------------
+# Tego dnia rejestr przez ~40 minut odrzucał ruch z Rendera (read timeout / 503).
+# Przy timeoucie 10 s i zerowych ponowieniach każda próba padała od razu, co zatrzymało
+# sprzedaż B2B w koszyku.
+#
+# BUDŻET CZASU JEST OGRANICZONY PRZEZ LICZBĘ WORKERÓW, NIE PRZEZ CIERPLIWOŚĆ KLIENTA.
+# Procfile daje `gunicorn --workers 2 --timeout 180`, a ten sam proces obsługuje wystawianie
+# faktur wFirma i LeadProcessor. Gdyby jedno zapytanie do GUS-u okupowało worker przez 79 s,
+# awaria rejestru przewróciłaby przy okazji fakturowanie — czyli naprawa jednego problemu
+# wyprodukowałaby gorszy. Stąd podział:
+#   * LOGOWANIE — krótki timeout i ponowienia. Gdy GUS działa, loguje się w ~0,4 s
+#     (zmierzone), więc 8 s to 20× zapas; ponowienia łapią przejściowe dławienie.
+#   * WYSZUKIWANIE — bez ponowień, timeout tylko lekko podniesiony. Skoro logowanie
+#     przeszło, sesja żyje i drugi strzał zwykle też przechodzi.
+# Najgorszy przypadek: 3×8 s + 3 s przerw + 20 s = ~47 s, z zapasem do gunicornowych 180 s.
+GUS_LOGIN_TIMEOUT = int(os.environ.get('GUS_LOGIN_TIMEOUT', '8'))
+GUS_SOAP_TIMEOUT = int(os.environ.get('GUS_SOAP_TIMEOUT', '20'))
+GUS_LOGIN_ATTEMPTS = int(os.environ.get('GUS_LOGIN_ATTEMPTS', '3'))
+GUS_RETRY_BACKOFF_S = (1, 2)
+
 # GitHub token do uploadu zdjęć stopki email
 GITHUB_STOPKA_TOKEN = os.environ.get('ADMINZOHO_GITHUB_STOPKA_TOKEN')
 
@@ -2244,7 +2264,7 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
 
     print(f"[GUS-LOOKUP] Wysyłam Zaloguj request...")
     try:
-        login_resp = post_soap_gus(bir_host, login_envelope, sid=None, timeout=10)
+        login_resp = post_soap_gus_retry(bir_host, login_envelope, sid=None)
         print(f"[GUS-LOOKUP] Zaloguj response status={login_resp.status_code}")
     except Exception as e:
         print(f"[GUS-LOOKUP] BŁĄD logowania: {e}")
@@ -2286,7 +2306,7 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
 
     print(f"[GUS-LOOKUP] Wysyłam DaneSzukajPodmioty dla NIP={clean_nip}...")
     try:
-        search_resp = post_soap_gus(bir_host, search_envelope, sid=sid, timeout=10)
+        search_resp = post_soap_gus(bir_host, search_envelope, sid=sid)
         print(f"[GUS-LOOKUP] Search response status={search_resp.status_code}")
     except Exception as e:
         print(f"[GUS-LOOKUP] BŁĄD wyszukiwania: {e}")
@@ -2431,10 +2451,10 @@ def decode_bir_inner_xml(encoded: str) -> str:
     )
 
 
-def post_soap_gus(bir_host: str, envelope: str, sid: str | None, timeout: int = 10) -> requests.Response:
+def post_soap_gus(bir_host: str, envelope: str, sid: str | None, timeout: int = GUS_SOAP_TIMEOUT) -> requests.Response:
     """
     Minimalna wersja postSoap z Googie_GUS – wysyła envelope SOAP do GUS/BIR.
-    Używa requests, timeout domyślnie 10s. Nagłówek 'sid' ustawiany jeśli podano.
+    Timeout domyślnie GUS_SOAP_TIMEOUT (WO-469). Nagłówek 'sid' ustawiany jeśli podano.
     """
     url = f"https://{bir_host}/wsBIR/UslugaBIRzewnPubl.svc"
     headers = {
@@ -2448,6 +2468,44 @@ def post_soap_gus(bir_host: str, envelope: str, sid: str | None, timeout: int = 
     # Wysyłamy surowy envelope jako dane POST
     response = requests.post(url, data=envelope.encode("utf-8"), headers=headers, timeout=timeout)
     return response
+
+
+def post_soap_gus_retry(bir_host: str, envelope: str, sid: str | None = None,
+                        timeout: int = GUS_LOGIN_TIMEOUT,
+                        attempts: int = GUS_LOGIN_ATTEMPTS) -> requests.Response:
+    """
+    post_soap_gus z ponowieniami — WO-469 (BUG-056).
+
+    2026-08-26 GUS przez ~40 minut odrzucał ruch z naszego serwera (read timeout / 503),
+    a pojedynczy strzał bez ponowienia zamieniał to w zatrzymanie sprzedaży B2B.
+
+    Ponawiamy WYŁĄCZNIE to, co rokuje: wyjątek transportowy (timeout, zerwane połączenie)
+    oraz 5xx, czyli „spróbuj później" po stronie GUS-u. Kod 4xx (m.in. 401 przy złym kluczu)
+    NIE jest ponawiany — powtórka nic nie zmieni, a tylko wydłuży oczekiwanie użytkownika.
+
+    Rzuca ostatni wyjątek, jeśli żadna próba nie dała odpowiedzi. Ostatnią odpowiedź 5xx
+    zwraca normalnie — rozpoznanie i tak należy do wywołującego (brak SID => błąd).
+    """
+    last_exc: Exception | None = None
+    last_resp: requests.Response | None = None
+
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            resp = post_soap_gus(bir_host, envelope, sid=sid, timeout=timeout)
+            if resp.status_code < 500:
+                return resp
+            last_resp = resp
+            print(f"[GUS-RETRY] proba {attempt}/{attempts}: HTTP {resp.status_code} od GUS")
+        except Exception as e:
+            last_exc = e
+            print(f"[GUS-RETRY] proba {attempt}/{attempts}: {type(e).__name__}: {e}")
+
+        if attempt < attempts:
+            time.sleep(GUS_RETRY_BACKOFF_S[min(attempt - 1, len(GUS_RETRY_BACKOFF_S) - 1)])
+
+    if last_resp is not None:
+        return last_resp
+    raise last_exc if last_exc else RuntimeError("GUS: brak odpowiedzi i brak wyjątku")
 
 
 # ==================== ENDPOINTY OAUTH ====================
@@ -4134,7 +4192,7 @@ def gus_name_by_nip():
     )
 
     try:
-        login_resp = post_soap_gus(bir_host, login_envelope, sid=None, timeout=10)
+        login_resp = post_soap_gus_retry(bir_host, login_envelope, sid=None)
         # Szczegółowe logi z logowania do GUS
         print(f"[GUS] LOGIN status={login_resp.status_code}")
         login_snippet = (login_resp.text or '')[:500]
@@ -4183,7 +4241,7 @@ def gus_name_by_nip():
     )
 
     try:
-        search_resp = post_soap_gus(bir_host, search_envelope, sid=sid, timeout=10)
+        search_resp = post_soap_gus(bir_host, search_envelope, sid=sid)
         # Szczegółowe logi z wyszukiwania w GUS
         print(f"[GUS] SEARCH status={search_resp.status_code}")
         search_snippet = (search_resp.text or '')[:800]
@@ -4313,9 +4371,26 @@ def gus_validate_nip():
     gus_records, gus_err = gus_lookup_nip(clean_nip)
     print(f"[GUS] validate-nip RESULT nip={clean_nip} err={gus_err} records_count={len(gus_records) if gus_records else 0}")
 
-    # Nie znaleziono w GUS lub błąd
-    if gus_err or not gus_records or len(gus_records) == 0:
-        print(f"[GUS] validate-nip NIEPOPRAWNY nip={clean_nip} (err={gus_err}, records={gus_records})")
+    # WO-469 (BUG-056): awaria łączności to NIE to samo, co "nie ma takiej firmy".
+    # Do 2026-08-26 oba przypadki wracały jako HTTP 200 `niepoprawny`, więc koszyk nie miał
+    # czym ich odróżnić i pokazywał klientowi z poprawnym NIP-em, że firmy nie znaleziono.
+    # Awaria dostaje własny status i własny kod HTTP — dopiero to pozwala konsumentowi
+    # zaproponować ręczne uzupełnienie danych zamiast zatrzymać zamówienie.
+    if gus_err:
+        print(f"[GUS] validate-nip NIEDOSTEPNY nip={clean_nip} (err={gus_err})")
+        return gus_cors_response({
+            'nip_status': 'niedostepny',
+            'nip': clean_nip,
+            'gus_data': None,
+            # Treść błędu jest diagnostyczna (host, timeout) i NIE zawiera klucza API —
+            # `gus_err` powstaje z wyjątku transportowego, klucz siedzi w ciele SOAP.
+            'error': 'Rejestr GUS chwilowo nie odpowiada',
+            'detail': str(gus_err)[:200]
+        }, 503)
+
+    # Rejestr odpowiedział i nie zna tego NIP-u
+    if not gus_records or len(gus_records) == 0:
+        print(f"[GUS] validate-nip NIEPOPRAWNY nip={clean_nip} (brak rekordow w GUS)")
         return gus_cors_response({
             'nip_status': 'niepoprawny',
             'nip': clean_nip,
