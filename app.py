@@ -1529,9 +1529,49 @@ def _extract_contractor_id(contractor: dict | None) -> int | None:
 # tam jest. Bez tej asercji faktura pojechalaby do klienta bez Odbiorcy, a system
 # zaraportowalby sukces — czyli najgorszy mozliwy wariant: cichy blad na dokumencie ksiegowym.
 
-#: Rola migawki odbiorcy. Puste pole = wFirma odrzuca CALA fakture
-#: ("role: Pole nie moze byc puste.").
-RECEIVER_ROLE = "receiver"
+# 🛑 ROLA ODBIORCY TO KOD LICZBOWY KSeF, NIE SLOWO (WO-492, zmierzone 2026-08-27).
+#
+# Do WO-492 jechalo tu slowo "receiver". Wystarczalo — ale TYLKO na proformie, bo proforma
+# NIE JEDZIE DO KSeF. Przy fakturze VAT wFirma buduje XML dla KSeF i odrzuca CALY dokument:
+#
+#   Wystapil blad wysylki faktury do KSeF
+#   Bledy XML:
+#   Pole Rola posiada niepoprawna wartosc, poprawne wartosci dla pola: 1..11
+#
+# Skutek byl taki, ze funkcja wygladala na dzialajaca (proformy wychodzily z Odbiorca),
+# a faktura VAT dla tego samego klienta NIE POWSTAWALA W OGOLE. Zmierzone na serii
+# testowej: rola "receiver" -> odrzucone; rola "2" -> FV/EV/TEST/4/8/2026 oraz
+# PROF/EV/TEST/8/8/2026, w obu `contractor_receiver.id` != 0.
+#
+# Rola 2 = "Odbiorca — zaklad (oddzial), jednostka wewnetrzna przedsiebiorcy majaca wlasny
+# numer IDWew zbudowany z NIP-u i ciagu cyfr" — czyli dokladnie przypadek, dla ktorego ta
+# funkcja powstala (identyfikator w rodzaju `5272663852-80408` JEST takim IDWew).
+#
+# Rola jest NADPISYWALNA per zadanie (`receiver.role`), bo dobor kodu bywa decyzja
+# ksiegowa — np. dla czlonka formalnej grupy VAT bywa nim 10. Zmiana kodu nie moze
+# wymagac wdrozenia mikroserwisu.
+#: Domyslny kod roli KSeF dla odbiorcy.
+RECEIVER_ROLE = "2"
+
+#: Slownik KSeF dopuszcza wylacznie 1..11 — cokolwiek innego wywala CALA fakture na
+#: walidacji XML. Lepiej odrzucic zadanie u nas, z czytelnym powodem, niz dostac z wFirmy
+#: komunikat o bledzie XML przy dokumencie ksiegowym.
+RECEIVER_ROLE_ALLOWED = frozenset(str(n) for n in range(1, 12))
+
+
+def resolve_receiver_role(raw: object) -> tuple[str | None, str | None]:
+    """Kod roli odbiorcy: `(rola, blad)`. Brak wartosci -> domyslna `RECEIVER_ROLE`."""
+    if raw is None:
+        return RECEIVER_ROLE, None
+    value = str(raw).strip()
+    if not value:
+        return RECEIVER_ROLE, None
+    if value not in RECEIVER_ROLE_ALLOWED:
+        return None, (
+            "Rola odbiorcy '{}' jest spoza slownika KSeF. "
+            "Dopuszczalne wartosci to 1-11 (2 = odbiorca/oddzial z numerem IDWew)."
+        ).format(value)
+    return value, None
 
 
 def _resolve_tax_id_type(identifier: str | None) -> str:
@@ -1552,11 +1592,14 @@ def _resolve_tax_id_type(identifier: str | None) -> str:
     return "custom"
 
 
-def build_receiver_snapshot(receiver: dict) -> dict:
+def build_receiver_snapshot(receiver: dict, role: str = RECEIVER_ROLE) -> dict:
     """Migawka odbiorcy do `contractor_detail_receiver`.
 
     Kod pocztowy prostujemy tym samym `_normalize_zip_pl` co dla nabywcy — wFirma przyjmuje
     polski kod WYLACZNIE jako XX-XXX i przy innym zapisie odrzuca dokument.
+
+    `role` to kod slownika KSeF (patrz `RECEIVER_ROLE`) — NIE slowo. Domyslna wartosc
+    trzyma zachowanie wywolan, ktore roli nie podaja.
     """
     identifier = (receiver.get("nip") or "").strip()
     country = ((receiver.get("country") or "PL").strip().upper()) or "PL"
@@ -1571,7 +1614,7 @@ def build_receiver_snapshot(receiver: dict) -> dict:
             zip_value = fixed
 
     snapshot = {
-        "role": RECEIVER_ROLE,
+        "role": role,
         "name": (receiver.get("name") or "").strip(),
         "tax_id_type": (receiver.get("tax_id_type") or "").strip() or _resolve_tax_id_type(identifier),
         "street": (receiver.get("street") or "").strip(),
@@ -1582,6 +1625,51 @@ def build_receiver_snapshot(receiver: dict) -> dict:
     if identifier:
         snapshot["nip"] = identifier
     return snapshot
+
+
+#: Pola migawki odbiorcy przepisywane z dokumentu macierzystego na korekte.
+RECEIVER_SNAPSHOT_FIELDS = ("role", "name", "tax_id_type", "nip", "street", "zip", "city", "country")
+
+
+def receiver_block_from_invoice(original_invoice: dict | None) -> dict:
+    """Odbiorca przepisany z faktury macierzystej na dokument potomny (korekte).
+
+    🛑 ZMIERZONE (WO-492, 2026-08-27): wFirma NIE DZIEDZICZY Odbiorcy na korekcie.
+    Korekta do FV/EV/TEST/4/8/2026 (Odbiorca `contractor_receiver.id=198741907`) wyszla
+    jako FK/EV/TEST/4/8/2026 z `contractor_receiver.id = 0`. Trzeba go wyslac JAWNIE —
+    i to OBA klucze naraz, dokladnie jak przy fakturze (patrz `RECEIVER_ROLE`).
+
+    Zrodlem jest FAKTURA MACIERZYSTA, nie biezacy stan zamowienia. Korekta ma
+    odwzorowywac dokument, ktory koryguje: gdyby operator zmienil Odbiorce po
+    wystawieniu faktury, korekta z nowa wartoscia nie zgadzalaby sie z korygowanym
+    dokumentem — a to jest dokument ksiegowy.
+
+    Brak Odbiorcy na macierzystej -> pusty dict, czyli payload bit w bit jak dotad.
+    """
+    if not isinstance(original_invoice, dict):
+        return {}
+    receiver_id = receiver_stored_id(original_invoice)
+    if not receiver_id:
+        return {}
+    detail = original_invoice.get("contractor_detail_receiver")
+    if not isinstance(detail, dict):
+        return {}
+    snapshot = {}
+    for field in RECEIVER_SNAPSHOT_FIELDS:
+        value = str(detail.get(field) or "").strip()
+        if value:
+            snapshot[field] = value
+    if not snapshot.get("name"):
+        # Bez nazwy wFirma i tak odrzuci migawke — lepiej nie wysylac nic i zostawic
+        # korekte bez Odbiorcy niz wywrocic caly dokument korygujacy.
+        print("[RECEIVER] Faktura macierzysta ma odbiorce bez nazwy — korekta pojdzie bez niego")
+        return {}
+    snapshot.setdefault("role", RECEIVER_ROLE)
+    snapshot.setdefault("country", "PL")
+    return {
+        "contractor_receiver_id": receiver_id,
+        "contractor_detail_receiver": snapshot,
+    }
 
 
 def receiver_stored_id(stored_invoice: dict | None) -> int:
@@ -1963,6 +2051,9 @@ def wfirma_create_correction(
             "invoicecontents": invoice_contents_dict,
             "send": send_email,
         }
+
+        # WO-492: ta sama regula co na sciezce zywej — korekta niesie Odbiorce macierzystej.
+        correction_payload.update(receiver_block_from_invoice(original_invoice))
         
         # Dodaj serię korekty jeśli znaleziono
         if series_id:
@@ -4215,6 +4306,15 @@ def workflow_create_invoice():
         if not (receiver_input.get('name') or '').strip():
             return cors_response({'error': 'Odbiorca wymaga pola "name"'}, 400)
 
+        # Rola sprawdzana PRZED zalozeniem kontrahenta — bledna wywalilaby dopiero
+        # walidacje XML w KSeF, juz po utworzeniu kontrahenta-smiecia w wFirmie.
+        receiver_role, role_error = resolve_receiver_role(receiver_input.get('role'))
+        if role_error:
+            return cors_response({
+                'error': role_error,
+                'hint': 'Dokument NIE zostal wystawiony — popraw pole receiver.role i ponow.',
+            }, 400)
+
         receiver_contractor, receiver_errors = wfirma_resolve_receiver_contractor(
             token, receiver_input, company_id
         )
@@ -4231,7 +4331,7 @@ def workflow_create_invoice():
             }, 502)
 
         receiver_contractor_id = _extract_contractor_id(receiver_contractor)
-        receiver_snapshot = build_receiver_snapshot(receiver_input)
+        receiver_snapshot = build_receiver_snapshot(receiver_input, receiver_role)
         print(f"[WORKFLOW] Odbiorca ustalony: id={receiver_contractor_id} "
               f"nazwa='{receiver_snapshot.get('name')}'")
 
@@ -5182,6 +5282,10 @@ def workflow_create_correction(token):
     if series_id:
         correction_payload["series_id"] = series_id
 
+    # WO-492: Odbiorca z faktury macierzystej. Bez tego korekta wychodzi z samym
+    # Nabywca, a dokument korygujacy musi odwzorowac korygowany.
+    correction_payload.update(receiver_block_from_invoice(original_invoice))
+
     print(f"[CORRECTION] Payload: contractor_id={contractor_id}, parent_id={parent_invoice_id}, positions={len(invoice_contents_dict)}")
 
     # LOG: pełny payload korekty
@@ -5197,6 +5301,28 @@ def workflow_create_correction(token):
     if invoice_result and invoice_result.get('id'):
         correction_id = invoice_result.get('id')
         print(f"[CORRECTION] SUCCESS! Korekta utworzona: id={correction_id}, fullnumber={invoice_result.get('fullnumber')}")
+
+        # 🛑 TA SAMA PULAPKA CO PRZY FAKTURZE: wFirma potrafi przyjac dokument i po cichu
+        # zgubic Odbiorce (`contractor_receiver: {"id": 0}`). Bez sprawdzenia odczytem
+        # zameldowalibysmy sukces przy korekcie, ktora nie zgadza sie z korygowana faktura.
+        # Korekta JUZ ISTNIEJE — dlatego komunikat mowi wprost, ze nie wolno ponawiac.
+        if correction_payload.get("contractor_receiver_id"):
+            stored_correction, _read_err = wfirma_get_invoice(token, str(correction_id), wfirma_company_id)
+            stored_receiver_id = receiver_stored_id(stored_correction)
+            if not stored_receiver_id:
+                print(f"[CORRECTION] BLAD: wFirma zgubila Odbiorce na korekcie {correction_id}")
+                return cors_response({
+                    'error': 'receiver_verification_failed',
+                    'message': (
+                        'Korekta ZOSTALA UTWORZONA, ale wFirma nie zapisala na niej Odbiorcy. '
+                        'NIE wystawiaj korekty ponownie — dokument juz istnieje. '
+                        'Sprawdz go w wFirmie i popraw recznie albo zglos blad.'
+                    ),
+                    'correction_invoice_id': correction_id,
+                    'correction_number': invoice_result.get('fullnumber'),
+                    'parent_invoice_id': parent_invoice_id,
+                }, 502)
+            print(f"[CORRECTION] Odbiorca potwierdzony odczytem: contractor_receiver.id={stored_receiver_id}")
 
         # Pobierz PDF korekty
         pdf_base64 = None
