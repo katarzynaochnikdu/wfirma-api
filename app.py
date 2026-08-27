@@ -5492,6 +5492,11 @@ def test_correction_debug():
         "invoicecontents": invoice_contents_dict
     }
 
+    # WO-492: trzecia i ostatnia kopia payloadu korekty. Endpoint jest diagnostyczny,
+    # ale przy dry_run=false tworzy PRAWDZIWY dokument — a kopia, ktora rozjezdza sie
+    # z regula, to dokladnie ten blad, ktory WO-471 i WO-492 goni po repo.
+    correction_payload.update(receiver_block_from_invoice(invoice))
+
     result = {
         'invoice_info': invoice_info,
         'positions': positions_info,

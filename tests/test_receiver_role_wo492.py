@@ -23,6 +23,7 @@ Uruchomienie (z katalogu APIV1):
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -170,3 +171,65 @@ def test_parent_without_usable_receiver_gives_empty_block(parent):
     block = receiver_block_from_invoice(parent)
 
     assert block == {}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Straznik strukturalny: KAZDY payload korekty musi przepisywac odbiorce
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Ta sama lekcja, ktora WO-471 i WO-492 zaplacily dwa razy: wada nie polegala na zlej
+# logice, tylko na POMINIETEJ KOPII. W tym pliku sa TRZY payloady korekty (sciezka zywa
+# `/api/workflow/correction` + dwa endpointy diagnostyczne, ktore przy `dry_run=false`
+# tworza prawdziwe dokumenty). Czwarta kopia dopisana za pol roku bedzie rownie
+# niewidoczna — chyba ze pilnuje jej test czytajacy ZRODLO.
+
+APP_SOURCE = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "app.py"
+
+#: Ile linii ZA zamknieciem dictu przeszukujemy — payload korekty dostaje odbiorce
+#: dopiero po skonstruowaniu (serie, tryb ceny), wiec wywolanie nie mieści się w dicie.
+CORRECTION_TRAILING_LINES = 25
+
+
+def _correction_payload_windows() -> list[tuple[int, str]]:
+    """(numer_linii, tresc) dla kazdego payloadu z `"type": "correction"`."""
+    lines = APP_SOURCE.read_text(encoding="utf-8").splitlines()
+    out: list[tuple[int, str]] = []
+    for idx, line in enumerate(lines):
+        if '"type": "correction"' not in line:
+            continue
+        start = idx
+        while start > 0 and "{" not in lines[start]:
+            start -= 1
+        depth = 0
+        end = start
+        for j in range(start, min(len(lines), start + 60)):
+            depth += lines[j].count("{") - lines[j].count("}")
+            end = j
+            if depth <= 0 and j > start:
+                break
+        out.append((idx + 1, "\n".join(lines[start : end + 1 + CORRECTION_TRAILING_LINES])))
+    return out
+
+
+def test_every_correction_payload_copies_the_receiver():
+    """Kazdy payload korekty w app.py musi wolac `receiver_block_from_invoice`."""
+    # Act
+    offenders = [line_no for line_no, window in _correction_payload_windows()
+                 if "receiver_block_from_invoice" not in window]
+
+    assert not offenders, (
+        f"payload(y) korekty bez przepisania odbiorcy w liniach {offenders}. "
+        f"Tak wlasnie FK/EV/TEST/4/8/2026 wyszla z contractor_receiver.id = 0."
+    )
+
+
+def test_correction_marker_actually_finds_the_payloads():
+    """Straznik straznika — pusta lista znaczylaby, ze test niczego nie pilnuje."""
+    # Act
+    found = len(_correction_payload_windows())
+
+    # W chwili pisania: sciezka zywa + dwa endpointy diagnostyczne.
+    assert found >= 3, (
+        f"marker znalazl tylko {found} payloadow korekty — jesli kod zmienil ksztalt, "
+        f"popraw marker, inaczej ten test przestanie czegokolwiek pilnowac"
+    )
