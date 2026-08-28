@@ -61,6 +61,87 @@ X-API-Key: [wartość MAKE_RENDER_API_KEY]
 Content-Type: application/json
 ```
 
+Dla dwóch workflow objętych WO-502 błędy bramek autoryzacji są błędami przed create,
+więc zachowują dotychczasowe `error`, `message` i status, a dostają
+`success: false, outcome: "rejected"`:
+
+| Przypadek | HTTP |
+|---|---|
+| brak nagłówka `X-API-Key` | `401` |
+| podany, ale błędny `X-API-Key` | `403` |
+| brak albo nieważny token OAuth w workflow korekty | `401` |
+
+Udany `OPTIONS` po spełnieniu bramek zwraca `200 {"status":"ok"}` bez `success` i bez
+`outcome`; nie wykonuje POST-u tworzącego dokument.
+
+---
+
+## Wynik tworzenia dokumentu (WO-502)
+
+Poniższy kontrakt obowiązuje oba produkcyjne workflow:
+
+- [`POST /api/workflow/create-invoice-from-nip`](app.py#L4075);
+- [`POST /api/workflow/correction`](app.py#L5269).
+
+Nieudana odpowiedź zachowuje dotychczasowe pola i status HTTP, a dodatkowo zawiera
+`success: false` oraz dokładnie jedno pole `outcome`:
+
+```json
+{
+  "success": false,
+  "outcome": "rejected",
+  "error": "Brak sekcji invoice"
+}
+```
+
+| Sytuacja | `outcome` | Status HTTP | Czy wolno ponowić create? |
+|---|---|---|---|
+| Walidacja lokalna przed pierwszym `invoices/add` albo jawny błąd dowodzący, że dokument nie powstał | `rejected` | Zachowany status ścieżki; walidacja requestu `400` | Nie automatycznie. Najpierw napraw dane albo przyczynę odrzucenia. |
+| Dokładny, znormalizowany komunikat tymczasowej blokady batch KSeF z zamkniętej allowlisty | `retryable` | Zachowane `500` workflow korekty | Tak, ale wyłącznie jako opóźnione ponowienie wdrożone przez WO-503. |
+| Timeout, zerwane połączenie, `5xx`, brak odpowiedzi, uszkodzone `HTTP 200` albo brak rozstrzygającego ID | `unknown` | Zachowany status ścieżki; timeout invoice workflow `502` | **Nie.** Dokument mógł powstać — najpierw uzgodnij stan z wFirmą. |
+| Otrzymano ID dokumentu, ale później zawiódł readback Odbiorcy/kwoty, inna weryfikacja albo wysyłka maila | `created_unverified` | Zachowany status ścieżki; błąd readback Odbiorcy `502` | **Nie.** Nie wysyłaj nowego create; dokument już ma ID. |
+
+Zamknięta allowlista `retryable` zawiera jeden komunikat:
+
+```text
+Nie można wystawić korekty do faktury w trakcie wysyłki wsadowej do KSeF
+```
+
+Normalizacja obejmuje wielkość liter oraz zewnętrzne/powielone białe znaki. Substring
+`KSeF`, podobne zdanie, inna interpunkcja lub brak znaków diakrytycznych nie wystarcza.
+Exact match jest sprawdzany przed ogólną klasyfikacją `5xx`; każdy inny `5xx` daje `unknown`.
+
+Reguły konsumenta są zamknięte:
+
+1. Tylko `retryable` zezwala na późniejsze, automatyczne ponowienie create.
+2. `unknown` i `created_unverified` bezwzględnie blokują nowy create.
+3. Brak albo nierozpoznana wartość `outcome` jest traktowana fail-closed jak `unknown`.
+4. Mikroserwis wykonuje najwyżej jeden POST `invoices/add` na request i nie ponawia go wewnętrznie.
+5. Transport tworzący dokument lub korektę ma timeout `30 s`; timeout zawsze oznacza `unknown`.
+6. HTTP status nie zastępuje `outcome` i nie może samodzielnie sterować retry.
+
+Sukces zachowuje dotychczasowy kształt i **nie zawiera** pola `outcome`:
+
+```json
+{
+  "success": true
+}
+```
+
+WO-502 publikuje kontrakt mikroserwisu. Backend portalu zacznie go konsumować, utrwalać i
+planować delayed retry dopiero w WO-503; do tego czasu wdrożenie samego WO-502 nie uruchamia
+automatycznych ponowień.
+
+### Epoki ceny pozostają rozłączne
+
+| Epoka | Request workflow | Payload `invoices/add` |
+|---|---|---|
+| netto | pomija `price_mode`; pozycje zawierają wyłącznie `unit_price_net` | pomija `price_type` |
+| brutto | jawnie zawiera `price_mode: "brutto"`; pozycje zawierają wyłącznie `unit_price_gross` | jawnie zawiera `price_type: "brutto"` |
+
+Korekta dziedziczy epokę dokumentu rodzica: rodzic netto nie dostaje `price_type`, a rodzic
+brutto dostaje `price_type: "brutto"`. `outcome` nie zależy od bieżącej flagi ceny.
+
 ---
 
 ## 1. Tworzenie dokumentów sprzedaży
@@ -88,6 +169,7 @@ Tworzy fakturę, proformę, notę księgową lub paragon.
 | `ereceipt_email` | string | Nie | - | Email do e-paragonu (tylko dla paragonów) |
 | `email` | string | Nie | - | Email do wysyłki faktury |
 | `send_email` | bool | Nie | `false` | Czy wysłać emailem |
+| `price_mode` | string | Nie | netto (brak klucza) | Dla epoki brutto jawnie `"brutto"`; netto zachowuje brak klucza |
 | `invoice` | object | **TAK** | - | Dane dokumentu (pozycje) |
 
 *Wymagany `nip` LUB `purchaser_name`
@@ -125,7 +207,8 @@ Pola pozycji:
 |------|-----|----------|-----------|------|
 | `name` | string | Tak | - | Nazwa pozycji (np. nazwa biletu, usługi) |
 | `quantity` | number | Tak | - | Ilość |
-| `unit_price_net` | number | Tak | - | Cena netto za jednostkę |
+| `unit_price_net` | number | Warunkowo | - | Cena netto za jednostkę; wymagana i jedyna w epoce netto |
+| `unit_price_gross` | number | Warunkowo | - | Cena brutto za jednostkę; wymagana i jedyna przy `price_mode: "brutto"` |
 | `vat_rate` | string | Tak | - | Stawka VAT (patrz tabela poniżej) |
 | `unit` | string | Nie | `"szt."` | Jednostka miary |
 
@@ -349,7 +432,10 @@ Tworzy fakturę korygującą do istniejącej faktury.
 }
 ```
 
-Pola pozycji korekty: `parent_position_id` (wymagane), `name`, `quantity`, `unit_price_net`, `vat_rate`; opcjonalnie `unit` (domyślnie `"szt."`).
+Pola pozycji korekty: `parent_position_id` (wymagane), `name`, `quantity`, `vat_rate` oraz
+dokładnie jedno pole ceny zgodne z epoką rodzica: `unit_price_net` dla netto albo
+`unit_price_gross` dla brutto; opcjonalnie `unit` (domyślnie `"szt."`). Epoki nie wybiera
+bieżąca flaga ani request korekty — mikroserwis odczytuje ją z dokumentu rodzica.
 
 #### Przykład:
 ```json
@@ -502,9 +588,14 @@ Dla `test` i `md_test` na fakturach pojawia się ostrzeżenie:
 |-----|------|
 | 200 | Sukces |
 | 400 | Błąd walidacji (brak wymaganych pól) |
-| 401 | Brak autoryzacji (niepoprawny X-API-Key lub brak tokenu) |
+| 401 | Brak `X-API-Key` albo brak/nieważny token OAuth |
+| 403 | Podany, ale niepoprawny `X-API-Key` |
 | 404 | Nie znaleziono (kontrahent, faktura) |
 | 500 | Błąd serwera |
+
+Statusy pozostają kompatybilne wstecz. Dla dwóch workflow tworzących dokument decyzję o
+retry podejmuje się na podstawie `outcome`, nie samego kodu HTTP — patrz
+[„Wynik tworzenia dokumentu (WO-502)”](#wynik-tworzenia-dokumentu-wo-502).
 
 ---
 

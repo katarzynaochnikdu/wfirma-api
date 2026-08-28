@@ -2,7 +2,7 @@
 wFirma API - Web Service dla Render
 Flask web app z OAuth 2.0 i endpointami API
 """
-from flask import Flask, request, redirect, jsonify, Response, send_file, session
+from flask import Flask, request, redirect, jsonify, Response, send_file, session, g, make_response
 import requests
 import json
 import os
@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
 import threading
+from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
 
@@ -1887,8 +1888,222 @@ def wfirma_get_or_create_good(token: str, name: str, price: float, unit: str = "
     return None
 
 
-def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = None) -> tuple[dict | None, requests.Response | None]:
-    """Utwórz fakturę; zwraca (invoice_dict|None, response)."""
+DOCUMENT_CREATE_TIMEOUT_SECONDS = 30
+
+DOCUMENT_OUTCOME_REJECTED = "rejected"
+DOCUMENT_OUTCOME_RETRYABLE = "retryable"
+DOCUMENT_OUTCOME_UNKNOWN = "unknown"
+DOCUMENT_OUTCOME_CREATED_UNVERIFIED = "created_unverified"
+
+
+def _normalize_document_error_message(message: str) -> str:
+    """Normalizacja techniczna przed exact-match; bez fuzzy/substring/ASCII-fold."""
+    return " ".join(str(message or "").split()).casefold()
+
+
+KSEF_BATCH_RETRYABLE_MESSAGES = frozenset({
+    _normalize_document_error_message(
+        "Nie można wystawić korekty do faktury w trakcie wysyłki wsadowej do KSeF"
+    )
+})
+
+
+def _wfirma_response_json(response: requests.Response | None) -> dict | None:
+    if response is None:
+        return None
+    try:
+        payload = response.json()
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _extract_document_error_messages(response: requests.Response | None) -> list[str]:
+    """Czyta wyłącznie pola `message` żyjące pod `status/error/errors`.
+
+    Exact allowlista nie może przeglądać dowolnego echa requestu: klient mógłby
+    przypadkiem wpisać tekst podobny do błędu w opisie dokumentu.
+    """
+    payload = _wfirma_response_json(response)
+    if payload is None:
+        return []
+
+    messages: list[str] = []
+
+    def _walk(value, error_context: bool = False) -> None:
+        if isinstance(value, dict):
+            for raw_key, child in value.items():
+                key = str(raw_key).casefold()
+                child_error_context = error_context or key in {"status", "error", "errors"}
+                if key == "message" and error_context and isinstance(child, str):
+                    messages.append(child)
+                _walk(child, child_error_context)
+        elif isinstance(value, list):
+            for child in value:
+                _walk(child, error_context)
+
+    _walk(payload)
+    return messages
+
+
+def _extract_created_document_id(
+    document: dict | None,
+    response: requests.Response | None,
+) -> str | None:
+    """ID z obiektu transportu lub znanego shape `invoices.*.invoice` response."""
+    if isinstance(document, dict):
+        direct_id = document.get("id") or document.get("invoice_id")
+        if direct_id not in (None, ""):
+            return str(direct_id)
+
+    payload = _wfirma_response_json(response)
+    invoices = payload.get("invoices") if isinstance(payload, dict) else None
+    if not isinstance(invoices, dict):
+        return None
+    for entry in invoices.values():
+        if not isinstance(entry, dict):
+            continue
+        candidate = entry.get("invoice") if isinstance(entry.get("invoice"), dict) else entry
+        document_id = candidate.get("id") if isinstance(candidate, dict) else None
+        if document_id not in (None, ""):
+            return str(document_id)
+    return None
+
+
+def _classify_document_create_failure(response: requests.Response | None) -> str:
+    """Fail-closed wynik JEDNEGO POST-a `invoices/add`, gdy nie mamy ID."""
+    normalized_messages = {
+        _normalize_document_error_message(message)
+        for message in _extract_document_error_messages(response)
+    }
+    if normalized_messages & KSEF_BATCH_RETRYABLE_MESSAGES:
+        return DOCUMENT_OUTCOME_RETRYABLE
+
+    if response is None:
+        return DOCUMENT_OUTCOME_UNKNOWN
+    status_code = getattr(response, "status_code", None)
+    if not isinstance(status_code, int):
+        return DOCUMENT_OUTCOME_UNKNOWN
+    if 400 <= status_code < 500:
+        return DOCUMENT_OUTCOME_REJECTED
+    if status_code >= 500:
+        return DOCUMENT_OUTCOME_UNKNOWN
+    if status_code == 200:
+        payload = _wfirma_response_json(response)
+        if payload is None:
+            return DOCUMENT_OUTCOME_UNKNOWN
+        wfirma_status = payload.get("status")
+        if (
+            isinstance(wfirma_status, dict)
+            and str(wfirma_status.get("code") or "").upper() == "ERROR"
+        ):
+            return DOCUMENT_OUTCOME_REJECTED
+        # HTTP 200 bez rozstrzygającego ID nie dowodzi ani sukcesu, ani odrzucenia.
+        return DOCUMENT_OUTCOME_UNKNOWN
+    return DOCUMENT_OUTCOME_UNKNOWN
+
+
+def _reset_document_create_state() -> None:
+    g.document_create_attempted = False
+    g.document_create_response = None
+    g.document_created_id = None
+
+
+def _mark_document_create_attempt() -> None:
+    g.document_create_attempted = True
+    g.document_create_response = None
+    g.document_created_id = None
+
+
+def _record_document_create_result(
+    document: dict | None,
+    response: requests.Response | None,
+) -> None:
+    g.document_create_response = response
+    document_id = _extract_created_document_id(document, response)
+    if document_id:
+        # ID ma bezwzględny priorytet nad każdym późniejszym błędem lub wyjątkiem.
+        g.document_created_id = document_id
+
+
+def _current_document_failure_outcome() -> str:
+    if getattr(g, "document_created_id", None):
+        return DOCUMENT_OUTCOME_CREATED_UNVERIFIED
+    if getattr(g, "document_create_attempted", False):
+        return _classify_document_create_failure(
+            getattr(g, "document_create_response", None)
+        )
+    return DOCUMENT_OUTCOME_REJECTED
+
+
+def document_outcome_envelope(handler):
+    """Addytywny envelope błędów wyłącznie dla dwóch produkcyjnych workflow."""
+    @wraps(handler)
+    def wrapper(*args, **kwargs):
+        _reset_document_create_state()
+        try:
+            raw_response = handler(*args, **kwargs)
+        except HTTPException as exc:
+            # Zachowaj kod i nagłówki kontrolowanego błędu HTTP. Jeśli Werkzeug
+            # dostarczył HTML, zamień tylko body na stabilny kontrakt JSON.
+            response = exc.get_response()
+            data = response.get_json(silent=True)
+            if not isinstance(data, dict):
+                data = {
+                    "error": f"{exc.name}: {exc.description}",
+                    "message": exc.description,
+                }
+            data.setdefault("success", False)
+            data["outcome"] = _current_document_failure_outcome()
+            response.set_data(json.dumps(data, ensure_ascii=False))
+            response.mimetype = "application/json"
+            return response
+        except Exception:
+            # Przed create wiemy, że dokument nie powstał; po ID zawsze parkujemy
+            # jako created_unverified. Nie ujawniamy treści wyjątku w odpowiedzi.
+            traceback.print_exc()
+            error_payload = {
+                "success": False,
+                "outcome": _current_document_failure_outcome(),
+                "error": "Wewnętrzny błąd workflow dokumentu",
+            }
+            if getattr(g, "document_created_id", None):
+                error_payload["document_id"] = g.document_created_id
+            return cors_response(error_payload, 500)
+
+        response = make_response(raw_response)
+        data = response.get_json(silent=True)
+        is_failure = (
+            isinstance(data, dict)
+            and (
+                data.get("success") is False
+                or ("error" in data and data.get("success") is not True)
+            )
+        )
+        if not is_failure:
+            return response
+
+        # Zachowujemy wszystkie istniejące pola i status HTTP; dodajemy tylko
+        # stabilny wynik maszynowy oraz brakujące `success: false`.
+        data.setdefault("success", False)
+        data["outcome"] = _current_document_failure_outcome()
+        response.set_data(json.dumps(data, ensure_ascii=False))
+        response.mimetype = "application/json"
+        return response
+
+    return wrapper
+
+
+def wfirma_create_invoice(
+    token: str,
+    invoice_payload: dict,
+    company_id: str = None,
+    request_timeout: float | None = None,
+) -> tuple[dict | None, requests.Response | None]:
+    """Utwórz fakturę; zwraca (invoice_dict|None, response).
+
+    Timeout jest opt-in, aby zachować legacy transport pozostałych callerów.
+    """
     api_url = "https://api2.wfirma.pl/invoices/add?inputFormat=json&outputFormat=json&oauth_version=2"
     if company_id:
         api_url += f"&company_id={company_id}"
@@ -1907,7 +2122,15 @@ def wfirma_create_invoice(token: str, invoice_payload: dict, company_id: str = N
         except Exception:
             pass
         
-        resp = requests.post(api_url, headers=headers, json=request_body)
+        # WO-502: dokładnie jeden create POST na request. Timeout nie dowodzi, że
+        # dokument nie powstał, dlatego transport niczego tutaj nie ponawia.
+        post_kwargs = {
+            "headers": headers,
+            "json": request_body,
+        }
+        if request_timeout is not None:
+            post_kwargs["timeout"] = request_timeout
+        resp = requests.post(api_url, **post_kwargs)
         print(f"[WFIRMA DEBUG] wfirma_create_invoice response status: {resp.status_code}")
         if resp.status_code == 200:
             result = resp.json()
@@ -3850,6 +4073,7 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
 
 
 @app.route('/api/workflow/create-invoice-from-nip', methods=['POST', 'OPTIONS'])
+@document_outcome_envelope
 @require_api_key
 def workflow_create_invoice():
     """Pełny workflow: NIP -> (GUS) -> kontrahent -> faktura."""
@@ -4398,7 +4622,14 @@ def workflow_create_invoice():
             invoice_payload["description"] = description_param
             print(f"[WORKFLOW] Dodano opis na fakturze: {description_param}")
 
-    invoice, resp_inv = wfirma_create_invoice(token, invoice_payload, company_id)
+    _mark_document_create_attempt()
+    invoice, resp_inv = wfirma_create_invoice(
+        token,
+        invoice_payload,
+        company_id,
+        request_timeout=DOCUMENT_CREATE_TIMEOUT_SECONDS,
+    )
+    _record_document_create_result(invoice, resp_inv)
     try:
         print("[WFIRMA DEBUG] invoice create status:", resp_inv.status_code if resp_inv else None)
         if resp_inv is not None:
@@ -5036,6 +5267,7 @@ def wfirma_find_invoice_by_fullnumber(token: str, fullnumber: str, company_id: s
 
 
 @app.route('/api/workflow/correction', methods=['POST', 'OPTIONS'])
+@document_outcome_envelope
 @require_api_key
 @require_token
 def workflow_create_correction(token):
@@ -5296,7 +5528,14 @@ def workflow_create_correction(token):
         print(f"[CORRECTION] correction_payload (raw): {correction_payload}")
 
     # 4) Utwórz fakturę korygującą
-    invoice_result, resp = wfirma_create_invoice(token, correction_payload, wfirma_company_id)
+    _mark_document_create_attempt()
+    invoice_result, resp = wfirma_create_invoice(
+        token,
+        correction_payload,
+        wfirma_company_id,
+        request_timeout=DOCUMENT_CREATE_TIMEOUT_SECONDS,
+    )
+    _record_document_create_result(invoice_result, resp)
 
     if invoice_result and invoice_result.get('id'):
         correction_id = invoice_result.get('id')
