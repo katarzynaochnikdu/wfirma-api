@@ -74,14 +74,38 @@ więc zachowują dotychczasowe `error`, `message` i status, a dostają
 Udany `OPTIONS` po spełnieniu bramek zwraca `200 {"status":"ok"}` bez `success` i bez
 `outcome`; nie wykonuje POST-u tworzącego dokument.
 
+### Budżety transportowe readback i OAuth (WO-504A0)
+
+| Transport | Maksymalny czas jednego requestu | Retry wewnętrzny | Zachowanie po awarii |
+|---|---:|---|---|
+| `GET invoices/get/<invoice_id>` | `8 s` | brak — dokładnie jeden GET | Helper zachowuje `(None, error)`. `GET /api/invoice/<invoice_id>` zachowuje dotychczasowe `404` oraz klucze `error/details`. Readback po otrzymaniu ID dokumentu kończy workflow jako `created_unverified`, bez drugiego create. |
+| `POST https://api2.wfirma.pl/oauth2/token` | `15 s` | brak — dokładnie jeden POST | Timeout/awaria zwraca `None`, nie zapisuje tokenu i zwalnia advisory lock. Autoryzowany ręczny `POST /api/token/refresh` zachowuje `500`, a automatyczna bramka `@require_token` zachowuje `401`. |
+
+Dane OAuth są wysyłane wyłącznie w body `data=`. `client_secret` i `refresh_token` nie
+trafiają do URL-a ani logów. Access token i jego fragment nie są zwracane ani logowane;
+log diagnostyczny zapisu zawiera wyłącznie nieodwracalny fingerprint. Surowe body błędu
+OAuth również nie jest logowane, ponieważ zewnętrzna odpowiedź może odbić przesłany sekret.
+Z tego samego powodu ścieżka refreshu nie loguje treści ani tracebacku wyjątku oraz nie
+wylicza nazw kluczy odpowiedzi dostawcy; używa wyłącznie stałych markerów i statusu HTTP.
+
+Ręczne odświeżenie jest operacją zmieniającą stan, dlatego kanoniczny i jedyny dozwolony
+entrypoint to `POST /api/token/refresh?company=md&force=true` z nagłówkiem `X-API-Key`.
+`GET` zwraca `405`. Brak klucza w `POST` zwraca standardowe `401`, błędny klucz `403`,
+a oba przypadki kończą się przed odczytem Postgresa, advisory lockiem, OAuth POST-em i
+zapisem tokenu. Klucz jest porównywany stałoczasowo. Udana odpowiedź zawiera wyłącznie
+`success`, `message` i `company`; nie zawiera `access_token_preview`.
+
+Po przejściu autoryzacji budżety czasu nie zmieniają pozostałych statusów HTTP ani
+klasyfikacji `outcome`.
+
 ---
 
 ## Wynik tworzenia dokumentu (WO-502)
 
 Poniższy kontrakt obowiązuje oba produkcyjne workflow:
 
-- [`POST /api/workflow/create-invoice-from-nip`](app.py#L4075);
-- [`POST /api/workflow/correction`](app.py#L5269).
+- [`POST /api/workflow/create-invoice-from-nip`](app.py);
+- [`POST /api/workflow/correction`](app.py).
 
 Nieudana odpowiedź zachowuje dotychczasowe pola i status HTTP, a dodatkowo zawiera
 `success: false` oraz dokładnie jedno pole `outcome`:

@@ -13,6 +13,7 @@ import base64
 import uuid
 import traceback
 import hashlib
+import hmac
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from functools import wraps
@@ -135,6 +136,12 @@ GUS_SOAP_TIMEOUT = int(os.environ.get('GUS_SOAP_TIMEOUT', '20'))
 GUS_LOGIN_ATTEMPTS = int(os.environ.get('GUS_LOGIN_ATTEMPTS', '3'))
 GUS_RETRY_BACKOFF_S = (1, 2)
 
+# WO-504A0: read-only verification and OAuth refresh need independent, finite
+# budgets.  Neither transport is retried: an invoice may already exist after an
+# ambiguous readback, while a repeated refresh can race token rotation.
+WFIRMA_INVOICE_READ_TIMEOUT_SECONDS = 8
+WFIRMA_OAUTH_REFRESH_TIMEOUT_SECONDS = 15
+
 # GitHub token do uploadu zdjęć stopki email
 GITHUB_STOPKA_TOKEN = os.environ.get('ADMINZOHO_GITHUB_STOPKA_TOKEN')
 
@@ -245,7 +252,7 @@ def require_api_key(f):
     def decorated_function(*args, **kwargs):
         # BEZPIECZEŃSTWO: jeśli klucz nie jest ustawiony, NIE przepuszczaj requestów (fail-closed).
         # To chroni system, gdy ENV "zniknie" przy deployu.
-        if not MAKE_RENDER_API_KEY:
+        if not isinstance(MAKE_RENDER_API_KEY, str) or not MAKE_RENDER_API_KEY:
             print("[SECURITY] Brak MAKE_RENDER_API_KEY w ENV - blokuję endpoint wymagający X-API-Key")
             return jsonify({
                 'error': 'Server misconfigured',
@@ -253,7 +260,8 @@ def require_api_key(f):
             }), 503
         
         # Sprawdź header X-API-Key
-        provided_key = request.headers.get('X-API-Key', '').strip()
+        provided_header = request.headers.get('X-API-Key', '')
+        provided_key = provided_header.strip() if isinstance(provided_header, str) else ''
         
         if not provided_key:
             return jsonify({
@@ -261,7 +269,15 @@ def require_api_key(f):
                 'message': 'Wymagany header X-API-Key'
             }), 401
         
-        if provided_key != MAKE_RENDER_API_KEY:
+        try:
+            key_matches = hmac.compare_digest(
+                provided_key.encode('utf-8'),
+                MAKE_RENDER_API_KEY.encode('utf-8'),
+            )
+        except (TypeError, UnicodeEncodeError):
+            key_matches = False
+
+        if not key_matches:
             return jsonify({
                 'error': 'Nieprawidłowy klucz API',
                 'message': 'X-API-Key jest niepoprawny'
@@ -556,7 +572,7 @@ def save_token(access_token, expires_in, refresh_token=None, company=None, send_
         refresh_expires_at = int(time.time() + 30 * 24 * 60 * 60)
         print(f"{log_prefix} refresh_provided source={refresh_token_source or 'manual'} fp={_token_fingerprint(refresh_token)}")
     
-    print(f"{log_prefix} save_token: access={access_token[:20]}..., refresh={bool(final_refresh_token)}, expires_at={expires_at}")
+    print(f"{log_prefix} save_token: access_fp={_token_fingerprint(access_token)}, refresh={bool(final_refresh_token)}, expires_at={expires_at}")
     
     # 1. GŁÓWNE: Zapisz do POSTGRES (trwałe!)
     try:
@@ -646,7 +662,11 @@ def _refresh_access_token_inner(config, company, company_name, pg_company, prefi
             'refresh_token': refresh_token
         }
 
-        response = requests.post(token_url, data=payload)
+        response = requests.post(
+            token_url,
+            data=payload,
+            timeout=WFIRMA_OAUTH_REFRESH_TIMEOUT_SECONDS,
+        )
         print(f"{log_prefix} RESPONSE status_code={response.status_code}")
         
         if response.status_code == 200:
@@ -670,14 +690,18 @@ def _refresh_access_token_inner(config, company, company_name, pg_company, prefi
                 print(f"{log_prefix} SUKCES - Access token odświeżony")
                 return new_access
 
-            print(f"{log_prefix} BŁĄD - Brak access_token w odpowiedzi, keys={list(new_tokens.keys())}")
+            # Provider-controlled key names may themselves contain reflected secrets.
+            print(f"{log_prefix} BŁĄD - Brak access_token w odpowiedzi")
             return None
 
-        print(f"{log_prefix} BŁĄD API status={response.status_code} body={response.text[:500] if response.text else 'PUSTY'}")
+        # OAuth error bodies are untrusted and may reflect submitted secrets.
+        # Status is sufficient for diagnostics; never log response.text here.
+        print(f"{log_prefix} BŁĄD API status={response.status_code}")
         return None
-    except Exception as e:
-        print(f"{log_prefix} EXCEPTION: {e}")
-        traceback.print_exc()
+    except Exception:
+        # Transport/JSON exceptions can embed request data or reflected secrets.
+        # Keep this flow fail-closed and emit only a constant diagnostic marker.
+        print(f"{log_prefix} EXCEPTION")
         return None
     finally:
         try:
@@ -3331,7 +3355,8 @@ def callback():
 
 # ==================== ENDPOINTY API ====================
 
-@app.route('/api/token/refresh')
+@app.route('/api/token/refresh', methods=['POST'])
+@require_api_key
 def token_refresh():
     """
     Ręcznie odśwież access token używając refresh tokena.
@@ -3397,8 +3422,7 @@ def token_refresh():
         return jsonify({
             'success': True,
             'message': f'Token odświeżony pomyślnie dla firmy {company.upper()}',
-            'company': company,
-            'access_token_preview': new_token[:20] + '...'
+            'company': company
         })
     else:
         return jsonify({
@@ -5188,7 +5212,11 @@ def wfirma_get_invoice(token: str, invoice_id: str, company_id: str = None) -> t
     
     headers = get_wfirma_headers(token)
     try:
-        resp = requests.get(api_url, headers=headers)
+        resp = requests.get(
+            api_url,
+            headers=headers,
+            timeout=WFIRMA_INVOICE_READ_TIMEOUT_SECONDS,
+        )
         print(f"[WFIRMA] invoices/get/{invoice_id} status={resp.status_code}")
         
         if resp.status_code == 200:
