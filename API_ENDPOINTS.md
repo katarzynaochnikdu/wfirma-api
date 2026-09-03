@@ -98,6 +98,54 @@ zapisem tokenu. Klucz jest porównywany stałoczasowo. Udana odpowiedź zawiera 
 Po przejściu autoryzacji budżety czasu nie zmieniają pozostałych statusów HTTP ani
 klasyfikacji `outcome`.
 
+### Ścisły odczyt recovery dokumentu (WO-507A2-S)
+
+Portal ma osobne, wewnętrzne wejście proof-only:
+
+```http
+GET /api/recovery/invoice/<invoice_id>?company=md|test|md_test
+X-API-Key: <MAKE_RENDER_API_KEY>
+```
+
+`company` jest obowiązkowe i może wystąpić dokładnie raz. Endpoint nie używa firmy
+domyślnej i nie wyszukuje firmy przez `companies/find`: przyjmuje wyłącznie przypięte
+`WFIRMA_<COMPANY>_COMPANY_ID` albo znane ID `md`. `md_test` jawnie korzysta z credentiali
+i ID firmy `md`, ale zachowuje etykietę `md_test` w proofie. Konto `test` bez przypiętego
+`WFIRMA_TEST_COMPANY_ID` jest fail-closed (`503`).
+
+Po autoryzacji wykonywane są wyłącznie:
+
+1. jeden `GET invoices/get/<invoice_id>`;
+2. jeden `GET contractors/get/<buyer_id>`;
+3. opcjonalnie jeden `GET contractors/get/<receiver_id>`.
+
+Każdy request ma 8 s timeout, `allow_redirects=False`, brak retry oraz limit 2 MiB
+zdekompresowanego JSON. Sukces wymaga dokładnie jednego obiektu w każdej odpowiedzi i
+zgodności wszystkich ID z żądaniem lub relacją dokumentu. Endpoint nie wykonuje
+providerowego POST/PATCH/PUT/DELETE, wyszukania, maila ani PDF.
+
+Sukces:
+
+```json
+{
+  "success": true,
+  "proof": {
+    "version": 1,
+    "company": "md",
+    "company_id": "130706",
+    "invoice": {},
+    "contractor": {},
+    "receiver": null
+  }
+}
+```
+
+Proof zawiera pełny odczyt potrzebny portalowi do porównania z zamrożonym intentem i jest
+przeznaczony wyłącznie dla zaufanego backendu. Portal nie może przekazywać tych surowych
+danych do UI. Odpowiedzi błędów są zamknięte i nie zawierają treści ani wyjątków wFirma:
+`400 invalid_request`, `401 oauth_unavailable`, `503 recovery_configuration_unavailable`,
+`404 document_not_found` lub `502 recovery_read_unavailable`.
+
 ---
 
 ## Wynik tworzenia dokumentu (WO-502)

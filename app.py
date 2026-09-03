@@ -141,6 +141,11 @@ GUS_RETRY_BACKOFF_S = (1, 2)
 # ambiguous readback, while a repeated refresh can race token rotation.
 WFIRMA_INVOICE_READ_TIMEOUT_SECONDS = 8
 WFIRMA_OAUTH_REFRESH_TIMEOUT_SECONDS = 15
+# WO-507A2-S: recovery is a separate proof-only transport.  Keep its budget
+# explicit so it cannot silently inherit a longer create/search timeout.
+WFIRMA_RECOVERY_READ_TIMEOUT_SECONDS = 8
+WFIRMA_RECOVERY_RESPONSE_MAX_BYTES = 2 * 1024 * 1024
+WFIRMA_RECOVERY_RESPONSE_CHUNK_BYTES = 64 * 1024
 
 # GitHub token do uploadu zdjęć stopki email
 GITHUB_STOPKA_TOKEN = os.environ.get('ADMINZOHO_GITHUB_STOPKA_TOKEN')
@@ -3666,6 +3671,289 @@ def api_get_invoice(token, invoice_id):
     else:
         print(f"[API] Nie znaleziono faktury ID={invoice_id}: {err}")
         return cors_response({'error': f'Nie znaleziono faktury o ID {invoice_id}', 'details': err}, 404)
+
+
+def _canonical_recovery_id(value, *, allow_zero=False) -> str | None:
+    """Normalize provider IDs without accepting aliases or lossy coercions."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        text = str(value)
+    elif isinstance(value, str):
+        text = value
+    else:
+        return None
+    if not re.fullmatch(r"0|[1-9][0-9]{0,31}", text):
+        return None
+    if text == "0" and not allow_zero:
+        return None
+    return text
+
+
+def _pinned_recovery_company_id(company: str) -> str | None:
+    """Return only a configured/known company ID; recovery never performs find."""
+    if type(company) is not str or company not in SUPPORTED_COMPANIES:
+        return None
+    config = get_company_config(company)
+    raw_pinned = os.environ.get(f"{config['prefix']}COMPANY_ID") or ""
+    if raw_pinned != raw_pinned.strip():
+        return None
+    pinned = raw_pinned
+    candidate = pinned or WFIRMA_KNOWN_COMPANY_IDS.get(config["pg_company"])
+    return _canonical_recovery_id(candidate)
+
+
+def _read_recovery_json_bounded(response) -> dict | None:
+    """Decode one streamed JSON object while bounding the decompressed body."""
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        raw_length = headers.get("Content-Length")
+        if raw_length not in (None, ""):
+            try:
+                declared_length = int(raw_length)
+            except (TypeError, ValueError):
+                return None
+            if declared_length < 0 or declared_length > WFIRMA_RECOVERY_RESPONSE_MAX_BYTES:
+                return None
+
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        iterator = response.iter_content(
+            chunk_size=WFIRMA_RECOVERY_RESPONSE_CHUNK_BYTES
+        )
+        for chunk in iterator:
+            if not chunk:
+                continue
+            if not isinstance(chunk, bytes):
+                return None
+            total += len(chunk)
+            if total > WFIRMA_RECOVERY_RESPONSE_MAX_BYTES:
+                return None
+            chunks.append(chunk)
+        value = json.loads(b"".join(chunks).decode("utf-8"))
+    except (AttributeError, UnicodeDecodeError, ValueError, TypeError):
+        return None
+    return value if type(value) is dict else None
+
+
+def _extract_single_recovery_entity(
+    payload: dict,
+    *,
+    plural: str,
+    singular: str,
+    expected_id: str,
+) -> dict | None:
+    """Require exactly one entity and prove its ID against the requested relation."""
+    container = payload.get(plural)
+    if type(container) is not dict:
+        return None
+    candidates: list[dict] = []
+    for key, wrapper in container.items():
+        if key == singular and type(wrapper) is dict:
+            candidates.append(wrapper)
+            continue
+        if type(key) is not str or not key.isdigit() or type(wrapper) is not dict:
+            continue
+        entity = wrapper.get(singular)
+        if type(entity) is dict:
+            candidates.append(entity)
+    if len(candidates) != 1:
+        return None
+    entity = candidates[0]
+    if _canonical_recovery_id(entity.get("id")) != expected_id:
+        return None
+    return entity
+
+
+def _strict_wfirma_recovery_get(
+    token: str,
+    *,
+    plural: str,
+    singular: str,
+    entity_id: str,
+    company_id: str,
+) -> tuple[dict | None, str | None]:
+    """Execute one bounded GET against one of the two fixed recovery resources."""
+    allowed = {
+        ("invoices", "invoice"),
+        ("contractors", "contractor"),
+    }
+    if (
+        (plural, singular) not in allowed
+        or _canonical_recovery_id(entity_id) is None
+        or _canonical_recovery_id(company_id) is None
+    ):
+        return None, "invalid_internal_request"
+
+    response = None
+    try:
+        response = requests.get(
+            f"https://api2.wfirma.pl/{plural}/get/{entity_id}",
+            params={
+                "inputFormat": "json",
+                "outputFormat": "json",
+                "oauth_version": "2",
+                "company_id": company_id,
+            },
+            headers=get_wfirma_headers(token),
+            timeout=WFIRMA_RECOVERY_READ_TIMEOUT_SECONDS,
+            allow_redirects=False,
+            stream=True,
+        )
+        status = getattr(response, "status_code", None)
+        if status == 404:
+            return None, "not_found"
+        if status != 200:
+            return None, "provider_unavailable"
+        payload = _read_recovery_json_bounded(response)
+        if payload is None:
+            return None, "invalid_response"
+        entity = _extract_single_recovery_entity(
+            payload,
+            plural=plural,
+            singular=singular,
+            expected_id=entity_id,
+        )
+        if entity is None:
+            return None, "invalid_response"
+        return entity, None
+    except requests.RequestException:
+        return None, "transport_unavailable"
+    except Exception:
+        # Provider exception text can reflect Authorization or upstream PII.
+        return None, "transport_unavailable"
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
+def _recovery_relation_id(document: dict, key: str, *, optional: bool) -> tuple[str | None, bool]:
+    node = document.get(key)
+    if node is None and optional:
+        return None, True
+    if type(node) is not dict:
+        return None, False
+    raw_id = node.get("id")
+    if optional and raw_id in (None, "", 0, "0"):
+        return None, True
+    relation_id = _canonical_recovery_id(raw_id)
+    return relation_id, relation_id is not None
+
+
+def wfirma_get_recovery_invoice_proof(
+    token: str,
+    *,
+    invoice_id: str,
+    company: str,
+    company_id: str,
+) -> tuple[dict | None, str | None]:
+    """Read one invoice and its exact parties; never search, write or retry."""
+    invoice, reason = _strict_wfirma_recovery_get(
+        token,
+        plural="invoices",
+        singular="invoice",
+        entity_id=invoice_id,
+        company_id=company_id,
+    )
+    if invoice is None:
+        return None, reason
+
+    contractor_id, contractor_relation_ok = _recovery_relation_id(
+        invoice, "contractor", optional=False
+    )
+    receiver_id, receiver_relation_ok = _recovery_relation_id(
+        invoice, "contractor_receiver", optional=True
+    )
+    if not contractor_relation_ok or not receiver_relation_ok or contractor_id is None:
+        return None, "invalid_response"
+
+    contractor, reason = _strict_wfirma_recovery_get(
+        token,
+        plural="contractors",
+        singular="contractor",
+        entity_id=contractor_id,
+        company_id=company_id,
+    )
+    if contractor is None:
+        # The requested invoice exists; a missing party makes its proof incomplete.
+        party_reason = "invalid_response" if reason == "not_found" else reason
+        return None, party_reason or "invalid_response"
+
+    receiver = None
+    if receiver_id is not None:
+        receiver, reason = _strict_wfirma_recovery_get(
+            token,
+            plural="contractors",
+            singular="contractor",
+            entity_id=receiver_id,
+            company_id=company_id,
+        )
+        if receiver is None:
+            party_reason = "invalid_response" if reason == "not_found" else reason
+            return None, party_reason or "invalid_response"
+
+    return {
+        "version": 1,
+        "company": company,
+        "company_id": company_id,
+        "invoice": invoice,
+        "contractor": contractor,
+        "receiver": receiver,
+    }, None
+
+
+@app.route('/api/recovery/invoice/<invoice_id>', methods=['GET'])
+@require_api_key
+def api_get_recovery_invoice(invoice_id):
+    """Return a strict proof envelope for portal-side manual recovery."""
+    company_values = request.args.getlist("company")
+    if set(request.args.keys()) != {"company"} or len(company_values) != 1:
+        return jsonify({"success": False, "error": "invalid_request"}), 400
+    company = company_values[0]
+    if (
+        company not in SUPPORTED_COMPANIES
+        or _canonical_recovery_id(invoice_id) != invoice_id
+    ):
+        return jsonify({"success": False, "error": "invalid_request"}), 400
+
+    company_id = _pinned_recovery_company_id(company)
+    if company_id is None:
+        return jsonify({
+            "success": False,
+            "error": "recovery_configuration_unavailable",
+        }), 503
+
+    try:
+        token = load_token(silent=True, company=company)
+        token_is_valid = (
+            type(token) is str
+            and 1 <= len(token) <= 16384
+            and token == token.strip()
+            and not any(ord(character) <= 0x20 or ord(character) == 0x7F for character in token)
+            and is_token_valid_for_company(company)
+        )
+    except Exception:
+        token = None
+        token_is_valid = False
+    if not token_is_valid:
+        return jsonify({"success": False, "error": "oauth_unavailable"}), 401
+
+    proof, reason = wfirma_get_recovery_invoice_proof(
+        token,
+        invoice_id=invoice_id,
+        company=company,
+        company_id=company_id,
+    )
+    if proof is not None:
+        return jsonify({"success": True, "proof": proof}), 200
+    if reason == "not_found":
+        return jsonify({"success": False, "error": "document_not_found"}), 404
+    return jsonify({"success": False, "error": "recovery_read_unavailable"}), 502
 
 
 @app.route('/api/invoice/create', methods=['POST', 'OPTIONS'])
