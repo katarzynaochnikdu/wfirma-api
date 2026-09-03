@@ -3778,6 +3778,7 @@ def _strict_wfirma_recovery_get(
     allowed = {
         ("invoices", "invoice"),
         ("contractors", "contractor"),
+        ("series", "series"),
     }
     if (
         (plural, singular) not in allowed
@@ -3845,6 +3846,27 @@ def _recovery_relation_id(document: dict, key: str, *, optional: bool) -> tuple[
     return relation_id, relation_id is not None
 
 
+def _recovery_series_id(document: dict) -> str | None:
+    """Accept the two provider encodings only when they resolve to one exact ID."""
+    candidates: list[str] = []
+    if "series" in document:
+        series = document.get("series")
+        if type(series) is not dict:
+            return None
+        nested = _canonical_recovery_id(series.get("id"))
+        if nested is None:
+            return None
+        candidates.append(nested)
+    if "series_id" in document:
+        flat = _canonical_recovery_id(document.get("series_id"))
+        if flat is None:
+            return None
+        candidates.append(flat)
+    if not candidates or len(set(candidates)) != 1:
+        return None
+    return candidates[0]
+
+
 def wfirma_get_recovery_invoice_proof(
     token: str,
     *,
@@ -3863,14 +3885,31 @@ def wfirma_get_recovery_invoice_proof(
     if invoice is None:
         return None, reason
 
+    series_id = _recovery_series_id(invoice)
     contractor_id, contractor_relation_ok = _recovery_relation_id(
         invoice, "contractor", optional=False
     )
     receiver_id, receiver_relation_ok = _recovery_relation_id(
         invoice, "contractor_receiver", optional=True
     )
-    if not contractor_relation_ok or not receiver_relation_ok or contractor_id is None:
+    if (
+        series_id is None
+        or not contractor_relation_ok
+        or not receiver_relation_ok
+        or contractor_id is None
+    ):
         return None, "invalid_response"
+
+    series, reason = _strict_wfirma_recovery_get(
+        token,
+        plural="series",
+        singular="series",
+        entity_id=series_id,
+        company_id=company_id,
+    )
+    if series is None:
+        series_reason = "invalid_response" if reason == "not_found" else reason
+        return None, series_reason or "invalid_response"
 
     contractor, reason = _strict_wfirma_recovery_get(
         token,
@@ -3902,6 +3941,7 @@ def wfirma_get_recovery_invoice_proof(
         "company": company,
         "company_id": company_id,
         "invoice": invoice,
+        "series": series,
         "contractor": contractor,
         "receiver": receiver,
     }, None

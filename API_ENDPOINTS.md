@@ -116,8 +116,9 @@ i ID firmy `md`, ale zachowuje etykietę `md_test` w proofie. Konto `test` bez p
 Po autoryzacji wykonywane są wyłącznie:
 
 1. jeden `GET invoices/get/<invoice_id>`;
-2. jeden `GET contractors/get/<buyer_id>`;
-3. opcjonalnie jeden `GET contractors/get/<receiver_id>`.
+2. jeden `GET series/get/<series_id>`;
+3. jeden `GET contractors/get/<buyer_id>`;
+4. opcjonalnie jeden `GET contractors/get/<receiver_id>`.
 
 Każdy request ma 8 s timeout, `allow_redirects=False`, brak retry oraz limit 2 MiB
 zdekompresowanego JSON. Sukces wymaga dokładnie jednego obiektu w każdej odpowiedzi i
@@ -134,6 +135,7 @@ Sukces:
     "company": "md",
     "company_id": "130706",
     "invoice": {},
+    "series": {},
     "contractor": {},
     "receiver": null
   }

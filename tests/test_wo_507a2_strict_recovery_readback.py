@@ -66,6 +66,7 @@ def _invoice(
     value: dict[str, Any] = {
         "id": invoice_id,
         "fullnumber": "FV/EV/TEST/50/9/2026",
+        "series": {"id": "7301"},
         "contractor": {"id": contractor_id},
         "price_type": "brutto",
         "date": "2026-09-03",
@@ -165,6 +166,7 @@ def test_recovery_readback_returns_exact_tenant_bound_invoice_and_parties(
     monkeypatch.setenv("WFIRMA_TEST_COMPANY_ID", "230706")
     responses = [
         _entity_response("invoices", "invoice", _invoice()),
+        _entity_response("series", "series", {"id": "7301", "name": "Eventy Faktura VAT TEST"}),
         _entity_response("contractors", "contractor", _contractor("7101", name="Buyer Test")),
         _entity_response("contractors", "contractor", _contractor("7201", name="Receiver Test")),
     ]
@@ -184,16 +186,18 @@ def test_recovery_readback_returns_exact_tenant_bound_invoice_and_parties(
             "company": "test",
             "company_id": "230706",
             "invoice": _invoice(),
+            "series": {"id": "7301", "name": "Eventy Faktura VAT TEST"},
             "contractor": _contractor("7101", name="Buyer Test"),
             "receiver": _contractor("7201", name="Receiver Test"),
         },
     }
     assert state["token_companies"] == [(True, "test")]
     assert state["validity_companies"] == ["test"]
-    assert len(state["gets"]) == 3
+    assert len(state["gets"]) == 4
     _assert_get_budget(state["gets"][0], path="invoices/get/8101", company_id="230706")
-    _assert_get_budget(state["gets"][1], path="contractors/get/7101", company_id="230706")
-    _assert_get_budget(state["gets"][2], path="contractors/get/7201", company_id="230706")
+    _assert_get_budget(state["gets"][1], path="series/get/7301", company_id="230706")
+    _assert_get_budget(state["gets"][2], path="contractors/get/7101", company_id="230706")
+    _assert_get_budget(state["gets"][3], path="contractors/get/7201", company_id="230706")
     assert all(item.closed for item in responses)
 
 
@@ -205,6 +209,7 @@ def test_recovery_readback_md_variants_share_pinned_credentials_but_preserve_req
     state["responses"].extend(
         [
             _entity_response("invoices", "invoice", _invoice(receiver_id=None)),
+            _entity_response("series", "series", {"id": "7301", "name": "Eventy Faktura VAT TEST"}),
             _entity_response("contractors", "contractor", _contractor("7101", name="Buyer Test")),
         ]
     )
@@ -221,7 +226,7 @@ def test_recovery_readback_md_variants_share_pinned_credentials_but_preserve_req
     assert response.get_json()["proof"]["receiver"] is None
     assert state["token_companies"] == [(True, company)]
     assert state["validity_companies"] == [company]
-    assert len(state["gets"]) == 2
+    assert len(state["gets"]) == 3
 
 
 @pytest.mark.parametrize(
@@ -356,6 +361,7 @@ def test_recovery_readback_invoice_failure_is_closed_without_retry_or_leak(
         {"invoices": {"0": {"invoice": _invoice("8102")}}},
         {"invoices": {"0": {"invoice": {**_invoice(), "contractor": {"id": "0"}}}}},
         {"invoices": {"0": {"invoice": {**_invoice(), "contractor_receiver": {"id": "bad"}}}}},
+        {"invoices": {"0": {"invoice": {**_invoice(), "series": {"id": "bad"}}}}},
     ],
 )
 def test_recovery_readback_malformed_invoice_or_relation_stops_before_party_get(
@@ -383,6 +389,7 @@ def test_recovery_readback_party_id_mismatch_discards_partial_proof(harness):
     state["responses"].extend(
         [
             _entity_response("invoices", "invoice", _invoice()),
+            _entity_response("series", "series", {"id": "7301", "name": "Eventy Faktura VAT TEST"}),
             _entity_response("contractors", "contractor", _contractor("9999", name="Wrong Buyer")),
         ]
     )
@@ -399,7 +406,7 @@ def test_recovery_readback_party_id_mismatch_discards_partial_proof(harness):
         "error": "recovery_read_unavailable",
     }
     assert "proof" not in response.get_json()
-    assert len(state["gets"]) == 2
+    assert len(state["gets"]) == 3
 
 
 def test_recovery_readback_invalid_company_pin_stops_before_oauth_and_transport(
@@ -443,6 +450,7 @@ def test_recovery_readback_receiver_id_mismatch_discards_all_proof(harness):
     state["responses"].extend(
         [
             _entity_response("invoices", "invoice", _invoice()),
+            _entity_response("series", "series", {"id": "7301", "name": "Eventy Faktura VAT TEST"}),
             _entity_response("contractors", "contractor", _contractor("7101", name="Buyer Test")),
             _entity_response("contractors", "contractor", _contractor("9999", name="Wrong Receiver")),
         ]
@@ -459,7 +467,7 @@ def test_recovery_readback_receiver_id_mismatch_discards_all_proof(harness):
         "success": False,
         "error": "recovery_read_unavailable",
     }
-    assert len(state["gets"]) == 3
+    assert len(state["gets"]) == 4
 
 
 @pytest.mark.parametrize("party", ["contractor", "receiver"])
@@ -469,6 +477,9 @@ def test_recovery_readback_missing_party_is_not_misreported_as_missing_document(
     client, state = harness
     state["responses"].append(
         _entity_response("invoices", "invoice", _invoice())
+    )
+    state["responses"].append(
+        _entity_response("series", "series", {"id": "7301", "name": "Eventy Faktura VAT TEST"})
     )
     if party == "contractor":
         state["responses"].append(FakeStreamResponse(404, {"status": "missing"}))
@@ -513,3 +524,59 @@ def test_recovery_readback_contract_has_fixed_limits_and_no_write_verb():
     assert "requests.patch(" not in helper_source
     assert "requests.delete(" not in helper_source
     assert "wfirma_get_company_id" not in helper_source
+
+
+@pytest.mark.parametrize(
+    "invoice_series",
+    [
+        None,
+        {"id": "0"},
+        {"id": "bad"},
+    ],
+)
+def test_recovery_readback_invalid_series_relation_stops_before_series_get(
+    harness, invoice_series
+):
+    client, state = harness
+    invoice = _invoice()
+    if invoice_series is None:
+        invoice.pop("series")
+    else:
+        invoice["series"] = invoice_series
+    state["responses"].append(_entity_response("invoices", "invoice", invoice))
+
+    # Act
+    response = client.get(
+        "/api/recovery/invoice/8101?company=md",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 502
+    assert response.get_json() == {
+        "success": False,
+        "error": "recovery_read_unavailable",
+    }
+    assert len(state["gets"]) == 1
+
+
+def test_recovery_readback_series_id_mismatch_discards_all_proof(harness):
+    client, state = harness
+    state["responses"].extend(
+        [
+            _entity_response("invoices", "invoice", _invoice()),
+            _entity_response("series", "series", {"id": "9999", "name": "Wrong"}),
+        ]
+    )
+
+    # Act
+    response = client.get(
+        "/api/recovery/invoice/8101?company=md",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 502
+    assert response.get_json() == {
+        "success": False,
+        "error": "recovery_read_unavailable",
+    }
+    assert len(state["gets"]) == 2
