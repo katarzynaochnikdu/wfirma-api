@@ -2128,6 +2128,7 @@ def wfirma_create_invoice(
     invoice_payload: dict,
     company_id: str = None,
     request_timeout: float | None = None,
+    redact_logs: bool = False,
 ) -> tuple[dict | None, requests.Response | None]:
     """Utwórz fakturę; zwraca (invoice_dict|None, response).
 
@@ -2147,7 +2148,8 @@ def wfirma_create_invoice(
         # LOG: pełny request body
         try:
             import json as json_lib
-            print("[WFIRMA DEBUG] FULL invoice request body:", json_lib.dumps(request_body, ensure_ascii=False, indent=2))
+            if not redact_logs:
+                print("[WFIRMA DEBUG] FULL invoice request body:", json_lib.dumps(request_body, ensure_ascii=False, indent=2))
         except Exception:
             pass
         
@@ -2159,6 +2161,9 @@ def wfirma_create_invoice(
         }
         if request_timeout is not None:
             post_kwargs["timeout"] = request_timeout
+        if redact_logs:
+            # The strict workflow must never follow a redirect with a create body.
+            post_kwargs["allow_redirects"] = False
         resp = requests.post(api_url, **post_kwargs)
         print(f"[WFIRMA DEBUG] wfirma_create_invoice response status: {resp.status_code}")
         if resp.status_code == 200:
@@ -2169,7 +2174,8 @@ def wfirma_create_invoice(
             wfirma_status = result.get('status', {})
             if isinstance(wfirma_status, dict) and wfirma_status.get('code') == 'ERROR':
                 print(f"[WFIRMA ERROR] wFirma zwróciło HTTP 200 ale status.code=ERROR!")
-                print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
+                if not redact_logs:
+                    print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
                 return None, resp
 
             # Odpowiedź: invoices.0.invoice
@@ -2179,19 +2185,23 @@ def wfirma_create_invoice(
                     if key.isdigit():
                         invoice = invoices[key].get('invoice', {})
                         if invoice and invoice.get('id'):
-                            print(f"[WFIRMA DEBUG] Invoice created successfully: id={invoice.get('id')}, fullnumber={invoice.get('fullnumber')}")
+                            if not redact_logs:
+                                print(f"[WFIRMA DEBUG] Invoice created successfully: id={invoice.get('id')}, fullnumber={invoice.get('fullnumber')}")
                             return invoice, resp
-            print(f"[WFIRMA DEBUG] wfirma_create_invoice: status 200 but no invoice in response. Full response: {resp.text[:2000]}")
+            if not redact_logs:
+                print(f"[WFIRMA DEBUG] wfirma_create_invoice: status 200 but no invoice in response. Full response: {resp.text[:2000]}")
             return None, resp
         else:
             # Logowanie błędu z wFirma.pl (ograniczone do 2000 znaków żeby nie jeść RAM)
             print(f"[WFIRMA ERROR] wfirma_create_invoice FAILED! Status: {resp.status_code}")
-            print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
+            if not redact_logs:
+                print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
             return None, resp
     except Exception as e:
-        print(f"[WFIRMA ERROR] wfirma_create_invoice EXCEPTION: {e}")
-        import traceback
-        traceback.print_exc()
+        if not redact_logs:
+            print(f"[WFIRMA ERROR] wfirma_create_invoice EXCEPTION: {e}")
+            import traceback
+            traceback.print_exc()
         return None, resp
 
 
@@ -3994,6 +4004,124 @@ def api_get_recovery_invoice(invoice_id):
     if reason == "not_found":
         return jsonify({"success": False, "error": "document_not_found"}), 404
     return jsonify({"success": False, "error": "recovery_read_unavailable"}), 502
+
+
+def _structural_correction_identity(company):
+    """Explicit tenant only; never fall back to the default company's token."""
+    company_id = _pinned_recovery_company_id(company)
+    if company_id is None:
+        return None, None
+    token = load_token(silent=True, company=company)
+    if (type(token) is not str or not 1 <= len(token) <= 16384
+            or token != token.strip()
+            or any(ord(c) <= 0x20 or ord(c) == 0x7F for c in token)
+            or not is_token_valid_for_company(company)):
+        return None, None
+    return token, company_id
+
+
+def _structural_correction_error(reason, status):
+    from participant_change_correction import StructuralContractError, identifier
+    data = {"success": False, "error": reason}
+    try:
+        data["document_id"] = identifier(getattr(g, "document_created_id", None))
+    except StructuralContractError:
+        pass
+    return jsonify(data), status
+
+
+@app.route('/api/workflow/participant-change-correction/parent/<invoice_id>', methods=['GET'])
+@require_api_key
+def structural_correction_parent(invoice_id):
+    """Private, complete parent projection for a frozen participant-change job."""
+    from participant_change_correction import StructuralContractError, identifier, project_parent, fingerprint
+    try:
+        if (set(request.args) != {"company"} or len(request.args.getlist("company")) != 1
+                or request.args["company"] not in ("md", "md_test", "test")
+                or identifier(invoice_id) != invoice_id):
+            return jsonify(success=False, error="invalid_request"), 400
+        token, company_id = _structural_correction_identity(request.args["company"])
+        if token is None:
+            return jsonify(success=False, error="oauth_unavailable"), 503
+        invoice, error = _strict_wfirma_recovery_get(
+            token, plural="invoices", singular="invoice", entity_id=invoice_id, company_id=company_id)
+        if error is not None or invoice is None:
+            return jsonify(success=False, error="parent_read_unavailable"), 502
+        parent = project_parent(invoice, company_id)
+        if parent["document_id"] != invoice_id:
+            return jsonify(success=False, error="parent_read_unavailable"), 502
+        response = jsonify(success=True, parent=parent, parent_sha256=fingerprint(parent))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except StructuralContractError:
+        return jsonify(success=False, error="parent_proof_invalid"), 409
+    except Exception:
+        # Input/provider exceptions may contain PII; no traceback or raw error.
+        return jsonify(success=False, error="parent_read_unavailable"), 502
+
+
+@app.route('/api/workflow/participant-change-correction', methods=['POST'])
+@document_outcome_envelope
+@require_api_key
+def structural_correction_create():
+    """One create, then exact readback. Caller must hold a durable start fence.
+
+    No retry, PDF, mail, legacy fallback, or invoice-position index matching.
+    This endpoint remains unreleased until the portal's fenced consumer exists.
+    """
+    from participant_change_correction import (
+        MAX_BODY_BYTES, StructuralContractError, decode_request, identifier,
+        prepare_correction, verify_created,
+    )
+    try:
+        if request.args or request.mimetype != "application/json":
+            return jsonify(success=False, error="invalid_request"), 400
+        body = decode_request(request.stream.read(MAX_BODY_BYTES + 1))
+        parent_id = identifier(body["parent"].get("document_id"))
+        token, company_id = _structural_correction_identity(body["company"])
+        if token is None:
+            return jsonify(success=False, error="oauth_unavailable"), 503
+        invoice, error = _strict_wfirma_recovery_get(
+            token, plural="invoices", singular="invoice", entity_id=parent_id, company_id=company_id)
+        if error is not None or invoice is None:
+            return jsonify(success=False, error="parent_read_unavailable"), 502
+        series, error = _strict_wfirma_recovery_get(
+            token, plural="series", singular="series", entity_id=body["series_id"], company_id=company_id)
+        if error is not None or series is None:
+            return jsonify(success=False, error="series_read_unavailable"), 502
+        prepared = prepare_correction(body, invoice, company_id, series)
+        _mark_document_create_attempt()
+        created, transport_response = wfirma_create_invoice(
+            token, prepared["document"], company_id,
+            request_timeout=DOCUMENT_CREATE_TIMEOUT_SECONDS, redact_logs=True)
+        _record_document_create_result(created, transport_response)
+        document_id = getattr(g, "document_created_id", None)
+        if document_id is None:
+            return jsonify(success=False, error="document_create_unconfirmed"), 502
+        document_id = identifier(document_id)
+        # Shared legacy transport accepts the first document. The strict path
+        # also requires an unambiguous create envelope before trusting readback.
+        create_payload = _wfirma_response_json(transport_response)
+        if _extract_single_recovery_entity(
+                create_payload, plural="invoices", singular="invoice", expected_id=document_id) is None:
+            return _structural_correction_error("document_create_response_unverified", 502)
+        readback, error = _strict_wfirma_recovery_get(
+            token, plural="invoices", singular="invoice", entity_id=document_id, company_id=company_id)
+        if error is not None or readback is None:
+            return jsonify(success=False, error="document_readback_unavailable", document_id=document_id), 502
+        proof = verify_created(prepared, readback, document_id, company_id)
+        number = readback.get("fullnumber")
+        if (type(number) is not str or not number or number != number.strip()
+                or not number.isprintable() or len(number.encode("utf-8")) > 256):
+            return jsonify(success=False, error="document_number_unverified", document_id=document_id), 502
+        response = jsonify(success=True, contract_version=1, invoice_id=document_id,
+                           correction_invoice={"id": document_id, "fullnumber": number}, proof=proof)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except StructuralContractError:
+        return _structural_correction_error("structural_proof_invalid", 409)
+    except Exception:
+        return _structural_correction_error("structural_workflow_unavailable", 502)
 
 
 @app.route('/api/invoice/create', methods=['POST', 'OPTIONS'])

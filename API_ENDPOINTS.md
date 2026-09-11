@@ -1,5 +1,102 @@
 # wFirma API - Dokumentacja Endpointów
 
+## Korekta struktury biletów — WO-599C2b2, v1 (LOCAL / NOT RELEASED)
+
+Te dwa endpointy są oddzielne od starszego `/api/workflow/correction`.
+Nie aktywować przed integracją trwałej blokady wysyłki w portalu (WO-599C2b3)
+i bramką wydania. Sam `id_external` NIE zapewnia idempotencji w wFirma.
+Nie wykonywać przykładowych żądań na prawdziwych dokumentach.
+
+### Odczyt rodzica
+
+`GET /api/workflow/participant-change-correction/parent/<invoice_id>?company=md_test`
+
+Wymaga `X-API-Key`, jawnej firmy `md|md_test|test` i jej OAuth. Bez domyślnej
+firmy, powtórzonych lub dodatkowych parametrów. `md_test` jest nadal prawdziwym
+kontem Medidesk, NIE izolowaną bazą testową. Odczyt nie wysyła dokumentów.
+HTTP 200: `{success:true, parent:{...}, parent_sha256:"..."}`, `Cache-Control:no-store`.
+Przechowaj całą projekcję i SHA razem; nie odtwarzaj jej z sum zamówienia.
+
+Projekcja obejmuje wersję, ID/typ dokumentu, firmę, nabywcę/odbiorcę i hash
+ich danych, epokę ceny, PLN, dowód terminalności, powiązanie z poprzednim
+dokumentem, `id_external`, wszystkie pozycje oraz trzy sumy w groszach.
+Pozycja: ID, ewentualne ID poprzedniej pozycji, nazwa, jednostka, liczba,
+cena sztuki w epoce rodzica, kod VAT i netto/VAT/brutto całej linii.
+SHA-256: posortowane klucze JSON, UTF-8, bez białych znaków i NaN.
+
+### Utworzenie korekty i ścisły odczyt kontrolny
+
+`POST /api/workflow/participant-change-correction`, `Content-Type:application/json`.
+API-key i firmowy OAuth jak wyżej. Zamknięty zestaw wymaganych pól:
+
+| Pole | Znaczenie |
+|---|---|
+| `contract_version` | liczba całkowita `1` |
+| `company`, `change_id` | jawna firma; trwałe ID zmiany z portalu |
+| `parent`, `parent_sha256` | pełny wynik poprzedniego GET i jego SHA |
+| `issue_date` | data ISO `YYYY-MM-DD` |
+| `series_id`, `series_name` | obie wartości sprawdzane w tej samej firmie |
+| `correction_reason` | niepusty opis, maksymalnie 500 bajtów UTF-8 |
+| `price_model`, `currency` | `netto|brutto` zgodne z rodzicem; `PLN` |
+| `positions` | kompletny stan pozycji po zmianie (1..500) |
+| `after_totals` | dokładne `net_grosze`, `vat_grosze`, `gross_grosze` |
+
+Przykładowe dwie pozycje w epoce netto (same pozycje, nie pełny request):
+
+```json
+[
+  {"kind":"existing","line_key":"conference","parent_position_id":"8101",
+   "quantity":1,"unit_price_grosze":10000,"vat_rate_code":"23"},
+  {"kind":"new","line_key":"banquet","name":"Bankiet testowy","unit":"szt.",
+   "quantity":1,"unit_price_grosze":5000,"vat_rate_code":"23"}
+]
+```
+
+Sumy tego przykładu: 15000 netto + 3450 VAT = 18450 brutto. Każda stara
+pozycja występuje dokładnie raz; zmiana ilości do zera pozostawia pozycję
+w korekcie. Stare nazwy, jednostki, VAT i cena sztuki nie są przepisywane.
+Zmiana ceny istniejącego biletu wymaga wyzerowania starej i nowej linii,
+nie podziału kwoty proporcjonalnie. Nowa linia nie może mieć `parent_position_id`.
+
+Przed wysłaniem: świeży odczyt całego rodzica i serii, porównanie projekcji/SHA
+i wszystkich sum. Potem dokładnie jeden `invoices/add` (30 s, bez redirectów),
+odczyt nowego dokumentu i porównanie firmy, stron, rodzica, serii, epoki,
+identyfikatora zmiany, pozycji oraz trzech sum. GET-y mają limit 8 s / 2 MiB.
+Brak PDF, emaila i ponawiania create. Obecny wspólny create transport ma
+ograniczony czas, ale nie limit rozmiaru odpowiedzi (istniejące ograniczenie).
+
+Sukces 200: `{success:true, contract_version:1, invoice_id:"...",
+correction_invoice:{id:"...",fullnumber:"..."}, proof:{parent:{...},
+parent_sha256:"...",position_mapping:[{line_key:"...",position_id:"..."}]}}`.
+Nowa projekcja jest rodzicem następnej korekty; mapowanie korzysta z treści
+i powiązań, nigdy z kolejności zwróconej przez dostawcę.
+
+Odmowy mają `success:false`, stały kod `error` i `outcome`. Przed create:
+`rejected`; timeout / odpowiedź bez ID: `unknown`; istniejące ścisłe przypadki
+przejściowej odmowy: `retryable`; znane ID i nieweryfikowalny wynik:
+`created_unverified` (ID dołączane tylko, gdy kanoniczne). HTTP 409/502 NIE
+upoważnia do ponowienia. Nie wolno przejść awaryjnie do starszego endpointu.
+Auth: 401 brak klucza, 403 błędny klucz, 503 niedostępny OAuth/konfiguracja.
+
+### Granice v1 i wymagania integratora
+
+- Żądanie do 1 MiB, maks. 500 pozycji, ilość całkowita 0..5000 (nowa >0),
+  pieniądze jako całkowite grosze 0..2^63-1. VAT: `23|8|5|0|zw|np`.
+- Netto: VAT zaokrąglany od netto całej linii. Brutto: netto zaokrąglane
+  od brutto całej linii. Nigdy `netto/brutto` dostawcy jako cena sztuki.
+- Brak `price_type` oznacza wyłącznie historyczne netto; pusta/obca wartość
+  jest odmową. Brak terminalności `corrections=0` też oznacza odmowę.
+- Natywne rabaty na pozycji dostawcy, ułamkowe ilości, waluty inne niż PLN,
+  nieznane kształty paginacji oraz identyczne sygnatury pozycji są odmawiane.
+  Portal musi budować jednoznaczne grupy, a nie zgadywać ID.
+- W obrębie istniejących pozycji nie zmieniamy ceny jednostkowej. Przy upgrade
+  integrator planuje ilość starej pozycji i jawne dodanie nowej.
+- Caller jest właścicielem trwałej kolejki, blokady zamówienia i zapisu
+  rozpoczętej wysyłki PRZED HTTP. Ponowne wywołanie tego endpointu może
+  utworzyć kolejny dokument — sam endpoint nie jest trwałym deduplikatorem.
+- Testy są syntetyczne, bez prawdziwego wFirma. Kontrakt wymaga kontrolowanego
+  testu na dozwolonym wydarzeniu sandbox przed dopuszczeniem wydania.
+
 ## Wywołanie z zewnątrz (Make.com, Postman, curl, integracje)
 
 Aby wywoływać endpointy tworzenia faktur, proform i korekt **z zewnątrz**, potrzebujesz:
