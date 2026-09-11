@@ -67,9 +67,15 @@ ograniczony czas, ale nie limit rozmiaru odpowiedzi (istniejące ograniczenie).
 
 Sukces 200: `{success:true, contract_version:1, invoice_id:"...",
 correction_invoice:{id:"...",fullnumber:"..."}, proof:{parent:{...},
-parent_sha256:"...",position_mapping:[{line_key:"...",position_id:"..."}]}}`.
+parent_sha256:"...",position_mapping:[{line_key:"...",position_id:"..."}],
+equivalent_position_groups:[{line_keys:["a","b"],position_ids:["1","2"]}]}}`.
 Nowa projekcja jest rodzicem następnej korekty; mapowanie korzysta z treści
 i powiązań, nigdy z kolejności zwróconej przez dostawcę.
+Jawne powiązania parent_id są sprawdzane jako pierwsze. Jeżeli pozostałe linie
+są jednakowe i dostawca nie zwrócił powiązań, `equivalent_position_groups`
+potwierdza tylko równość całej grupy. NIE jest to przypisanie konkretnej osoby
+do konkretnego ID. Każdy line_key i nowe ID występuje raz w mapping albo grupie.
+Identyczne pozycje zachowują osobne ilości i zaokrąglenia — nie scala się ich.
 
 Odmowy mają `success:false`, stały kod `error` i `outcome`. Przed create:
 `rejected`; timeout / odpowiedź bez ID: `unknown`; istniejące ścisłe przypadki
@@ -86,9 +92,9 @@ Auth: 401 brak klucza, 403 błędny klucz, 503 niedostępny OAuth/konfiguracja.
   od brutto całej linii. Nigdy `netto/brutto` dostawcy jako cena sztuki.
 - Brak `price_type` oznacza wyłącznie historyczne netto; pusta/obca wartość
   jest odmową. Brak terminalności `corrections=0` też oznacza odmowę.
-- Natywne rabaty na pozycji dostawcy, ułamkowe ilości, waluty inne niż PLN,
-  nieznane kształty paginacji oraz identyczne sygnatury pozycji są odmawiane.
-  Portal musi budować jednoznaczne grupy, a nie zgadywać ID.
+- Natywne rabaty na pozycji dostawcy, ułamkowe ilości, waluty inne niż PLN
+  i nieznane kształty paginacji są odmawiane. Identyczne sygnatury przyjmowane
+  tylko jako udowodniony multizbiór; brak parent_id nie pozwala zgadnąć ID osoby.
 - W obrębie istniejących pozycji nie zmieniamy ceny jednostkowej. Przy upgrade
   integrator planuje ilość starej pozycji i jawne dodanie nowej.
 - Caller jest właścicielem trwałej kolejki, blokady zamówienia i zapisu

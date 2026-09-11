@@ -272,7 +272,7 @@ def prepare_correction(body, live_invoice, company_id, series):
             or series.get("name") != body["series_name"]):
         _fail("series_mismatch")
     by_id = {p["position_id"]: p for p in parent["positions"]}
-    seen_ids, seen_keys, signatures = set(), set(), set()
+    seen_ids, seen_keys = set(), set()
     rows, contents = [], {}
     common = {"kind", "line_key", "quantity", "unit_price_grosze", "vat_rate_code"}
     for index, position in enumerate(body["positions"]):
@@ -303,10 +303,6 @@ def prepare_correction(body, live_invoice, company_id, series):
             name, unit = position["name"], position["unit"]
         row = {"line_key": key, "parent_position_id": parent_id, "name": name, "unit": unit,
                "quantity": qty, "unit_price_grosze": price, "vat_rate_code": rate, **totals}
-        signature = tuple(row[k] for k in SIGNATURE_KEYS)
-        if signature in signatures:
-            _fail("ambiguous_result_positions")
-        signatures.add(signature)
         rows.append(row)
         content = {"count": qty, "price": money_text(price)}
         if kind == "existing":
@@ -341,19 +337,46 @@ def verify_created(prepared, invoice, document_id, company_id):
             or _relation(invoice, "series") != prepared["series_id"]
             or any(observed[k] != parent[k] for k in ("company_id", "contractor_id", "receiver_id", "party_sha256", "price_model", "currency"))):
         _fail("created_document_mismatch")
-    expected = {tuple(row[k] for k in SIGNATURE_KEYS): row for row in prepared["positions"]}
-    if len(observed["positions"]) != len(expected):
+    if len(observed["positions"]) != len(prepared["positions"]):
         _fail("created_positions_mismatch")
     parent_ids = {row["position_id"] for row in parent["positions"]}
-    mapping = []
+    by_parent = {row["parent_position_id"]: row for row in prepared["positions"]
+                 if row["parent_position_id"] is not None}
+    remaining = {row["line_key"]: row for row in prepared["positions"]}
+    mapping, without_links = [], []
     for row in observed["positions"]:
-        wanted = expected.pop(tuple(row[k] for k in SIGNATURE_KEYS), None)
-        if (wanted is None or row["position_id"] in parent_ids
-                or row["source_parent_id"] not in (None, wanted["parent_position_id"])):
+        if row["position_id"] in parent_ids:
             _fail("created_positions_mismatch")
+        if row["source_parent_id"] is None:
+            without_links.append(row)
+            continue
+        wanted = by_parent.pop(row["source_parent_id"], None)
+        if wanted is None or any(wanted[k] != row[k] for k in SIGNATURE_KEYS):
+            _fail("created_positions_mismatch")
+        del remaining[wanted["line_key"]]
         mapping.append({"line_key": wanted["line_key"], "position_id": row["position_id"]})
+
+    expected_groups, actual_groups = {}, {}
+    for row in remaining.values():
+        expected_groups.setdefault(tuple(row[k] for k in SIGNATURE_KEYS), []).append(row["line_key"])
+    for row in without_links:
+        actual_groups.setdefault(tuple(row[k] for k in SIGNATURE_KEYS), []).append(row["position_id"])
+    if expected_groups.keys() != actual_groups.keys():
+        _fail("created_positions_mismatch")
+    equivalent = []
+    for signature, keys in expected_groups.items():
+        ids = actual_groups[signature]
+        if len(keys) != len(ids):
+            _fail("created_positions_mismatch")
+        if len(keys) == 1:
+            mapping.append({"line_key": keys[0], "position_id": ids[0]})
+        else:
+            # Prove a complete multiset, not an invented person-to-row identity.
+            # Keep each quantity/rounding row separate; never aggregate money.
+            equivalent.append({"line_keys": sorted(keys), "position_ids": sorted(ids)})
     return {"parent": observed, "parent_sha256": fingerprint(observed),
-            "position_mapping": sorted(mapping, key=lambda item: item["line_key"])}
+            "position_mapping": sorted(mapping, key=lambda item: item["line_key"]),
+            "equivalent_position_groups": sorted(equivalent, key=lambda item: item["line_keys"])}
 
 
 def decode_request(data):

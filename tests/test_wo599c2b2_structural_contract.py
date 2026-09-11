@@ -140,7 +140,7 @@ def test_readback_matches_identity_not_provider_order_and_can_be_next_parent():
     assert result["parent_sha256"] == c.fingerprint(c.project_parent(after, "130706"))
 
 
-def test_duplicate_signature_is_refused_instead_of_guessing_position_mapping():
+def test_new_equal_position_remains_separate_from_existing_position():
     parent = source()
     body = request_for(parent)
     body["positions"] = [
@@ -149,8 +149,10 @@ def test_duplicate_signature_is_refused_instead_of_guessing_position_mapping():
          "quantity": 1, "unit_price_grosze": 10000, "vat_rate_code": "23"},
     ]
     body["after_totals"] = {"net_grosze": 20000, "vat_grosze": 4600, "gross_grosze": 24600}
-    with pytest.raises(c.StructuralContractError, match="ambiguous_result_positions"):
-        c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
+    result = c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
+    assert result["document"]["invoicecontents"]["0"]["invoicecontent"]["parent_id"] == 8101
+    assert "parent_id" not in result["document"]["invoicecontents"]["1"]["invoicecontent"]
+    assert result["totals"] == body["after_totals"]
 
 
 @pytest.mark.parametrize("metadata", [{"total": "2"}, {"page": "1"}, {"total": True}, {}, None])
@@ -165,3 +167,72 @@ def test_exact_position_count_metadata_is_accepted():
     parent = source()
     parent["invoicecontents"]["parameters"] = {"total": "1"}
     assert len(c.project_parent(parent, "130706")["positions"]) == 1
+
+
+def test_equal_rows_keep_separate_rounding_and_report_only_proven_identity():
+    parent = source()
+    parent["invoicecontents"]["1"] = copy.deepcopy(parent["invoicecontents"]["0"])
+    parent["invoicecontents"]["1"]["invoicecontent"]["id"] = "8102"
+    parent["total_composed"] = "246.00"
+    body = request_for(parent)
+    body["positions"] = [
+        {**body["positions"][0], "quantity": 1},
+        {**body["positions"][0], "quantity": 1, "line_key": "second", "parent_position_id": "8102"},
+    ]
+    body["after_totals"] = {"net_grosze": 20000, "vat_grosze": 4600, "gross_grosze": 24600}
+    prepared = c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
+    assert len(prepared["document"]["invoicecontents"]) == 2
+    after = copy.deepcopy(parent)
+    after.update(id="9001", type="correction", parent={"id": "8001"}, series_id="71",
+                 id_external=prepared["document"]["id_external"])
+    after["invoicecontents"]["0"]["invoicecontent"]["id"] = "9102"
+    after["invoicecontents"]["1"]["invoicecontent"]["id"] = "9101"
+    result = c.verify_created(prepared, after, "9001", "130706")
+    assert result["position_mapping"] == []
+    assert result["equivalent_position_groups"] == [
+        {"line_keys": ["conference", "second"], "position_ids": ["9101", "9102"]}]
+    after["invoicecontents"]["0"]["invoicecontent"]["parent_id"] = "8101"
+    after["invoicecontents"]["1"]["invoicecontent"]["parent_id"] = "8102"
+    result = c.verify_created(prepared, after, "9001", "130706")
+    assert result["equivalent_position_groups"] == []
+    assert result["position_mapping"] == [
+        {"line_key": "conference", "position_id": "9102"}, {"line_key": "second", "position_id": "9101"}]
+
+
+@pytest.mark.parametrize("bad", ["different_quantity", "duplicate_parent", "foreign_parent"])
+def test_equal_position_group_cannot_hide_changed_quantity_or_false_parent(bad):
+    parent = source()
+    body = request_for(parent)
+    body["positions"][0]["quantity"] = 1
+    body["positions"].append({"kind": "new", "line_key": "new", "name": "Konferencja", "unit": "szt.",
+                              "quantity": 1, "unit_price_grosze": 10000, "vat_rate_code": "23"})
+    body["after_totals"] = {"net_grosze": 20000, "vat_grosze": 4600, "gross_grosze": 24600}
+    prepared = c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
+    after = source()
+    after.update(id="9001", type="correction", parent_id="8001", series_id="71",
+                 id_external=prepared["document"]["id_external"], total_composed="246.00")
+    row = after["invoicecontents"]["0"]["invoicecontent"]
+    row.update(id="9101", parent_id="8101")
+    second = copy.deepcopy(row)
+    second["id"] = "9102"
+    after["invoicecontents"]["1"] = {"invoicecontent": second}
+    if bad == "different_quantity":
+        row.update(count="0", netto="0.00", brutto="0.00")
+        second.update(count="2", netto="200.00", brutto="246.00")
+        del second["parent_id"]
+    elif bad == "foreign_parent":
+        second["parent_id"] = "9999"
+    with pytest.raises(c.StructuralContractError, match="created_positions_mismatch"):
+        c.verify_created(prepared, after, "9001", "130706")
+
+
+def test_equal_net_positions_are_not_merged_when_vat_rounding_would_change():
+    parent = source()
+    body = request_for(parent)
+    body["positions"] += [{"kind": "new", "line_key": key, "name": "Dodatek", "unit": "szt.",
+                           "quantity": 1, "unit_price_grosze": 3, "vat_rate_code": "23"} for key in ("a", "b")]
+    body["after_totals"] = {"net_grosze": 6, "vat_grosze": 2, "gross_grosze": 8}
+    prepared = c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
+    assert len(prepared["document"]["invoicecontents"]) == 3
+    assert prepared["totals"] == body["after_totals"]
+    assert c.line_totals("netto", "23", 2, 3)["gross_grosze"] == 7
