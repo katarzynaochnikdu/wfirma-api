@@ -4124,6 +4124,376 @@ def structural_correction_create():
         return _structural_correction_error("structural_workflow_unavailable", 502)
 
 
+
+def _grouped_document_response(data, status=200):
+    response = make_response(jsonify(data), status)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _grouped_document_minimal_readback(invoice):
+    """Allowlisted private source; never copy arbitrary provider metadata."""
+    import grouped_document_contract as c
+    fields = {
+        "id", "type", "price_type", "currency", "corrections", "netto", "tax",
+        "total", "total_composed", "id_external", "fullnumber", "parent_id",
+        "contractor_id", "contractor_receiver_id", "series_id",
+    }
+    result = {k:v for k,v in invoice.items() if k in fields}
+    for key in ("parent", "contractor", "contractor_receiver", "series"):
+        if key in invoice:
+            c.require(type(invoice[key]) is dict and "id" in invoice[key])
+            result[key] = {"id":invoice[key]["id"]}
+    for key in ("contractor_detail", "contractor_detail_receiver"):
+        if key in invoice:
+            c.require(type(invoice[key]) is dict)
+            result[key] = {k:v for k,v in invoice[key].items() if k in c.PARTY_FIELDS}
+    line_keys = {"id", "name", "unit", "count", "unit_count", "price", "netto", "brutto",
+                 "discount", "discount_percent", "parent_id"}
+    for name, wrapper, allowed in (
+        ("invoicecontents", "invoicecontent", line_keys),
+        ("vat_contents", "vat_content", {"netto", "tax", "brutto", "vat_code_id"}),
+    ):
+        result[name] = {}
+        for i,row in enumerate(c.collection(invoice.get(name),wrapper)):
+            item = {k:v for k,v in row.items() if k in allowed}
+            for relation_name in ("vat_code", "parent"):
+                if relation_name in row:
+                    c.require(type(row[relation_name]) is dict and "id" in row[relation_name])
+                    item[relation_name] = {"id":row[relation_name]["id"]}
+            result[name][str(i)] = {wrapper:item}
+    return json.loads(c.canonical(result))
+
+
+def _grouped_document_read_sources(token, company_id, document_ids):
+    import grouped_document_contract as c
+    result = []
+    for document_id in document_ids:
+        invoice, error = _strict_wfirma_recovery_get(
+            token, plural="invoices", singular="invoice", entity_id=document_id, company_id=company_id)
+        c.require(error is None and type(invoice) is dict and c.identifier(invoice.get("id")) == document_id,
+                  "source_read_unavailable")
+        result.append(invoice)
+        c.canonical(result)
+    c.project_chain(result, company_id)
+    return result
+
+
+@app.route('/api/workflow/grouped-document-correction/source', methods=['POST'])
+@require_api_key
+def grouped_document_source():
+    """Read-only private source for the server's trusted order->invoice chain."""
+    import grouped_document_contract as c
+    try:
+        if request.args or request.mimetype != "application/json":
+            return _grouped_document_response({"success":False,"error":"invalid_request"},400)
+        raw = request.stream.read(8193)
+        c.require(len(raw) <= 8192)
+        def pairs(items):
+            result = {}
+            for key,value in items:
+                c.require(key not in result)
+                result[key] = value
+            return result
+        body = json.loads(raw.decode("utf-8"),object_pairs_hook=pairs)
+        c.require(c.keys(body, {"company","document_ids"})
+                  and type(body["company"]) is str and body["company"] in {"md","md_test","test"})
+        ids = body["document_ids"]
+        c.require(type(ids) is list and 1 <= len(ids) <= c.MAX_CHAIN
+                  and all(c.identifier(v) == v for v in ids) and len(set(ids)) == len(ids))
+        token, company_id = _structural_correction_identity(body["company"])
+        if token is None:
+            return _grouped_document_response({"success":False,"error":"oauth_unavailable"},503)
+        invoices = _grouped_document_read_sources(token,company_id,ids)
+        parent = c.project_chain(invoices,company_id)
+        sources = [_grouped_document_minimal_readback(i) for i in invoices]
+        c.require(c.canonical(c.project_chain(sources,company_id)) == c.canonical(parent))
+        data = dict(success=True,contract_version=2,parent=parent,parent_sha256=c.fingerprint(parent),
+                    source_documents=sources)
+        c.canonical(data)
+        return _grouped_document_response(data)
+    except (c.GroupedDocumentError, ValueError, TypeError, UnicodeError, KeyError):
+        return _grouped_document_response({"success":False,"error":"source_proof_invalid"},409)
+    except Exception:
+        return _grouped_document_response({"success":False,"error":"source_read_unavailable"},502)
+
+
+@app.route('/api/workflow/historical-documents/source', methods=['POST'])
+@require_api_key
+def historical_document_source():
+    """Private read-only, exact company and document set; never issues anything."""
+    import grouped_document_contract as c
+    try:
+        c.require(not request.args and request.mimetype == "application/json")
+        raw = request.stream.read(8193)
+        c.require(len(raw) <= 8192)
+        def pairs(items):
+            result = {}
+            for key,value in items:
+                c.require(key not in result)
+                result[key] = value
+            return result
+        body = json.loads(raw.decode("utf-8"),object_pairs_hook=pairs)
+        c.require(c.keys(body,{"company","company_id","documents"})
+            and type(body["company"]) is str and body["company"] in {"md","md_test","test"})
+        documents = body["documents"]
+        c.require(type(documents) is list and 1 <= len(documents) <= c.MAX_CHAIN)
+        for doc in documents:
+            c.require(c.keys(doc,{"id","type"}) and type(doc["id"]) is str
+                and c.identifier(doc["id"]) == doc["id"] and doc["type"] in {"normal","correction","proforma"})
+        c.require(len({d["id"] for d in documents}) == len(documents))
+        # Verify the requested pin BEFORE loading/refreshing a tenant token.
+        c.require(type(body["company_id"]) is str and c.identifier(body["company_id"]) == body["company_id"]
+            and _pinned_recovery_company_id(body["company"]) == body["company_id"])
+        token, company_id = _structural_correction_identity(body["company"])
+        if token is None:
+            return _grouped_document_response({"success":False,"error":"oauth_unavailable"},503)
+        result = []
+        for doc in documents:
+            invoice,error = _strict_wfirma_recovery_get(token,plural="invoices",singular="invoice",
+                entity_id=doc["id"],company_id=company_id)
+            c.require(error is None and type(invoice) is dict
+                and c.identifier(invoice.get("id")) == doc["id"] and invoice.get("type") == doc["type"])
+            value = _grouped_document_minimal_readback(invoice)
+            value["id"] = doc["id"]
+            # A proforma is not proof of receipt, but its current paid marker
+            # must not be discarded before the unissued-basis verifier.
+            if "alreadypaid" in invoice:
+                value["alreadypaid"] = invoice["alreadypaid"]
+            result.append(value)
+            c.canonical(result)
+        return _grouped_document_response(dict(success=True,contract_version=1,
+            company=body["company"],company_id=company_id,invoices=result))
+    except (c.GroupedDocumentError, ValueError, TypeError, UnicodeError, KeyError):
+        return _grouped_document_response({"success":False,"error":"history_source_invalid"},409)
+    except Exception:
+        return _grouped_document_response({"success":False,"error":"history_read_unavailable"},502)
+
+
+def _first_invoice_create_party(token,company_id,detail):
+    """Explicit missing ID: one exact create within the already-owned fence.
+
+    No fuzzy lookup, registry overwrite, email or provider-error logging.
+    Unknown response ends the document attempt, never an automatic retry.
+    """
+    import first_invoice_contract as n
+    response=None
+    try:
+        _mark_document_create_attempt()
+        response=requests.post('https://api2.wfirma.pl/contractors/add',
+            params=dict(inputFormat='json',outputFormat='json',oauth_version='2',company_id=company_id),
+            headers=get_wfirma_headers(token),
+            json={'contractors':{'contractor':{k:v for k,v in detail.items() if k!='role' and v!=''}}},
+            timeout=10,allow_redirects=False,stream=True)
+        n.c.require(response.status_code==200,'party_create_unconfirmed')
+        body=_read_recovery_json_bounded(response)
+        n.c.require(type(body) is dict and type(body.get('contractors')) is dict,'party_create_unconfirmed')
+        status=body.get('status',{})
+        n.c.require(type(status) is dict and status.get('code')!='ERROR','party_create_unconfirmed')
+        candidates=[]
+        for key,value in body['contractors'].items():
+            if key=='contractor' and type(value) is dict:candidates.append(value)
+            elif type(key) is str and key.isdigit() and type(value) is dict and type(value.get('contractor')) is dict:
+                candidates.append(value['contractor'])
+        n.c.require(len(candidates)==1,'party_create_unconfirmed')
+        return n.c.identifier(candidates[0].get('id'))
+    finally:
+        if response is not None:
+            try:response.close()
+            except Exception:pass
+
+
+def _first_invoice_party(token,company_id,expected,*,receiver=False):
+    """Exact existing party or explicit creation from saved billing details."""
+    import first_invoice_contract as n
+    n.party(expected)
+    entity_id=expected['id']
+    if entity_id is None:
+        entity_id=_first_invoice_create_party(token,company_id,expected['detail'])
+    observed,error=_strict_wfirma_recovery_get(
+        token,plural="contractors",singular="contractor",entity_id=entity_id,company_id=company_id)
+    n.c.require(error is None and type(observed) is dict
+        and n.c.identifier(observed.get("id"))==entity_id,"party_read_unavailable")
+    detail=n.c.party_detail(observed)
+    if receiver:
+        role,error=resolve_receiver_role(expected["detail"]["role"])
+        n.c.require(error is None and role==expected["detail"]["role"],"receiver_role_invalid")
+        detail["role"]=role
+    else:
+        n.c.require(expected["detail"]["role"]=="","buyer_role_invalid")
+        detail["role"]=""
+    return n.resolved_party(expected,dict(id=entity_id,detail=detail))
+
+
+@app.route('/api/workflow/grouped-first-invoice/reconcile',methods=['POST'])
+@app.route('/api/workflow/grouped-document-correction/reconcile',methods=['POST'])
+@require_api_key
+def grouped_document_reconcile():
+    """Read an explicit existing document; no creation, payment or party writes.
+
+    Source documents are the portal's frozen pre-POST evidence. Fetching the
+    parent again after its correction would change the very basis being proved.
+    This private response is still independently verified by the portal.
+    """
+    import grouped_document_contract as c
+    import first_invoice_contract as n
+    try:
+        c.require(not request.args and request.mimetype=='application/json')
+        raw=request.stream.read(24*1024*1024+1)
+        c.require(len(raw)<=24*1024*1024)
+        def pairs(items):
+            value={}
+            for key,item in items:
+                c.require(key not in value)
+                value[key]=item
+            return value
+        def invalid(_):raise ValueError('invalid_json')
+        value=json.loads(raw.decode('utf-8'),object_pairs_hook=pairs,parse_constant=invalid)
+        first=request.path=='/api/workflow/grouped-first-invoice/reconcile'
+        c.require(c.keys(value,{'request','document_id'} if first else {'request','document_id','source_documents'}))
+        document_id=c.identifier(value['document_id'])
+        body=value['request']
+        if first:n.validate(body)
+        else:c.validate_request(body)
+        token,company_id=_structural_correction_identity(body['company'])
+        if token is None:
+            return _grouped_document_response(dict(success=False,error='oauth_unavailable'),503)
+        invoice,error=_strict_wfirma_recovery_get(token,plural='invoices',singular='invoice',
+            entity_id=document_id,company_id=company_id)
+        c.require(error is None and type(invoice) is dict)
+        series=dict(id=body['series_id'],name=body['series_name'])
+        if first:
+            buyer=dict(id=c.relation(invoice,'contractor'),detail=body['buyer']['detail'])
+            receiver=(dict(id=c.relation(invoice,'contractor_receiver'),detail=body['receiver']['detail'])
+                if body['receiver'] is not None else None)
+            prepared=n.prepare(body,company_id,series,buyer=buyer,receiver=receiver)
+            proof=n.verify_created(prepared,invoice,document_id,company_id)
+        else:
+            prepared=c.prepare_correction(body,value['source_documents'],company_id,series)
+            proof=c.verify_created(prepared,invoice,document_id,company_id)
+        c.require(c.text(invoice.get('fullnumber'),256))
+        readback=_grouped_document_minimal_readback(invoice)
+        if first:
+            for key in ('date','disposaldate','paymentdate','paymentmethod','description','paymentstate','alreadypaid','remaining'):
+                readback[key]=invoice[key]
+        verifier=n.verify_created if first else c.verify_created
+        c.require(c.canonical(verifier(prepared,readback,document_id,company_id))==c.canonical(proof))
+        return _grouped_document_response(dict(success=True,contract_version=1 if first else 2,
+            invoice_id=document_id,readback=readback,proof=proof,
+            **{'invoice' if first else 'correction_invoice':dict(id=document_id,fullnumber=invoice['fullnumber'])}))
+    except Exception:
+        return _grouped_document_response(dict(success=False,error='reconciliation_unverified'),409)
+
+
+@app.route('/api/workflow/grouped-first-invoice',methods=['POST'])
+@document_outcome_envelope
+@require_api_key
+def grouped_first_invoice_create():
+    """Normal paid NET invoice; one POST, strict independent GET, no payment retry."""
+    import first_invoice_contract as n
+    try:
+        if request.args or request.mimetype!="application/json":
+            return _grouped_document_response(dict(success=False,error="invalid_request"),400)
+        body=n.decode(request.stream.read(n.c.MAX_BYTES+1))
+        token,company_id=_structural_correction_identity(body["company"])
+        if token is None:
+            return _grouped_document_response(dict(success=False,error="oauth_unavailable"),503)
+        series,error=_strict_wfirma_recovery_get(
+            token,plural="series",singular="series",entity_id=body["series_id"],company_id=company_id)
+        n.c.require(error is None and type(series) is dict and series.get('name')==body['series_name']
+            and n.c.identifier(series.get('id'))==body['series_id'],"series_read_unavailable")
+        buyer=_first_invoice_party(token,company_id,body["buyer"])
+        receiver=(_first_invoice_party(token,company_id,body["receiver"],receiver=True)
+            if body["receiver"] is not None else None)
+        prepared=n.prepare(body,company_id,series,buyer=buyer,receiver=receiver)
+        _mark_document_create_attempt()
+        created,response=wfirma_create_invoice(token,prepared["document"],company_id,
+            request_timeout=DOCUMENT_CREATE_TIMEOUT_SECONDS,redact_logs=True)
+        _record_document_create_result(created,response)
+        known=getattr(g,"document_created_id",None)
+        n.c.require(known is not None,"create_unconfirmed")
+        document_id=n.c.identifier(known)
+        n.c.require(_extract_single_recovery_entity(_wfirma_response_json(response),
+            plural="invoices",singular="invoice",expected_id=document_id) is not None,"create_unverified")
+        invoice,error=_strict_wfirma_recovery_get(
+            token,plural="invoices",singular="invoice",entity_id=document_id,company_id=company_id)
+        n.c.require(error is None and type(invoice) is dict,"readback_unavailable")
+        proof=n.verify_created(prepared,invoice,document_id,company_id)
+        readback=_grouped_document_minimal_readback(invoice)
+        for key in ("date","disposaldate","paymentdate","paymentmethod","description","paymentstate","alreadypaid","remaining"):
+            readback[key]=invoice[key]
+        n.c.require(n.c.canonical(n.verify_created(prepared,readback,document_id,company_id))==n.c.canonical(proof))
+        return _grouped_document_response(dict(success=True,contract_version=1,invoice_id=document_id,
+            invoice=dict(id=document_id,fullnumber=invoice["fullnumber"]),readback=readback,proof=proof))
+    except Exception:
+        data=dict(success=False,error="first_invoice_unverified")
+        known=getattr(g,"document_created_id",None)
+        try:
+            if known is not None:data["document_id"]=n.c.identifier(known)
+        except n.c.GroupedDocumentError:pass
+        return _grouped_document_response(data,502)
+
+
+@app.route('/api/workflow/grouped-document-correction', methods=['POST'])
+@document_outcome_envelope
+@require_api_key
+def grouped_document_create():
+    """One POST after fresh source proof. Portal must own a committed fence."""
+    import grouped_document_contract as c
+    try:
+        if request.args or request.mimetype != "application/json":
+            return _grouped_document_response({"success":False,"error":"invalid_request"},400)
+        body = c.decode_request(request.stream.read(c.MAX_BYTES+1))
+        token, company_id = _structural_correction_identity(body["company"])
+        if token is None:
+            return _grouped_document_response({"success":False,"error":"oauth_unavailable"},503)
+        invoices = _grouped_document_read_sources(token,company_id,body["source_document_ids"])
+        series,error = _strict_wfirma_recovery_get(
+            token,plural="series",singular="series",entity_id=body["series_id"],company_id=company_id)
+        if error is not None or series is None:
+            return _grouped_document_response({"success":False,"error":"series_read_unavailable"},502)
+        prepared = c.prepare_correction(body,invoices,company_id,series)
+        _mark_document_create_attempt()
+        created, transport_response = wfirma_create_invoice(
+            token,prepared["document"],company_id,
+            request_timeout=DOCUMENT_CREATE_TIMEOUT_SECONDS,redact_logs=True)
+        _record_document_create_result(created,transport_response)
+        known_id = getattr(g,"document_created_id",None)
+        if known_id is None:
+            return _grouped_document_response({"success":False,"error":"document_create_unconfirmed"},502)
+        document_id = c.identifier(known_id)
+        if _extract_single_recovery_entity(_wfirma_response_json(transport_response),
+                plural="invoices",singular="invoice",expected_id=document_id) is None:
+            return _grouped_document_response(
+                {"success":False,"error":"document_create_response_unverified","document_id":document_id},502)
+        invoice,error = _strict_wfirma_recovery_get(
+            token,plural="invoices",singular="invoice",entity_id=document_id,company_id=company_id)
+        if error is not None or invoice is None:
+            return _grouped_document_response(
+                {"success":False,"error":"document_readback_unavailable","document_id":document_id},502)
+        proof = c.verify_created(prepared,invoice,document_id,company_id)
+        c.require(c.text(invoice.get("fullnumber"),256), "document_number_unverified")
+        readback = _grouped_document_minimal_readback(invoice)
+        c.require(c.canonical(c.verify_created(prepared,readback,document_id,company_id)) == c.canonical(proof))
+        data = dict(success=True,contract_version=2,invoice_id=document_id,
+            correction_invoice={"id":document_id,"fullnumber":invoice["fullnumber"]},
+            proof=proof,readback=readback)
+        c.canonical(data)
+        return _grouped_document_response(data)
+    except Exception:
+        # Every failure includes the known ID when available; never log raw
+        # provider data or a traceback, and never attempt a second creation.
+        data = {"success":False,"error":"grouped_document_unverified"}
+        known_id = getattr(g,"document_created_id",None)
+        try:
+            if known_id is not None:
+                data["document_id"] = c.identifier(known_id)
+        except c.GroupedDocumentError:
+            pass
+        return _grouped_document_response(data,502)
+
+
+
 @app.route('/api/invoice/create', methods=['POST', 'OPTIONS'])
 @require_api_key
 @require_token
