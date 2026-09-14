@@ -698,7 +698,6 @@ def _refresh_access_token_inner(config, company, company_name, pg_company, prefi
             # Provider-controlled key names may themselves contain reflected secrets.
             print(f"{log_prefix} BŁĄD - Brak access_token w odpowiedzi")
             return None
-
         # OAuth error bodies are untrusted and may reflect submitted secrets.
         # Status is sufficient for diagnostics; never log response.text here.
         print(f"{log_prefix} BŁĄD API status={response.status_code}")
@@ -4004,8 +4003,6 @@ def api_get_recovery_invoice(invoice_id):
     if reason == "not_found":
         return jsonify({"success": False, "error": "document_not_found"}), 404
     return jsonify({"success": False, "error": "recovery_read_unavailable"}), 502
-
-
 def _structural_correction_identity(company):
     """Explicit tenant only; never fall back to the default company's token."""
     company_id = _pinned_recovery_company_id(company)
