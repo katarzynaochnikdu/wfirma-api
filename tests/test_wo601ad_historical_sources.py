@@ -62,3 +62,46 @@ def test_missing_or_changed_provider_document_cannot_be_called_complete(harness,
         documents=[dict(id="8001",type="normal")]),headers=HEADERS)
     assert response.status_code == 409 and response.get_json()["success"] is False
     assert state["posts"] == []
+
+
+@pytest.mark.parametrize("form", ["nested", "scalar", "both", "zero", "missing"])
+def test_history_preserves_actual_proforma_link_and_bounded_replacement_metadata(harness, form):
+    client, state = harness
+    state["parent"] = invoice()
+    original = state["parent"]
+    original.update(date="2026-08-31", description="Zamówienie: PF TEST/1 - opłacone",
+                    alreadypaid=original["total"], private_note="MUST-NOT-LEAK")
+    if form in {"nested", "both"}: original["order"] = {"id": "9001", "private": "MUST-NOT-LEAK"}
+    if form in {"scalar", "both"}: original["order_id"] = "9001"
+    if form == "zero": original["order"] = {"id": "0"}
+    before = deepcopy(original)
+    # Act
+    response = client.post(URL, json=dict(company="md_test", company_id="130706",
+        documents=[dict(id="8001", type="normal")]), headers=HEADERS)
+    assert response.status_code == 200, response.get_json()
+    current = response.get_json()["invoices"][0]
+    for key in ("date", "description", "alreadypaid"):
+        assert current[key] == original[key]
+    if "order" in original: assert current["order"] == {"id": original["order"]["id"]}
+    else: assert "order" not in current
+    if "order_id" in original: assert current["order_id"] == original["order_id"]
+    else: assert "order_id" not in current
+    assert original == before and state["posts"] == []
+    assert "MUST-NOT-LEAK" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("fault", ["conflict", "bad_id", "nested_shape", "bad_date", "huge_description", "description_type"])
+def test_history_rejects_unusable_lineage_metadata_without_writes(harness, fault):
+    client, state = harness
+    state["parent"] = invoice()
+    if fault == "conflict": state["parent"].update(order={"id": "9001"}, order_id="9002")
+    elif fault == "bad_id": state["parent"]["order_id"] = "../9001"
+    elif fault == "nested_shape": state["parent"]["order"] = []
+    elif fault == "bad_date": state["parent"]["date"] = "2026-02-31"
+    elif fault == "huge_description": state["parent"]["description"] = "x"*4097
+    else: state["parent"]["description"] = {}
+    # Act
+    response = client.post(URL, json=dict(company="md_test", company_id="130706",
+        documents=[dict(id="8001", type="normal")]), headers=HEADERS)
+    assert response.status_code == 409
+    assert response.get_json()["success"] is False and state["posts"] == []

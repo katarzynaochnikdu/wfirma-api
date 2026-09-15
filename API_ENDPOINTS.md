@@ -1,5 +1,15 @@
 # wFirma API - Dokumentacja Endpointów
 
+## WO-601AD-AM — prywatna historia, metadane powiązania
+
+`POST /api/workflow/historical-documents/source` zachowuje opcjonalne pola
+rzeczywistej odpowiedzi dostawcy: `order: {id}`, `order_id`, `date` (ISO dzień),
+`description` (maks. 4096 znaków). Obie postacie relacji muszą być zgodne.
+Brak pozostaje brakiem, zero nie staje się zgadywanym ID. Nie kopiuje innych
+pól węzła `order`. Data/opis służą kwalifikacji powiązań dokumentów, nigdy
+samodzielnemu uznaniu wpłaty. Wersja 1 i dotychczasowe auth/pin/no-store bez zmian.
+Rozszerzenie dotyczy wyłącznie tego prywatnego odczytu, nie odpowiedzi korekt.
+
 ## Korekta struktury biletów — WO-599C2b2, v1 (LOCAL / NOT RELEASED)
 
 Te dwa endpointy są oddzielne od starszego `/api/workflow/correction`.

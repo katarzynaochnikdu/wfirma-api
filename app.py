@@ -4215,6 +4215,32 @@ def grouped_document_source():
         return _grouped_document_response({"success":False,"error":"source_read_unavailable"},502)
 
 
+def _historical_document_metadata(invoice):
+    """Actual lineage only, never manufacture a proforma link from amounts."""
+    from datetime import date as iso_date
+    import grouped_document_contract as c
+    result = {}
+    if "order" in invoice:
+        c.require(type(invoice["order"]) is dict and "id" in invoice["order"])
+        c.relation({"order": invoice["order"]}, "order", optional=True)
+        result["order"] = {"id": invoice["order"]["id"]}
+    if "order_id" in invoice:
+        c.relation({"order_id": invoice["order_id"]}, "order", optional=True)
+        result["order_id"] = invoice["order_id"]
+    if "order" in result and "order_id" in result:
+        c.require(c.relation({"order": result["order"]}, "order", optional=True)
+                  == c.relation({"order_id": result["order_id"]}, "order", optional=True))
+    if "date" in invoice:
+        value = invoice["date"]
+        c.require(type(value) is str and len(value) == 10 and iso_date.fromisoformat(value).isoformat() == value)
+        result["date"] = value
+    if "description" in invoice:
+        value = invoice["description"]
+        c.require(type(value) is str and len(value) <= 4096)
+        result["description"] = value
+    return result
+
+
 @app.route('/api/workflow/historical-documents/source', methods=['POST'])
 @require_api_key
 def historical_document_source():
@@ -4257,6 +4283,7 @@ def historical_document_source():
             # must not be discarded before the unissued-basis verifier.
             if "alreadypaid" in invoice:
                 value["alreadypaid"] = invoice["alreadypaid"]
+            value.update(_historical_document_metadata(invoice))
             result.append(value)
             c.canonical(result)
         return _grouped_document_response(dict(success=True,contract_version=1,
