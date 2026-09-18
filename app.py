@@ -4361,6 +4361,8 @@ def grouped_document_reconcile():
     """
     import grouped_document_contract as c
     import first_invoice_contract as n
+    import document_refusal_log as refusal_log
+    document_id=None
     try:
         c.require(not request.args and request.mimetype=='application/json')
         raw=request.stream.read(24*1024*1024+1)
@@ -4405,7 +4407,8 @@ def grouped_document_reconcile():
         return _grouped_document_response(dict(success=True,contract_version=1 if first else 2,
             invoice_id=document_id,readback=readback,proof=proof,
             **{'invoice' if first else 'correction_invoice':dict(id=document_id,fullnumber=invoice['fullnumber'])}))
-    except Exception:
+    except Exception as exc:
+        refusal_log.log_refusal(exc,stage='reconcile',document_id=document_id)
         return _grouped_document_response(dict(success=False,error='reconciliation_unverified'),409)
 
 
@@ -4415,6 +4418,7 @@ def grouped_document_reconcile():
 def grouped_first_invoice_create():
     """Normal paid NET invoice; one POST, strict independent GET, no payment retry."""
     import first_invoice_contract as n
+    import document_refusal_log as refusal_log
     try:
         if request.args or request.mimetype!="application/json":
             return _grouped_document_response(dict(success=False,error="invalid_request"),400)
@@ -4449,12 +4453,13 @@ def grouped_first_invoice_create():
         n.c.require(n.c.canonical(n.verify_created(prepared,readback,document_id,company_id))==n.c.canonical(proof))
         return _grouped_document_response(dict(success=True,contract_version=1,invoice_id=document_id,
             invoice=dict(id=document_id,fullnumber=invoice["fullnumber"]),readback=readback,proof=proof))
-    except Exception:
+    except Exception as exc:
         data=dict(success=False,error="first_invoice_unverified")
         known=getattr(g,"document_created_id",None)
         try:
             if known is not None:data["document_id"]=n.c.identifier(known)
         except n.c.GroupedDocumentError:pass
+        refusal_log.log_refusal(exc,stage="first_invoice_create",document_id=data.get("document_id"))
         return _grouped_document_response(data,502)
 
 
