@@ -4363,6 +4363,7 @@ def grouped_document_reconcile():
     import first_invoice_contract as n
     import document_refusal_log as refusal_log
     document_id=None
+    probe=None
     try:
         c.require(not request.args and request.mimetype=='application/json')
         raw=request.stream.read(24*1024*1024+1)
@@ -4393,6 +4394,7 @@ def grouped_document_reconcile():
             receiver=(dict(id=c.relation(invoice,'contractor_receiver'),detail=body['receiver']['detail'])
                 if body['receiver'] is not None else None)
             prepared=n.prepare(body,company_id,series,buyer=buyer,receiver=receiver)
+            probe=(prepared,invoice,document_id,company_id)
             proof=n.verify_created(prepared,invoice,document_id,company_id)
         else:
             prepared=c.prepare_correction(body,value['source_documents'],company_id,series)
@@ -4409,6 +4411,7 @@ def grouped_document_reconcile():
             **{'invoice' if first else 'correction_invoice':dict(id=document_id,fullnumber=invoice['fullnumber'])}))
     except Exception as exc:
         refusal_log.log_refusal(exc,stage='reconcile',document_id=document_id)
+        refusal_log.log_identity(c,probe,stage='reconcile',document_id=document_id)
         return _grouped_document_response(dict(success=False,error='reconciliation_unverified'),409)
 
 
@@ -4419,6 +4422,7 @@ def grouped_first_invoice_create():
     """Normal paid NET invoice; one POST, strict independent GET, no payment retry."""
     import first_invoice_contract as n
     import document_refusal_log as refusal_log
+    probe=None
     try:
         if request.args or request.mimetype!="application/json":
             return _grouped_document_response(dict(success=False,error="invalid_request"),400)
@@ -4446,6 +4450,7 @@ def grouped_first_invoice_create():
         invoice,error=_strict_wfirma_recovery_get(
             token,plural="invoices",singular="invoice",entity_id=document_id,company_id=company_id)
         n.c.require(error is None and type(invoice) is dict,"readback_unavailable")
+        probe=(prepared,invoice,document_id,company_id)
         proof=n.verify_created(prepared,invoice,document_id,company_id)
         readback=_grouped_document_minimal_readback(invoice)
         for key in ("date","disposaldate","paymentdate","paymentmethod","description","paymentstate","alreadypaid","remaining"):
@@ -4460,6 +4465,7 @@ def grouped_first_invoice_create():
             if known is not None:data["document_id"]=n.c.identifier(known)
         except n.c.GroupedDocumentError:pass
         refusal_log.log_refusal(exc,stage="first_invoice_create",document_id=data.get("document_id"))
+        refusal_log.log_identity(n.c,probe,stage="first_invoice_create",document_id=data.get("document_id"))
         return _grouped_document_response(data,502)
 
 

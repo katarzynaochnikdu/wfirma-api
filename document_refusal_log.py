@@ -133,3 +133,69 @@ def _safe_document(value):
     if type(value) is int and type(value) is not bool and 0 < value < 10**32:
         return str(value)
     return UNNAMED
+
+
+def _attempt(call):
+    try:
+        return call()
+    except Exception:
+        return None
+
+
+def _length(value):
+    return len(value) if type(value) is str else -1
+
+
+def log_identity(contract, probe, *, stage, document_id=None):
+    """Say which part of a failed identity check disagrees (WO-636).
+
+    `created_identity_mismatch` compares four things at once, so on its own it
+    does not say whether the provider returned a different document, filed it
+    under another series, dropped our marker, or withheld the number. Both
+    production settlements of 2026-09-18 died here and the single name could
+    not tell them apart.
+
+    The breakdown is recomputed here rather than reported by the contract on
+    purpose: `first_invoice_contract.py` and `grouped_document_contract.py` are
+    byte-identical twins of the portal's own copies, and splitting the check at
+    the source would put the two halves of one contract out of step.
+
+    Only field *names* and string *lengths* are printed. No provider value, no
+    party data, no marker content.
+    """
+    try:
+        prepared, invoice, created_id, company_id = probe
+        observed = _attempt(lambda: contract.project_chain([invoice], company_id))
+        if observed is None:
+            # The document could not be projected at all, so the identity check
+            # never ran. Reporting all four parts as disagreeing would be a
+            # confident lie; `log_refusal` already named the real failure.
+            return
+        wanted = _attempt(lambda: prepared["document"]["id_external"])
+        seen = _attempt(lambda: observed["external_key"])
+        checks = (
+            ("document_id", lambda: observed["document_id"] == contract.identifier(created_id)),
+            ("external_key", lambda: seen == wanted),
+            ("series", lambda: contract.relation(invoice, "series") == prepared["series_id"]),
+            ("fullnumber", lambda: bool(contract.text(invoice.get("fullnumber"), 256))),
+        )
+        bad = [name for name, check in checks if _attempt(check) is not True]
+        if not bad:
+            # The refusal came from a later check; `log_refusal` already named
+            # it and a second line saying `nothing disagrees` would be noise.
+            return
+        fields = [
+            f"{PREFIX} identity",
+            f"stage={stage if stage in _STAGES else UNNAMED}",
+            f"disagrees={','.join(bad)}",
+        ]
+        if "external_key" in bad:
+            # Zero tells a dropped marker apart from a truncated one, and both
+            # apart from a marker the provider replaced with something else.
+            fields.append(f"marker_seen={_length(seen)}")
+            fields.append(f"marker_sent={_length(wanted)}")
+        if document_id is not None:
+            fields.append(f"document={_safe_document(document_id)}")
+        print(" ".join(fields))
+    except Exception:
+        pass
