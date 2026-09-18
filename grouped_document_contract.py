@@ -146,6 +146,13 @@ def party_detail(value):
         field = value.get(key, "")
         if key == "role" and type(field) is int:
             field = str(field)
+        if key == "role" and field == "0":
+            # The provider spells "no role" two ways: an absent field reads
+            # back as "" and an explicit zero as "0". Measured on production
+            # 2026-09-18: a proforma carried "" while its own contractor card
+            # carried "0", and the settlement refused to recognise the buyer
+            # as unchanged. One spelling, so identical parties compare equal.
+            field = ""
         require(field == "" or text(field, 1024), "party_invalid")
         result[key] = field
     return result
