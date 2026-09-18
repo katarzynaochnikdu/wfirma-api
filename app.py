@@ -5075,6 +5075,13 @@ def workflow_create_invoice():
     
     # Komentarz/opis na fakturze (np. nazwa wydarzenia)
     description_param = (body.get('description') or '').strip()
+
+    # Znacznik wlasnej operacji zamawiajacego. Trzymany w id_external, zeby
+    # nie musial byc drukowany w uwagach dokumentu. wFirma przechowuje to pole
+    # obciete do 32 znakow (zmierzone 2026-09-18), stad ograniczenie ksztaltu.
+    external_param = (body.get('id_external') or '').strip()
+    if external_param and not re.fullmatch(r'[a-z][a-z0-9:_-]{2,31}', external_param):
+        return cors_response({'error': 'invalid_id_external'}, 400)
     
     # Parent invoice ID - do powiązania faktury końcowej z proformą
     parent_invoice_id_param = body.get('parent_invoice_id')
@@ -5506,6 +5513,8 @@ def workflow_create_invoice():
             # Tryb PRODUKCJA (md): tylko nazwa wydarzenia (jeśli podana)
             invoice_payload["description"] = description_param
             print(f"[WORKFLOW] Dodano opis na fakturze: {description_param}")
+        if external_param:
+            invoice_payload["id_external"] = external_param
 
     _mark_document_create_attempt()
     invoice, resp_inv = wfirma_create_invoice(
