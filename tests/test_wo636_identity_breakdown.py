@@ -10,7 +10,7 @@ from test_wo599c2b2_structural_workflow import harness, API_KEY
 from test_wo601ad_first_invoice_workflow import first, PATH, HEADERS
 
 RECONCILE = PATH + "/reconcile"
-MARKER_LENGTH = 68  # "nf1:" + a 64 character digest
+MARKER_LENGTH = 32  # "nf1:" + a digest, cut to what the provider stores (WO-637)
 HOSTILE_NAME = "Jan Kowalski jan.kowalski@test.example.pl"
 
 
@@ -56,13 +56,13 @@ def test_wo636_a_dropped_marker_is_told_apart_from_a_truncated_one(first, capsys
 
 def test_wo636_a_truncated_marker_reports_both_lengths(first, capsys):
     client, state, value = first
-    state["created"]["id_external"] = state["created"]["id_external"][:50]
+    state["created"]["id_external"] = state["created"]["id_external"][:20]
     # Act
     result = client.post(PATH, json=value, headers=HEADERS)
     assert result.status_code == 502
     _, found = identity(capsys)
     assert found == ["[document-bridge] identity stage=first_invoice_create disagrees=external_key "
-                     f"marker_seen=50 marker_sent={MARKER_LENGTH} document=9001"]
+                     f"marker_seen=20 marker_sent={MARKER_LENGTH} document=9001"]
 
 
 def test_wo636_reconciliation_names_the_part_that_disagrees_too(first, capsys):

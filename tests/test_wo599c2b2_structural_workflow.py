@@ -125,7 +125,7 @@ def created_invoice(state, body):
     result = copy.deepcopy(state["parent"])
     result.update(id="9001", type="correction", parent={"id": "8001"},
                   series={"id": "71"}, fullnumber="KOR/TEST/1/2026", total_composed="184.50",
-                  id_external="mt1:" + contract.fingerprint({"change_id": body["change_id"], "parent": body["parent_sha256"]}))
+                  id_external=("mt1:" + contract.fingerprint({"change_id": body["change_id"], "parent": body["parent_sha256"]}))[:contract.MARKER_LIMIT])
     first = result["invoicecontents"]["0"]["invoicecontent"]
     first.update(id="9101", parent={"id": "8101"})
     result["invoicecontents"]["1"] = {"invoicecontent": {

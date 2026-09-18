@@ -56,6 +56,23 @@ def fingerprint(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
+MARKER_LIMIT = 32
+
+
+def marker(prefix, value):
+    """Request marker short enough for the provider to store it whole.
+
+    wFirma keeps `id_external` truncated to 32 characters. Measured on
+    production 2026-09-18: 68 characters sent, 32 read back. A longer marker
+    can therefore never read back equal to what was written, so the identity
+    check fails for every document and none is ever recognised as our own.
+    Cutting the very string we used to send keeps documents created before
+    this fix recognisable.
+    """
+    require(type(prefix) is str and len(prefix) == 4)
+    return (prefix + fingerprint(value))[:MARKER_LIMIT]
+
+
 def keys(value, expected):
     return type(value) is dict and set(value) == set(expected) and all(type(k) is str for k in value)
 
@@ -360,8 +377,8 @@ def prepare_correction(body, live_invoices, company_id, series):
             Counter((r["quantity"], r["unit_net_grosze"], r["vat_rate_code"], r["name"], r["unit"]) for r in rows)
             != Counter((r["quantity"], r["unit_net_grosze"], r["vat_rate_code"], r["name"], r["unit"]) for r in parent["positions"]),
             "document_no_change")
-    key = "nd2:" + fingerprint({"change_id":body["change_id"], "intent_sha256":body["intent_sha256"],
-                              "parent_sha256":body["parent_sha256"]})
+    key = marker("nd2:", {"change_id":body["change_id"], "intent_sha256":body["intent_sha256"],
+                          "parent_sha256":body["parent_sha256"]})
     invoice = live_invoices[-1]
     document = dict(type="correction", parent_id=int(parent["document_id"]),
         contractor_id=int(parent["contractor_id"]), date=body["issue_date"], series={"id":int(body["series_id"])},

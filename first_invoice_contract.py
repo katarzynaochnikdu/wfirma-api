@@ -98,7 +98,7 @@ def prepare(body,company_id,series,*,buyer,receiver):
     c.require((receiver is None)==(body["receiver"] is None),"receiver_changed")
     if receiver is not None:resolved_party(body["receiver"],receiver)
     gross=body["after_valuation"]["totals"]["gross_grosze"]
-    external="nf1:"+c.fingerprint({"change_id":body["change_id"],"intent_sha256":body["intent_sha256"]})
+    external=c.marker("nf1:",{"change_id":body["change_id"],"intent_sha256":body["intent_sha256"]})
     document=dict(type="normal",price_type="netto",currency="PLN",contractor_id=int(buyer["id"]),
         contractor_detail={k:v for k,v in buyer["detail"].items() if v!=""},
         date=body["issue_date"],disposaldate=body["sale_date"],paymentdate=body["issue_date"],paymentmethod="transfer",

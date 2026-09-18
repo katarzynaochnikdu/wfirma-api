@@ -47,6 +47,10 @@ def fingerprint(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
+# Provider stores id_external truncated to 32 characters (WO-637).
+MARKER_LIMIT = 32
+
+
 def _keys(value, keys):
     return type(value) is dict and all(type(k) is str for k in value) and set(value) == keys
 
@@ -312,7 +316,8 @@ def prepare_correction(body, live_invoice, company_id, series):
         contents[str(index)] = {"invoicecontent": content}
     if seen_ids != set(by_id) or _totals(rows) != body["after_totals"]:
         _fail("after_snapshot_mismatch")
-    key = "mt1:" + fingerprint({"change_id": body["change_id"], "parent": body["parent_sha256"]})
+    key = ("mt1:" + fingerprint({"change_id": body["change_id"],
+                                 "parent": body["parent_sha256"]}))[:MARKER_LIMIT]
     document = {"type": "correction", "parent_id": int(parent["document_id"]),
                 "contractor_id": int(parent["contractor_id"]), "date": body["issue_date"],
                 "series_id": int(body["series_id"]), "description": body["correction_reason"],
