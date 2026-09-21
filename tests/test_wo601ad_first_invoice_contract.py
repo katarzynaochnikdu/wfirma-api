@@ -34,6 +34,9 @@ def readback(prepared):
         alreadypaid=m(totals["gross_grosze"]),remaining="0.00",
         netto=m(totals["net_grosze"]),tax=m(totals["vat_grosze"]),total=m(totals["gross_grosze"]),
         total_composed=m(totals["gross_grosze"]),invoicecontents={},vat_contents={})
+    if "order" in document:
+        # BUG-155: wFirma reads the proforma link back as a string id relation.
+        result["order"]={"id":str(document["order"]["id"])}
     if prepared["receiver"] is not None:
         result.update(contractor_receiver={"id":prepared["receiver"]["id"]},
             contractor_detail_receiver=deepcopy(prepared["receiver"]["detail"]))

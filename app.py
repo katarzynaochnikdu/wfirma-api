@@ -4349,6 +4349,18 @@ def _first_invoice_party(token,company_id,expected,*,receiver=False):
     return n.resolved_party(expected,dict(id=entity_id,detail=detail))
 
 
+def _first_invoice_link_readback(n,body,invoice,readback):
+    """BUG-155: v2 bodies only. The proforma link ("order") is proven by readback.
+
+    Deliberately NOT part of _grouped_document_minimal_readback: that function
+    also feeds corrections and historical sources, whose stored receipts are
+    compared byte for byte, and a v1 first-invoice response must stay as it was.
+    """
+    if n.linked(body) is not None:
+        readback[n.PROVIDER_LINK]={"id":n.c.relation(invoice,n.PROVIDER_LINK)}
+    return readback
+
+
 @app.route('/api/workflow/grouped-first-invoice/reconcile',methods=['POST'])
 @app.route('/api/workflow/grouped-document-correction/reconcile',methods=['POST'])
 @require_api_key
@@ -4404,9 +4416,10 @@ def grouped_document_reconcile():
         if first:
             for key in ('date','disposaldate','paymentdate','paymentmethod','description','paymentstate','alreadypaid','remaining'):
                 readback[key]=invoice[key]
+            _first_invoice_link_readback(n,body,invoice,readback)
         verifier=n.verify_created if first else c.verify_created
         c.require(c.canonical(verifier(prepared,readback,document_id,company_id))==c.canonical(proof))
-        return _grouped_document_response(dict(success=True,contract_version=1 if first else 2,
+        return _grouped_document_response(dict(success=True,contract_version=body['contract_version'] if first else 2,
             invoice_id=document_id,readback=readback,proof=proof,
             **{'invoice' if first else 'correction_invoice':dict(id=document_id,fullnumber=invoice['fullnumber'])}))
     except Exception as exc:
@@ -4455,8 +4468,10 @@ def grouped_first_invoice_create():
         readback=_grouped_document_minimal_readback(invoice)
         for key in ("date","disposaldate","paymentdate","paymentmethod","description","paymentstate","alreadypaid","remaining"):
             readback[key]=invoice[key]
+        _first_invoice_link_readback(n,body,invoice,readback)
         n.c.require(n.c.canonical(n.verify_created(prepared,readback,document_id,company_id))==n.c.canonical(proof))
-        return _grouped_document_response(dict(success=True,contract_version=1,invoice_id=document_id,
+        # The bridge echoes the version it verified; v1 answers exactly as before.
+        return _grouped_document_response(dict(success=True,contract_version=body["contract_version"],invoice_id=document_id,
             invoice=dict(id=document_id,fullnumber=invoice["fullnumber"]),readback=readback,proof=proof))
     except Exception as exc:
         data=dict(success=False,error="first_invoice_unverified")

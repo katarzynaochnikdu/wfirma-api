@@ -18,6 +18,13 @@ VERSION = 1
 KEYS = {"contract_version","calculation_version","company","change_id","intent_sha256",
     "issue_date","sale_date","series_id","series_name","description","price_model",
     "currency","positions","after_valuation","settled_grosze","buyer","receiver"}
+# BUG-155: v2 = v1 + the proforma this invoice settles. wFirma stores that link
+# as the invoice "order" relation (legacy build_invoice_payload does the same).
+# v1 stays byte for byte as before: stored v1 receipts are re-verified forever.
+LINKED_VERSION = 2
+LINK_KEY = "proforma_id"
+LINKED_KEYS = KEYS | {LINK_KEY}
+PROVIDER_LINK = "order"
 LINE_KEYS = {"line_key","name","unit","quantity","unit_net_grosze","vat_rate_code"}
 SIGNATURE = ("name","unit","quantity","unit_net_grosze","vat_rate_code")
 
@@ -53,11 +60,18 @@ def resolved_party(expected,actual):
     return actual
 
 
+def linked(body):
+    """The proforma id a v2 body settles, or None for v1 (validated body only)."""
+    return body[LINK_KEY] if body["contract_version"]==LINKED_VERSION else None
+
+
 def validate(body):
-    c.require(c.keys(body,KEYS))
+    c.require(type(body) is dict and type(body.get("contract_version")) is int
+        and body["contract_version"] in (VERSION,LINKED_VERSION))
+    c.require(c.keys(body,LINKED_KEYS if body["contract_version"]==LINKED_VERSION else KEYS))
     c.canonical(body)
-    c.require(type(body["contract_version"]) is int and body["contract_version"]==VERSION
-        and body["calculation_version"]==c.money.CALCULATION_VERSION
+    c.require(body["contract_version"]==VERSION or c.identifier(body[LINK_KEY])==body[LINK_KEY])
+    c.require(body["calculation_version"]==c.money.CALCULATION_VERSION
         and type(body["company"]) is str and body["company"] in {"md","md_test"}
         and body["price_model"]=="netto" and body["currency"]=="PLN")
     c.require(c.text(body["change_id"]) and c.text(body["description"],4096)
@@ -110,6 +124,8 @@ def prepare(body,company_id,series,*,buyer,receiver):
     if receiver is not None:
         document.update(contractor_receiver_id=int(receiver["id"]),
             contractor_detail_receiver={k:v for k,v in receiver["detail"].items() if v!=""})
+    if linked(body) is not None:
+        document[PROVIDER_LINK]={"id":int(linked(body))}
     return dict(document=document,company_id=company_id,positions=body["positions"],
         after_valuation=body["after_valuation"],buyer=buyer,receiver=receiver,series_id=body["series_id"])
 
@@ -127,6 +143,10 @@ def verify_created(prepared,invoice,document_id,company_id):
     c.require(observed["contractor_id"]==prepared["buyer"]["id"]
         and observed["receiver_id"]==(prepared["receiver"]["id"] if prepared["receiver"] else None)
         and observed["party_sha256"]==c.fingerprint(expected_parties),"created_party_mismatch")
+    # BUG-155: a sent link is proven by the readback, never assumed from the request.
+    link=prepared["document"].get(PROVIDER_LINK)
+    c.require(link is None or c.relation(invoice,PROVIDER_LINK,optional=True)==c.identifier(link["id"]),
+        "created_proforma_link_mismatch")
     c.require(c.same_valuation(observed["full_valuation"],prepared["after_valuation"]),"created_valuation_mismatch")
     c.require(invoice.get("date")==prepared["document"]["date"]
         and invoice.get("disposaldate")==prepared["document"]["disposaldate"],"created_date_mismatch")
