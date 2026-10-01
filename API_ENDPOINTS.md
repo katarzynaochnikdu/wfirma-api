@@ -299,6 +299,10 @@ Odpowiedzi (zamknięty zbiór kluczy, `Cache-Control: no-store`):
 | 400 | `{"success": false, "error": "invalid_request"}` | złe żądanie (przed tokenem i wFirmą) |
 | 401/403 | standardowe odpowiedzi `X-API-Key` | przed czymkolwiek innym |
 
+Kształt trafienia w wFirmie (zmierzony na produkcji 2026-10-01): `{"invoice": {...}, "ksef_status": ...}`.
+Pole `ksef_status` jest dopuszczone i nieczytane; każde inne pole obok `invoice` = 503.
+wFirma porównuje `id_external` bez rozróżniania wielkości liter — trasa wymaga dokładnej równości.
+
 „0” zwalnia rozliczenie po stronie portalu, więc jest odpowiedzią **pozytywną**: tylko przy
 HTTP 200 od wFirmy, `status.code == "OK"`, kluczach `invoices` i `status`, liczniku
 `parameters.total` zgodnym z liczbą trafień i bez żadnego trafienia. Każde trafienie musi mieć

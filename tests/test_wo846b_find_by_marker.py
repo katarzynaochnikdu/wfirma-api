@@ -87,8 +87,17 @@ def _invoice(invoice_id: Any = "9001", *, marker: Any = MARKER, number: Any = "F
     return value
 
 
+#: The entry shape wFirma really answers with (production probe 2026-10-01): the
+#: invoice has a `ksef_status` sibling. Only the key was measured, not its value.
+KSEF_STATUS = {"synthetic": "shape of the value was not measured"}
+
+
+def _entry(invoice: dict) -> dict:
+    return {"invoice": invoice, "ksef_status": KSEF_STATUS}
+
+
 def _found(*invoices: dict, total: Any = None) -> FakeStreamResponse:
-    container: dict[str, Any] = {str(index): {"invoice": invoice} for index, invoice in enumerate(invoices)}
+    container: dict[str, Any] = {str(index): _entry(invoice) for index, invoice in enumerate(invoices)}
     container["parameters"] = {"limit": "2", "page": "1", "total": str(len(invoices)) if total is None else total}
     return FakeStreamResponse(200, {"invoices": container, "status": {"code": "OK"}})
 
@@ -184,6 +193,26 @@ def test_wo846b_find_by_marker_one_invoice_answers_its_id_and_number(harness, ca
     log = capsys.readouterr().out
     assert "[WO-846B FIND-BY-MARKER] found=1 company=md marker=" + MARKER + " invoice_id=9001" in log
     assert "Synthetic Buyer" not in log + response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("entry", [
+    {"invoice": _invoice(), "ksef_status": KSEF_STATUS},
+    {"invoice": _invoice(), "ksef_status": None},
+    {"invoice": _invoice()},
+])
+def test_wo846b_find_by_marker_hit_with_or_without_ksef_status_sibling_is_found(harness, entry):
+    """Regression: production wraps a hit as {"invoice", "ksef_status"}; the route answered 503."""
+    client, state = harness
+    state["responses"].append(FakeStreamResponse(200, _payload(
+        invoices={"0": entry, "parameters": {"limit": "2", "page": "1", "total": "1"}})))
+
+    # Act
+    response = _ask(client)
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "success": True, "found": 1, "invoice_id": "9001", "fullnumber": "FV/EV/TEST/7/10/2026"}
+    assert len(state["posts"]) == 1
 
 
 def test_wo846b_find_by_marker_numeric_provider_id_is_answered_as_text(harness):
@@ -293,6 +322,10 @@ def _payload(**change):
         _payload(invoices={"0": {"invoice": _invoice(number="")}, "parameters": {"total": "1"}}),
         _payload(invoices={"0": {"invoice": _invoice(number=" FV/1")}, "parameters": {"total": "1"}}),
         _payload(invoices={"0": {"invoice": _invoice(), "extra": 1}, "parameters": {"total": "1"}}),
+        _payload(invoices={"0": {"invoice": _invoice(), "ksef_status": KSEF_STATUS, "extra": 1},
+                           "parameters": {"total": "1"}}),
+        _payload(invoices={"0": {"ksef_status": KSEF_STATUS}, "parameters": {"total": "1"}}),
+        _payload(invoices={"0": {"invoice": None, "ksef_status": KSEF_STATUS}, "parameters": {"total": "1"}}),
         _payload(invoices={"x": {"invoice": _invoice()}, "parameters": {"total": "1"}}),
         _payload(invoices={"invoice": _invoice(), "parameters": {"total": "1"}}),
         _payload(invoices={"0": {"invoice": _invoice("9001")}, "1": {"invoice": _invoice("9001")},

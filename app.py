@@ -4439,6 +4439,10 @@ FIRST_INVOICE_MARKER_REQUEST_MAX_BYTES = 1024
 #: Two hits already prove "not exactly one": the route never picks one of several.
 FIRST_INVOICE_MARKER_FIND_LIMIT = 2
 FIRST_INVOICE_MARKER_FIND_URL = "https://api2.wfirma.pl/invoices/find"
+#: wFirma wraps a find hit as {"invoice": {...}, "ksef_status": ...} (measured on
+#: production 2026-10-01). The sibling says nothing about identity and is not read;
+#: any OTHER sibling is still an unknown shape, so the answer proves nothing.
+FIRST_INVOICE_MARKER_ENTRY_SIBLINGS = frozenset({"ksef_status"})
 _FIRST_INVOICE_MARKER_LOG = "[WO-846B FIND-BY-MARKER]"
 
 
@@ -4481,7 +4485,8 @@ def _first_invoice_marker_hits(payload, marker):
         if key == "parameters":
             continue
         if (type(key) is not str or not key.isdigit() or type(wrapper) is not dict
-                or set(wrapper) != {"invoice"} or type(wrapper["invoice"]) is not dict):
+                or set(wrapper) - FIRST_INVOICE_MARKER_ENTRY_SIBLINGS != {"invoice"}
+                or type(wrapper["invoice"]) is not dict):
             return None
         invoice = wrapper["invoice"]
         if invoice.get("id_external") != marker:
