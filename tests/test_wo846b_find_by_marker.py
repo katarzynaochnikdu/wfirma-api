@@ -330,6 +330,18 @@ def test_wo846b_find_by_marker_malformed_answer_is_unavailable_never_zero(harnes
         (json.dumps({"company": "md", "id_external": "nf1:abc\n"}), "application/json", ""),
         (json.dumps({"company": "md", "id_external": "nf1:łab"}), "application/json", ""),
         (json.dumps({"company": "md", "id_external": 12345}), "application/json", ""),
+        # L-2: only the portal's own marker shape, nf1: + 28 lowercase hex.
+        (json.dumps({"company": "md", "id_external": MARKER.upper()}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": "NF1:" + MARKER[4:]}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": "nf2:" + MARKER[4:]}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": "nf1-" + MARKER[4:]}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": MARKER[:31]}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": MARKER + "0"}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": MARKER[:31] + "g"}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": MARKER[:31] + "\n"}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": MARKER[:31] + " "}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": "x" * 32}), "application/json", ""),
+        (json.dumps({"company": "md", "id_external": "PRO-123/2026"}), "application/json", ""),
         (json.dumps({"company": "md"}), "application/json", ""),
         (json.dumps({"company": "md", "id_external": MARKER, "company_id": "130706"}), "application/json", ""),
         ('{"company":"md","company":"md","id_external":"' + MARKER + '"}', "application/json", ""),
@@ -433,6 +445,8 @@ def test_wo846b_find_by_marker_is_not_wrapped_by_the_document_create_envelope(ha
     assert not hasattr(view.__wrapped__, "__wrapped__")
     assert app_module.FIRST_INVOICE_MARKER_FIND_LIMIT == 2
     assert app_module.FIRST_INVOICE_MARKER_COMPANIES == frozenset({"md", "md_test"})
+    assert app_module.FIRST_INVOICE_MARKER_PATTERN.pattern == r"nf1:[0-9a-f]{28}"
+    assert app_module._first_invoice_marker(MARKER) is True and len(MARKER) == 32
 
 
 def test_wo846b_find_by_marker_route_is_post_only(harness):

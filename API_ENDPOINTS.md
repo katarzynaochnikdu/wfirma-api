@@ -276,8 +276,10 @@ Content-Type: application/json
 ```
 
 - Zamknięty zbiór kluczy, bez parametrów zapytania, ciało ≤ 1024 B, bez powtórzonych kluczy
-  i `NaN`. `id_external`: 1–32 znaki, drukowalne ASCII, bez białych znaków (wFirma przechowuje
-  32 znaki, WO-637). Firmy: te same co przy tworzeniu faktury pierwszej (`md`, `md_test`).
+  i `NaN`. `id_external`: dokładnie `^nf1:[0-9a-f]{28}$` (32 znaki — to, co pisze rozliczenie
+  portalu, `contract.provider_marker`; wFirma przechowuje 32 znaki, WO-637); każdy inny kształt
+  (wielkie litery, inny prefiks, inna długość) to 400 `invalid_request`.
+  Firmy: te same co przy tworzeniu faktury pierwszej (`md`, `md_test`).
 - Firma i jej OAuth jak przy tworzeniu i `/reconcile` (`_structural_correction_identity`):
   przypięte `WFIRMA_MD_COMPANY_ID` albo znane ID `md` (130706). `md_test` to prawdziwe konto
   Medidesk z serią testową (credentiale i ID `md`), **nie** firma `test`. Bez firmy domyślnej

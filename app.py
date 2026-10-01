@@ -4442,11 +4442,15 @@ FIRST_INVOICE_MARKER_FIND_URL = "https://api2.wfirma.pl/invoices/find"
 _FIRST_INVOICE_MARKER_LOG = "[WO-846B FIND-BY-MARKER]"
 
 
+#: Exactly the marker the portal's base settlement writes (backend
+#: `contract.provider_marker`: "nf1:" + sha256 hex cut to wFirma's 32-character
+#: `id_external`, WO-637). Anything else is not ours to look up (WO-846B L-2).
+FIRST_INVOICE_MARKER_PATTERN = re.compile(r"nf1:[0-9a-f]{28}")
+
+
 def _first_invoice_marker(value):
-    """1..32 printable ASCII characters, no whitespace (wFirma keeps 32 of `id_external`, WO-637)."""
-    import grouped_document_contract as c
-    return (type(value) is str and 1 <= len(value) <= c.MARKER_LIMIT
-            and all(0x21 <= ord(character) <= 0x7E for character in value))
+    """Only ``nf1:`` + 28 lowercase hex characters (32 in total, ASCII, no whitespace)."""
+    return type(value) is str and FIRST_INVOICE_MARKER_PATTERN.fullmatch(value) is not None
 
 
 def _first_invoice_marker_hits(payload, marker):
