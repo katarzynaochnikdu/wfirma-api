@@ -261,6 +261,57 @@ danych do UI. Odpowiedzi błędów są zamknięte i nie zawierają treści ani w
 `400 invalid_request`, `401 oauth_unavailable`, `503 recovery_configuration_unavailable`,
 `404 document_not_found` lub `502 recovery_read_unavailable`.
 
+### Faktura pierwsza po znaczniku `id_external` (WO-846B)
+
+Prywatne wejście portalu (rozliczenie „Oznacz jako opłacone”, które zapisało START, ale nie
+dostało odpowiedzi wFirmy). Tylko odczyt: czy w wFirmie jest faktura ze znacznikiem, który
+nosiło żądanie utworzenia (`nf1:…`, `first_invoice_contract.prepare`).
+
+```http
+POST /api/workflow/grouped-first-invoice/find-by-marker
+X-API-Key: <MAKE_RENDER_API_KEY>
+Content-Type: application/json
+
+{"company": "md" | "md_test", "id_external": "nf1:…"}
+```
+
+- Zamknięty zbiór kluczy, bez parametrów zapytania, ciało ≤ 1024 B, bez powtórzonych kluczy
+  i `NaN`. `id_external`: 1–32 znaki, drukowalne ASCII, bez białych znaków (wFirma przechowuje
+  32 znaki, WO-637). Firmy: te same co przy tworzeniu faktury pierwszej (`md`, `md_test`).
+- Firma i jej OAuth jak przy tworzeniu i `/reconcile` (`_structural_correction_identity`):
+  przypięte `WFIRMA_MD_COMPANY_ID` albo znane ID `md` (130706). `md_test` to prawdziwe konto
+  Medidesk z serią testową (credentiale i ID `md`), **nie** firma `test`. Bez firmy domyślnej
+  i bez `companies/find`.
+- Do wFirmy idzie dokładnie jedno `invoices/find` z warunkiem `id_external eq <znacznik>`,
+  `limit 2`, w tej jednej firmie: 8 s, bez przekierowań, limit 2 MiB, bez ponowień. Żadnego
+  tworzenia, płatności, kontrahenta, maila ani PDF.
+
+Odpowiedzi (zamknięty zbiór kluczy, `Cache-Control: no-store`):
+
+| HTTP | Ciało | Znaczenie |
+|---|---|---|
+| 200 | `{"success": true, "found": 0, "invoice_id": null}` | wFirma odpowiedziała poprawnie: brak faktury |
+| 200 | `{"success": true, "found": 1, "invoice_id": "<id>", "fullnumber": "<nr>"}` | dokładnie jedna |
+| 409 | `{"success": false, "outcome": "ambiguous", "found": 2}` | dwie lub więcej — trasa nigdy nie wybiera „pierwszej” |
+| 503 | `{"success": false, "outcome": "provider_unavailable"}` | każda wątpliwość — nigdy „0” |
+| 400 | `{"success": false, "error": "invalid_request"}` | złe żądanie (przed tokenem i wFirmą) |
+| 401/403 | standardowe odpowiedzi `X-API-Key` | przed czymkolwiek innym |
+
+„0” zwalnia rozliczenie po stronie portalu, więc jest odpowiedzią **pozytywną**: tylko przy
+HTTP 200 od wFirmy, `status.code == "OK"`, kluczach `invoices` i `status`, liczniku
+`parameters.total` zgodnym z liczbą trafień i bez żadnego trafienia. Każde trafienie musi mieć
+`id_external` **dokładnie** równe znacznikowi (porównanie wFirmy może ignorować wielkość liter),
+poprawne `id` i `fullnumber`. Brak tokenu, przypięcia, błąd transportu, status ≠ 200, nieznany
+klucz, niespójny licznik → 503. Trasa **nie** jest opakowana w `document_outcome_envelope`
+(ta koperta dopisuje `outcome: "rejected"` = „nic nie powstało” przy każdym błędzie przed
+utworzeniem). Log stałymi słowami: `[WO-846B FIND-BY-MARKER] found=0|found=1 …|ambiguous|provider_unavailable reason=…`
+ze znacznikiem i ID faktury, bez danych nabywcy.
+
+Manualny smoke kontraktu (tylko odczyt `invoices/find` na `md_test`, poza domyślnym przebiegiem):
+`WFIRMA_SMOKE=1 WFIRMA_SMOKE_MARKER=nf1:… WFIRMA_SMOKE_INVOICE_ID=… python -m pytest tests/test_wo846b_find_by_marker.py -m manual -q`
+— kontrola pozytywna (znana faktura ⇒ `found: 1` z jej ID) jest obowiązkowa, kontrola
+negatywna (losowy znacznik ⇒ `found: 0`, nie 503).
+
 ---
 
 ## Wynik tworzenia dokumentu (WO-502)

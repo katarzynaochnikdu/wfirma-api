@@ -4428,6 +4428,185 @@ def grouped_document_reconcile():
         return _grouped_document_response(dict(success=False,error='reconciliation_unverified'),409)
 
 
+# WO-846B: the portal's settlement stuck WITHOUT a provider id (START saved, the
+# create answer lost) asks here whether wFirma holds its first invoice, by the
+# `id_external` marker the create request carried (first_invoice_contract.prepare).
+# Only a read: one bounded `invoices/find`, no retry, no create, no party write.
+#: The tenants a grouped first invoice can be created in (first_invoice_contract.validate).
+#: `md_test` is the real Medidesk account with the test series (credentials and ID of `md`).
+FIRST_INVOICE_MARKER_COMPANIES = frozenset({"md", "md_test"})
+FIRST_INVOICE_MARKER_REQUEST_MAX_BYTES = 1024
+#: Two hits already prove "not exactly one": the route never picks one of several.
+FIRST_INVOICE_MARKER_FIND_LIMIT = 2
+FIRST_INVOICE_MARKER_FIND_URL = "https://api2.wfirma.pl/invoices/find"
+_FIRST_INVOICE_MARKER_LOG = "[WO-846B FIND-BY-MARKER]"
+
+
+def _first_invoice_marker(value):
+    """1..32 printable ASCII characters, no whitespace (wFirma keeps 32 of `id_external`, WO-637)."""
+    import grouped_document_contract as c
+    return (type(value) is str and 1 <= len(value) <= c.MARKER_LIMIT
+            and all(0x21 <= ord(character) <= 0x7E for character in value))
+
+
+def _first_invoice_marker_hits(payload, marker):
+    """The invoices of one `invoices/find` answer, or None when it proves nothing.
+
+    "Zero" must be a POSITIVE answer -- the portal frees the order on it and a
+    second invoice could follow -- so every doubt is None (provider unavailable):
+    another status code, an unknown key, a missing or inconsistent `total`, a hit
+    whose `id_external` is not exactly the marker (the provider's comparison may
+    ignore case), an unproven id or number.
+    """
+    import grouped_document_contract as c
+    if type(payload) is not dict or set(payload) != {"invoices", "status"}:
+        return None
+    status = payload["status"]
+    container = payload["invoices"]
+    if type(status) is not dict or status.get("code") != "OK" or type(container) is not dict:
+        return None
+    meta = container.get("parameters")
+    if type(meta) is not dict or "total" not in meta:
+        return None
+    try:
+        total = c.integer(meta["total"], 10**9)
+    except c.GroupedDocumentError:
+        return None
+    hits = []
+    for key, wrapper in container.items():
+        if key == "parameters":
+            continue
+        if (type(key) is not str or not key.isdigit() or type(wrapper) is not dict
+                or set(wrapper) != {"invoice"} or type(wrapper["invoice"]) is not dict):
+            return None
+        invoice = wrapper["invoice"]
+        if invoice.get("id_external") != marker:
+            return None
+        try:
+            invoice_id = c.identifier(invoice.get("id"))
+        except c.GroupedDocumentError:
+            return None
+        number = invoice.get("fullnumber")
+        if not c.text(number, 256):
+            return None
+        hits.append((invoice_id, number))
+    if len(hits) > FIRST_INVOICE_MARKER_FIND_LIMIT or len({hit[0] for hit in hits}) != len(hits):
+        return None
+    if total != len(hits) and not (len(hits) == FIRST_INVOICE_MARKER_FIND_LIMIT
+                                   and total >= FIRST_INVOICE_MARKER_FIND_LIMIT):
+        return None
+    return hits
+
+
+def wfirma_find_first_invoices_by_marker(token, *, marker, company_id):
+    """One `invoices/find` by `id_external` in ONE pinned company -> (hits, None) | (None, reason).
+
+    The find is an HTTP POST at wFirma, but a read: same budget as the recovery
+    reads (8 s, no redirects, 2 MiB), no retry. Provider text never leaves here.
+    """
+    if not _first_invoice_marker(marker) or _canonical_recovery_id(company_id) is None:
+        return None, "invalid_internal_request"
+    response = None
+    try:
+        response = requests.post(
+            FIRST_INVOICE_MARKER_FIND_URL,
+            params={
+                "inputFormat": "json",
+                "outputFormat": "json",
+                "oauth_version": "2",
+                "company_id": company_id,
+            },
+            headers=get_wfirma_headers(token),
+            json={"invoices": {"parameters": {
+                "conditions": {"condition": {"field": "id_external", "operator": "eq", "value": marker}},
+                "limit": str(FIRST_INVOICE_MARKER_FIND_LIMIT),
+            }}},
+            timeout=WFIRMA_RECOVERY_READ_TIMEOUT_SECONDS,
+            allow_redirects=False,
+            stream=True,
+        )
+        if getattr(response, "status_code", None) != 200:
+            return None, "provider_status"
+        payload = _read_recovery_json_bounded(response)
+        if payload is None:
+            return None, "invalid_response"
+        hits = _first_invoice_marker_hits(payload, marker)
+        if hits is None:
+            return None, "invalid_response"
+        return hits, None
+    except Exception:
+        # Provider exception text can reflect Authorization or upstream data.
+        return None, "transport_unavailable"
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
+@app.route('/api/workflow/grouped-first-invoice/find-by-marker', methods=['POST'])
+@require_api_key
+def grouped_first_invoice_find_by_marker():
+    """WO-846B: is there a grouped first invoice with this `id_external`? Read only.
+
+    200 {success:true, found:0, invoice_id:null}            wFirma answered: none
+    200 {success:true, found:1, invoice_id, fullnumber}      exactly one
+    409 {success:false, outcome:"ambiguous", found:2}        two or more: never pick one
+    503 {success:false, outcome:"provider_unavailable"}      any doubt -- never "0"
+    400 {success:false, error:"invalid_request"}
+
+    Not wrapped in `document_outcome_envelope`: that envelope classifies the
+    failures of document-CREATING workflows and stamps `outcome: "rejected"`
+    ("nothing was created") on any failure before a create attempt -- here it
+    would overwrite "provider_unavailable" with exactly the answer that lets the
+    portal free a START. The tenant comes from the request (`_structural_correction_identity`,
+    as the create and `/reconcile` routes), never from the default company.
+    """
+    import grouped_document_contract as c
+    try:
+        c.require(not request.args and request.mimetype == "application/json")
+        raw = request.stream.read(FIRST_INVOICE_MARKER_REQUEST_MAX_BYTES + 1)
+        c.require(len(raw) <= FIRST_INVOICE_MARKER_REQUEST_MAX_BYTES)
+
+        def pairs(items):
+            value = {}
+            for key, item in items:
+                c.require(key not in value)
+                value[key] = item
+            return value
+
+        def invalid(_):
+            raise ValueError("invalid_json")
+        body = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=invalid)
+        c.require(c.keys(body, {"company", "id_external"}) and type(body["company"]) is str
+                  and body["company"] in FIRST_INVOICE_MARKER_COMPANIES and _first_invoice_marker(body["id_external"]))
+    except Exception:
+        return _grouped_document_response(dict(success=False, error="invalid_request"), 400)
+    company, marker = body["company"], body["id_external"]
+    try:
+        token, company_id = _structural_correction_identity(company)
+    except Exception:
+        token = company_id = None
+    if token is None:
+        print(f"{_FIRST_INVOICE_MARKER_LOG} provider_unavailable reason=identity company={company} marker={marker}")
+        return _grouped_document_response(dict(success=False, outcome="provider_unavailable"), 503)
+    hits, reason = wfirma_find_first_invoices_by_marker(token, marker=marker, company_id=company_id)
+    if hits is None:
+        print(f"{_FIRST_INVOICE_MARKER_LOG} provider_unavailable reason={reason} company={company} marker={marker}")
+        return _grouped_document_response(dict(success=False, outcome="provider_unavailable"), 503)
+    if not hits:
+        print(f"{_FIRST_INVOICE_MARKER_LOG} found=0 company={company} marker={marker}")
+        return _grouped_document_response(dict(success=True, found=0, invoice_id=None))
+    if len(hits) == 1:
+        invoice_id, number = hits[0]
+        print(f"{_FIRST_INVOICE_MARKER_LOG} found=1 company={company} marker={marker} invoice_id={invoice_id}")
+        return _grouped_document_response(dict(success=True, found=1, invoice_id=invoice_id, fullnumber=number))
+    print(f"{_FIRST_INVOICE_MARKER_LOG} ambiguous found={len(hits)} company={company} marker={marker}")
+    return _grouped_document_response(dict(success=False, outcome="ambiguous", found=len(hits)), 409)
+
+
 @app.route('/api/workflow/grouped-first-invoice',methods=['POST'])
 @document_outcome_envelope
 @require_api_key
