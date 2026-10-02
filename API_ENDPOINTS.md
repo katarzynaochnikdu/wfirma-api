@@ -414,9 +414,58 @@ Tworzy fakturę, proformę, notę księgową lub paragon.
 | `email` | string | Nie | - | Email do wysyłki faktury |
 | `send_email` | bool | Nie | `false` | Czy wysłać emailem |
 | `price_mode` | string | Nie | netto (brak klucza) | Dla epoki brutto jawnie `"brutto"`; netto zachowuje brak klucza |
+| `receiver` | object | Nie | - | Odbiorca inny niż Nabywca — dwa kształty, patrz „Odbiorca (`receiver`)” niżej |
 | `invoice` | object | **TAK** | - | Dane dokumentu (pozycje) |
 
 *Wymagany `nip` LUB `purchaser_name`
+
+#### Odbiorca (`receiver`) — dwa kształty (WO-871)
+
+**Blok płaski** (dotychczasowy, bez zmian): `name` (wymagane), `nip`, `tax_id_type`, `street`, `zip`,
+`city`, `country`, `role`. Most sam ustala kartę odbiorcy: po identyfikatorze podatkowym, potem po
+nazwie, na końcu zakłada nową. Brak `name` = `400` (`Odbiorca wymaga pola "name"`), dokument nie powstaje.
+
+**Odbiorca przypięty** — blok o DOKŁADNIE dwóch kluczach:
+
+```json
+{
+  "receiver": {
+    "id": "7002",
+    "detail": {
+      "role": "2", "name": "...", "tax_id_type": "custom", "nip": "...",
+      "street": "...", "zip": "...", "city": "...", "country": "PL"
+    }
+  }
+}
+```
+
+- `id` — id karty kontrahenta w wFirmie, tekst w postaci kanonicznej (`[1-9][0-9]*`). `null` = odmowa:
+  w trybie przypiętym most nie zakłada ani nie wyszukuje żadnej karty.
+- `detail` — komplet ośmiu pól strony (jak na trasie `grouped-first-invoice`); `role` to kod KSeF 1–11.
+- Most czyta kartę po `id` i porównuje ją z `detail` (rola brana z dokumentu, nie z karty). Migawka
+  odbiorcy na dokumencie to `detail` dosłownie, bez pustych pól i bez normalizacji.
+- Odpowiedź sukcesu niesie dodatkowo `receiver_pinned: true`; `receiver_contractor_id` = przypięte `id`.
+- Blok `{id, detail}` z trzecim kluczem NIE jest trybem przypiętym — idzie drogą bloku płaskiego.
+
+Odmowy trybu przypiętego — zawsze przed `invoices/add` (`outcome: "rejected"`), ciało
+`{"success": false, "error": "<nazwa>", "outcome": "rejected"}`:
+
+| `error` | HTTP | Kiedy | Wywołanie wFirmy |
+|---|---|---|---|
+| `receiver_pin_id_missing` | 400 | `id` jest `null` | żadne |
+| `receiver_pin_invalid` | 409 | kształt `detail` / `id` albo rola spoza 1–11 | żadne |
+| `receiver_pin_mismatch` | 409 | karta o tym `id` niesie inne dane niż `detail` | jeden odczyt karty |
+| `receiver_pin_unreadable` | 502 | karty nie da się odczytać po `id` | jeden odczyt karty |
+| `receiver_pin_unverified` | 502 | nieprzewidziany błąd kontroli | najwyżej jeden odczyt karty |
+
+Powód wewnętrzny trafia wyłącznie do logu: `[document-bridge] refused stage=invoice_receiver_pin reason=… exc=…`.
+
+Po `invoices/add` obowiązuje ta sama asercja co dla bloku płaskiego (`502`,
+`receiver_verification_failed`, `outcome: "created_unverified"`), gdy wFirma zgubi odbiorcę.
+
+Wywołujący, który chce przypiąć odbiorcę, najpierw sprawdza `GET /api/capabilities`
+(zdolność `invoice_from_nip_receiver_pin_v1`). Most sprzed WO-871 nie ma tej trasy (`404`),
+a blok `{id, detail}` odrzuca jako blok płaski bez `name` (`400`) — nigdy nie wraca po cichu do wyszukiwania.
 
 #### Typy dokumentów (`document_type`):
 
@@ -794,6 +843,21 @@ Sprawdza poprawność NIP i pobiera dane z GUS/REGON.
 
 ### `GET /api/contractor/<nip>`
 Pobiera dane kontrahenta z wFirma po NIP.
+
+### `GET /api/capabilities` (WO-871)
+Zamknięta lista zdolności tego mostu. Wymaga `X-API-Key`; tylko odczyt, bez wywołania wFirmy,
+`Cache-Control: no-store`. Odpowiedź niesie wyłącznie nazwy — bez wersji, commita i konfiguracji.
+
+```json
+{
+  "success": true,
+  "capabilities": ["invoice_from_nip_receiver_pin_v1"]
+}
+```
+
+| Zdolność | Znaczenie |
+|---|---|
+| `invoice_from_nip_receiver_pin_v1` | `POST /api/workflow/create-invoice-from-nip` honoruje `receiver: {id, detail}` |
 
 ### `GET /api/series/list`
 Lista dostępnych serii numeracji.

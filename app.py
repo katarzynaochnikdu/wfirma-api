@@ -4349,6 +4349,96 @@ def _first_invoice_party(token,company_id,expected,*,receiver=False):
     return n.resolved_party(expected,dict(id=entity_id,detail=detail))
 
 
+# --- WO-871: przypiety Odbiorca na trasie `create-invoice-from-nip` -----------------
+#
+# Trasa brala karte Odbiorcy WYLACZNIE z wlasnego wyszukiwania (identyfikator -> nazwa
+# -> nowa karta). Kilka kart tego samego odbiorcy to stan normalny (`grouped-first-invoice`
+# przy `id=None` zawsze zaklada nowa), wiec wyszukiwanie moglo podpiac INNA karte niz ta,
+# ktora wywolujacy sprawdzil — dokument powstawal, a portal parkowal go bez wyjscia
+# (BUG-186, SECURITY-WO-870 W-1).
+#
+# Tryb przypiety wlacza DOKLADNIE ksztalt `receiver: {"id", "detail"}` — ten sam, ktorego
+# uzywa `grouped-first-invoice`. Wybor ksztaltu jest celowy: most sprzed tej zmiany widzi
+# w nim plaski blok bez `name` i odmawia 400, wiec nigdy nie wraca po cichu do wyszukiwania.
+
+#: Jedyny zestaw kluczy bloku `receiver`, ktory wlacza tryb przypiety.
+RECEIVER_PIN_KEYS = frozenset({"id", "detail"})
+#: Nazwa etapu w `document_refusal_log` (musi byc w jego `_STAGES`).
+RECEIVER_PIN_STAGE = "invoice_receiver_pin"
+#: Zdolnosc ogloszona przez `GET /api/capabilities`.
+CAPABILITY_RECEIVER_PIN = "invoice_from_nip_receiver_pin_v1"
+#: Zamkniety slownik zdolnosci mostu. Same nazwy — zadnej wersji, commita ani konfiguracji.
+BRIDGE_CAPABILITIES = (CAPABILITY_RECEIVER_PIN,)
+
+#: Zamkniete nazwy odmow trybu przypietego -> status HTTP. Wszystkie padaja PRZED
+#: `_mark_document_create_attempt()`, wiec koperta dopisuje `outcome: "rejected"`.
+RECEIVER_PIN_REFUSALS = {
+    "receiver_pin_id_missing": 400,   # `id: null` — na tej trasie nie zakladamy kart
+    "receiver_pin_invalid": 409,      # ksztalt / rola zadania (bez wywolania wFirmy)
+    "receiver_pin_mismatch": 409,     # karta o tym id niesie inne dane niz `detail`
+    "receiver_pin_unreadable": 502,   # karty nie da sie odczytac po id
+    "receiver_pin_unverified": 502,   # nasz wlasny, nieprzewidziany blad kontroli
+}
+_RECEIVER_PIN_ID_MISSING = "receiver_pin_id_missing"
+
+
+def _receiver_pin_refusal(exc, *, card_was_read):
+    """Jedna nazwana odmowa trybu przypietego: linia w logu + stala odpowiedz.
+
+    Odpowiedz niesie wylacznie nazwe z `RECEIVER_PIN_REFUSALS`; powod wewnetrzny
+    (`party_changed`, `receiver_role_invalid`, ...) trafia tylko do logu, przez
+    ten sam straznik ksztaltu co pozostale odmowy dokumentowe.
+    """
+    import document_refusal_log as refusal_log
+    import first_invoice_contract as n
+    reason = exc.args[0] if getattr(exc, "args", None) else None
+    if reason == _RECEIVER_PIN_ID_MISSING:
+        error = _RECEIVER_PIN_ID_MISSING
+    elif not card_was_read:
+        error = "receiver_pin_invalid"
+    elif not isinstance(exc, n.c.GroupedDocumentError):
+        error = "receiver_pin_unverified"
+    elif reason == "party_read_unavailable":
+        error = "receiver_pin_unreadable"
+    else:
+        error = "receiver_pin_mismatch"
+    refusal_log.log_refusal(exc, stage=RECEIVER_PIN_STAGE)
+    return cors_response({'success': False, 'error': error}, RECEIVER_PIN_REFUSALS[error])
+
+
+def _receiver_pin_request(expected):
+    """Kontrola SAMEGO zadania, bez jednego wywolania wFirmy. Zwraca odmowe albo None.
+
+    Rola jest sprawdzana drugi raz przez `_first_invoice_party` (po odczycie karty);
+    tutaj po to, zeby bledne zadanie nie kosztowalo nawet odczytu.
+    """
+    import first_invoice_contract as n
+    try:
+        n.c.require(expected["id"] is not None, _RECEIVER_PIN_ID_MISSING)
+        n.party(expected, resolved=True)
+        role, role_error = resolve_receiver_role(expected["detail"]["role"])
+        n.c.require(role_error is None and role == expected["detail"]["role"], "receiver_role_invalid")
+    except Exception as exc:
+        return _receiver_pin_refusal(exc, card_was_read=False)
+    return None
+
+
+def _receiver_pin_card(token, company_id, expected):
+    """Karta przypietego Odbiorcy czytana po id. Zwraca `(strona, odmowa)`.
+
+    Uzywa `_first_invoice_party(..., receiver=True)` bez zmian: odczyt po id,
+    rola z dokumentu, porownanie 8 pol. Zadnego wyszukiwania. `id=None` tu nie
+    dociera (`_receiver_pin_request`), a gdyby dotarlo — odmowa stoi PRZED
+    pomocnikiem, ktory dla `None` zalozylby nowa karte.
+    """
+    import first_invoice_contract as n
+    try:
+        n.c.require(expected["id"] is not None, _RECEIVER_PIN_ID_MISSING)
+        return _first_invoice_party(token, company_id, expected, receiver=True), None
+    except Exception as exc:
+        return None, _receiver_pin_refusal(exc, card_was_read=True)
+
+
 def _first_invoice_link_readback(n,body,invoice,readback):
     """BUG-155: v2 bodies only. The proforma link ("order") is proven by readback.
 
@@ -5160,6 +5250,19 @@ def build_invoice_payload(invoice_input: dict, contractor: dict, token: str = No
     return payload, None
 
 
+@app.route('/api/capabilities', methods=['GET'])
+@require_api_key
+def api_capabilities():
+    """WO-871: zamknieta lista zdolnosci tego mostu. Tylko odczyt, bez wFirmy.
+
+    Portal robi trwaly START przed POST dokumentu, wiec o tym, czy most honoruje
+    przypiecie Odbiorcy, musi wiedziec WCZESNIEJ. Most bez tej trasy odpowiada 404
+    i portal odmawia czysto. Odpowiedz to same nazwy: zadnej wersji, commita,
+    konfiguracji ani sekretu.
+    """
+    return _grouped_document_response(dict(success=True, capabilities=list(BRIDGE_CAPABILITIES)))
+
+
 @app.route('/api/workflow/create-invoice-from-nip', methods=['POST', 'OPTIONS'])
 @document_outcome_envelope
 @require_api_key
@@ -5180,6 +5283,17 @@ def workflow_create_invoice():
             'supported': SUPPORTED_COMPANIES
         }, 400)
     
+    # WO-871: przypiety Odbiorca (`receiver: {id, detail}`). Samo zadanie sprawdzamy
+    # tutaj — przed tokenem i przed jakimkolwiek wywolaniem wFirmy. Kazdy inny ksztalt
+    # bloku `receiver` (takze `{id, detail}` z trzecim kluczem) idzie stara droga.
+    receiver_pin = body.get('receiver')
+    if not (isinstance(receiver_pin, dict) and set(receiver_pin) == RECEIVER_PIN_KEYS):
+        receiver_pin = None
+    if receiver_pin is not None:
+        pin_refusal = _receiver_pin_request(receiver_pin)
+        if pin_refusal is not None:
+            return pin_refusal
+
     config = get_company_config(company)
     print(f"[WORKFLOW] Używam konfiguracji dla firmy: {company.upper()} (prefix: {config['prefix']})")
     
@@ -5339,6 +5453,15 @@ def workflow_create_invoice():
             'company': company,
             'hint': f"Ustaw ENV {get_company_config(company)['prefix']}COMPANY_ID na ID właściwej firmy w wFirma"
         }, 502)
+
+    # WO-871: karta przypietego Odbiorcy czytana po id i porownana z `detail`, ZANIM
+    # ruszy rozwiazywanie nabywcy — odmowa nie zostawia w wFirmie niczego, nawet
+    # swiezo zalozonej karty nabywcy.
+    receiver_pinned = None
+    if receiver_pin is not None:
+        receiver_pinned, pin_refusal = _receiver_pin_card(token, company_id, receiver_pin)
+        if pin_refusal is not None:
+            return pin_refusal
 
     # 1) Szukamy kontrahenta lub tworzymy na podstawie danych z wywołania
     contractor = None
@@ -5619,7 +5742,15 @@ def workflow_create_invoice():
     receiver_contractor_id = None
     receiver_snapshot = None
     receiver_input = body.get('receiver')
-    if receiver_input:
+    if receiver_pinned is not None:
+        # WO-871: karta wskazana przez wywolujacego i sprawdzona wyzej. Zadnego
+        # wyszukiwania i zadnego zakladania karty. Migawka to `detail` DOSLOWNIE
+        # (bez pustych pol, jak `first_invoice_contract.prepare`) — normalizacja
+        # `build_receiver_snapshot` zmienilaby dane, ktore wywolujacy porowna po POST.
+        receiver_contractor_id = int(receiver_pinned["id"])
+        receiver_snapshot = {k: v for k, v in receiver_pinned["detail"].items() if v != ""}
+        print(f"[WORKFLOW] Odbiorca przypiety: id={receiver_contractor_id}")
+    elif receiver_input:
         if not isinstance(receiver_input, dict):
             return cors_response({'error': 'Pole "receiver" musi byc obiektem'}, 400)
         if not (receiver_input.get('name') or '').strip():
@@ -5914,6 +6045,10 @@ def workflow_create_invoice():
         'email_response': email_result,
         'pdf_saved': pdf_filename
     }
+    if receiver_pinned is not None:
+        # WO-871: tylko w trybie przypietym — pozostali wywolujacy dostaja odpowiedz
+        # o dokladnie tych samych kluczach co dotad.
+        response['receiver_pinned'] = True
     
     # Dodaj PDF jako base64 (dla Make.com - żeby nie robić osobnego HTTP request)
     if pdf_base64:

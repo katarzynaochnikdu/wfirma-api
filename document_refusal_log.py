@@ -31,7 +31,9 @@ UNNAMED = "unnamed"
 _REASON_SHAPE = re.compile(r"[a-z][a-z0-9_]{2,63}")
 # wFirma entity identifiers are decimal strings; nothing else is printable here.
 _DOCUMENT_SHAPE = re.compile(r"[0-9]{1,32}")
-_STAGES = frozenset({"first_invoice_create", "reconcile"})
+# `invoice_receiver_pin` (WO-871): a pinned receiver refused on
+# `create-invoice-from-nip`, always before the document POST.
+_STAGES = frozenset({"first_invoice_create", "reconcile", "invoice_receiver_pin"})
 _OTHER = "other"
 
 
