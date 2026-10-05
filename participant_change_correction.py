@@ -129,6 +129,33 @@ def _totals(rows):
     return total
 
 
+def document_totals(mode, rows):
+    """WO-891: document totals as wFirma issues them; positions keep line amounts.
+
+    ``netto``: per VAT-rate code (``0``/``zw``/``np`` stay separate) the sum of
+    the position nets, VAT rounded ONCE per group HALF_UP, gross = net + VAT;
+    2 x 170,16 @23 % -> 418,59, not the 418,60 of the per-line gross rows.
+    ``brutto``: the plain per-line sum, unchanged. Identical to the portal's
+    ``participant_change_document_plan._doc_totals``.
+    """
+    if type(mode) is not str or mode not in ("netto", "brutto"):
+        _fail()
+    if mode == "brutto":
+        return _totals(rows)
+    net_by_code = {}
+    for row in rows:
+        code, net = row["vat_rate_code"], row["net_grosze"]
+        if type(code) is not str or code not in VAT_PERCENT or not _int(net):
+            _fail()
+        net_by_code[code] = net_by_code.get(code, 0) + net
+    net = sum(net_by_code.values())
+    vat = sum((amount * VAT_PERCENT[code] + 50) // 100 for code, amount in net_by_code.items())
+    total = {"net_grosze": net, "vat_grosze": vat, "gross_grosze": net + vat}
+    if any(not _int(value) for value in total.values()):
+        _fail()
+    return total
+
+
 def _relation(document, name, *, optional=False):
     values = []
     if name in document:
@@ -218,7 +245,7 @@ def project_parent(invoice, company_id):
         if (not _keys(metadata, {"total"})
                 or _provider_integer(metadata["total"], MAX_POSITIONS) != len(rows)):
             _fail("document_positions_incomplete")
-    totals = _totals(rows)
+    totals = document_totals(mode, rows)
     if totals["gross_grosze"] != _money(invoice.get("total_composed")):
         _fail("document_total_mismatch")
     external = invoice.get("id_external", "")
@@ -314,7 +341,8 @@ def prepare_correction(body, live_invoice, company_id, series):
         else:
             content.update(name=name, unit=unit, vat=rate)
         contents[str(index)] = {"invoicecontent": content}
-    if seen_ids != set(by_id) or _totals(rows) != body["after_totals"]:
+    after_totals = document_totals(parent["price_model"], rows)
+    if seen_ids != set(by_id) or after_totals != body["after_totals"]:
         _fail("after_snapshot_mismatch")
     key = ("mt1:" + fingerprint({"change_id": body["change_id"],
                                  "parent": body["parent_sha256"]}))[:MARKER_LIMIT]
@@ -329,7 +357,7 @@ def prepare_correction(body, live_invoice, company_id, series):
         document["contractor_receiver_id"] = int(parent["receiver_id"])
         document["contractor_detail_receiver"] = {k: v for k, v in _party_detail(live_invoice["contractor_detail_receiver"]).items() if v != ""}
     return {"document": document, "parent": parent, "positions": rows,
-            "totals": _totals(rows), "series_id": body["series_id"]}
+            "totals": after_totals, "series_id": body["series_id"]}
 
 
 def verify_created(prepared, invoice, document_id, company_id):

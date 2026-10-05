@@ -231,8 +231,162 @@ def test_equal_net_positions_are_not_merged_when_vat_rounding_would_change():
     body = request_for(parent)
     body["positions"] += [{"kind": "new", "line_key": key, "name": "Dodatek", "unit": "szt.",
                            "quantity": 1, "unit_price_grosze": 3, "vat_rate_code": "23"} for key in ("a", "b")]
-    body["after_totals"] = {"net_grosze": 6, "vat_grosze": 2, "gross_grosze": 8}
+    # WO-891: rows stay separate (4 + 4 gross), the document total is the rate group: 6 + 1 = 7.
+    body["after_totals"] = {"net_grosze": 6, "vat_grosze": 1, "gross_grosze": 7}
     prepared = c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
     assert len(prepared["document"]["invoicecontents"]) == 3
     assert prepared["totals"] == body["after_totals"]
     assert c.line_totals("netto", "23", 2, 3)["gross_grosze"] == 7
+
+
+# --- WO-891: wFirma NETTO document totals are per VAT-rate group, not per row ---
+
+SERIES = {"id": "71", "name": "KOR TEST"}
+TWO_AT_23 = [("8101", "1", "170.16", "222", "170.16", "209.30"),
+             ("8102", "1", "170.16", "222", "170.16", "209.30")]
+
+
+def parent_with(lines, total, mode="netto"):
+    """lines: (id, count, price, vat_code_id, netto, brutto) exactly as the provider sends them."""
+    parent = source(mode)
+    parent["total_composed"] = total
+    parent["invoicecontents"] = {str(i): {"invoicecontent": {
+        "id": pid, "name": "Konferencja", "unit": "szt.", "count": count, "price": price,
+        "netto": netto, "brutto": brutto, "vat_code": {"id": vat}}}
+        for i, (pid, count, price, vat, netto, brutto) in enumerate(lines)}
+    return parent
+
+
+def remove_second_of_two(parent):
+    body = request_for(parent)
+    body["positions"] = [
+        {**body["positions"][0], "quantity": 1, "unit_price_grosze": 17016},
+        {**body["positions"][0], "quantity": 0, "unit_price_grosze": 17016,
+         "line_key": "second", "parent_position_id": "8102"},
+    ]
+    body["after_totals"] = {"net_grosze": 17016, "vat_grosze": 3914, "gross_grosze": 20930}
+    return body
+
+
+def test_netto_parent_with_grouped_vat_rounding_is_accepted_with_group_totals():
+    # Arrange
+    parent = parent_with(TWO_AT_23, "418.59")
+    # Act
+    proof = c.project_parent(parent, "130706")
+    # Assert
+    assert proof["totals"] == {"net_grosze": 34032, "vat_grosze": 7827, "gross_grosze": 41859}
+    assert [row["gross_grosze"] for row in proof["positions"]] == [20930, 20930]
+
+
+def test_netto_parent_with_per_row_gross_sum_as_total_is_refused():
+    # Arrange
+    parent = parent_with(TWO_AT_23, "418.60")
+    # Act / Assert
+    with pytest.raises(c.StructuralContractError, match="document_total_mismatch"):
+        c.project_parent(parent, "130706")
+
+
+def test_netto_parent_with_mixed_rates_sums_each_rate_group_separately():
+    # Arrange
+    parent = parent_with(TWO_AT_23 + [("8103", "1", "100.04", "223", "100.04", "108.04")], "526.63")
+    # Act
+    proof = c.project_parent(parent, "130706")
+    # Assert
+    assert proof["totals"] == {"net_grosze": 44036, "vat_grosze": 8627, "gross_grosze": 52663}
+
+
+def test_correction_removing_one_of_two_grouped_rows_is_validated_and_read_back():
+    # Arrange
+    parent = parent_with(TWO_AT_23, "418.59")
+    body = remove_second_of_two(parent)
+    prepared = c.prepare_correction(body, parent, "130706", SERIES)
+    after = parent_with([("9101", "1", "170.16", "222", "170.16", "209.30"),
+                         ("9102", "0", "170.16", "222", "0.00", "0.00")], "209.30")
+    after.update(id="9001", type="correction", parent={"id": "8001"}, series_id="71",
+                 id_external=prepared["document"]["id_external"])
+    after["invoicecontents"]["0"]["invoicecontent"]["parent_id"] = "8101"
+    after["invoicecontents"]["1"]["invoicecontent"]["parent_id"] = "8102"
+    # Act
+    result = c.verify_created(prepared, after, "9001", "130706")
+    # Assert
+    assert prepared["totals"] == body["after_totals"]
+    assert body["parent"]["totals"]["gross_grosze"] - prepared["totals"]["gross_grosze"] == 20929
+    assert result["parent"]["totals"] == body["after_totals"]
+
+
+def test_request_with_per_row_after_totals_is_refused_when_group_total_differs():
+    # Arrange
+    parent = parent_with(TWO_AT_23, "418.59")
+    body = remove_second_of_two(parent)
+    body["positions"][1]["quantity"] = 1
+    body["after_totals"] = {"net_grosze": 34032, "vat_grosze": 7828, "gross_grosze": 41860}
+    # Act / Assert
+    with pytest.raises(c.StructuralContractError, match="after_snapshot_mismatch"):
+        c.prepare_correction(body, parent, "130706", SERIES)
+
+
+@pytest.mark.parametrize("rows,expected", [
+    ([("23", 17016), ("23", 17016)], (34032, 7827, 41859)),
+    ([("23", 17016), ("23", 17016), ("8", 10004)], (44036, 8627, 52663)),
+    ([("0", 10000), ("zw", 5000), ("np", 1)], (15001, 0, 15001)),
+    ([("zw", 10000), ("23", 17016), ("23", 17016)], (44032, 7827, 51859)),
+    ([("23", 3), ("23", 3), ("23", 0)], (6, 1, 7)),
+    ([("23", 0)], (0, 0, 0)),
+])
+def test_netto_document_totals_round_vat_once_per_rate_code(rows, expected):
+    # Arrange
+    projected = [{"vat_rate_code": code, "net_grosze": net} for code, net in rows]
+    # Act
+    result = c.document_totals("netto", projected)
+    # Assert
+    assert tuple(result[k] for k in ("net_grosze", "vat_grosze", "gross_grosze")) == expected
+
+
+def test_netto_parent_with_zero_and_exempt_rows_keeps_totals():
+    # Arrange
+    parent = parent_with([("8101", "1", "100.00", "225", "100.00", "100.00"),
+                          ("8102", "1", "50.00", "226", "50.00", "50.00")], "150.00")
+    # Act
+    proof = c.project_parent(parent, "130706")
+    # Assert
+    assert proof["totals"] == {"net_grosze": 15000, "vat_grosze": 0, "gross_grosze": 15000}
+    assert sorted(row["vat_rate_code"] for row in proof["positions"]) == ["0", "zw"]
+
+
+@pytest.mark.parametrize("total,accepted", [("418.60", True), ("418.59", False)])
+def test_brutto_parent_still_uses_the_per_row_sum(total, accepted):
+    # Arrange
+    parent = parent_with([("8101", "1", "209.30", "222", "170.16", "209.30"),
+                          ("8102", "1", "209.30", "222", "170.16", "209.30")], total, mode="brutto")
+    # Act / Assert
+    if accepted:
+        assert c.project_parent(parent, "130706")["totals"] == {
+            "net_grosze": 34032, "vat_grosze": 7828, "gross_grosze": 41860}
+    else:
+        with pytest.raises(c.StructuralContractError, match="document_total_mismatch"):
+            c.project_parent(parent, "130706")
+
+
+@pytest.mark.parametrize("mutation", ["unknown_entry", "missing_vat", "row_net"])
+def test_grouped_parent_with_an_unparsed_row_is_still_refused(mutation):
+    # Arrange
+    parent = parent_with(TWO_AT_23, "418.59")
+    line = parent["invoicecontents"]["1"]["invoicecontent"]
+    if mutation == "unknown_entry": parent["invoicecontents"]["extra"] = {}
+    elif mutation == "missing_vat": line["vat_code"] = {"id": "99999"}
+    else: line["netto"] = "170.15"
+    # Act / Assert
+    with pytest.raises(c.StructuralContractError):
+        c.project_parent(parent, "130706")
+
+
+@pytest.mark.parametrize("mode,rows", [
+    ("netto", [{"vat_rate_code": "22", "net_grosze": 1}]),
+    ("netto", [{"vat_rate_code": "23", "net_grosze": -1}]),
+    ("netto", [{"vat_rate_code": "23", "net_grosze": True}]),
+    ("other", []),
+])
+def test_document_totals_refuse_unknown_rate_or_amount(mode, rows):
+    # Act / Assert
+    with pytest.raises(c.StructuralContractError):
+        c.document_totals(mode, rows)
