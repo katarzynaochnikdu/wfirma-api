@@ -189,6 +189,43 @@ def test_bad_readback_never_confirms_created_correction(change):
         c.verify_created(prepared,out,"8002",company)
 
 
+def test_wo970_correction_read_back_without_marker_is_recognised():
+    # wFirma zwraca korekte z pustym `id_external` (zmierzone 2026-10-09).
+    prepared=prepare(invoice())
+    out=correction(prepared)
+    out["id_external"]=""
+
+    proof=c.verify_created(prepared,out,"8002","130706")
+
+    assert proof["parent"]["document_id"]=="8002" and proof["parent"]["external_key"]==""
+
+
+def test_wo970_correction_read_back_with_missing_marker_field_is_recognised():
+    prepared=prepare(invoice())
+    out=correction(prepared)
+    del out["id_external"]
+
+    proof=c.verify_created(prepared,out,"8002","130706")
+
+    assert proof["parent"]["document_id"]=="8002" and proof["parent"]["external_key"]==""
+
+
+@pytest.mark.parametrize("change", ["identity","series","parent","party","quantity","header"])
+def test_wo970_empty_marker_does_not_relax_any_other_identity_check(change):
+    prepared=prepare(invoice())
+    out=correction(prepared)
+    out["id_external"]=""
+    if change=="identity": out["id"]="8003"
+    elif change=="series": out["series"]["id"]="72"
+    elif change=="parent": out["parent"]={"id":"7999"}
+    elif change=="party": out["contractor"]={"id":"7002"}
+    elif change=="quantity": out["invoicecontents"]["0"]["invoicecontent"]["count"]="4"
+    else: out["total"]="490.01"
+
+    with pytest.raises(c.GroupedDocumentError):
+        c.verify_created(prepared,out,"8002","130706")
+
+
 @pytest.mark.parametrize("change", ["version","math","intent","ids","sha","parent","missing_line","amount","extra"])
 def test_invalid_request_refuses_before_wire_document(change):
     data=invoice()

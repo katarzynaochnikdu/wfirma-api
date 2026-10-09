@@ -399,13 +399,27 @@ def prepare_correction(body, live_invoices, company_id, series):
 
 
 def verify_created(prepared, invoice, document_id, company_id):
+    """Prove that the read-back correction is the one this request created.
+
+    WO-970: wFirma does not keep `id_external` on a correction. Measured on
+    production 2026-10-09: marker sent, document created, read back with an
+    empty field. Requiring the marker therefore refused every correction this
+    route ever created. An EMPTY marker is accepted; a marker that is present
+    must still be exactly ours. Identity rests on the document id the provider
+    returned for this very request, the corrected parent, the series, being
+    the last document of the chain, the same parties, and the exact lines and
+    amounts below. Where an operator types the id by hand (manual
+    reconciliation), this identity is economic, not cryptographic: any
+    correction of this parent with exactly these lines would pass, and it can
+    be registered only once.
+    """
     parent = prepared["parent"]
     observed = _project(invoice, company_id, previous=parent,
         root_id=parent["root_document_id"], terminal=True)
     require(observed["document_id"] == identifier(document_id)
             and observed["document_id"] not in parent["source_document_ids"]
             and observed["source_document_id"] == parent["document_id"]
-            and observed["external_key"] == prepared["document"]["id_external"]
+            and observed["external_key"] in ("", prepared["document"]["id_external"])
             and relation(invoice, "series") == prepared["series_id"], "created_identity_mismatch")
     require(same_valuation(observed["full_valuation"], prepared["after_valuation"])
             and canonical(observed["document_delta"]) == canonical(prepared["document_delta"]),
