@@ -160,3 +160,47 @@ def test_receiver_and_fresh_party_snapshot_are_required_on_both_sides():
     assert proof["parent"]["receiver_id"]=="7002"
     with pytest.raises(n.c.GroupedDocumentError):
         n.prepare(value,"130706",dict(id="72",name="FV TEST"),buyer=value["buyer"],receiver=None)
+
+
+def test_wo970_first_invoice_read_back_without_marker_is_recognised():
+    # wFirma zwraca fakture z pustym `id_external` (zmierzone 2026-10-09 i 2026-10-12).
+    prepared=prepare()
+    value=readback(prepared)
+    value["id_external"]=""
+
+    proof=n.verify_created(prepared,value,"8001","130706")
+
+    assert proof
+
+
+def test_wo970_first_invoice_read_back_with_missing_marker_field_is_recognised():
+    prepared=prepare()
+    value=readback(prepared)
+    del value["id_external"]
+
+    n.verify_created(prepared,value,"8001","130706")
+
+
+def test_wo970_first_invoice_with_a_foreign_marker_is_still_refused():
+    prepared=prepare()
+    value=readback(prepared)
+    value["id_external"]="nf1:"+"0"*28
+
+    with pytest.raises(n.c.GroupedDocumentError):
+        n.verify_created(prepared,value,"8001","130706")
+
+
+@pytest.mark.parametrize("fault",["identity","series","paid","amount","buyer"])
+def test_wo970_empty_marker_does_not_relax_any_other_first_invoice_check(fault):
+    prepared=prepare()
+    value=readback(prepared)
+    document_id="8001"
+    value["id_external"]=""
+    if fault=="identity":document_id="8002"
+    elif fault=="series":value["series"]={"id":"73"}
+    elif fault=="paid":value["paymentstate"]="unpaid"
+    elif fault=="amount":value["total"]="1.00"
+    else:value["contractor"]={"id":"999999"}
+
+    with pytest.raises(n.c.GroupedDocumentError):
+        n.verify_created(prepared,value,document_id,"130706")

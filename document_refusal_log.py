@@ -177,7 +177,7 @@ def log_identity(contract, probe, *, stage, document_id=None):
         seen = _attempt(lambda: observed["external_key"])
         checks = (
             ("document_id", lambda: observed["document_id"] == contract.identifier(created_id)),
-            ("external_key", lambda: seen == wanted),
+            ("external_key", lambda: seen in ("", wanted)),
             ("series", lambda: contract.relation(invoice, "series") == prepared["series_id"]),
             ("fullnumber", lambda: bool(contract.text(invoice.get("fullnumber"), 256))),
         )

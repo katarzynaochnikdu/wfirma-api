@@ -4696,8 +4696,12 @@ def grouped_first_invoice_find_by_marker():
         print(f"{_FIRST_INVOICE_MARKER_LOG} provider_unavailable reason={reason} company={company} marker={marker}")
         return _grouped_document_response(dict(success=False, outcome="provider_unavailable"), 503)
     if not hits:
-        print(f"{_FIRST_INVOICE_MARKER_LOG} found=0 company={company} marker={marker}")
-        return _grouped_document_response(dict(success=True, found=0, invoice_id=None))
+        # WO-970: wFirma no longer returns `id_external` on read (measured on
+        # production 2026-10-09/12), so "no hit" stopped proving "no invoice".
+        # The portal frees the order on found=0 and a second invoice could
+        # follow; zero is therefore never a positive answer any more.
+        print(f"{_FIRST_INVOICE_MARKER_LOG} provider_unavailable reason=marker_unreliable company={company} marker={marker}")
+        return _grouped_document_response(dict(success=False, outcome="provider_unavailable"), 503)
     if len(hits) == 1:
         invoice_id, number = hits[0]
         print(f"{_FIRST_INVOICE_MARKER_LOG} found=1 company={company} marker={marker} invoice_id={invoice_id}")

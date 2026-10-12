@@ -11,7 +11,7 @@ from test_wo601ad_first_invoice_contract import body, prepare, readback
 
 #: sha256 of the LF-normalized contract file. The bridge pins the SAME value for
 #: its copy (first_invoice_contract.py): change both copies and both pins at once.
-CONTRACT_SHA256 = "67ffbfd595919604cf8766defc7d7dbf1385d3fe5d3771a53c4d8c15af7dc5bb"
+CONTRACT_SHA256 = "f3455c2e25aa42354dca35c843ef831cfc5d919602d4f63fc771947df97cdd10"
 CONTRACT_FILE = Path(n.__file__)
 #: v1 goldens computed with the contract BEFORE BUG-155 (backend origin/master 98ead96).
 V1_DOCUMENT_SHA256 = "aa7c805a37ea1045bef7b7a170afaa4b38309e567548455735f66337af9bd980"

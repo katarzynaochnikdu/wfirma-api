@@ -131,11 +131,19 @@ def prepare(body,company_id,series,*,buyer,receiver):
 
 
 def verify_created(prepared,invoice,document_id,company_id):
-    """Independent full GET required. A 200/create body never proves payment/lines."""
+    """Independent full GET required. A 200/create body never proves payment/lines.
+
+    WO-970: wFirma no longer returns `id_external` (measured on production
+    2026-10-09/12: empty on a new invoice AND on one that verified by its marker
+    on 2026-10-04). An EMPTY marker is accepted; a marker that is present must
+    still be exactly ours. Identity rests on the document id the provider
+    returned for this very request, the series, both parties, the dates, the
+    payment state and the exact lines and amounts below.
+    """
     c.require(c.identifier(company_id)==prepared["company_id"])
     observed=c.project_chain([invoice],company_id)
     c.require(observed["document_id"]==c.identifier(document_id)
-        and observed["external_key"]==prepared["document"]["id_external"]
+        and observed["external_key"] in ("",prepared["document"]["id_external"])
         and c.relation(invoice,"series")==prepared["series_id"] and c.text(invoice.get("fullnumber"),256),
         "created_identity_mismatch")
     expected_parties={"buyer":prepared["buyer"]["detail"],

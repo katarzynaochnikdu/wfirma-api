@@ -226,18 +226,22 @@ def test_wo846b_find_by_marker_numeric_provider_id_is_answered_as_text(harness):
     assert response.get_json()["invoice_id"] == "9001"
 
 
-def test_wo846b_find_by_marker_zero_invoices_answers_found_zero(harness, capsys):
+def test_wo970_find_by_marker_zero_invoices_is_never_a_positive_answer(harness, capsys):
+    # wFirma przestala zwracac `id_external` (2026-10-09/12): "brak trafien" nie dowodzi
+    # juz "brak faktury", a portal na found=0 zwalnia zamowienie do drugiej faktury.
     client, state = harness
     state["responses"].append(_found())
 
     # Act
     response = _ask(client)
 
-    assert response.status_code == 200
-    assert response.get_json() == {"success": True, "found": 0, "invoice_id": None}
+    assert response.status_code == 503
+    assert response.get_json() == {"success": False, "outcome": "provider_unavailable"}
     assert len(state["posts"]) == 1
     _assert_one_bounded_find(state["posts"][0], company_id="130706")
-    assert "[WO-846B FIND-BY-MARKER] found=0 company=md marker=" + MARKER in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "[WO-846B FIND-BY-MARKER] provider_unavailable reason=marker_unreliable company=md marker=" + MARKER in out
+    assert "found=0" not in out
 
 
 @pytest.mark.parametrize("total", ["2", "5", 7])
@@ -419,7 +423,7 @@ def test_wo846b_find_by_marker_company_id_is_bound_to_the_requested_tenant(harne
     # Act
     response = _ask(client, company=company)
 
-    assert response.status_code == 200
+    assert response.status_code == 503  # WO-970: zero hits is never a positive answer
     assert state["tokens"] == [(True, company)] and state["validity"] == [company]
     _assert_one_bounded_find(state["posts"][0], company_id="130706", token=f"token-for-{company}")
 
@@ -433,7 +437,7 @@ def test_wo846b_find_by_marker_uses_the_pinned_company_id_of_the_tenant(harness,
     # Act
     response = _ask(client, company=company)
 
-    assert response.status_code == 200
+    assert response.status_code == 503  # WO-970: zero hits is never a positive answer
     _assert_one_bounded_find(state["posts"][0], company_id="555001", token=f"token-for-{company}")
 
 

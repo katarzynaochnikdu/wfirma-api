@@ -21,7 +21,6 @@ def identity(capsys):
 
 
 @pytest.mark.parametrize("fault,expected", [
-    ("marker_dropped", "external_key"),
     ("marker_replaced", "external_key"),
     ("other_series", "series"),
     ("other_document", "document_id"),
@@ -29,8 +28,7 @@ def identity(capsys):
 ])
 def test_wo636_a_failed_identity_check_names_the_part_that_disagrees(first, capsys, fault, expected):
     client, state, value = first
-    if fault == "marker_dropped":state["created"]["id_external"] = ""
-    elif fault == "marker_replaced":state["created"]["id_external"] = "nf1:" + "b" * 32
+    if fault == "marker_replaced":state["created"]["id_external"] = "nf1:" + "b" * 32
     elif fault == "other_series":state["created"]["series"] = {"id": "71"}
     elif fault == "other_document":state["created"]["id"] = "9002"
     else:state["created"].pop("fullnumber")
@@ -43,15 +41,15 @@ def test_wo636_a_failed_identity_check_names_the_part_that_disagrees(first, caps
     assert found[0].endswith("document=9001")
 
 
-def test_wo636_a_dropped_marker_is_told_apart_from_a_truncated_one(first, capsys):
+def test_wo970_a_dropped_marker_no_longer_refuses_and_writes_no_breakdown(first, capsys):
+    # wFirma przestala zwracac `id_external` (2026-10-09/12): pusty znacznik to nie odmowa.
     client, state, value = first
     state["created"]["id_external"] = ""
     # Act
     result = client.post(PATH, json=value, headers=HEADERS)
-    assert result.status_code == 502
+    assert result.status_code == 200 and result.get_json()["invoice_id"] == "9001"
     _, found = identity(capsys)
-    assert found == ["[document-bridge] identity stage=first_invoice_create disagrees=external_key "
-                     f"marker_seen=0 marker_sent={MARKER_LENGTH} document=9001"]
+    assert found == []
 
 
 def test_wo636_a_truncated_marker_reports_both_lengths(first, capsys):
@@ -67,13 +65,13 @@ def test_wo636_a_truncated_marker_reports_both_lengths(first, capsys):
 
 def test_wo636_reconciliation_names_the_part_that_disagrees_too(first, capsys):
     client, state, value = first
-    state["created"]["id_external"] = ""
+    state["created"]["id_external"] = "nf1:" + "b" * 32
     # Act
     result = client.post(RECONCILE, json=dict(request=value, document_id="9001"), headers=HEADERS)
     assert result.status_code == 409 and result.get_json()["error"] == "reconciliation_unverified"
     _, found = identity(capsys)
     assert found == ["[document-bridge] identity stage=reconcile disagrees=external_key "
-                     f"marker_seen=0 marker_sent={MARKER_LENGTH} document=9001"]
+                     f"marker_seen=36 marker_sent={MARKER_LENGTH} document=9001"]
 
 
 def test_wo636_a_refusal_after_the_identity_check_writes_no_breakdown(first, capsys):
@@ -108,7 +106,7 @@ def test_wo636_a_refusal_before_the_provider_answers_writes_no_breakdown(first, 
 
 def test_wo636_a_breakdown_carries_no_customer_data(first, capsys):
     client, state, value = first
-    state["created"]["id_external"] = ""
+    state["created"]["id_external"] = "nf1:" + "b" * 32
     state["created"]["contractor_detail"]["name"] = HOSTILE_NAME
     # Act
     result = client.post(PATH, json=value, headers=HEADERS)
@@ -121,7 +119,7 @@ def test_wo636_a_breakdown_carries_no_customer_data(first, capsys):
 
 def test_wo636_a_failing_breakdown_never_changes_the_answer(first, monkeypatch):
     client, state, value = first
-    state["created"]["id_external"] = ""
+    state["created"]["id_external"] = "nf1:" + "b" * 32
 
     def boom(_call):
         raise RuntimeError("SYNTHETIC-BREAKDOWN-FAILURE")
