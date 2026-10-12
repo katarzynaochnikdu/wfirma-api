@@ -131,10 +131,45 @@ GUS_USE_TEST = (os.environ.get('GUS_USE_TEST', 'false') or '').lower() == 'true'
 #   * WYSZUKIWANIE — bez ponowień, timeout tylko lekko podniesiony. Skoro logowanie
 #     przeszło, sesja żyje i drugi strzał zwykle też przechodzi.
 # Najgorszy przypadek: 3×8 s + 3 s przerw + 20 s = ~47 s, z zapasem do gunicornowych 180 s.
+# Z raportem PKD (WO-982, `with_pkd`) ten rachunek się NIE wydłuża: raport startuje tylko
+# wtedy, gdy logowanie i wyszukiwanie zajęły razem najwyżej GUS_PKD_SKIP_AFTER_SECONDS
+# (15 s), i dokłada nominalnie do 5 s połączenia + 5 s odczytu, czyli ok. 25 s łącznie.
+# Po przekroczeniu progu raport jest pomijany, więc najgorszy przypadek zostaje ~47 s.
+# (Wszystkie te liczby są nominalne — patrz uwaga o limicie `requests` przy stałych PKD.)
 GUS_LOGIN_TIMEOUT = int(os.environ.get('GUS_LOGIN_TIMEOUT', '8'))
 GUS_SOAP_TIMEOUT = int(os.environ.get('GUS_SOAP_TIMEOUT', '20'))
 GUS_LOGIN_ATTEMPTS = int(os.environ.get('GUS_LOGIN_ATTEMPTS', '3'))
 GUS_RETRY_BACKOFF_S = (1, 2)
+
+# --- Główne (przeważające) PKD z GUS (WO-982) -----------------------------------------
+# Raport PKD jest DODATKIEM do wyszukiwania: panel zakłada firmę w Zoho także bez niego
+# (kategorię wpisze wtedy człowiek). Dlatego budżet jest twardy i celowo krótki — ten sam
+# worker wystawia faktury (patrz wyżej): jedno wywołanie, ZERO ponowień, stała w kodzie
+# (bez zmiennej środowiskowej, żeby nikt nie wydłużył jej poza budżet workera).
+# UWAGA: limit `requests` dotyczy osobno połączenia i KAŻDEGO pojedynczego odczytu (przerwy
+# między porcjami danych), więc 5 s NIE jest twardą górną granicą całego wywołania —
+# odpowiedź sączona po kawałku może trwać dłużej. Nominalnie: do 5 s + 5 s.
+GUS_PKD_REPORT_TIMEOUT_SECONDS = 5
+# Twardą ochroną panelu jest próg STARTU raportu. Panel czeka na całą odpowiedź trasy 30 s
+# (`call_wfirma_service`). Przy spowolnionym GUS logowanie + wyszukiwanie potrafią zająć
+# kilkanaście sekund; raport dołożony na końcu przepchnąłby odpowiedź za 30 s i panel
+# straciłby także adres firmy, który bez PKD by zdążył. Dlatego po przekroczeniu progu
+# (czas liczony od wejścia do `gus_lookup_nip`) raportu nie wołamy wcale: 15 s + nominalne
+# 10 s raportu mieści się w 30 s, a rekord wraca z pustym PKD — tak jak przy błędzie raportu.
+GUS_PKD_SKIP_AFTER_SECONDS = 15
+# Nazwa raportu wg pola `typ` rekordu z DaneSzukajPodmioty. Inny typ (np. jednostka
+# lokalna) nie ma tu raportu — wtedy nie pytamy wcale i PKD zostaje puste.
+GUS_PKD_REPORT_BY_ENTITY_TYPE = {
+    'P': 'BIR11OsPrawnaPkd',
+    'F': 'BIR11OsFizycznaPkd',
+}
+# Te same trzy informacje GUS nazywa inaczej w każdym raporcie, a raport osoby fizycznej
+# spotyka się w dwóch pisowniach (z podkreśleniem i bez). Czytamy wszystkie: widget
+# `GUS_Googie` zna tylko pisownię bez podkreślenia i dla JDG zostawia PKD puste.
+GUS_PKD_CODE_KEYS = ('praw_pkdKod', 'fiz_pkd_Kod', 'fiz_pkdKod')
+GUS_PKD_NAME_KEYS = ('praw_pkdNazwa', 'fiz_pkd_Nazwa', 'fiz_pkdNazwa')
+GUS_PKD_PREDOMINANT_KEYS = ('praw_pkdPrzewazajace', 'fiz_pkd_Przewazajace', 'fiz_pkdPrzewazajace')
+GUS_PKD_PREDOMINANT_VALUE = '1'
 
 # WO-504A0: read-only verification and OAuth refresh need independent, finite
 # budgets.  Neither transport is retried: an invoice may already exist after an
@@ -2749,11 +2784,20 @@ def wfirma_send_invoice_email(token: str, invoice_id: str, email: str, company_i
 # ==================== POMOCNICZE: GUS LOOKUP (do ponownego użycia w workflow) ====================
 
 
-def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
+def gus_lookup_nip(clean_nip: str, with_pkd: bool = False) -> tuple[list[dict] | None, str | None]:
     """
     Minimalny helper do ponownego użycia w workflow (bez HTTP round-trip do własnego endpointu).
     Zwraca (lista rekordów lub None, komunikat błędu lub None).
+
+    `with_pkd` (WO-982): po UDANYM wyszukiwaniu dociąga w tej samej sesji główne PKD
+    i dopisuje do PIERWSZEGO rekordu `pkdPrzewazajace`, `pkdKod`, `pkdNazwa`,
+    `pkdGlowneJednoznaczne`. Domyślnie wyłączone — workflow kontrahenta i faktur nie
+    wykonuje dodatkowego wywołania GUS i dostaje rekord bez tych kluczy, jak dotąd.
+    Gdy logowanie i wyszukiwanie zajęły ponad GUS_PKD_SKIP_AFTER_SECONDS, raport PKD
+    jest pomijany (pola puste) — wywołujący czeka ograniczony czas na całą odpowiedź.
     """
+    # Zegar czytamy tylko dla `with_pkd`: ścieżka bez flagi nie zyskuje ani jednego kroku.
+    pkd_started_at = gus_monotonic() if with_pkd else None
     print(f"[GUS-LOOKUP] === START dla NIP={clean_nip} ===")
     from_header_key = ''
     api_key = GUS_API_KEY or ''
@@ -2912,6 +2956,18 @@ def gus_lookup_nip(clean_nip: str) -> tuple[list[dict] | None, str | None]:
     print(f"[GUS-LOOKUP] === KONIEC NIP={clean_nip} znaleziono {len(data_list)} rekordów ===")
     if data_list:
         print(f"[GUS-LOOKUP] Pierwszy rekord: nazwa={data_list[0].get('nazwa')}, regon={data_list[0].get('regon')}")
+
+    # WO-982: PKD dopiero PO udanym wyszukiwaniu i tylko na wyraźne życzenie. Sesja (`sid`)
+    # wciąż żyje — ta funkcja nie wylogowuje. Pobranie nie rzuca, więc rekord wraca zawsze.
+    if with_pkd and data_list:
+        if gus_monotonic() - pkd_started_at > GUS_PKD_SKIP_AFTER_SECONDS:
+            # Budżet wywołującego jest już napoczęty: lepiej oddać znalezioną firmę bez PKD,
+            # niż spóźnić całą odpowiedź (patrz GUS_PKD_SKIP_AFTER_SECONDS).
+            print('[GUS-PKD] pominieto: budzet czasu')
+            predominant_pkd = []
+        else:
+            predominant_pkd = gus_fetch_predominant_pkd(bir_host, bir_url, sid, data_list[0])
+        data_list[0].update(gus_pkd_record_fields(predominant_pkd))
     return data_list, None
 
 
@@ -3027,6 +3083,142 @@ def post_soap_gus_retry(bir_host: str, envelope: str, sid: str | None = None,
     if last_resp is not None:
         return last_resp
     raise last_exc if last_exc else RuntimeError("GUS: brak odpowiedzi i brak wyjątku")
+
+
+# ==================== GUS: GŁÓWNE (PRZEWAŻAJĄCE) PKD — WO-982 ====================
+
+
+def gus_monotonic() -> float:
+    """
+    Zegar budżetu czasu raportu PKD. Osobna funkcja, żeby test mógł go podmienić bez
+    `sleep` i bez ruszania globalnego `time.monotonic`, z którego korzysta reszta procesu.
+    """
+    return time.monotonic()
+
+
+def _gus_pkd_row_value(row: dict, keys: tuple[str, ...]) -> str:
+    """Pierwsza niepusta wartość spod którejkolwiek pisowni klucza (po strip) albo ''."""
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ''
+
+
+def parse_gus_pkd_rows(rows) -> list[dict]:
+    """
+    Wiersze raportu PKD z GUS (każdy `<dane>` jako słownik) -> lista PKD przeważających.
+
+    Czysta funkcja: bez sieci i bez logów. Zwraca `[{"kod", "nazwa"}, ...]` w kolejności
+    raportu; kod i nazwa tak, jak podał je GUS (tylko po strip).
+
+    Ten sam kod bywa powtórzony (np. w kilku rejestrach jednej osoby) — zostaje pierwszy
+    wiersz; porównanie po samych cyfrach i literach, więc `86.21.Z` i `8621Z` to jeden kod.
+
+    ŚWIADOMIE nie filtrujemy po silosie ani po dacie skreślenia: nie znamy kształtu tych
+    danych z produkcji, a zgadywanie mogłoby po cichu odrzucić właściwy wiersz. Kilka
+    różnych kodów przeważających wraca więc w całości — rozstrzyga wywołujący, a jego
+    bezpiecznym wynikiem jest „brak rozstrzygnięcia".
+    """
+    predominant: list[dict] = []
+    seen_codes: set[str] = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if _gus_pkd_row_value(row, GUS_PKD_PREDOMINANT_KEYS) != GUS_PKD_PREDOMINANT_VALUE:
+            continue
+        code = _gus_pkd_row_value(row, GUS_PKD_CODE_KEYS)
+        normalized_code = re.sub(r'[^0-9A-Za-z]', '', code).upper()
+        if not normalized_code or normalized_code in seen_codes:
+            continue
+        seen_codes.add(normalized_code)
+        predominant.append({'kod': code, 'nazwa': _gus_pkd_row_value(row, GUS_PKD_NAME_KEYS)})
+    return predominant
+
+
+def gus_pkd_record_fields(predominant: list[dict]) -> dict:
+    """
+    Pola PKD dopisywane do rekordu GUS. Zawsze komplet czterech kluczy — także przy braku
+    danych — żeby odbiorca nie musiał odróżniać „nie pytano" od „pytano i nic nie ma"
+    po obecności pojedynczych pól. Usługa NIE zna reguły biznesowej: oddaje same dane.
+    """
+    first = predominant[0] if predominant else {}
+    return {
+        'pkdPrzewazajace': [dict(item) for item in predominant],
+        'pkdKod': first.get('kod', ''),
+        'pkdNazwa': first.get('nazwa', ''),
+        'pkdGlowneJednoznaczne': len(predominant) == 1,
+    }
+
+
+def gus_fetch_predominant_pkd(bir_host: str, bir_url: str, sid: str, record: dict) -> list[dict]:
+    """
+    Jedno `DanePobierzPelnyRaport` w ŻYWEJ sesji GUS (`sid` z wyszukiwania) dla REGON-u
+    rekordu; zwraca listę PKD przeważających albo [].
+
+    NIGDY nie rzuca i nie ponawia: PKD jest dodatkiem, a wyszukiwanie już się udało —
+    błąd raportu nie może zamienić znalezionej firmy w „GUS nie odpowiada".
+
+    Logi: wyłącznie nazwa raportu, status, liczby i nazwy kluczy. Żadnych wartości
+    (REGON, kod, nazwa) ani treści wyjątku — rekord JDG to dane osoby.
+    """
+    try:
+        report_name = GUS_PKD_REPORT_BY_ENTITY_TYPE.get(str(record.get('typ') or '').strip())
+        if not report_name:
+            print('[GUS-PKD] pominieto: typ podmiotu bez raportu PKD')
+            return []
+
+        regon = str(record.get('regon') or '').strip()
+        if not re.fullmatch(r'[0-9]{9}|[0-9]{14}', regon):
+            print(f'[GUS-PKD] pominieto: brak numeru REGON (raport={report_name})')
+            return []
+
+        report_envelope = (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:ns="http://CIS/BIR/PUBL/2014/07">'
+            '<soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+            f'<wsa:To>{bir_url}</wsa:To>'
+            '<wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport</wsa:Action>'
+            '</soap:Header>'
+            '<soap:Body>'
+            '<ns:DanePobierzPelnyRaport>'
+            f'<ns:pRegon>{escape_xml(regon)}</ns:pRegon>'
+            f'<ns:pNazwaRaportu>{escape_xml(report_name)}</ns:pNazwaRaportu>'
+            '</ns:DanePobierzPelnyRaport>'
+            '</soap:Body>'
+            '</soap:Envelope>'
+        )
+
+        report_resp = post_soap_gus(bir_host, report_envelope, sid=sid,
+                                    timeout=GUS_PKD_REPORT_TIMEOUT_SECONDS)
+        if report_resp.status_code != 200:
+            print(f'[GUS-PKD] raport={report_name} status={report_resp.status_code} -> brak PKD')
+            return []
+
+        # `re.search` znajduje wynik także w odpowiedzi multipart/MTOM, więc osobne
+        # wycinanie części SOAP (jak przy wyszukiwaniu) nie jest tu potrzebne.
+        result_match = re.search(
+            r'<DanePobierzPelnyRaportResult>([\s\S]*?)</DanePobierzPelnyRaportResult>',
+            report_resp.text or '',
+        )
+        decoded_xml = decode_bir_inner_xml(result_match.group(1)) if result_match else ''
+        if not decoded_xml:
+            print(f'[GUS-PKD] raport={report_name} status={report_resp.status_code} pusty wynik -> brak PKD')
+            return []
+
+        root = ET.fromstring(decoded_xml)
+        rows = [{child.tag: child.text for child in dane} for dane in root.findall('.//dane')]
+        predominant = parse_gus_pkd_rows(rows)
+        key_names = sorted({str(key) for row in rows for key in row})[:20]
+        print(f'[GUS-PKD] raport={report_name} status={report_resp.status_code} wiersze={len(rows)} '
+              f'przewazajace={len(predominant)} klucze={key_names}')
+        return predominant
+    except Exception as e:
+        print(f'[GUS-PKD] blad raportu ({type(e).__name__}) -> brak PKD')
+        return []
 
 
 # ==================== ENDPOINTY OAUTH ====================
@@ -6291,6 +6483,10 @@ def gus_validate_nip():
     Headers: X-API-Key: <REGON_API_KEY_TOKEN>
     Wejście: JSON { "nip": "1234567890" }
     Wyjście: { "nip_status": "brak/niepoprawny/poprawny", "gus_data": {...} lub null }
+
+    Opcjonalnie `"with_pkd": true` (WO-982): rekord w kluczu `data` dostaje dodatkowo
+    `pkdPrzewazajace`, `pkdKod`, `pkdNazwa`, `pkdGlowneJednoznaczne`. Bez tej flagi nie ma
+    ani dodatkowego wywołania GUS, ani tych kluczy — odpowiedź jest taka jak dotąd.
     """
     # Obsługa CORS preflight (OPTIONS)
     if request.method == 'OPTIONS':
@@ -6319,7 +6515,10 @@ def gus_validate_nip():
 
     # Sprawdź w GUS/REGON
     print(f"[GUS] validate-nip START nip={clean_nip}")
-    gus_records, gus_err = gus_lookup_nip(clean_nip)
+    # WO-982: ścisłe `is True` — tekst "true" ani 1 nie włączają dodatkowego wywołania GUS,
+    # więc żaden dotychczasowy klient nie uruchomi go przypadkiem.
+    with_pkd = body.get('with_pkd') is True
+    gus_records, gus_err = gus_lookup_nip(clean_nip, with_pkd=with_pkd)
     print(f"[GUS] validate-nip RESULT nip={clean_nip} err={gus_err} records_count={len(gus_records) if gus_records else 0}")
 
     # WO-469 (BUG-056): awaria łączności to NIE to samo, co "nie ma takiej firmy".
