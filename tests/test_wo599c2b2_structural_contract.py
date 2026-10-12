@@ -390,3 +390,68 @@ def test_document_totals_refuse_unknown_rate_or_amount(mode, rows):
     # Act / Assert
     with pytest.raises(c.StructuralContractError):
         c.document_totals(mode, rows)
+
+
+def created_correction():
+    """A prepared zeroing correction and the way wFirma reads it back (marker as sent)."""
+    parent = source()
+    body = request_for(parent)
+    prepared = c.prepare_correction(body, parent, "130706", {"id": "71", "name": "KOR TEST"})
+    after = source()
+    after.update(id="9001", type="correction", parent={"id": "8001"}, series_id="71",
+                 id_external=prepared["document"]["id_external"], total_composed="0.00")
+    row = after["invoicecontents"].pop("0")
+    row["invoicecontent"].update(id="9101", parent_id="8101", count="0", netto="0.00", brutto="0.00")
+    after["invoicecontents"]["7"] = row
+    return prepared, after
+
+
+def test_wo984_correction_read_back_without_marker_is_recognised():
+    # wFirma zwraca korekte z pustym `id_external` (zmierzone 2026-10-09 i 2026-10-12).
+    prepared, after = created_correction()
+    after["id_external"] = ""
+    # Act
+    result = c.verify_created(prepared, after, "9001", "130706")
+    assert result["parent"]["external_key"] == ""
+    assert result["position_mapping"] == [{"line_key": "conference", "position_id": "9101"}]
+
+
+def test_wo984_correction_read_back_with_missing_marker_field_is_recognised():
+    prepared, after = created_correction()
+    del after["id_external"]
+    # Act
+    result = c.verify_created(prepared, after, "9001", "130706")
+    assert result["parent"]["document_id"] == "9001"
+
+
+def test_wo984_correction_read_back_with_the_exact_marker_is_still_recognised():
+    prepared, after = created_correction()
+    assert after["id_external"] == prepared["document"]["id_external"] != ""
+    # Act
+    result = c.verify_created(prepared, after, "9001", "130706")
+    assert result["parent"]["external_key"] == prepared["document"]["id_external"]
+
+
+def test_wo984_correction_with_a_foreign_marker_is_still_refused():
+    prepared, after = created_correction()
+    after["id_external"] = "mt1:" + "0" * 28
+    # Act / Assert
+    with pytest.raises(c.StructuralContractError, match="created_document_mismatch"):
+        c.verify_created(prepared, after, "9001", "130706")
+
+
+@pytest.mark.parametrize("fault", ["identity", "parent", "type", "series", "totals", "party", "positions"])
+def test_wo984_empty_marker_does_not_relax_any_other_correction_check(fault):
+    prepared, after = created_correction()
+    after["id_external"] = ""
+    document_id = "9001"
+    if fault == "identity": document_id = "9002"
+    elif fault == "parent": after["parent"] = {"id": "7999"}
+    elif fault == "type": after["type"] = "normal"; del after["parent"]
+    elif fault == "series": after["series_id"] = "72"
+    elif fault == "totals": after["total_composed"] = "1.00"
+    elif fault == "party": after["contractor"] = {"id": "7002"}
+    else: after["invoicecontents"]["7"]["invoicecontent"]["count"] = "1"
+    # Act / Assert
+    with pytest.raises(c.StructuralContractError):
+        c.verify_created(prepared, after, document_id, "130706")

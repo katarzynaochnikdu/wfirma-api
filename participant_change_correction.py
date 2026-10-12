@@ -361,11 +361,19 @@ def prepare_correction(body, live_invoice, company_id, series):
 
 
 def verify_created(prepared, invoice, document_id, company_id):
+    """Prove that the read-back correction is the one this request created.
+
+    WO-984: wFirma no longer returns `id_external` on read (measured on
+    production 2026-10-09/12). An EMPTY marker is accepted; a marker that is
+    present must still be exactly ours. Identity rests on the document id the
+    provider returned for this very request, the corrected parent, the series,
+    the same parties and the exact lines and amounts below.
+    """
     observed = project_parent(invoice, company_id)
     parent = prepared["parent"]
     if (observed["document_id"] != identifier(document_id) or observed["document_id"] == parent["document_id"]
             or observed["document_type"] != "correction" or observed["source_document_id"] != parent["document_id"]
-            or observed["external_key"] != prepared["document"]["id_external"]
+            or observed["external_key"] not in ("", prepared["document"]["id_external"])
             or observed["totals"] != prepared["totals"]
             or _relation(invoice, "series") != prepared["series_id"]
             or any(observed[k] != parent[k] for k in ("company_id", "contractor_id", "receiver_id", "party_sha256", "price_model", "currency"))):
