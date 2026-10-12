@@ -4373,6 +4373,8 @@ def _grouped_document_read_sources(token, company_id, document_ids):
 def grouped_document_source():
     """Read-only private source for the server's trusted order->invoice chain."""
     import grouped_document_contract as c
+    import document_refusal_log as refusal_log
+    document_id = None
     try:
         if request.args or request.mimetype != "application/json":
             return _grouped_document_response({"success":False,"error":"invalid_request"},400)
@@ -4390,6 +4392,7 @@ def grouped_document_source():
         ids = body["document_ids"]
         c.require(type(ids) is list and 1 <= len(ids) <= c.MAX_CHAIN
                   and all(c.identifier(v) == v for v in ids) and len(set(ids)) == len(ids))
+        document_id = ids[0]
         token, company_id = _structural_correction_identity(body["company"])
         if token is None:
             return _grouped_document_response({"success":False,"error":"oauth_unavailable"},503)
@@ -4401,9 +4404,12 @@ def grouped_document_source():
                     source_documents=sources)
         c.canonical(data)
         return _grouped_document_response(data)
-    except (c.GroupedDocumentError, ValueError, TypeError, UnicodeError, KeyError):
+    except (c.GroupedDocumentError, ValueError, TypeError, UnicodeError, KeyError) as exc:
+        # WO-996: the reason our own code chose was destroyed here (BUG-279).
+        refusal_log.log_refusal(exc, stage="correction_source", document_id=document_id)
         return _grouped_document_response({"success":False,"error":"source_proof_invalid"},409)
-    except Exception:
+    except Exception as exc:
+        refusal_log.log_refusal(exc, stage="correction_source", document_id=document_id)
         return _grouped_document_response({"success":False,"error":"source_read_unavailable"},502)
 
 

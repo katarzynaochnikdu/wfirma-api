@@ -33,7 +33,10 @@ _REASON_SHAPE = re.compile(r"[a-z][a-z0-9_]{2,63}")
 _DOCUMENT_SHAPE = re.compile(r"[0-9]{1,32}")
 # `invoice_receiver_pin` (WO-871): a pinned receiver refused on
 # `create-invoice-from-nip`, always before the document POST.
-_STAGES = frozenset({"first_invoice_create", "reconcile", "invoice_receiver_pin"})
+# `correction_source` (WO-996): the read-only `/grouped-document-correction/source`
+# route; it never writes to the provider, so a line here means nothing was issued.
+_STAGES = frozenset({"first_invoice_create", "reconcile", "invoice_receiver_pin",
+                     "correction_source"})
 _OTHER = "other"
 
 
