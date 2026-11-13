@@ -377,8 +377,10 @@ def test_validation_before_create_is_rejected_and_never_posts(workflow_harness):
     [
         EXACT_KSEF_BATCH_BLOCK,
         "  NIE MOŻNA WYSTAWIĆ KOREKTY DO FAKTURY   W TRAKCIE WYSYŁKI WSADOWEJ DO KSEF  ",
+        # WO-1231/BUG-068: the production sentence ends with a full stop (BUG-129 log).
+        EXACT_KSEF_BATCH_BLOCK + ".",
     ],
-    ids=["measured-exact", "normalized-case-and-whitespace"],
+    ids=["measured-exact", "normalized-case-and-whitespace", "production-with-full-stop"],
 )
 def test_exact_ksef_batch_block_is_retryable_with_one_correction_create(
     workflow_harness, monkeypatch, message

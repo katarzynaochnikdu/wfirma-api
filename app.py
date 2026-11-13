@@ -1964,10 +1964,16 @@ def _normalize_document_error_message(message: str) -> str:
     return " ".join(str(message or "").split()).casefold()
 
 
+# WO-1231/BUG-068: wFirma ends the sentence with a full stop - measured on
+# production 2026-09-20 13:42:29Z (BUG-129): "...wsadowej do KSeF." Both exact
+# spellings are listed; still exact-match only, no substring or fuzzy rule.
 KSEF_BATCH_RETRYABLE_MESSAGES = frozenset({
     _normalize_document_error_message(
         "Nie można wystawić korekty do faktury w trakcie wysyłki wsadowej do KSeF"
-    )
+    ),
+    _normalize_document_error_message(
+        "Nie można wystawić korekty do faktury w trakcie wysyłki wsadowej do KSeF."
+    ),
 })
 
 
