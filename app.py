@@ -2163,6 +2163,61 @@ def document_outcome_envelope(handler):
     return wrapper
 
 
+# WO-1258 / BUG-369: the strict workflows (redact_logs=True) never print the request or
+# the response body, so a refusal by wFirma (HTTP 200 + INPUT ERROR, no document) left
+# no reason in the logs. One line carries only what lives under status/error/errors:
+# the wFirma status code, the error fields and the error messages, with digit runs and
+# e-mail addresses masked and sizes capped. Logging never changes the result.
+_CREATE_REFUSAL_MAX_ITEMS = 6
+_CREATE_REFUSAL_MAX_MESSAGE = 240
+_CREATE_REFUSAL_MAX_FIELD = 64
+
+
+def _mask_create_refusal_text(text, limit):
+    value = " ".join(str(text or "").split())
+    value = re.sub(r"\S+@\S+", "<email>", value)
+    value = re.sub(r"\d[\d\- ]{9,}\d", "<num>", value)
+    value = re.sub(r"\d{6,}", "<num>", value)
+    return value[:limit]
+
+
+def _document_create_refusal_fields(payload):
+    fields = []
+
+    def _walk(value, error_context=False):
+        if isinstance(value, dict):
+            for raw_key, child in value.items():
+                key = str(raw_key).casefold()
+                child_context = error_context or key in {"status", "error", "errors"}
+                if key == "field" and error_context and isinstance(child, str):
+                    fields.append(child)
+                _walk(child, child_context)
+        elif isinstance(value, list):
+            for child in value:
+                _walk(child, error_context)
+
+    _walk(payload)
+    return fields
+
+
+def _log_document_create_refusal(response):
+    try:
+        payload = _wfirma_response_json(response)
+        status = payload.get("status") if isinstance(payload, dict) else None
+        code = status.get("code") if isinstance(status, dict) else None
+        fields = [_mask_create_refusal_text(f, _CREATE_REFUSAL_MAX_FIELD)
+                  for f in _document_create_refusal_fields(payload)[:_CREATE_REFUSAL_MAX_ITEMS]]
+        messages = [_mask_create_refusal_text(m, _CREATE_REFUSAL_MAX_MESSAGE)
+                    for m in _extract_document_error_messages(response)[:_CREATE_REFUSAL_MAX_ITEMS]]
+        print("[document-bridge] wfirma_create_refused"
+              f" http={getattr(response, 'status_code', None)}"
+              f" wfirma_status={_mask_create_refusal_text(code, 40) or '-'}"
+              f" fields={json.dumps(fields, ensure_ascii=False)}"
+              f" messages={json.dumps(messages, ensure_ascii=False)}")
+    except Exception:
+        pass
+
+
 def wfirma_create_invoice(
     token: str,
     invoice_payload: dict,
@@ -2216,6 +2271,8 @@ def wfirma_create_invoice(
                 print(f"[WFIRMA ERROR] wFirma zwróciło HTTP 200 ale status.code=ERROR!")
                 if not redact_logs:
                     print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
+                else:
+                    _log_document_create_refusal(resp)
                 return None, resp
 
             # Odpowiedź: invoices.0.invoice
@@ -2230,12 +2287,16 @@ def wfirma_create_invoice(
                             return invoice, resp
             if not redact_logs:
                 print(f"[WFIRMA DEBUG] wfirma_create_invoice: status 200 but no invoice in response. Full response: {resp.text[:2000]}")
+            else:
+                _log_document_create_refusal(resp)
             return None, resp
         else:
             # Logowanie błędu z wFirma.pl (ograniczone do 2000 znaków żeby nie jeść RAM)
             print(f"[WFIRMA ERROR] wfirma_create_invoice FAILED! Status: {resp.status_code}")
             if not redact_logs:
                 print(f"[WFIRMA ERROR] Response body: {resp.text[:2000]}")
+            else:
+                _log_document_create_refusal(resp)
             return None, resp
     except Exception as e:
         if not redact_logs:
